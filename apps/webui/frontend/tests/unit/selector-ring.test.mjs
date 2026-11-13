@@ -1,3 +1,4 @@
+// requirement: KEYB-14059
 /**
  * K4 / #9396: selector ring helper, styles and SSR.
  *
@@ -180,4 +181,22 @@ test('SSR: clear after set removes ring', () => {
 	assert.match(ssr.render(ssr.Ring).body, /data-testid="selector-ring"/);
 	ssr.clearSelectorRingTarget();
 	assert.equal(ssr.render(ssr.Ring).body.includes('data-testid="selector-ring"'), false);
+});
+
+// [if] the selection moves, re-publishes the same node, then clears [then] the one live region reads each real change, [else stop].
+test('SSR: the polite live region carries only real selection changes', () => {
+	const target = { id: 'deck.1.cues', rect: { x: 0, y: 0, width: 10, height: 10 }, kind: 'group' };
+	const region = () =>
+		ssr.render(ssr.Ring).body.match(/<div[^>]*data-testid="selector-announce"[^>]*>([^<]*)<\/div>/);
+	ssr.setSelectorRingTarget(target);
+	const shown = region();
+	assert.ok(shown, 'live region missing');
+	assert.match(shown[0], /aria-live="polite"/);
+	assert.equal(shown[1].trim(), 'Deck 1, Hot cues');
+	ssr.setSelectorRingTarget({ ...target, id: 'deck.1.loop' });
+	ssr.setSelectorRingTarget({ ...target, id: 'deck.1.loop' });
+	assert.equal(region()[1].trim(), 'Deck 1, Loop');
+	ssr.clearSelectorRingTarget();
+	assert.equal(region()[1].trim(), 'Selection cleared');
+	assert.equal(ssr.render(ssr.Ring).body.match(/aria-live=/g).length, 1);
 });

@@ -80,7 +80,16 @@ def test_qr_svg_matches_segno_reference() -> None:
     url = "http://192.0.2.5:47810/remote#code=K7Q4MX"
     payload = qr_svg_payload(url)
     assert payload.startswith("<svg")
-    assert payload == segno.make(url, error="m").svg_inline(scale=4)
+    reference = segno.make(url, error="m").svg_inline(scale=4)
+    assert payload.replace(' xmlns="http://www.w3.org/2000/svg"', "", 1) == reference
+
+
+def test_qr_svg_keeps_namespace_for_xml_parsing() -> None:
+    """[if] the QR SVG is parsed as a standalone XML image [then] its root is a namespaced svg element, [else stop]."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(qr_svg_payload("http://192.0.2.5:47810/request"))
+    assert root.tag == "{http://www.w3.org/2000/svg}svg"
 
 
 def test_qr_route_encodes_remote_url_and_409_when_off(state_dir: Path) -> None:

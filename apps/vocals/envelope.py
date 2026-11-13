@@ -52,6 +52,7 @@ than silently wrong.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,28 @@ def write_envelope(
     )
     tmp.replace(path)
     return path
+
+
+def phrase_vocal_means(envelope: Envelope, *, phrase_start_s: float, phrase_end_s: float) -> dict[str, float] | None:
+    """Mean vocals/mix RMS across a phrase window for segment voice overlay hints."""
+    hop_s = envelope.hop_s
+    if hop_s <= 0:
+        return None
+    start = max(0, int(phrase_start_s / hop_s))
+    end = min(envelope.frames, int(math.ceil(phrase_end_s / hop_s)))
+    if end <= start:
+        return None
+    vocals = envelope.vocals_rms[start:end]
+    mix = envelope.mix_rms[start:end]
+    if len(vocals) == 0:
+        return None
+    import numpy as np
+
+    return {
+        "vocals_rms_mean": float(np.mean(vocals)),
+        "mix_rms_mean": float(np.mean(mix)),
+        "frames": float(end - start),
+    }
 
 
 def read_envelope(path: Path, expect_signature: dict[str, int | str] | None = None) -> Envelope | None:

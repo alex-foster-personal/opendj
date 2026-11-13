@@ -7,8 +7,21 @@
  */
 import type { ChatKitComponents } from './types';
 
-export type { CitationRef, CitationState, ChatKitComponents, StreamingBubbleRole } from './types';
-export { appendTextDelta, CITATION_STATES, citationStateTitle } from './types';
+export type {
+	CitationRef,
+	CitationState,
+	ChatKitComponents,
+	StreamingBubbleRole,
+	ToolStepRef,
+	ToolTraceStepStatus
+} from './types';
+export {
+	appendTextDelta,
+	CITATION_STATES,
+	citationStateTitle,
+	TOOL_TRACE_STEP_STATUSES,
+	toolTraceStepTitle
+} from './types';
 
 let chatKitModule: Promise<ChatKitComponents> | null = null;
 
@@ -17,10 +30,12 @@ export function loadChatKit(): Promise<ChatKitComponents> {
 	if (chatKitModule === null) {
 		chatKitModule = Promise.all([
 			import('../components/chat-kit/CitationPill.svelte'),
-			import('../components/chat-kit/StreamingBubble.svelte')
-		]).then(([citation, streaming]) => ({
+			import('../components/chat-kit/StreamingBubble.svelte'),
+			import('../components/chat-kit/ToolTrace.svelte')
+		]).then(([citation, streaming, toolTrace]) => ({
 			CitationPill: citation.default,
-			StreamingBubble: streaming.default
+			StreamingBubble: streaming.default,
+			ToolTrace: toolTrace.default
 		}));
 	}
 	return chatKitModule;

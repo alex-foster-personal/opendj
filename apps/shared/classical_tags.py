@@ -40,6 +40,16 @@ def _year(raw: Any) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def tag_year(tag: Any) -> int | None:
+    """The 4-digit year a parsed tag carries (``2019`` from ``2019-05-03``), or None (issue #10029)."""
+    return _year(tag.year)
+
+
+def tag_label(tag: Any) -> str | None:
+    """The record label a parsed tag carries (publisher, label or organization frame), or None."""
+    return _first(tag, "publisher", "label", "organization")
+
+
 def proposal_from_tag(tag: Any) -> dict[str, Any]:
     """The classical fields a parsed tag carries. Absent fields are left out."""
     proposal: dict[str, Any] = {
@@ -48,10 +58,10 @@ def proposal_from_tag(tag: Any) -> dict[str, Any]:
         "movement": _first(tag, "movement_name", "movementname"),
         "movement_number": _movement_number(_first(tag, "movement")),
         "catalogue": _first(tag, "catalog_number"),
-        "label": _first(tag, "publisher", "label", "organization"),
+        "label": tag_label(tag),
         "conductor": _first(tag, "conductor"),
         "remixer": _first(tag, "remixer", "tpe4"),
-        "recording_year": _year(tag.year),
+        "recording_year": tag_year(tag),
     }
     return {name: value for name, value in proposal.items() if value is not None}
 

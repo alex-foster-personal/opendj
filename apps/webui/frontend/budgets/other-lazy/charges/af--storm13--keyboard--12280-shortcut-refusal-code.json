@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557661,
+  "measured_with_pr": 557833,
+  "sha": "7133a81c0e",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12280-shortcut-refusal-code grows the other-lazy surface; measured +172 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -1,12 +1,14 @@
 """Module-level pytest selection for a webui-only change set (SMARTEST-CI round 14,
-docs/decisions/ADR-NEW-seam-ci.md; round 15 own-ancestor initializer edges).
+(private path); round 15 own-ancestor initializer edges).
 
 A frontend change cannot reach Python through an import, only through code that reads
 frontend files. The webui_frontend scope in `ci/test-scopes.yml` declares the strings
 such code spells (`mentions`). So the sound selection for a webui-only diff is:
 
 - every tracked Python file whose code literals mention the frontend (`mentioned_strings`,
-  the planner's own reader), as the SEED;
+  the planner's own reader), as the SEED. A literal shaped like a Python identifier
+  (`frontend_port`, `frontend_dsn`) is a key or a name, not a path or a message about
+  the build, so it seeds only when it IS a needle (`"frontend"`);
 - every module whose import closure reaches a seed, read with `imported_modules` over
   `apps`, `scripts`, `ops` AND `tests` (a test helper is reached through `tests.` imports),
   where each import also pulls in the known parents of the imported name (their `__init__`
@@ -29,7 +31,7 @@ Requirements:
   selected.
 - ✔︎ ✅ 🎯 Any change set that is not webui-only selects everything.
 
-Acceptance tests (tests/scripts/test_ci_seam_select.py):
+Acceptance tests ((private path)):
 - [if] a test imports a module that serves the frontend build [then] it is selected
   [⛔️ if the frontend could break it unseen].
 - [if] a conftest mentions the frontend [then] every test beneath it is selected
@@ -46,6 +48,7 @@ import argparse
 import functools
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping, Sequence
@@ -61,6 +64,7 @@ FRONTEND_SCOPE = "webui_frontend"
 NARROWABLE_SEAMS = frozenset({"webui"})
 IMPORT_ROOTS = ("apps", "scripts", "ops", "tests")
 DURATIONS_FILE = ".test_durations"
+IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 @dataclass(frozen=True)
@@ -114,11 +118,42 @@ def _own_ancestor_inits(path: str, tracked: frozenset[str]) -> set[str]:
     return deps
 
 
+def literal_mentions_frontend(literal: str, needles: Iterable[str]) -> bool:
+    """A needle inside a path or prose literal, or a literal that is exactly a needle.
+
+    An identifier-shaped literal such as a telemetry key `frontend_port` names a field and
+    reads no frontend file (PR #12015 added one to a module every test imports, which
+    selected the whole suite)."""
+    if IDENTIFIER.fullmatch(literal):
+        return literal in needles
+    return any(_needle_in_literal(needle, literal) for needle in needles)
+
+
 def _read(root: Path, path: str) -> str:
     try:
         return (root / path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise PlanError(f"cannot read {path}: {exc}") from None
+
+
+def _needle_in_literal(needle: str, literal: str) -> bool:
+    """Whether ``needle`` matches ``literal`` for frontend seed detection.
+
+    Path-shaped and quoted frontend mentions stay substring matches. Bare ``frontend``
+    rejects snake_case continuation: ``frontend_port`` does not seed the closure."""
+    if needle not in literal:
+        return False
+    if needle != "frontend":
+        return True
+    start = 0
+    while True:
+        pos = literal.find(needle, start)
+        if pos < 0:
+            return False
+        after = pos + len(needle)
+        if after >= len(literal) or literal[after] != "_":
+            return True
+        start = pos + 1
 
 
 @functools.cache
@@ -133,7 +168,7 @@ def frontend_consumers(root: Path, needles: tuple[str, ...]) -> frozenset[str]:
     reached = {
         path
         for path, text in texts.items()
-        if any(needle in literal for literal in mentioned_strings(text, path) for needle in needles)
+        if any(literal_mentions_frontend(literal, needles) for literal in mentioned_strings(text, path))
     }
     if not reached:
         raise PlanError(f"no tracked Python file mentions {list(needles)}; the reader is not measuring")

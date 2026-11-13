@@ -110,25 +110,32 @@ test('input-focus guard: keys typed in a text field are never table keys', () =>
 	}
 });
 
-test('a key bubbling from a control inside the row belongs to that control', () => {
+test('[if] a button inside a focused row receives ArrowDown [then] row navigation stops, [else stop].', () => {
 	const row = { tagName: 'TR', getAttribute: () => null };
 	const deckButton = { tagName: 'BUTTON', getAttribute: () => null };
-	for (const key of ['Enter', 'ArrowDown', 'Home']) {
-		const e = { ...keyOnRow(key), target: deckButton, currentTarget: row };
-		assert.deepEqual(kb.trackTableKeyAction(e), { kind: 'none' }, key);
+	const e = { ...keyOnRow('ArrowDown'), target: deckButton, currentTarget: row };
+	assert.deepEqual(kb.trackTableKeyAction(e), { kind: 'none' });
+});
+
+test('[if] Cmd or Control plus an arrow is pressed on a row [then] row navigation stops, [else stop].', () => {
+	for (const mods of [{ metaKey: true }, { ctrlKey: true }]) {
+		for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
+			assert.deepEqual(kb.trackTableKeyAction(keyOnRow(key, mods)), { kind: 'none' }, key);
+		}
 	}
 });
 
-test('Alt and Cmd/Ctrl arrow chords and unrelated keys are left alone', () => {
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { altKey: true })), {
-		kind: 'none'
-	});
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { metaKey: true })), {
-		kind: 'none'
-	});
-	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowDown', { ctrlKey: true })), {
-		kind: 'none'
-	});
+test('[if] Alt plus an arrow is pressed on a row [then] row navigation stops, [else stop].', () => {
+	for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp']) {
+		assert.deepEqual(
+			kb.trackTableKeyAction(keyOnRow(key, { altKey: true })),
+			{ kind: 'none' },
+			key
+		);
+	}
+});
+
+test('unrelated keys and IME composition are left alone on the row itself', () => {
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('ArrowLeft')), { kind: 'none' });
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('a')), { kind: 'none' });
 	assert.deepEqual(kb.trackTableKeyAction(keyOnRow('Delete')), { kind: 'none' });
@@ -341,4 +348,120 @@ test('BrowserPanel selectRow accepts the keyboard gesture the table passes', asy
 	const src = await readFile(PANEL, 'utf8');
 	assert.match(src, /function selectRow\([\s\S]*?event\?: MouseEvent \| KeyboardEvent\s*\): void/);
 	assert.match(src, /onselectrow=\{selectRow\}/);
+});
+
+// ------------------------- range anchor across keyboard paging (issue #12551)
+
+/** Mirror TrackTable's _keyboardMove over a long list whose rendered window
+ * (like visibleRows) only mounts `capacity` rows around the active row, so a
+ * PageDown unmounts the anchor row. The anchor is a (stable_id, order) key
+ * resolved against the full list, never against the mounted window. */
+function pagingHarness(rowCount = 60, capacity = 10) {
+	const rows = Array.from({ length: rowCount }, (_, i) => ({ stable_id: `t${i}`, order: i + 1 }));
+	const pane = {
+		rows,
+		selected_id: null,
+		selected_ids: [],
+		selected_order: null,
+		selected_orders: []
+	};
+	let activeKey = null;
+	let anchorKey = null;
+	let windowStart = 0;
+	const select = (row, shift) =>
+		sel.applySelect(pane, row.stable_id, false, shift, rows, row.order);
+	const mounted = () => rows.slice(windowStart, windowStart + capacity);
+	/** Press one nav key, optionally with Shift held. */
+	const press = (nav, extend) => {
+		const current = kb.resolveActiveRowIndex({
+			rows,
+			activeKey,
+			selectedOrders: pane.selected_orders
+		});
+		const target = kb.nextTrackTableIndex({
+			current,
+			nav,
+			rowCount: rows.length,
+			pageSize: kb.trackTablePageSize(capacity)
+		});
+		const targetKey = kb.trackRowKey(rows[target]);
+		if (extend) {
+			if (anchorKey === null && current >= 0) anchorKey = kb.trackRowKey(rows[current]);
+			const anchor =
+				anchorKey === null ? -1 : rows.findIndex((r) => kb.trackRowKey(r) === anchorKey);
+			const span = kb.trackTableRangeSpan({ anchor, target, rowCount: rows.length });
+			if (span.from === span.to) {
+				select(rows[target], false);
+				anchorKey = targetKey;
+			} else {
+				select(rows[anchor], false);
+				select(rows[target], true);
+			}
+		} else {
+			select(rows[target], false);
+			anchorKey = targetKey;
+		}
+		activeKey = targetKey;
+		// Virtual window follows the active row: rows outside it unmount.
+		if (target < windowStart) windowStart = target;
+		if (target >= windowStart + capacity) windowStart = target - capacity + 1;
+	};
+	return { pane, press, mounted, anchor: () => anchorKey };
+}
+
+/** Orders from..to inclusive (1-based orders of 0-based rows). */
+const span = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i + 1);
+
+test('#12551: Shift+Down establishes a multi-row selection from the fixed anchor', () => {
+	const h = pagingHarness();
+	h.press('down', false); // row 0
+	h.press('down', false); // row 1: anchor
+	h.press('down', true);
+	h.press('down', true);
+	assert.deepEqual(h.pane.selected_orders, span(1, 3));
+	assert.equal(h.anchor(), 't1:2');
+});
+
+test('#12551: Shift+PageDown across the virtual window keeps the unmounted anchor', () => {
+	const h = pagingHarness(60, 10);
+	h.press('down', false);
+	h.press('down', false); // anchor row 1
+	h.press('down', true); // row 2
+	h.press('pagedown', true); // row 12: window scrolls, anchor row unmounts
+	assert.ok(
+		!h.mounted().some((r) => kb.trackRowKey(r) === 't1:2'),
+		'anchor row must be off the mounted window for this case to mean anything'
+	);
+	assert.deepEqual(h.pane.selected_orders, span(1, 12));
+	h.press('pagedown', true); // row 22
+	assert.deepEqual(h.pane.selected_orders, span(1, 22));
+	h.press('pageup', true); // row 12: shrinks back toward the same anchor
+	assert.deepEqual(h.pane.selected_orders, span(1, 12));
+	h.press('pageup', true); // row 2
+	h.press('pageup', true); // row 0: crosses over the anchor, still contiguous
+	assert.deepEqual(h.pane.selected_orders, span(0, 1));
+	assert.equal(h.anchor(), 't1:2');
+});
+
+test('#12551: releasing Shift before the next arrow collapses and re-seats the anchor', () => {
+	const h = pagingHarness(60, 10);
+	h.press('down', false);
+	h.press('down', false); // anchor row 1
+	h.press('pagedown', true); // row 11
+	assert.deepEqual(h.pane.selected_orders, span(1, 11));
+	h.press('down', false); // Shift released: plain move to row 12
+	assert.deepEqual(h.pane.selected_orders, [13]);
+	assert.equal(h.anchor(), 't12:13');
+	h.press('down', true); // row 13 grows from the new anchor, not the old one
+	assert.deepEqual(h.pane.selected_orders, span(12, 13));
+});
+
+test('#12551: TrackTable resolves the range anchor against all rows, not the mounted window', async () => {
+	const src = await readFile(TABLE, 'utf8');
+	const start = src.indexOf('function _keyboardMove');
+	const fn = src.slice(start, src.indexOf('_revealAndFocusRow(target);', start));
+	assert.match(fn, /const list = rows;/);
+	assert.match(fn, /list\.findIndex\(\(r\) => trackRowKey\(r\) === anchorRowKey\)/);
+	assert.doesNotMatch(fn, /visibleRows/);
+	assert.match(src, /const visibleRows = \$derived\(rows\.slice\(/);
 });

@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 508220,
+  "measured_with_pr": 510228,
+  "sha": "59b56e159f",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 5 (PR 14874, branch rc-main-direct--r3-b5) grows the performance surface by its 102 members' code and the bundle's own fixes: measured +2008 B gzip at 59b56e159f over bundle 4's head e0d5292549 built on the same machine (this branch's base once PR 14808 and 14841 merge), ceiled to KiB plus 1 KiB, because the plain ceiling (2048) left 40 B of margin on a 508 KB surface. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

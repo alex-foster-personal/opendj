@@ -71,16 +71,34 @@ export function assertUnitRange(name: string, value: number): void {
  * `(private path)` section 1/6). Endpoints are that
  * doc's recommended constants, chosen so full travel never reaches silence
  * (LP floor keeps kick/sub, HP ceiling keeps hats/air) -- doc section on
- * calibration finding 4. This is the mechanism only: fixed Butterworth Q,
- * no resonance/onset-taper character shaping, which is MIXUX-05 and needs
- * the maintainer's ear calibration before it is built.
+ * calibration finding 4. This is the mechanism only: one fixed Q
+ * (`FILTER_Q_DB`, a mild corner bump, not a flat Butterworth), no
+ * resonance/onset-taper character shaping, which is MIXUX-05 and needs
+ * the maintainer's ear calibration before it is built. The law is pinned for both
+ * engines by `apps/audio-engine/tests/fixtures/filter-law.json` (#9791).
  */
 export const FILTER_DEADZONE_FRAC = 0.02;
 export const FILTER_LP_CEILING_HZ = 20000;
 export const FILTER_LP_FLOOR_HZ = 130;
 export const FILTER_HP_FLOOR_HZ = 30;
 export const FILTER_HP_CEILING_HZ = 6300;
-export const FILTER_Q = 0.707;
+/**
+ * Q of the FILTER biquads in dB: Web Audio reads lowpass/highpass Q as
+ * 20 log10 of linear Q, so 0.707 dB is linear Q 1.085, a +1.74 dB peak just
+ * inside the corner (+0.71 dB at it). Mirrored in `mixer.rs` (#9791).
+ */
+export const FILTER_Q_DB = 0.707;
+/**
+ * FXFILT-09 (issue #10010): FILTER slope per side, 12 dB/oct (one biquad, the
+ * shipped graph) or 24 (a second section at the same corner, `filter-slope.ts`).
+ * The slope pair is calibrated in #9830; mirrored in `apps/audio-engine/src/mixer.rs`.
+ * FXFILT-02 owns resonance (#9826): it moves the first section's Q only, and the
+ * second section's Q never carries it.
+ */
+export type FilterSlopeDbOct = 12 | 24;
+export const FILTER_SLOPE_DB_OCT: FilterSlopeDbOct = 12;
+/** Q of the second section in dB: Web Audio reads it as 20 log10 of linear Q, so this is 1/sqrt(2), a flat Butterworth. */
+export const FILTER_SECOND_SECTION_Q_DB = -3.010299956639812;
 /**
  * Domain the FILTER corner glides in on a knob move: 'hz' (shipped, a one-pole
  * on the frequency) or 'octave' (a one-pole on log2 of it, so LP and HP glide

@@ -594,11 +594,26 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         hot_cues=_hot_cues(_records(anlz.get("cues"))),
         transition_in_bar=_transition_in_bar(stable_id, _records(anlz.get("cues")), downbeats),
         stems_available=stems if isinstance(stems, bool) else None,
+        stem_layout=_stem_layout(track.get("stem_parts")),
         notes=tuple(notes),
         **_loudness(track),
         **_dbtp(track),
         **mik,
     )
+
+
+def _stem_layout(raw: Any) -> tuple[str, ...] | None:
+    """The stem-set's part names as served, or None when the app does not report them."""
+    if not isinstance(raw, list) or not all(isinstance(part, str) for part in raw):
+        return None
+    return tuple(raw)
+
+
+def stem_status(profile: TrackProfile) -> str:
+    """The track's stem-set evidence: ready, unavailable (known absent) or unresolved (not reported)."""
+    if profile.stems_available is None:
+        return "unresolved"
+    return "ready" if profile.stems_available else "unavailable"
 
 
 def _finite_number(value: Any) -> bool:

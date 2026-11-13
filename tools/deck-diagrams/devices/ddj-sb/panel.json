@@ -16,7 +16,7 @@
  "out_of_scope": [
   "pad modes other than HOT CUE: pads carry the HOT CUE wire identity (AUTO LOOP mode is bound in the map)",
   "MSB/LSB companion CCs: each control carries its MSB",
-  "MASTER LEVEL, HEADPHONES VOL and FILTER FADE send no MIDI: channel-16 placeholder hints",
+  "MASTER LEVEL, HEADPHONES VOL and FILTER FADE send no MIDI: midi null, unwired and inert",
   "FX ON and LEVEL/BEATS are drawn, inert",
   "jog touch and wheel-side rows, fader-start notes, rear and front panel (MIC LEVEL)",
   "TEMPO and VINYL/KEY LOCK sit on the outer edges (mirrored, not translated)"
@@ -1041,11 +1041,7 @@
    "w": 19.0,
    "h": 19.0,
    "section": "mixer",
-   "midi": {
-    "ch": 16,
-    "kind": "cc",
-    "id": 0
-   },
+   "midi": null,
    "shift_midi": null
   },
   {
@@ -1077,11 +1073,7 @@
    "w": 19.0,
    "h": 19.0,
    "section": "mixer",
-   "midi": {
-    "ch": 16,
-    "kind": "cc",
-    "id": 1
-   },
+   "midi": null,
    "shift_midi": null
   },
   {
@@ -1095,11 +1087,7 @@
    "w": 20.0,
    "h": 20.0,
    "section": "mixer",
-   "midi": {
-    "ch": 16,
-    "kind": "note",
-    "id": 0
-   },
+   "midi": null,
    "shift_midi": null
   },
   {

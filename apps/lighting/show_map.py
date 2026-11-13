@@ -7,6 +7,7 @@ the JSON only; picking among ranked looks is L61 / #9901.
 
 from __future__ import annotations
 
+import colorsys
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -21,9 +22,7 @@ DEFAULT_MAP_PATH: Final = Path(__file__).with_name("show_map.json")
 DEFAULT_LOOKS_PATH: Final = Path(__file__).with_name("looks_default.json")
 DEFAULT_AUTOLOOP_BARS: Final = 8
 
-_MAP_TOP_KEYS: Final = frozenset(
-    {"version", "note", "looks_file", "autoloop_bars", "autoloop", "sections"}
-)
+_MAP_TOP_KEYS: Final = frozenset({"version", "note", "looks_file", "autoloop_bars", "autoloop", "sections"})
 _CELL_KEYS: Final = frozenset({"looks", "effect_level"})
 _SECTION_NAMES: Final = frozenset(s.value for s in LightSection)
 _MOOD_NAMES: Final = frozenset(m.value for m in TrackMood)
@@ -74,11 +73,26 @@ class ShowMap:
         return self.autoloop[slot]
 
     def autoloop_changes(self, downbeats_ms: Sequence[float]) -> list[tuple[float, str]]:
+        _require_strict_downbeats_ms(downbeats_ms)
         step = self.autoloop_bars
-        return [
-            (downbeats_ms[index], self.autoloop_look(index))
-            for index in range(0, len(downbeats_ms), step)
-        ]
+        return [(downbeats_ms[index], self.autoloop_look(index)) for index in range(0, len(downbeats_ms), step)]
+
+
+def _require_strict_downbeats_ms(downbeats_ms: Sequence[float]) -> None:
+    if not downbeats_ms:
+        raise ValueError("downbeats_ms must not be empty")
+    prev = downbeats_ms[0]
+    if not isinstance(prev, (int, float)) or isinstance(prev, bool):
+        raise ValueError(f"downbeats_ms[0] must be a number, got {prev!r}")
+    for index in range(1, len(downbeats_ms)):
+        value = downbeats_ms[index]
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"downbeats_ms[{index}] must be a number, got {value!r}")
+        if value <= prev:
+            raise ValueError(
+                f"downbeats_ms must be strictly increasing, got {value!r} after {prev!r} at index {index}"
+            )
+        prev = value
 
 
 # ----- validation helpers --------------------------------------------------
@@ -101,9 +115,7 @@ def _read_json(path: Path) -> object:
         raise ShowMapError(str(path), [f"$: not valid JSON: {exc}"]) from exc
 
 
-def _object_keys(
-    value: object, path: str, allowed: frozenset[str], errors: _Errors
-) -> Mapping[str, Any] | None:
+def _object_keys(value: object, path: str, allowed: frozenset[str], errors: _Errors) -> Mapping[str, Any] | None:
     if not isinstance(value, dict):
         errors.add(path, f"must be an object, got {type(value).__name__}")
         return None
@@ -331,3 +343,65 @@ def load_show_map(path: Path = DEFAULT_MAP_PATH, looks_path: Path | None = None)
         looks_path = map_path.parent / looks_file
     look_ids = load_look_ids(looks_path)
     return parse_show_map(data, str(map_path), look_ids)
+
+
+# ----- palettes (VARIANT, issue #10103) -----------------------------------
+
+PALETTES_DIR: Final = Path(__file__).with_name("palettes")
+HUE_BINS: Final = 12
+_MIN_SATURATION: Final = 0.25
+_PALETTE_KEYS: Final = frozenset({"version", "palette", "looks"})
+
+
+@dataclass(frozen=True)
+class Palette:
+    name: str
+    colours: Mapping[str, tuple[tuple[int, int, int], ...]]
+
+
+def _parse_hex(value: object) -> tuple[int, int, int] | None:
+    if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
+        return None
+    try:
+        return (int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16))
+    except ValueError:
+        return None
+
+
+def load_palette(name: str, palettes_dir: Path = PALETTES_DIR, looks_path: Path = DEFAULT_LOOKS_PATH) -> Palette:
+    """Load ``<name>.json``; it must cover exactly the look ids of the looks file."""
+    path = Path(palettes_dir) / f"{name}.json"
+    source = str(path)
+    errors = _Errors()
+    obj = _object_keys(_read_json(path), "$", _PALETTE_KEYS, errors)
+    if obj is None:
+        raise ShowMapError(source, errors.items)
+    looks = obj.get("looks")
+    if not isinstance(looks, dict):
+        raise ShowMapError(source, [*errors.items, "$.looks: must be an object"])
+    known = load_look_ids(looks_path)
+    for look_id in sorted(known - set(looks)):
+        errors.add(f"$.looks.{look_id}", "missing look id")
+    for look_id in sorted(set(looks) - known):
+        errors.add(f"$.looks.{look_id}", "look id not in looks file")
+    colours: dict[str, tuple[tuple[int, int, int], ...]] = {}
+    for look_id, raw in looks.items():
+        parsed = [_parse_hex(c) for c in raw] if isinstance(raw, list) else []
+        if not parsed or any(c is None for c in parsed):
+            errors.add(f"$.looks.{look_id}", "must be a non-empty list of #rrggbb colours")
+            continue
+        colours[look_id] = tuple(c for c in parsed if c is not None)
+    if errors.items:
+        raise ShowMapError(source, errors.items)
+    return Palette(name, colours)
+
+
+def palette_entropy(palette: Palette, look_ids: Sequence[str]) -> int:
+    """Distinct hue bins (of 12) over the colours of ``look_ids``; greys and whites are skipped."""
+    bins: set[int] = set()
+    for look_id in look_ids:
+        for r, g, b in palette.colours[look_id]:
+            hue, _light, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+            if sat >= _MIN_SATURATION and max(r, g, b) > 0:
+                bins.add(round(hue * HUE_BINS) % HUE_BINS)
+    return len(bins)

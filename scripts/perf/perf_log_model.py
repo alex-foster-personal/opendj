@@ -58,6 +58,19 @@ STORAGE_TABLE = "ItemTable"
 """WebKit's localStorage table name."""
 
 NON_DURATION_STAGES = frozenset({"audioBytes", "audioPrefetchHit", "stemmed", "deferredToStop", "decodedShareHit"})
+
+DECK_LOAD_BLOCKING_KPI_STAGES = frozenset(
+    {
+        "audioTransfer",
+        "decode",
+        "stretchProcessorCreate",
+        "stretchProcessorLoad",
+        "processorLatency",
+        "probeStem",
+        "fetchStems",
+        "decodeStems",
+    }
+)
 """Keys inside `stages` that are NOT milliseconds.
 
 `stages` is stringly overloaded today: `audioBytes` is a byte count,
@@ -158,6 +171,7 @@ _KNOWN_STAGES = (
     | frozenset(STEM_GROUP_WALL_STAGES)
     | frozenset(STEM_SERIAL_STAGES)
     | frozenset(STEM_SERIAL_CREATE_STAGES)
+    | DECK_LOAD_BLOCKING_KPI_STAGES
     | frozenset({"total"})
 )
 

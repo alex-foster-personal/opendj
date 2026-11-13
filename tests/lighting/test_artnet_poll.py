@@ -25,6 +25,7 @@ from apps.lighting.artnet_poll import (
     ARTPOLLREPLY_MIN_LENGTH,
     MISSED_POLLS_BEFORE_EXPIRY,
     OPCODE_ARTPOLL,
+    ArtPollReplyPacketError,
     NodeInfo,
     SubscriberTable,
     encode_artpoll,
@@ -154,3 +155,65 @@ def test_discovery_decode_pollreply_returns_none_for_bad_id() -> None:
     reply = bytearray(FIXTURE.read_bytes())
     reply[0:8] = b"Not-Art\x00"
     assert decode_pollreply(bytes(reply)) is None
+
+
+# --- issue #12338: malformed ArtPollReply output-port boundaries
+
+
+@pytest.mark.requirement("TESTINFRA-14127")
+def test_artpollreply_truncated_inside_output_port_fields_raises_a_packet_error() -> None:
+    """[if] a reply truncates inside output-port fields [then] parse raises a named packet error, [else stop]."""
+    reply = FIXTURE.read_bytes()[:191]
+    with pytest.raises(ArtPollReplyPacketError, match="output-port table at offset 190"):
+        parse_artpollreply(reply)
+
+
+@pytest.mark.requirement("TESTINFRA-14127")
+def test_artpollreply_with_non_output_ports_registers_no_destination() -> None:
+    """[if] a reply marks every port as non-output [then] no destination is registered, [else stop]."""
+    reply = bytearray(FIXTURE.read_bytes())
+    reply[174:178] = bytes([0, 0, 0, 0])
+    table = SubscriberTable()
+    table.record_reply(bytes(reply), now=0.0)
+    assert table.destinations(port_address(1, 2, 3), now=0.0) == []
+    assert table.nodes(now=0.0) == []
+
+
+@pytest.mark.requirement("TESTINFRA-14127")
+def test_artpollreply_with_deprecated_port_address_registers_no_destination() -> None:
+    """[if] a reply advertises only Port-Address 0 on an output port [then] no destination is registered, [else stop]."""
+    reply = bytearray(FIXTURE.read_bytes())
+    reply[174:178] = bytes([128, 0, 0, 0])
+    reply[18] = 0
+    reply[19] = 0
+    reply[190] = 0
+    table = SubscriberTable()
+    table.record_reply(bytes(reply), now=0.0)
+    assert table.destinations(0, now=0.0) == []
+    assert table.nodes(now=0.0) == []
+
+
+@pytest.mark.requirement("TESTINFRA-14127")
+def test_mixed_valid_and_invalid_replies_leave_only_valid_unicast_destinations() -> None:
+    """[if] valid and invalid replies are mixed [then] only valid unicast destinations remain, [else stop]."""
+    valid = FIXTURE.read_bytes()
+    non_output = bytearray(FIXTURE.read_bytes())
+    non_output[10:14] = bytes([10, 0, 0, 8])
+    non_output[174:178] = bytes([0, 0, 0, 0])
+    deprecated = bytearray(FIXTURE.read_bytes())
+    deprecated[10:14] = bytes([10, 0, 0, 9])
+    deprecated[174:178] = bytes([128, 0, 0, 0])
+    deprecated[18] = 0
+    deprecated[19] = 0
+    deprecated[190] = 0
+    table = SubscriberTable()
+    table.record_reply(valid, now=0.0)
+    table.record_reply(bytes(non_output), now=0.0)
+    table.record_reply(bytes(deprecated), now=0.0)
+    universes = (port_address(1, 2, 3), port_address(1, 2, 4))
+    for universe in universes:
+        destinations = table.destinations(universe, now=0.0)
+        assert destinations == [("10.0.0.7", ARTNET_PORT)]
+        for ip, _port in destinations:
+            assert not ip.endswith(BROADCAST_SUFFIX)
+    assert [node.ip for node in table.nodes(now=0.0)] == ["10.0.0.7"]

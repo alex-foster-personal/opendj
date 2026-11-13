@@ -40,11 +40,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from apps.cloud import asset_store, hydration_core, policy
-from apps.cloud.config import CloudConfig
+from apps.cloud.asset_store import AssetStoreError
+from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.eviction import HydrationError
+from apps.cloud.hub_lyrics_pair_client import (
+    LYRICS_PAIR_HUB_UNAVAILABLE,
+    LYRICS_PAIR_PRESIGN_FAILED,
+    fetch_lyrics_pair_upload_presign,
+    put_presigned_file,
+)
 from apps.lyrics.artifacts import asset_clients_for_mode
 from apps.shared.hashing import sha256_file_hex
-from apps.shared.paths import STATE_DB, STATE_DIR
+from apps.shared.paths import DATA_DIR, STATE_DB, STATE_DIR
 from apps.shared.state import db as state_db_mod
 from apps.shared.state import sync_stamp
 from apps.stems.artifacts import PRODUCTION_ROFORMER_STEMS_DIR, load_stem_bundle
@@ -52,6 +59,7 @@ from apps.stems.bundle_lock import readers_held_off, remove_staging, store_write
 
 if TYPE_CHECKING:
     from apps.cloud.asset_store import AssetS3Client
+    from apps.sync_hub.transport import HubTransport
 
 LYRICS_EVAL_DIR = STATE_DIR / "lyrics-eval"
 FRAME_MISMATCH_TOL_S = 0.1
@@ -113,12 +121,25 @@ def _push_bundle_parts(
     s3: AssetS3Client,
     cfg: CloudConfig,
 ) -> None:
+    if not _stem_push_wanted(conn, stable_id):
+        return
+    for path in _bundle_push_paths(bundle_dir, manifest):
+        pushed = asset_store.push_asset(cfg, s3, path)
+        if not asset_store.object_exists(cfg, s3, pushed.content_hash):
+            raise HydrationError(
+                f"{STEM_ASSET_KIND} {stable_id!r} pushed {path.name} but HEAD "
+                "does not find it"
+            )
+
+
+def _stem_push_wanted(conn: sqlite3.Connection, stable_id: str) -> bool:
+    """Resolve the stem_bundle policy: True to push, False when excluded, raise on stream."""
     machine_id = sync_stamp.ensure_local_machine(conn)
     resolution = hydration_core.resolve_policy(
         conn, stable_id, machine_id, asset_kind=STEM_ASSET_KIND
     )
     if resolution.mode == "excluded":
-        return
+        return False
     if resolution.mode == "stream":
         raise HydrationError(
             f"policy mode 'stream' is not supported for {STEM_ASSET_KIND}; "
@@ -126,19 +147,79 @@ def _push_bundle_parts(
         )
     if resolution.mode not in ("pinned", "cached"):
         raise AssertionError(f"unhandled policy mode {resolution.mode!r}")
+    return True
 
-    paths_to_push = [
+
+def _bundle_push_paths(bundle_dir: Path, manifest: dict) -> list[Path]:
+    """The three bundle files a registration pushes: both parts and the manifest."""
+    return [
         bundle_dir / manifest["files"]["vocals"],
         bundle_dir / manifest["files"]["instrumental"],
         bundle_dir / "manifest.json",
     ]
-    for path in paths_to_push:
-        pushed = asset_store.push_asset(cfg, s3, path)
-        if not asset_store.object_exists(cfg, s3, pushed.content_hash):
-            raise HydrationError(
-                f"{STEM_ASSET_KIND} {stable_id!r} pushed {path.name} but HEAD "
-                "does not find it"
-            )
+
+
+@dataclass(frozen=True)
+class HubPairTarget:
+    """A configured CloudSync hub this spoke registers pairs through (LYRICS-13411)."""
+
+    transport: HubTransport
+    machine_id: str
+
+
+def hub_pair_target(data_dir: Path) -> HubPairTarget | None:
+    """Build the configured hub presign target for ``data_dir``, or None when no hub is usable."""
+    from apps.shared.state.machine_identity import get_or_create_machine_id
+    from apps.sync_hub import config as sync_config
+    from apps.sync_hub import spoke_credential
+    from apps.sync_hub.transport import HttpTransport
+
+    effective = sync_config.resolve_config(data_dir)
+    if not effective.configured or effective.hub_url is None:
+        return None
+    try:
+        bearer = spoke_credential.read_credential(data_dir)
+    except spoke_credential.SpokeCredentialError:
+        return None
+    return HubPairTarget(
+        transport=HttpTransport(effective.hub_url, bearer=bearer),
+        machine_id=get_or_create_machine_id(data_dir),
+    )
+
+
+def _push_bundle_parts_via_hub(
+    conn: sqlite3.Connection,
+    *,
+    stable_id: str,
+    bundle_dir: Path,
+    manifest: dict,
+    hub: HubPairTarget,
+) -> None:
+    """Upload the bundle through hub-presigned PUTs, then have the hub confirm every digest."""
+    if not _stem_push_wanted(conn, stable_id):
+        return
+    by_digest = {sha256_file_hex(p): p for p in _bundle_push_paths(bundle_dir, manifest)}
+    files = [(digest, path.stat().st_size) for digest, path in by_digest.items()]
+    try:
+        targets = fetch_lyrics_pair_upload_presign(
+            hub.transport, machine_id=hub.machine_id, stable_id=stable_id, files=files
+        )
+        for target in targets:
+            if not target.present and target.url is not None:
+                put_presigned_file(target.url, by_digest[target.content_hash], target.content_hash)
+        confirmed = fetch_lyrics_pair_upload_presign(
+            hub.transport, machine_id=hub.machine_id, stable_id=stable_id, files=files
+        )
+    except (RuntimeError, TypeError, AssetStoreError, OSError) as exc:
+        raise HydrationError(
+            f"{LYRICS_PAIR_PRESIGN_FAILED}: {STEM_ASSET_KIND} {stable_id!r} hub push failed: {exc}"
+        ) from exc
+    missing = [t.content_hash for t in confirmed if not t.present]
+    if missing:
+        raise HydrationError(
+            f"{LYRICS_PAIR_PRESIGN_FAILED}: {STEM_ASSET_KIND} {stable_id!r} uploaded "
+            f"through the hub but its HEAD does not find {missing}"
+        )
 
 
 #-----------------------------------------------------------------------------
@@ -150,6 +231,8 @@ class RegisterPairStorage:
     s3: AssetS3Client | None = None
     cfg: CloudConfig | None = None
     conn: sqlite3.Connection | None = None
+    hub: HubPairTarget | None = None
+    data_dir: Path | None = None
 
 
 def _storage_for_register_pair(
@@ -269,37 +352,62 @@ def _push_register_pair_if_cloud(
     s3: AssetS3Client | None = None,
     cfg: CloudConfig | None = None,
     conn: sqlite3.Connection | None = None,
+    hub: HubPairTarget | None = None,
+    data_dir: Path | None = None,
 ) -> None:
     if policy.CFG.mode == "cloud":
-        client: AssetS3Client
-        config: CloudConfig
-        if s3 is not None and cfg is not None:
-            client, config = s3, cfg
-        else:
-            got_s3, got_cfg = asset_clients_for_mode(writing=True)
-            if got_s3 is None or got_cfg is None:
-                raise HydrationError(
-                    "cloudsync mode is 'cloud' but no S3 client was supplied for stem push"
-                )
-            client, config = got_s3, got_cfg
-        if client is None or config is None:
-            raise HydrationError(
-                "cloudsync mode is 'cloud' but no S3 client was supplied for stem push"
-            )
+        route = _register_pair_push_route(s3, cfg, hub, data_dir)
         own_conn = conn is None
         db_conn = conn if conn is not None else state_db_mod.open_rw(STATE_DB)
         try:
-            _push_bundle_parts(
-                db_conn,
-                stable_id=manifest["stable_id"],
-                bundle_dir=out_dir,
-                manifest=manifest,
-                s3=client,
-                cfg=config,
-            )
+            if isinstance(route, HubPairTarget):
+                _push_bundle_parts_via_hub(
+                    db_conn,
+                    stable_id=manifest["stable_id"],
+                    bundle_dir=out_dir,
+                    manifest=manifest,
+                    hub=route,
+                )
+            else:
+                _push_bundle_parts(
+                    db_conn,
+                    stable_id=manifest["stable_id"],
+                    bundle_dir=out_dir,
+                    manifest=manifest,
+                    s3=route[0],
+                    cfg=route[1],
+                )
         finally:
             if own_conn:
                 db_conn.close()
+
+
+def _register_pair_push_route(
+    s3: AssetS3Client | None,
+    cfg: CloudConfig | None,
+    hub: HubPairTarget | None,
+    data_dir: Path | None,
+) -> tuple[AssetS3Client, CloudConfig] | HubPairTarget:
+    """Pick direct R2 when credentials exist, else the configured hub, else fail closed."""
+    if s3 is not None and cfg is not None:
+        return s3, cfg
+    if hub is not None:
+        return hub
+    try:
+        got_s3, got_cfg = asset_clients_for_mode(writing=True)
+    except MissingEnvError as exc:
+        target = hub_pair_target(data_dir or DATA_DIR)
+        if target is None:
+            raise HydrationError(
+                f"{LYRICS_PAIR_HUB_UNAVAILABLE}: no direct R2 credentials ({exc}) and "
+                "no configured CloudSync hub presign target for stem push"
+            ) from exc
+        return target
+    if got_s3 is None or got_cfg is None:
+        raise HydrationError(
+            "cloudsync mode is 'cloud' but no S3 client was supplied for stem push"
+        )
+    return got_s3, got_cfg
 
 
 def register_pair(
@@ -351,7 +459,9 @@ def register_pair(
     out_dir = _write_verified_register_pair(
         root, stable_id, vocals, instrumental, manifest
     )
-    _push_register_pair_if_cloud(out_dir, manifest, s3=s3, cfg=cfg, conn=conn)
+    _push_register_pair_if_cloud(
+        out_dir, manifest, s3=s3, cfg=cfg, conn=conn, hub=store.hub, data_dir=store.data_dir
+    )
     return out_dir
 
 

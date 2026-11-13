@@ -51,6 +51,8 @@ interface ElectronShellBridge {
 		open(label: WindowLabel): Promise<void>;
 		close(label: WindowLabel): Promise<void>;
 		focus(label: WindowLabel): Promise<void>;
+		list?(): Promise<string[]>;
+		onChange?(listener: (labels: string[]) => void): () => void;
 	};
 	listCoreAudioOutputs(): Promise<unknown[]>;
 }

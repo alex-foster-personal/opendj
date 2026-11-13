@@ -3,12 +3,12 @@
 // not stem-status-view.test.mjs (pure stemStatusView mapping only).
 //
 // SSR via load-svelte-ssr.mjs models sequential renders as unmount+remount; it
-// does not exercise client {#key} or layout-driven lazy remount. Real click path:
-// StemRow.contract.ts FailedRetry (Storybook userEvent).
+// does not exercise client {#key} or layout-driven lazy remount. Client click
+// after remount: tests/e2e/stem-row-retry-remount.spec.ts. StemRow.contract.ts
+// FailedRetry covers initial mount click only.
 //
 // [if] a stem load fails before the row mounts [then] STEMS FAILED - RETRY button
 // [if] a failed row remounts [then] the same retry button is still present
-// [if] retry is activated after remount [then] onLoad runs (invoked here, not click)
 // [if] the retry succeeds [then] ready chips render without the retry button
 //
 import assert from 'node:assert/strict';
@@ -136,15 +136,6 @@ describe('StemRow failed load survives remount (#12431)', () => {
 		renderStemRow(props);
 		const out = renderStemRow(props);
 		assertFailedRetry(out);
-	});
-
-	test('retry activatable after remount: onLoad handler runs', async () => {
-		onLoadCalls = 0;
-		const props = stemRowProps(failedStems());
-		renderStemRow(props);
-		renderStemRow(props);
-		await props.onLoad();
-		assert.equal(onLoadCalls, 1);
 	});
 
 	test('retry success: ready stems drop the retry status button', () => {

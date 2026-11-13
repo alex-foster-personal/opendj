@@ -78,6 +78,7 @@ to stderr and return a nonzero exit code (409 conflict returns 4).
 | `opendj status [--json]` | Lock-file origin, health, build-info (MCP `status` parity) |
 | `opendj client_errors [--since ISO] [--build-sha PREFIX] [--kind KIND] [--contains TEXT] [--limit N] [--untriaged]` | Browser errors the app recorded, filtered (AGENT-8304); `--json` is the MCP `client_errors` document: `{count, filters, errors: [{timestamp, build_sha, kind, message, event_id}]}` |
 | `opendj api METHOD PATH` | Raw HTTP to `/api/v1/*`, GET/HEAD `/api/sets` and `/api/sets/*`, and the exact recorder lifecycle POST routes below; refuses traversal and non-JSON 2xx bodies; exit codes: see `apps/opendj_cli/__init__.py` |
+| `opendj sync ratings [--diff-csv FILE] [--live --i-understand-the-risks] [--tracks IDS] [--bulk]` | Ratings sync between Rekordbox and djay (SYNC-06, PLATFORM-12976), same flags and safety rails as `python -m apps.sync apply-ratings`: a dry run by default (`--json` prints `{diff_csv, dry_run, resolutions, rows}`); `--live` without `--i-understand-the-risks` is refused before any database is opened |
 | `opendj ingest stage PATH...` | Stage ingest uploads and conditionally start batch refresh (issue #12216); same HTTP flow as the ingest drop modal |
 | `opendj dj <tool>` | AutoDJ tools (AGENT-29), same JSON as the MCP tools below: `state`, `profile`, `windows`, `score`, `suggest`, `styles`, `propose`, `validate`, `schedule`, `amend`, plus `show` (a plan as a mix score, bar grid or JSON; offline); for whole sets `set-plan`, `set-show` (offline) and `set-next`; `try` renders and ranks candidate transitions (TRYER-11): `opendj dj try --out X --in Y -n 6 --json`, `opendj dj try pick JOB CAND --etag E`, `opendj dj try undo JOB --etag E` (the etag of the job document you reviewed) |
 
@@ -145,6 +146,8 @@ deck's bars. The library is `apps/autodj`; the HTTP glue is `dj_service.py`.
 | `try_transitions` | Render and rank N candidate transitions for a pair (TRYER-12); returns a job id and per-candidate score, vetoes, `measured k of n`, render URL |
 | `pick_transition` | Record the chosen candidate for a try job (If-Match guarded; reversible) |
 | `undo_transition_pick` | Remove a try job's pick |
+| `get_transition_try` | Read a try job and its current etag, like `opendj dj try show` (read-only) |
+| `get_transition_lanes` | Read one kept candidate's lanes (deck waveforms, knob curves, beats) as the try-er panel draws them; `columns` 1..4000 (read-only) |
 
 A plan only continues a playing set: it is refused unless its outgoing deck is playing.
 

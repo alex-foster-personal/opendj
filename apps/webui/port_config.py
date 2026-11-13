@@ -142,6 +142,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5273,  # tests/e2e/playwright.js-heap-after-pane.config.ts (+10 more)
         5277,  # tests/e2e/library-jobs-e2e-endpoints.ts
         5278,  # tests/e2e/vocals-demucs-overlay-endpoints.ts
+        5280,  # tests/e2e/library-error-zoom-endpoints.ts
         5311,  # tests/e2e/playwright.stretch-artifact.config.ts
         5320,  # tests/e2e/vite.hotcue-mapping-gate.config.ts
         5321,  # tests/e2e/playwright.preflight-gate.config.ts (+1 more)
@@ -157,9 +158,10 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         5336,  # tests/e2e/vite.cmdk-pick-race.config.ts
         5337,  # tests/e2e/vite.cmdk-preview-cue.config.ts
         5338,  # tests/e2e/vite.cmdk-ttx.config.ts
+        5339,  # tests/e2e/vite.command-palette-focus.config.ts
         5399,  # tests/e2e/vite.rekordbox-gate.config.ts
         7700,  # apps/desktop/electron/src/engine.ts
-        8686,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+26 more)
+        8686,  # tests/e2e/playwright.kpi-boot-library-capture.config.ts (+30 more)
         8688,  # tests/e2e/stems-e2e-endpoints.ts
         8690,  # tests/e2e/playwright.webkit-deckload.config.ts (+1 more)
         8691,  # apps/desktop/wdio.conf.ts (+1 more)
@@ -176,6 +178,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8705,  # tests/e2e/vocals-demucs-overlay-endpoints.ts
         8706,  # tests/e2e/vite.lyrics-words.config.ts
         8707,  # tests/e2e/vite.silence-expected-audible.config.ts
+        8708,  # tests/e2e/library-error-zoom-endpoints.ts
         8711,  # tests/e2e/playwright.cloudsync-ui.config.ts
         8712,  # tests/e2e/playwright.cloudsync-ui.config.ts
         8713,  # tests/e2e/playwright.playlist-switch-latency.config.ts
@@ -184,6 +187,7 @@ RESERVED_FIXED_PORTS: frozenset[int] = frozenset(
         8716,  # tests/e2e/vite.cmdk-pick-race.config.ts
         8717,  # tests/e2e/vite.cmdk-preview-cue.config.ts
         8718,  # tests/e2e/vite.cmdk-ttx.config.ts
+        8719,  # tests/e2e/vite.command-palette-focus.config.ts
         9336,  # apps/desktop/mcp/smoke.ts
         9408,  # tests/e2e/stems-e2e-endpoints.ts
         9410,  # tests/e2e/midi-maps-e2e-endpoints.ts

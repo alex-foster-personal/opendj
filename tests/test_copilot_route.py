@@ -346,7 +346,40 @@ def test_suggest_next_includes_pressure_and_release_prior(
     assert high_energy, "high-energy candidates must remain listed"
 
 
-@pytest.mark.requirement("INTEL-12016")
+@pytest.mark.requirement("INTEL-12031")
+def test_find_similar_specific_route(client: TestClient, backend: InMemoryBackend) -> None:
+    """[if] Specific mode on bpm/key track [then] harmonic scores and rationale_numbers return, [else stop]."""
+    _seed_track(backend, "ref-001", title="Ref", artist="Ref",
+                bpm=120.0, key="8A", energy=5)
+    _seed_track(backend, "near-001", title="Near", artist="Near",
+                bpm=121.0, key="8A", energy=5)
+    _seed_track(backend, "far-001", title="Far", artist="Far",
+                bpm=150.0, key="12B", energy=2)
+    r = client.post(
+        FIND_SIMILAR_BASE,
+        json={"stable_id": "ref-001", "mode": "specific"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "specific"
+    assert body["provider"] == "harmonic"
+    ids = [c["stable_id"] for c in body["candidates"]]
+    assert ids.index("near-001") < ids.index("far-001")
+    assert {"camelot", "bpm", "energy"} <= set(body["candidates"][0]["rationale_numbers"])
+
+
+@pytest.mark.requirement("INTEL-12031")
+def test_find_similar_specific_missing_key_is_422(client: TestClient, backend: InMemoryBackend) -> None:
+    """[if] Specific current track lacks key [then] 422 insufficient_data names key, [else stop]."""
+    _seed_track(backend, "nokey", title="NoKey", artist="NK", bpm=120.0, key=None, energy=5)
+    r = client.post(FIND_SIMILAR_BASE, json={"stable_id": "nokey", "mode": "specific"})
+    assert r.status_code == 422
+    body = r.json()
+    assert body["error"] == "insufficient_data"
+    assert body["details"]["missing"]["key"] == ["nokey"]
+
+
+@pytest.mark.requirement("INTEL-12031b")
 def test_find_similar_generic_route(tmp_path) -> None:
     """[if] copilot Generic mode runs on a measured track [then] candidates match genres similar, [else stop]."""
     from apps.genre_infer import findings, taxonomy
@@ -376,10 +409,11 @@ def test_find_similar_generic_route(tmp_path) -> None:
             json={"stable_id": "t-fred", "mode": "generic"},
         ).json()
         assert copilot["mode"] == "generic"
-        assert [
-            {"stable_id": row["stable_id"], "score": row["score"]}
-            for row in copilot["candidates"]
-        ] == genre["similar"]
+        assert copilot["query_labels"] == []
+        copilot_core = [
+            {"stable_id": row["stable_id"], "score": row["score"]} for row in copilot["candidates"]
+        ]
+        assert copilot_core == genre["similar"]
         unmeasured = client.post(
             FIND_SIMILAR_BASE,
             json={"stable_id": "t-id", "mode": "generic"},

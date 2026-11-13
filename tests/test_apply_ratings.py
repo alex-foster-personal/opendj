@@ -9,6 +9,8 @@ Covers:
       - rail 4 (post-verify)  -- verifier callback is wired into the
                                   session and trips abort on mismatch
   * ``_verify_rb_rating`` / ``_verify_djay_rating`` helpers
+  * live ``main()`` exit status when targets verify, are missing, or fail
+    readback (#12992)
 """
 
 from __future__ import annotations
@@ -487,3 +489,166 @@ class TestMainLiveRoutesToLiveDbPaths:
         path = _make_diff(tmp_path, [])
         assert main(["--diff-csv", str(path)]) == 0
         assert called["hit"] is False
+
+
+# ---------------------------------------------------- main() live exit codes (#12992)
+
+
+class TestMainLiveExitStatus:
+    """``main(['--live', ...])`` process status for verified vs failed targets."""
+
+    @staticmethod
+    def _accept_djay_row(
+        rb_id: str = "10",
+        djay_uuid: str = "u-10",
+        rating: str = "5",
+    ) -> dict[str, str]:
+        return {
+            "rb_content_id": rb_id,
+            "djay_uuid": djay_uuid,
+            "field": "rating",
+            "rb_value": "0",
+            "djay_value": rating,
+            "resolution": "accept_djay",
+            "action_hint": "",
+        }
+
+    @staticmethod
+    def _seed_live_db_paths(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> tuple[Path, Path]:
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb-bytes")
+        djay_db = tmp_path / "MediaLibrary.db"
+        djay_db.write_bytes(b"djay-bytes")
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", rb_db)
+        monkeypatch.setattr(paths, "DJAY_LIVE_DB", djay_db)
+        return rb_db, djay_db
+
+    def test_main_live_all_selected_targets_verify_exit_zero(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """[if] all selected rating targets verify [then] main exits 0, [else stop]."""
+        self._seed_live_db_paths(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running",
+            lambda _name: False,
+        )
+        db = _FakeRBDB(
+            {
+                "10": _FakeContent("10", rating=0),
+                "11": _FakeContent("11", rating=0),
+            }
+        )
+        monkeypatch.setattr(
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: db,
+        )
+
+        path = _make_diff(
+            tmp_path,
+            [
+                self._accept_djay_row("10", "u-10", "5"),
+                self._accept_djay_row("11", "u-11", "4"),
+            ],
+        )
+        rc = main(
+            [
+                "--diff-csv",
+                str(path),
+                "--live",
+                "--i-understand-the-risks",
+                "--tracks",
+                "u-10,u-11",
+            ]
+        )
+        assert rc == 0
+        assert db.get_content(ID="10").one().Rating == 5
+        assert db.get_content(ID="11").one().Rating == 4
+
+    def test_main_live_missing_vendor_target_exit_nonzero(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """[if] one selected target is missing from the vendor database [then] main exits nonzero, [else stop]."""
+        self._seed_live_db_paths(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running",
+            lambda _name: False,
+        )
+        monkeypatch.setattr(
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: _FakeRBDB({}),
+        )
+
+        path = _make_diff(tmp_path, [self._accept_djay_row()])
+        rc = main(
+            [
+                "--diff-csv",
+                str(path),
+                "--live",
+                "--i-understand-the-risks",
+                "--tracks",
+                "u-10",
+            ]
+        )
+        err = capsys.readouterr().err
+        assert rc != 0
+        assert "SafetyAbort" in err
+
+    def test_main_live_readback_verification_failure_exit_nonzero(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """[if] one selected target fails readback verification [then] main exits nonzero, [else stop]."""
+        self._seed_live_db_paths(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running",
+            lambda _name: False,
+        )
+        row = _FakeContent("10", rating=0)
+
+        class _FrozenDB(_FakeRBDB):
+            def get_content(self, *, ID: str) -> _OneShotQuery:
+                return _OneShotQuery(row)
+
+        frozen = _FrozenDB({"10": row})
+
+        def _fake_write_rb(
+            db_: Any,
+            content_id: str,
+            rating: int,
+        ) -> bool:
+            return True
+
+        monkeypatch.setattr(
+            "apps.sync.apply_ratings._write_rb_rating",
+            _fake_write_rb,
+        )
+        monkeypatch.setattr(
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: frozen,
+        )
+
+        path = _make_diff(tmp_path, [self._accept_djay_row()])
+        rc = main(
+            [
+                "--diff-csv",
+                str(path),
+                "--live",
+                "--i-understand-the-risks",
+                "--tracks",
+                "u-10",
+            ]
+        )
+        err = capsys.readouterr().err
+        assert rc != 0
+        assert "SafetyAbort" in err
+        assert "verify_readback" in err

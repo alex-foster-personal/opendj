@@ -1,0 +1,39 @@
+/* SKINLAYOUT-10207: library-first performance preset (skin-layout.ts PERFORMANCE_LAYOUT_SPEC).
+ * The route sets deck-layout-less under this preset, so decks 3 and 4 collapse and the
+ * wavestack holds two rows. Edge classes (tw-top-visible, tw-bottom-visible) select
+ * .rb-wavestack and .rb-browser, which place by grid-area, so row order does not matter.
+ * Stem waveform rows keep their extra term inside --rb-wavestack-row.
+ * The variant rules repeat .perf-root (0,4,0) so they outrank the page's Svelte-scoped
+ * .perf-root.deck-layout-less rows (0,3,0 with the scope class) on specificity, not on
+ * which stylesheet is injected last. */
+.perf-root[data-layout='library-first'] {
+	--rb-wavestack-row: calc(
+		2 * (var(--rb-waverow-h) + var(--rb-stemwave-stack-extra, 0px)) * var(--rb-wavestack-shown, 1)
+	);
+}
+
+.perf-root.perf-root[data-layout='library-first'][data-layout-variant='decks-bottom'] {
+	grid-template-areas:
+		'topbar'
+		'browser'
+		'wavestack'
+		'deckarea';
+	grid-template-rows:
+		var(--rb-topbar-h)
+		minmax(360px, 1fr)
+		var(--rb-wavestack-row)
+		249px;
+}
+
+.perf-root.perf-root[data-layout='library-first'][data-layout-variant='decks-top'] {
+	grid-template-areas:
+		'topbar'
+		'wavestack'
+		'deckarea'
+		'browser';
+	grid-template-rows:
+		var(--rb-topbar-h)
+		var(--rb-wavestack-row)
+		249px
+		minmax(360px, 1fr);
+}

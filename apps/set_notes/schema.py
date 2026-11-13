@@ -42,8 +42,8 @@ def _ensure_meta(conn: sqlite3.Connection) -> None:
 
 
 def _current_version(conn: sqlite3.Connection) -> int:
-    row = conn.execute("SELECT COALESCE(MAX(version), 0) FROM set_notes_schema_meta").fetchone()
-    return int(row[0]) if row is not None else 0
+    (version,) = conn.execute("SELECT COALESCE(MAX(version), 0) FROM set_notes_schema_meta").fetchone()
+    return int(version)
 
 
 def apply_set_notes_migrations(conn: sqlite3.Connection) -> int:

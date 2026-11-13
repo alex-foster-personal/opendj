@@ -370,7 +370,14 @@ describe('installOutputRebind', () => {
 		);
 		listeners.forEach((h) => h());
 		await advance(mod.REBIND_DEBOUNCE_MS);
-		await new Promise((r) => setTimeout(r, 50));
+		const watchdogToast = () =>
+			calls.some((c) => typeof c === 'string' && c.includes('watchdog window'));
+		for (let stepped = 0; stepped <= 30 + 50; stepped += 1) {
+			const dead = perf.find((row) => row.kind === 'audio-output-dead');
+			const failed = perf.find((row) => row.kind === 'audio-output-rebind-failed');
+			if (dead && failed && watchdogToast()) break;
+			await advance(1);
+		}
 		const dead = perf.find((row) => row.kind === 'audio-output-dead');
 		const failed = perf.find((row) => row.kind === 'audio-output-rebind-failed');
 		assert.ok(dead, 'a hanging resume must record audio-output-dead');

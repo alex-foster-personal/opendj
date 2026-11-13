@@ -53,7 +53,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Literal
 
@@ -120,6 +120,29 @@ class Batch:
     artwork: ArtworkStage = "waiting"
     duplicates: int = 0
     genre: GenreStage = "waiting"
+
+
+_BATCH_KEYS: frozenset[str] = frozenset(f.name for f in fields(Batch))
+
+
+def _batch_from_stored(raw: object) -> Batch | None:
+    """A ``Batch`` from one stored record, or None when it is unusable.
+
+    The store lives in a data dir that a newer build may also have written
+    (Thu 12 Nov 2026: an added per-batch key stopped an older engine starting),
+    so keys this build does not know are ignored. ``_save`` then writes only the
+    known keys, which drops the newer build's extras; that build re-derives them.
+    """
+    if not isinstance(raw, dict):
+        return None
+    known = {key: value for key, value in raw.items() if key in _BATCH_KEYS}
+    try:
+        batch = Batch(**{**known, "duplicates": int(known.get("duplicates", 0))})
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(batch.batch_id, str) or not isinstance(batch.stable_ids, list):
+        return None
+    return batch
 
 
 @dataclass(frozen=True)
@@ -709,14 +732,13 @@ class EnrichmentCoordinator:
         payload = json.loads(path.read_text(encoding="utf-8"))
         self._watermark = payload["watermark"]
         for raw in payload["batches"]:
-            batch = Batch(
-                **{
-                    **raw,
-                    "identify": raw.get("identify", "waiting"),
-                    "duplicates": int(raw.get("duplicates", 0)),
-                    "genre": raw.get("genre", "waiting"),
-                }
-            )
+            batch = _batch_from_stored(raw)
+            if batch is None:
+                log.warning(
+                    "ingest enrichment: skipping a stored batch this build cannot read (keys %s)",
+                    sorted(raw) if isinstance(raw, dict) else type(raw).__name__,
+                )
+                continue
             batch.identify = "waiting"
             batch.artwork = "waiting"  # outcomes are not persisted; a re-release reads the cache
             batch.genre = "waiting"
@@ -727,6 +749,7 @@ class EnrichmentCoordinator:
         if path is None:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Only this build's Batch fields are written: keys a newer build stored are dropped (see _batch_from_stored).
         body = json.dumps({"watermark": self._watermark, "batches": [asdict(b) for b in self._batches.values()]})
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

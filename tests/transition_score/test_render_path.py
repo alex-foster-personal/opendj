@@ -49,19 +49,10 @@ from apps.transition_score.tryer import (
     worker_count,
     write_pcm16_set,
 )
-from tests.autodj.fixtures import CHORUS, INTRO, OUTRO, UP, anlz_payload, profile, track_row
+from tests.autodj.fixtures import CHORUS, anlz_payload, profile, track_row
+from tests.transition_score.arrangements import ARRANGEMENT, IN_ARRANGEMENT, IN_BARS
 from tests.transition_score.synth import track_audio
 
-ARRANGEMENT = ((INTRO, 16, 0.4, 0.3, False), (CHORUS, 16, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.8, False))
-#: The incoming track carries a 16-bar bass build before its chorus, so a blend entered where its bass lands
-#: still has the 16 bars (64 beats) of forward mixability blends need (AUTODJ-11851).
-IN_ARRANGEMENT = (
-    (INTRO, 16, 0.4, 0.3, False),
-    (UP, 16, 0.6, 1.0, False),
-    (CHORUS, 16, 1.0, 1.0, True),
-    (OUTRO, 16, 0.4, 0.8, False),
-)
-IN_BARS = sum(row[1] for row in IN_ARRANGEMENT)
 OUT_BPM, IN_BPM = 124.0, 126.0
 _AUTODJ = build_service()
 render_context = partial(render_context, autodj=_AUTODJ)
@@ -110,8 +101,8 @@ def test_a_synced_plan_with_an_authored_incoming_tempo_move_is_refused() -> None
     from apps.autodj.plan import PlanEvent
 
     out_profile, in_profile = _profiles()
-    plan = _plans()[0]
-    assert plan.tempo_mode == "sync_to_out"
+    # #10148: a 124 to 126 blend now proposes glide_to_in, so the synced case is pinned here.
+    plan = dataclasses.replace(_plans()[0], tempo_mode="sync_to_out", tempo_over_bars=None)
     moved = dataclasses.replace(plan, events=(*plan.events, PlanEvent(2.0, plan.in_.deck, "ramp", "tempo", 1.02, 4.0)))
     with pytest.raises(RenderPlanError, match="leader"):
         compile_render_plan(moved, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
@@ -1259,6 +1250,25 @@ def test_a_relative_audio_path_never_reaches_the_renderer() -> None:
     out_profile, in_profile = _profiles()
     with pytest.raises(RenderPlanError, match="absolute"):
         compile_render_plan(_plans()[0], out_profile, in_profile, 4, out_audio=Path("a.wav"), in_audio=B_WAV)
+
+
+def test_a_relative_incoming_audio_path_is_refused_too() -> None:
+    """[if] only the incoming load path is relative [then] compile_render_plan refuses it naming the path, else stop."""
+    out_profile, in_profile = _profiles()
+    with pytest.raises(RenderPlanError, match=r"audio path b\.wav must be absolute"):
+        compile_render_plan(_plans()[0], out_profile, in_profile, 4, out_audio=A_WAV, in_audio=Path("b.wav"))
+
+
+def test_a_crossfader_move_is_refused_naming_the_missing_assignment() -> None:
+    """[if] a plan moves the crossfader [then] compile refuses it naming the unknown A/B assignment, never renders
+    a silent no-op, else stop."""
+    out_profile, in_profile = _profiles()
+    plan = _plans()[0]
+    moved = dataclasses.replace(
+        plan, events=(*plan.events, PlanEvent(at_bar=2.0, deck=None, kind="set", name="crossfader", value=1.0))
+    )
+    with pytest.raises(RenderPlanError, match="crossfader at bar 2 .*crossfader assignment"):
+        compile_render_plan(moved, out_profile, in_profile, 4, out_audio=A_WAV, in_audio=B_WAV)
 
 
 def test_try_plans_resolves_audio_to_real_absolute_paths_and_refuses_a_missing_one(

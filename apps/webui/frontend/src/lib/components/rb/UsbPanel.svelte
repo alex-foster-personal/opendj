@@ -23,7 +23,7 @@
 	} from '$lib/rb/usb-tracker.svelte';
 	import { canImportUsbVolume, importUsbVolume, USB_IMPORT_TITLE } from '$lib/rb/usb-import';
 	import { usbImportView } from '$lib/rb/usb-import-view.svelte';
-	import type { Component } from 'svelte';
+	import { untrack, type Component } from 'svelte';
 
 	let PlanView = $state<Component | null>(null);
 	let planFailed = $state(false);
@@ -59,7 +59,10 @@
 
 	$effect(() => {
 		if (!open || healthVolumeIds.length === 0) return;
-		void refreshDeckHealthForVolumes(healthVolumeIds);
+		const ids = healthVolumeIds;
+		// The refresh reads usbTracker.deckHealth before its first await; untrack it so the
+		// effect depends only on panel visibility and volume ids, not on the health map (#12146).
+		untrack(() => void refreshDeckHealthForVolumes(ids));
 	});
 
 	function deckHealthLabel(state: UsbDeckHealthState | undefined): string {

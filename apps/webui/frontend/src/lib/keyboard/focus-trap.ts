@@ -2,6 +2,8 @@
  * WAI-ARIA Authoring Practices Guide Dialog (Modal) pattern: Tab and Shift+Tab
  * cycle inside the dialog; focus returns to the invoking element on destroy.
  * Issue #10364, requirement A11Y-11275 (predicted PR id).
+ * #12271: if the invoking element is gone by then, focus goes to the first
+ * control in its nearest ancestor still in the page, outside any modal.
  *
  * Tab order follows DOM order only; positive tabindex values are not re-sorted.
  */
@@ -104,6 +106,29 @@ function resolveInitialFocus(node: HTMLElement, options: FocusTrapOptions): HTML
 	return node;
 }
 
+/** A fallback never lands in a modal dialog: the closing one is one. */
+const MODAL_SELECTOR = '[aria-modal="true"]';
+
+/**
+ * #12271: the opener left the page while the dialog was open, so focus the first
+ * control that takes focus inside its nearest ancestor still in the page, the way
+ * a removed list row hands focus to its list. Returns false when nothing took it.
+ */
+function focusNearestSurvivor(node: HTMLElement, ancestors: readonly HTMLElement[]): boolean {
+	const tried = new Set<HTMLElement>();
+	for (const container of ancestors) {
+		if (!container.isConnected) continue;
+		for (const el of container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) {
+			if (tried.has(el)) continue;
+			tried.add(el);
+			if (node.contains(el) || el.closest(MODAL_SELECTOR) !== null) continue;
+			el.focus();
+			if (document.activeElement === el) return true;
+		}
+	}
+	return false;
+}
+
 function isInForeignDialog(active: unknown, node: HTMLElement): boolean {
 	if (active === null || active === document.body || !isFocusableElement(active)) return false;
 	const foreign = active.closest('[role="dialog"], [role="alertdialog"]');
@@ -135,8 +160,10 @@ export function focusTrap(node: HTMLElement, options: FocusTrapOptions = {}): Fo
 
 	const rawActive = document.activeElement;
 	let opener: HTMLElement | null = null;
+	const openerAncestors: HTMLElement[] = [];
 	if (isFocusableElement(rawActive) && rawActive !== document.body && !node.contains(rawActive)) {
 		opener = rawActive;
+		for (let at = opener.parentElement; at; at = at.parentElement) openerAncestors.push(at);
 	}
 
 	trapStack.push(node);
@@ -173,6 +200,7 @@ export function focusTrap(node: HTMLElement, options: FocusTrapOptions = {}): Fo
 				opener.focus();
 				return;
 			}
+			if (focusNearestSurvivor(node, openerAncestors)) return;
 			if (
 				isFocusableElement(active) &&
 				active !== document.body &&

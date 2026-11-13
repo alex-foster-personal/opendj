@@ -26,10 +26,13 @@ from apps.shared.state.events import FakeEventBus
 from apps.shared.state.ingest import folder as folder_ingest
 from apps.shared.state.ingest import rekordbox as rb_ingest
 from apps.shared.state.ingest.path_collisions import (
+    AmbiguousAnalysisPathError,
     PathCollisionError,
     _file_identity,
     assert_no_path_collisions,
+    assert_unambiguous_analysis_paths,
     is_streaming_path,
+    path_collision_key,
 )
 from apps.shared.state.writer import StateWriter
 from tests.shared.state.test_ingest_rekordbox import _counts
@@ -303,3 +306,78 @@ def test_rekordbox_collision_refuses_without_partial_state(tmp_rb_db: Path, tmp_
     finally:
         writer.close()
         conn.close()
+
+
+def test_nfc_nfd_and_case_spellings_share_one_collision_key() -> None:
+    """NFC, NFD and case-only spellings of one path normalize to the same collision key."""
+    nfc = unicodedata.normalize("NFC", "/Users/dev/Music/Café.wav")
+    nfd = unicodedata.normalize("NFD", "/Users/dev/Music/Café.wav")
+    upper = "/Users/dev/Music/CAFÉ.WAV"
+    assert nfc != nfd
+    assert path_collision_key(nfc) == path_collision_key(nfd) == path_collision_key(upper)
+
+
+def test_nfc_nfd_spellings_refuse_without_filesystem(tmp_path: Path) -> None:
+    """Two raw spellings that normalize to one location refuse even when no file exists to fold them."""
+    nfc = str(tmp_path / unicodedata.normalize("NFC", "café.wav"))
+    nfd = str(tmp_path / unicodedata.normalize("NFD", "café.wav"))
+
+    with pytest.raises(PathCollisionError) as excinfo:
+        assert_no_path_collisions([nfc, nfd])
+
+    assert set(excinfo.value.paths) == {nfc, nfd}
+
+
+def test_distinct_normalized_locations_do_not_collide(tmp_path: Path) -> None:
+    """Paths whose normalized keys differ (accent vs plain, other name) pass the preflight."""
+    paths = [str(tmp_path / "café.wav"), str(tmp_path / "cafe.wav"), str(tmp_path / "Other.wav")]
+    keys = {path_collision_key(path) for path in paths}
+    assert len(keys) == len(paths)
+
+    assert_no_path_collisions(paths)
+
+
+def test_collision_refusal_carries_every_raw_path_as_provenance(tmp_path: Path) -> None:
+    """The refusal lists each colliding raw spelling once, sorted, in both .paths and the message."""
+    spellings = [str(tmp_path / "song.wav"), str(tmp_path / "Song.wav"), str(tmp_path / "SONG.wav")]
+
+    with pytest.raises(PathCollisionError) as excinfo:
+        assert_no_path_collisions([*spellings, spellings[0], str(tmp_path / "unrelated.wav")])
+
+    error = excinfo.value
+    assert error.paths == sorted(spellings)
+    message = str(error)
+    for raw in spellings:
+        assert message.count(raw) == 1
+    assert "unrelated.wav" not in message
+
+
+@pytest.mark.requirement("SYNCEXPORT-13356")
+def test_analysis_targets_refuse_nfc_nfd_and_case_only_spellings() -> None:
+    """Distinct tracks whose paths differ only by NFC/NFD or case are ambiguous for analysis."""
+    nfc = unicodedata.normalize("NFC", "/Users/dev/Music/Café.wav")
+    nfd = unicodedata.normalize("NFD", nfc)
+    with pytest.raises(AmbiguousAnalysisPathError) as caught:
+        assert_unambiguous_analysis_paths([("sid_b", nfd), ("sid_a", nfc)])
+    assert caught.value.stable_ids == ["sid_a", "sid_b"]
+    assert set(caught.value.paths) == {nfc, nfd}
+    with pytest.raises(AmbiguousAnalysisPathError, match=r"Song\.wav; /Users/dev/Music/song\.wav"):
+        assert_unambiguous_analysis_paths(
+            [("sid_a", "/Users/dev/Music/Song.wav"), ("sid_b", "/Users/dev/Music/song.wav")]
+        )
+
+
+@pytest.mark.requirement("SYNCEXPORT-13356")
+def test_analysis_targets_allow_unique_missing_and_repeated_paths() -> None:
+    """Unique paths, missing or streaming paths, and one track repeated pass the analysis guard."""
+    assert_unambiguous_analysis_paths(
+        [
+            ("sid_a", "/Users/dev/Music/one.wav"),
+            ("sid_b", "/Users/dev/Music/two.wav"),
+            ("sid_c", None),
+            ("sid_d", ""),
+            ("sid_e", "spotify:track:1"),
+            ("sid_f", "spotify:track:1"),
+            ("sid_a", "/Users/dev/Music/one.wav"),
+        ]
+    )

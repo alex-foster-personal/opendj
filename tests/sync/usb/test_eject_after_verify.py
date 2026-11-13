@@ -329,6 +329,7 @@ def _hdiutil_detach(whole: str):
 
 
 @on_macos
+@pytest.mark.host_mutation
 def test_disk_image_with_clean_receipt_is_ejected(fixture_profile, fixture_canonical, disk_image) -> None:
     mount, whole = disk_image
     _copy_to(fixture_profile, fixture_canonical, mount)
@@ -341,6 +342,7 @@ def test_disk_image_with_clean_receipt_is_ejected(fixture_profile, fixture_canon
 
 
 @on_macos
+@pytest.mark.host_mutation
 @pytest.mark.parametrize("breaker", [_break_missing, _break_corrupt])
 def test_disk_image_with_failed_receipt_stays_mounted(fixture_profile, fixture_canonical, disk_image, breaker) -> None:
     mount, whole = disk_image
@@ -353,6 +355,7 @@ def test_disk_image_with_failed_receipt_stays_mounted(fixture_profile, fixture_c
 
 
 @on_macos
+@pytest.mark.host_mutation
 def test_disk_image_with_absent_receipt_stays_mounted(disk_image) -> None:
     mount, whole = disk_image
     with pytest.raises(EjectRefused):

@@ -117,7 +117,7 @@ test.describe('ingest drop modal', () => {
 		await expect(modal).toContainText('Staged to', { timeout: 20_000 });
 		await expect(modal).toContainText('e2e-drop.mp3');
 
-		await page.getByRole('button', { name: 'Close' }).click();
+		await modal.getByRole('button', { name: 'Close', exact: true }).click();
 		await expect(modal).not.toBeVisible();
 		await expect(page.getByTestId('ingest-awaiting-rb')).toBeVisible({ timeout: 10_000 });
 	});

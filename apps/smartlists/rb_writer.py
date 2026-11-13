@@ -161,6 +161,36 @@ def _copy_open_database(
     driver.execute("VACUUM INTO ?", (str(destination),))
 
 
+def _verify_encrypted_snapshot_reopens(
+    destination: Path, source_url: Any, source_dbapi: Any,
+) -> None:
+    """Fail unless ``destination`` reopens with the source SQLCipher configuration."""
+    snapshot_url = source_url.set(database=str(destination))
+    verify_engine = create_engine(
+        snapshot_url,
+        module=source_dbapi,
+        poolclass=NullPool,
+    )
+    try:
+        connection = verify_engine.raw_connection()
+        try:
+            driver = connection.driver_connection
+            if driver.execute("PRAGMA quick_check").fetchone() != ("ok",):
+                raise RuntimeError(
+                    f"rekordbox: online backup failed post-detach auth: {destination}"
+                )
+        finally:
+            connection.close()
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and "post-detach auth" in str(exc):
+            raise
+        raise RuntimeError(
+            f"rekordbox: online backup failed post-detach auth: {destination}"
+        ) from exc
+    finally:
+        verify_engine.dispose()
+
+
 def _assert_backup_matches_source(destination: Path, *, encrypted: bool) -> None:
     """Fail unless the backup's encryption matches the source's.
 
@@ -239,6 +269,8 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
         if destination.stat().st_size <= 0:
             raise RuntimeError(f"rekordbox: online backup is empty: {destination}")
         _assert_backup_matches_source(destination, encrypted=source_is_encrypted)
+        if source_is_encrypted:
+            _verify_encrypted_snapshot_reopens(destination, source_url, source_dbapi)
     except Exception:
         if connection is not None:
             connection.invalidate()

@@ -10,7 +10,6 @@ import re
 import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
 
 from .connection import open_set_notes
 from .models import Geometry, SetNote
@@ -21,6 +20,32 @@ from .wire import note_to_wire, row_to_note
 _SCOPE_RE = re.compile(r"^(scratch|playlist:[^\s:]+|playlist_set:\d+)$")
 
 _SET_NOTE_COLUMNS = "scope, body_md, x, y, w, h, visible, rev, updated_at"
+
+
+def _ensure_migrated(conn: sqlite3.Connection) -> None:
+    apply_set_notes_migrations(conn)
+
+
+def _write_bind_values(
+    body_md: str,
+    geometry: Geometry,
+    visible: bool,
+    new_rev: int,
+    updated_at: str,
+    scope: str,
+) -> tuple[object, ...]:
+    return (
+        body_md,
+        geometry.x,
+        geometry.y,
+        geometry.w,
+        geometry.h,
+        int(visible),
+        new_rev,
+        updated_at,
+        scope,
+    )
+
 
 __all__ = [
     "Geometry",
@@ -42,14 +67,14 @@ def validate_scope(scope: str) -> str:
 
 
 def list_set_notes(conn: sqlite3.Connection) -> list[SetNote]:
-    apply_set_notes_migrations(conn)
+    _ensure_migrated(conn)
     rows = conn.execute(f"SELECT {_SET_NOTE_COLUMNS} FROM set_notes ORDER BY scope").fetchall()
     return [row_to_note(row) for row in rows]
 
 
 def load_set_note(conn: sqlite3.Connection, scope: str) -> SetNote:
     validate_scope(scope)
-    apply_set_notes_migrations(conn)
+    _ensure_migrated(conn)
     row = conn.execute(
         f"SELECT {_SET_NOTE_COLUMNS} FROM set_notes WHERE scope = ?",
         (scope,),
@@ -69,21 +94,11 @@ def save_set_note(
 ) -> SetNote:
     """Write a note; ``base_rev`` 0 creates, otherwise it must match the stored rev."""
     validate_scope(scope)
-    apply_set_notes_migrations(conn)
+    _ensure_migrated(conn)
     stored = current_rev(conn, scope)
     new_rev = next_rev_for_base(base_rev, stored)
     updated_at = datetime.now(UTC).isoformat()
-    params = (
-        body_md,
-        geometry.x,
-        geometry.y,
-        geometry.w,
-        geometry.h,
-        int(visible),
-        new_rev,
-        updated_at,
-        scope,
-    )
+    params = _write_bind_values(body_md, geometry, visible, new_rev, updated_at, scope)
     if stored == 0:
         try:
             conn.execute(

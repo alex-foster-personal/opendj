@@ -199,6 +199,94 @@ def test_multipart_etag_is_verified_by_streaming_the_object(conn, cfg, tmp_path)
         assert {f.verified_by for f in ledger.files_for(led, SID)} == {"stream-sha256"}
 
 
+class _ReadbackFailingS3(InMemoryAssetS3):
+    """Accepts every upload, then fails the verifying HEAD on a key it already holds."""
+
+    def __init__(self, *, mode: str) -> None:
+        super().__init__()
+        self.mode = mode
+
+    def head_object(self, bucket, key):
+        if (bucket, key) not in self.store:
+            return super().head_object(bucket, key)
+        if self.mode == "transport-error":
+            raise ConnectionError("R2 readback timed out")
+        return None  # "vanished": the upload said created, the readback finds nothing
+
+
+class _StreamCorruptingS3(InMemoryAssetS3):
+    """Multipart-shaped ETag, so verification streams; the streamed bytes are damaged."""
+
+    def head_object(self, bucket, key):
+        head = super().head_object(bucket, key)
+        return None if head is None else AssetHead(size=head.size, etag='"abc123-2"')
+
+    def download_to(self, bucket, key, handle, on_chunk) -> None:
+        body = self.store[(bucket, key)][0]
+        damaged = bytes([body[0] ^ 0xFF]) + body[1:]
+        handle.write(damaged)
+        on_chunk(len(damaged))
+
+
+def _unverified_and_kept(conn: sqlite3.Connection, tmp_path: Path, audio: Path, alt: Path, stems: Path) -> None:
+    """Assert every local file is intact and no ledger file row claims verification."""
+    assert audio.read_bytes() == AUDIO and alt.read_bytes() == ALT
+    assert {p.name: p.read_bytes() for p in stems.iterdir()} == STEMS
+    assert _available(conn, alt) == 1
+    assert _state(tmp_path).state == "local"
+    with ledger.open_ledger(tmp_path) as led:
+        files = ledger.files_for(led, SID)
+    assert all(f.verified_at is None and f.deleted_at is None for f in files)
+
+
+@pytest.mark.parametrize("mode", ["transport-error", "vanished"])
+def test_successful_upload_with_failed_readback_keeps_every_local_file(conn, cfg, tmp_path, mode):
+    """VETO: [if] the upload reports success but the remote readback fails [then] no local file is deleted, [else stop]."""
+    audio, alt, stems = _seed(conn, tmp_path)
+    s3 = _ReadbackFailingS3(mode=mode)
+    with pytest.raises(OffloadVerifyError, match="failed" if mode == "transport-error" else "is not in"):
+        offload.offload_track(_ctx(tmp_path, cfg, s3, FakeS3Client()), SID)
+    assert s3.put_calls  # the upload itself landed
+    _unverified_and_kept(conn, tmp_path, audio, alt, stems)
+
+
+def test_streamed_readback_with_a_different_digest_keeps_every_local_file(conn, cfg, tmp_path):
+    """VETO: [if] the remote readback streams to a different SHA-256 [then] no local file is deleted, [else stop]."""
+    audio, alt, stems = _seed(conn, tmp_path)
+    with pytest.raises(OffloadVerifyError, match="streams to SHA-256"):
+        offload.offload_track(_ctx(tmp_path, cfg, _StreamCorruptingS3(), FakeS3Client()), SID)
+    _unverified_and_kept(conn, tmp_path, audio, alt, stems)
+
+
+def test_matching_readback_is_recorded_before_local_deletion(conn, cfg, fake_s3, tmp_path):
+    """[if] every remote readback matches the local digest [then] each file is verified by HEAD after its upload, then deleted, [else stop]."""
+    audio, alt, stems = _seed(conn, tmp_path)
+    outcome = offload.offload_track(_ctx(tmp_path, cfg, fake_s3, FakeS3Client()), SID)
+    assert outcome.state == "offloaded"
+    assert not audio.exists() and not alt.exists() and not stems.exists()
+    with ledger.open_ledger(tmp_path) as led:
+        files = ledger.files_for(led, SID)
+    assert len(files) == 2 + len(STEMS)
+    for f in files:
+        assert f.verified_by == "etag-md5" and f.verified_at is not None and f.deleted_at is not None
+        key = (cfg.audio_bucket, f.object_key)
+        assert key in fake_s3.put_calls
+        assert fake_s3.head_calls.count(key) >= 2, "pre-upload HEAD plus the verifying readback"
+
+
+def test_dry_run_sweep_uploads_verifies_and_deletes_nothing(conn, cfg, fake_s3, tmp_path):
+    """[if] a re-offload is requested in dry-run mode [then] it is only reported: nothing uploaded, read back or deleted, [else stop]."""
+    ctx, (audio, alt, stems) = _offloaded(conn, cfg, fake_s3, tmp_path)
+    offload.restore_track(ctx, SID, "temporary")
+    puts, heads = len(fake_s3.put_calls), len(fake_s3.head_calls)
+    ctx.now.at = T0 + timedelta(hours=25)
+    report = offload.sweep(ctx, dry_run=True)
+    assert report.reoffloaded == [SID]
+    assert len(fake_s3.put_calls) == puts and len(fake_s3.head_calls) == heads
+    assert audio.read_bytes() == AUDIO and alt.read_bytes() == ALT and stems.is_dir()
+    assert _state(tmp_path).state == "temporary"
+
+
 def test_file_changed_after_hashing_is_kept(conn, cfg, fake_s3, tmp_path):
     """VETO: [if] the file is rewritten after it was hashed and verified (a re-tag
     just before deletion) [then] it is not deleted."""

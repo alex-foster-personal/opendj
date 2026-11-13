@@ -106,6 +106,7 @@ test('loopback http and the bundled page are trusted', () => {
 	assert.equal(isTrustedPage('opendj://app/index.html?fatal=1'), true);
 });
 // ----- renderer crash recovery (row 72, issue #9390) ------------------------------
+// Handler wiring (same policy) lives in test/main.test.ts (#13309).
 function sequenceRendererGone(reason: string, timesMs: readonly number[]): RendererGoneAction[] {
 	const actions: RendererGoneAction[] = [];
 	let reloadsMs: number[] = [];

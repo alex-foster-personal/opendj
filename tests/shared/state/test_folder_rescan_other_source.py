@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.shared.state.ingest import folder_rescan
+from apps.shared.state.ingest import folder, folder_rescan
 from tests.shared.state.folder_rescan_other_source_helpers import (
     _seed_isrc_row_and_reconcile,
     _upsert_inferred_rekordbox,
@@ -177,24 +177,66 @@ def test_a_rewrite_keeps_an_isrc_identity(state_conn, tmp_path: Path) -> None:
     assert tuple(kept) == ("Kept", '["A"]', None, 1)
 
 
+def _title_and_hash(state_conn, stable_id: str) -> tuple[str, str | None]:
+    return tuple(
+        state_conn.execute("SELECT title, audio_hash FROM tracks WHERE stable_id = ?", (stable_id,)).fetchone()
+    )
+
+
 @pytest.mark.requirement("NATIVE-30")
 def test_a_rewrite_still_refreshes_an_inferred_rows_title(state_conn, tmp_path: Path) -> None:
-    """[if] a rewrite meets an inferred row [then] its title follows the file again, [else stop]."""
+    """[if] a rewrite meets an inferred row whose title is still the file's own [then] it follows the file again, [else stop].
+
+    The stored title equals what the last import wrote from the file's tags
+    (LIBM-14651 ``file_identity``), so it is the file's to refresh and not a
+    user correction. The rewritten file carries no tag title, so the row falls
+    back to the filename stem.
+    """
     root = tmp_path / "music"
     audio_path = root / "a.wav"
     _write_wav(audio_path)
     writer = _writer(state_conn)
     first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
     ((live_id, _path),) = _live_tracks(state_conn)
+    _stale, old_hash = _title_and_hash(state_conn, live_id)
     state_conn.execute("UPDATE tracks SET title = 'Stale' WHERE stable_id = ?", (live_id,))
+    state_conn.commit()
+    folder.record_file_identity(writer, live_id, folder.TrackIdentity("Stale", [], None))
+
+    _write_wav_sample(audio_path, 1234)
+    os.utime(audio_path, (os.path.getmtime(audio_path) + 5, os.path.getmtime(audio_path) + 5))
+    folder_rescan.reconcile_folders(writer, [root], previous_signature=first.signature)
+
+    title, new_hash = _title_and_hash(state_conn, live_id)
+    assert title == "a", "if a file-owned title does not follow a rewrite then broken"
+    assert new_hash != old_hash, "if the rewrite was not refreshed then this test proves nothing"
+
+
+@pytest.mark.requirement("NATIVE-30")
+@pytest.mark.requirement("LIBM-14651")
+def test_a_rewrite_keeps_an_inferred_rows_user_corrected_title(state_conn, tmp_path: Path) -> None:
+    """[if] a rewrite meets an inferred row whose title the user corrected [then] the title stays, the hash follows the file, [else stop].
+
+    A corrected title is a tracks-row value that differs from the recorded
+    ``file_identity``; the webui PATCH writes it the same way this UPDATE does.
+    """
+    root = tmp_path / "music"
+    audio_path = root / "a.wav"
+    _write_wav(audio_path)
+    writer = _writer(state_conn)
+    first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+    ((live_id, _path),) = _live_tracks(state_conn)
+    _imported, old_hash = _title_and_hash(state_conn, live_id)
+    state_conn.execute("UPDATE tracks SET title = 'My Title' WHERE stable_id = ?", (live_id,))
     state_conn.commit()
 
     _write_wav_sample(audio_path, 1234)
     os.utime(audio_path, (os.path.getmtime(audio_path) + 5, os.path.getmtime(audio_path) + 5))
     folder_rescan.reconcile_folders(writer, [root], previous_signature=first.signature)
 
-    title = state_conn.execute("SELECT title FROM tracks WHERE stable_id = ?", (live_id,)).fetchone()[0]
-    assert title == "a"
+    title, new_hash = _title_and_hash(state_conn, live_id)
+    assert title == "My Title", "if a rewrite clobbers a user-corrected title then broken"
+    assert new_hash != old_hash, "if the rewrite was not refreshed then this test proves nothing"
 
 
 @pytest.mark.requirement("NATIVE-30")

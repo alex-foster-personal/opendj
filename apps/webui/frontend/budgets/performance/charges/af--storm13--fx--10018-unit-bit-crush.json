@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 483124,
+  "measured_with_pr": 485056,
+  "sha": "6961e77222",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--fx--10018-unit-bit-crush grows the performance surface; measured +1932 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -15,7 +15,9 @@
 	import {
 		acceptTrackDragOver,
 		droppedStableIds,
-		endTrackDrag
+		endTrackDrag,
+		refuseTrackDragOver,
+		trackDropRefusal
 	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './playlist-drag';
 	import { dropPlaceAt, type DropPlace } from './playlist-tree-order';
@@ -32,9 +34,22 @@
 	import { sidebarArtShown } from '$lib/rb/library-sidebar-art.svelte';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import { prefetchPlaylistFirstPage } from '$lib/rb/library-playlist-page-prefetch';
+	import {
+		playlistTreeSearch,
+		playlistTreeSearchView,
+		setPlaylistTreeSearch
+	} from '$lib/rb/playlist-tree-search.svelte';
+	import {
+		ensurePlaylistTreePinsLoaded,
+		pinnedShortcutNodes,
+		playlistTreePins,
+		setPlaylistPinned
+	} from '$lib/rb/playlist-tree-pins.svelte';
+	import { pushToast } from '$lib/stores.svelte';
 	let {
 		nodes,
 		mode = 'tree',
+		searchable = true,
 		playlistsLoading,
 		playlistsError,
 		hiddenBrokenPlaylistCount,
@@ -60,10 +75,16 @@
 		onfolderdrop,
 		onmoveplaylist,
 		onsortplaylists
-	}: PlaylistTreeProps & { mode?: PlaylistTreeViewMode } = $props();
+	}: PlaylistTreeProps & {
+		mode?: PlaylistTreeViewMode;
+		/** LIBM-87: draw the tree's own name search; off where a host already searches it. */
+		searchable?: boolean;
+	} = $props();
 
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
+	/** LIBM-84: the smartlist row a track drag is over, refused out loud. */
+	let refusedDropId: string | null = $state(null);
 	let folderDropActive = $state(false);
 	let treeContextMenu = $state<TreeContextMenu | null>(null);
 	/** LIBTREE-01: the playlist row being dragged to a new place in the tree,
@@ -103,6 +124,11 @@
 
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		if (_onReorderDragOver(event, node)) return;
+		// LIBM-84: a smartlist fills from its rules; refuse before any request.
+		if (trackDropRefusal(node.kind) !== null) {
+			if (refuseTrackDragOver(event)) refusedDropId = node.playlist_id;
+			return;
+		}
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
 		if (ondroptracks === undefined || node.kind !== 'playlist' || isInboxPlaylistId(node.playlist_id))
 			return;
@@ -115,10 +141,12 @@
 	function _onTrackDragLeave(node: PlaylistNode): void {
 		if (reorderTarget?.id === node.playlist_id) reorderTarget = null;
 		if (dropTargetId === node.playlist_id) dropTargetId = null;
+		if (refusedDropId === node.playlist_id) refusedDropId = null;
 	}
 
 	function _onTrackDrop(event: DragEvent, node: PlaylistNode): void {
 		if (_onReorderDrop(event, node)) return;
+		refusedDropId = null;
 		if (ondroptracks === undefined || node.kind !== 'playlist' || isInboxPlaylistId(node.playlist_id))
 			return;
 		event.preventDefault();
@@ -157,7 +185,10 @@
 			node.kind === 'smartlist' ||
 			node.kind === 'taglist' ||
 			node.kind === 'autolist' ||
-			node.kind === 'usb'
+			node.kind === 'usb' ||
+			node.kind === 'history' ||
+			node.kind === 'tag_list' ||
+			node.kind === 'explorer'
 		)
 			return;
 		event.dataTransfer?.setData(
@@ -226,6 +257,26 @@
 	// up via the tracker's exposed fields/action/handler.
 	const foldTracker = new TreeFoldTracker();
 	let playlistsOpen = $state(true);
+	/** LIBM-87: the rows, open state and empty state the tree's search shows. */
+	const treeSearch = $derived(
+		playlistTreeSearchView(nodes, searchable ? playlistTreeSearch.query : '', playlistsOpen)
+	);
+
+	/** LIBM-87 (issue #12320): pinned shortcuts above the Playlists section; hidden while searching. */
+	$effect(() => {
+		ensurePlaylistTreePinsLoaded();
+	});
+	const pinnedIds = $derived(new Set(playlistTreePins.ids));
+	const pinnedNodes = $derived(
+		!treeSearch.active ? pinnedShortcutNodes(nodes, playlistTreePins.ids) : []
+	);
+
+	function _togglePin(node: PlaylistNode): void {
+		const pinned = !pinnedIds.has(node.playlist_id);
+		setPlaylistPinned(node.playlist_id, pinned).catch((exc: unknown) =>
+			pushToast(`${pinned ? 'pin' : 'unpin'} "${node.name}" failed: ${String(exc)}`, 'error')
+		);
+	}
 
 	/** CMDK-6848: open the Playlists section, bring the asked row into view, and clear the request. */
 	$effect(() => {
@@ -254,8 +305,17 @@
 {/snippet}
 
 <PlaylistTreeView
-	{nodes}
+	nodes={treeSearch.nodes}
+	unfilteredCount={nodes.length}
 	{mode}
+	{searchable}
+	searchQuery={playlistTreeSearch.query}
+	searchNoMatches={treeSearch.noMatches}
+	listOpen={treeSearch.open}
+	onsearch={setPlaylistTreeSearch}
+	{pinnedNodes}
+	{pinnedIds}
+	ontogglepin={_togglePin}
 	{playlistsLoading}
 	{playlistsError}
 	{hiddenBrokenPlaylistCount}
@@ -269,6 +329,7 @@
 	tintOf={_tintOf}
 	{columnMounted}
 	{dropTargetId}
+	refusedDropId={trackDrag.active ? refusedDropId : null}
 	{folderDropActive}
 	bind:playlistsOpen
 	foldCurrent={foldTracker.current}

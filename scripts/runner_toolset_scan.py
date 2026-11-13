@@ -335,6 +335,18 @@ class _Walker:
             self._skip_wrapper(base)
         elif tok in KEYWORDS_IGNORED or tok in self.functions or tok == lex.PLACEHOLDER:
             self.k += 1
+        elif tok.startswith("/"):
+            try:
+                rel = str(Path(tok).resolve().relative_to(REPO_ROOT.resolve()))
+            except ValueError:
+                rel = ""
+            if rel and not rel.startswith("..") and (REPO_ROOT / rel).is_file():
+                _queue_repo_file(rel, self.ctx)
+                self.k += 1
+                return
+            if WORD_RE.match(base) and not base.isdigit():
+                self.ctx.usage.executables[base].add(where)
+            self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
         elif repo_script:
             _queue_repo_file(repo_script, self.ctx)
             self.k = _scan_arguments(base, self.toks, self.k + 1, where, self.ctx)
@@ -404,15 +416,35 @@ def _scan_arguments(name: str, toks: list[tuple[str, int]], k: int, where: str, 
 
 def _args_inline_program(name: str, args: list[str], where: str, ctx: _Ctx) -> None:
     """`bash -c '...'` and `python -c '...'` carry a program in one argument."""
-    if "-c" not in args or args.index("-c") + 1 >= len(args):
+    if name in {"python", "python3"}:
+        if len(args) < 2 or args[0] != "-c":
+            return
+        program = args[1]
+    elif "-c" not in args or args.index("-c") + 1 >= len(args):
         return
-    program, (source, line) = args[args.index("-c") + 1], where.rsplit(":", 1)
+    else:
+        program = args[args.index("-c") + 1]
+    (source, line) = where.rsplit(":", 1)
     # A whole shell parameter is an argv reference, not embedded Python source.
     if name not in {"bash", "sh"} and re.fullmatch(r"\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})", program):
         ctx.usage.unresolved_python_programs[program].add(where)
         return
     scan = scan_shell if name in {"bash", "sh"} else scan_python_source
-    scan(program, source, int(line) - 1, ctx)
+    try:
+        scan(program, source, int(line) - 1, ctx)
+    except SyntaxError:
+        return
+
+
+def _functions_in_shell_source(source: str) -> frozenset[str]:
+    rel = source.split(":", 1)[0]
+    if not rel.endswith(".sh"):
+        return frozenset()
+    path = REPO_ROOT / rel
+    if not path.is_file():
+        return frozenset()
+    toks = lex.tokens(lex.prepare_shell_text(path.read_text(encoding="utf-8", errors="replace")))
+    return _defined_functions(toks) | _preset_sourced_functions(source)
 
 
 def _args_command_string(name: str, args: list[str], where: str, ctx: _Ctx) -> None:
@@ -424,7 +456,7 @@ def _args_command_string(name: str, args: list[str], where: str, ctx: _Ctx) -> N
     else:
         program = args[0]
     source, line = where.rsplit(":", 1)
-    scan_shell(program, source, int(line) - 1, ctx)
+    scan_shell(program, source, int(line) - 1, ctx, _functions_in_shell_source(source))
 
 
 def _args_recipes(name: str, args: list[str], _where: str, ctx: _Ctx) -> None:
@@ -530,6 +562,8 @@ def _note_repo_path(tok: str, source: str, ctx: _Ctx) -> None:
 
 
 def _queue_repo_file(rel: str, ctx: _Ctx) -> None:
+    if "node_modules" in Path(rel).parts:
+        return
     path = REPO_ROOT / rel
     if not path.is_file():
         return
@@ -544,7 +578,11 @@ def _queue_repo_file(rel: str, ctx: _Ctx) -> None:
 
 def scan_python_source(text: str, source: str, base_line: int, ctx: _Ctx) -> None:
     """Read direct commands and same-source argv flow with retained sink provenance."""
-    for command in python_reader.commands(text):
+    queued = python_reader.repo_queue_targets(text, source, REPO_ROOT)
+    commands = python_reader.commands(text, source=source, repo_root=REPO_ROOT)
+    for rel in queued:
+        _queue_repo_file(rel, ctx)
+    for command in commands:
         where = f"{source}:{base_line + command.line}"
         if command.kind == "name" and WORD_RE.match(command.text):
             ctx.usage.executables[command.text].add(where)
@@ -631,6 +669,7 @@ def scan_repo() -> Usage:
     for path in sorted(TESTS_DIR.rglob("*.py")):
         ctx.usage.scanned_files.add(_rel(path))
         scan_python_source(path.read_text(encoding="utf-8", errors="replace"), _rel(path), 0, ctx)
+    _drain_queues(ctx)
     return ctx.usage
 
 

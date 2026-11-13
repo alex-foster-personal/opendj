@@ -98,6 +98,14 @@ def validate_transfer(
         raise BackendError("cannot transfer a playlist onto itself")
 
 
+def require_source_members(source_items: list[str], stable_ids: list[str]) -> None:
+    """Reject (422) a move naming any stable_id that is not a member of the source playlist."""
+    present = set(source_items)
+    missing = [sid for sid in dict.fromkeys(stable_ids) if sid not in present]
+    if missing:
+        raise BackendError(f"stable_ids not in source playlist ({len(missing)}): {missing[:5]}")
+
+
 def membership_plan(
     dest_items: list[str],
     source_items: list[str] | None,

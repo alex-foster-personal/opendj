@@ -15,10 +15,13 @@ the logic lives once.
 
 from __future__ import annotations
 
+import functools
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+from scripts.ci_path_resolve import require_on_path
 
 REPO = Path(__file__).resolve().parents[1]
 TRACKED_IGNORED_BASELINE = Path("tests/quality/fixtures/tracked_ignored_baseline.txt")
@@ -31,8 +34,19 @@ COMPLETE_SUBFOLDERS = ("docs",)
 # ----- git index --------------------------------------------------------------
 
 
+@functools.cache
+def _git_exe() -> str:
+    """git by resolved path, once (AGENTS.md: launch programs by resolved path)."""
+    return require_on_path("git", RuntimeError, "git is not on PATH: cannot list the tracked tree")
+
+
 def _git_lines(root: Path, *args: str) -> list[str]:
-    out = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        [_git_exe(), "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
     return [line for line in out.splitlines() if line]
 
 

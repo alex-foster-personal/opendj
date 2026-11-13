@@ -1,0 +1,802 @@
+{
+ "device": "CDJ-2000NXS2",
+ "vendor": "AlphaTheta / Pioneer DJ",
+ "plate": {
+  "image": "source/plate-top.png",
+  "width": 779,
+  "height": 1001
+ },
+ "layers": [
+  "base"
+ ],
+ "out_of_scope": [
+  "source_buttons_rekordbox_link_usb_sd_disc_not_in_midi_list",
+  "browse_taglist_info_menu_shortcut_trackfilter_not_in_midi_list",
+  "hot_cue_bank_not_in_midi_list",
+  "jog_adjust_knob_not_in_midi_list",
+  "jog_display_and_main_display_graphics_hid",
+  "led_feedback_not_documented"
+ ],
+ "controls": [
+  {
+   "id": "cdj2000nxs2-jog-ring",
+   "fig": "jog_ring",
+   "label": "JOG RING",
+   "kind": "jog",
+   "x": 16.3,
+   "y": 40.5,
+   "w": 67.5,
+   "h": 52.5,
+   "layer": "base",
+   "section": "jog",
+   "midi": {
+    "name": "jog_ring",
+    "type": "cc",
+    "ch": 1,
+    "code": 48,
+    "shift_name": null
+   },
+   "notes": "manual callout 52 [jog_ring]"
+  },
+  {
+   "id": "cdj2000nxs2-jog-top",
+   "fig": "jog_top",
+   "label": "JOG (TOUCH)",
+   "kind": "jog",
+   "x": 25.2,
+   "y": 47.5,
+   "w": 49.7,
+   "h": 38.7,
+   "layer": "base",
+   "section": "jog",
+   "midi": {
+    "name": "jog_touch_turn",
+    "type": "cc",
+    "ch": 1,
+    "code": 16,
+    "shift_name": null
+   },
+   "notes": "manual callout 52; also sends jog_touch [jog_top]"
+  },
+  {
+   "id": "cdj2000nxs2-play-pause",
+   "fig": "play_pause",
+   "label": "PLAY/PAUSE",
+   "kind": "button",
+   "x": 2.4,
+   "y": 88.4,
+   "w": 11.3,
+   "h": 8.8,
+   "layer": "base",
+   "section": "transport",
+   "midi": {
+    "name": "play_pause",
+    "type": "note",
+    "ch": 1,
+    "code": 0,
+    "shift_name": null
+   },
+   "notes": "manual callout 1 [play_pause]"
+  },
+  {
+   "id": "cdj2000nxs2-cue",
+   "fig": "cue",
+   "label": "CUE",
+   "kind": "button",
+   "x": 2.7,
+   "y": 78.3,
+   "w": 10.6,
+   "h": 8.3,
+   "layer": "base",
+   "section": "transport",
+   "midi": {
+    "name": "cue",
+    "type": "note",
+    "ch": 1,
+    "code": 1,
+    "shift_name": null
+   },
+   "notes": "manual callout 2 [cue]"
+  },
+  {
+   "id": "cdj2000nxs2-search-rev",
+   "fig": "search_rev",
+   "label": "SEARCH REV",
+   "kind": "button",
+   "x": 2.9,
+   "y": 71.6,
+   "w": 4.8,
+   "h": 3.7,
+   "layer": "base",
+   "section": "transport",
+   "midi": {
+    "name": "search_rev",
+    "type": "note",
+    "ch": 1,
+    "code": 3,
+    "shift_name": null
+   },
+   "notes": "manual callout 3 [search_rev]"
+  },
+  {
+   "id": "cdj2000nxs2-search-fwd",
+   "fig": "search_fwd",
+   "label": "SEARCH FWD",
+   "kind": "button",
+   "x": 8.6,
+   "y": 71.6,
+   "w": 4.8,
+   "h": 3.7,
+   "layer": "base",
+   "section": "transport",
+   "midi": {
+    "name": "search_fwd",
+    "type": "note",
+    "ch": 1,
+    "code": 2,
+    "shift_name": null
+   },
+   "notes": "manual callout 3 [search_fwd]"
+  },
+  {
+   "id": "cdj2000nxs2-track-search-prev",
+   "fig": "track_search_prev",
+   "label": "TRACK SEARCH PREV",
+   "kind": "button",
+   "x": 2.9,
+   "y": 65.2,
+   "w": 4.8,
+   "h": 3.7,
+   "layer": "base",
+   "section": "transport",
+   "midi": {
+    "name": "track_search_prev",
+    "type": "note",
+    "ch": 1,
+    "code": 5,
+    "shift_name": null
+   },
+   "notes": "manual callout 4 [track_search_prev]"
+  },
+  {
+   "id": "cdj2000nxs2-track-search-next",
+   "fig": "track_search_next",
+   "label": "TRACK SEARCH NEXT",
+   "kind": "button",
+   "x": 8.6,
+   "y": 65.2,
+   "w": 4.8,
+   "h": 3.7,
+   "layer": "base",
+   "section": "transport",
+   "midi": {
+    "name": "track_search_next",
+    "type": "note",
+    "ch": 1,
+    "code": 4,
+    "shift_name": null
+   },
+   "notes": "manual callout 4 [track_search_next]"
+  },
+  {
+   "id": "cdj2000nxs2-direction-lever",
+   "fig": "direction_lever",
+   "label": "DIRECTION FWD/REV/SLIP REV",
+   "kind": "button",
+   "x": 3.8,
+   "y": 56.4,
+   "w": 5.5,
+   "h": 4.0,
+   "layer": "base",
+   "section": "direction",
+   "midi": {
+    "name": "reverse",
+    "type": "note",
+    "ch": 1,
+    "code": 33,
+    "shift_name": null
+   },
+   "notes": "manual callout 6; also sends slip_reverse [direction_lever]"
+  },
+  {
+   "id": "cdj2000nxs2-slip",
+   "fig": "slip",
+   "label": "SLIP",
+   "kind": "button",
+   "x": 17.6,
+   "y": 47.6,
+   "w": 2.7,
+   "h": 2.1,
+   "layer": "base",
+   "section": "direction",
+   "midi": {
+    "name": "slip",
+    "type": "note",
+    "ch": 1,
+    "code": 58,
+    "shift_name": null
+   },
+   "notes": "manual callout 7 [slip]"
+  },
+  {
+   "id": "cdj2000nxs2-beat-4-8",
+   "fig": "beat_4_8",
+   "label": "4/8BEAT (LOOP CUTTER)",
+   "kind": "button",
+   "x": 17.5,
+   "y": 42.5,
+   "w": 3.1,
+   "h": 2.4,
+   "layer": "base",
+   "section": "loop",
+   "midi": {
+    "name": "beat_loop_4",
+    "type": "note",
+    "ch": 1,
+    "code": 42,
+    "shift_name": null
+   },
+   "notes": "manual callout 8 [beat_4_8]"
+  },
+  {
+   "id": "cdj2000nxs2-loop-in",
+   "fig": "loop_in",
+   "label": "IN/CUE (IN ADJUST)",
+   "kind": "button",
+   "x": 16.3,
+   "y": 36.1,
+   "w": 5.1,
+   "h": 4.0,
+   "layer": "base",
+   "section": "loop",
+   "midi": {
+    "name": "loop_in",
+    "type": "note",
+    "ch": 1,
+    "code": 6,
+    "shift_name": null
+   },
+   "notes": "manual callout 9 [loop_in]"
+  },
+  {
+   "id": "cdj2000nxs2-loop-out",
+   "fig": "loop_out",
+   "label": "OUT (OUT ADJUST)",
+   "kind": "button",
+   "x": 24.0,
+   "y": 36.1,
+   "w": 5.1,
+   "h": 4.0,
+   "layer": "base",
+   "section": "loop",
+   "midi": {
+    "name": "loop_out",
+    "type": "note",
+    "ch": 1,
+    "code": 7,
+    "shift_name": null
+   },
+   "notes": "manual callout 10 [loop_out]"
+  },
+  {
+   "id": "cdj2000nxs2-reloop-exit",
+   "fig": "reloop_exit",
+   "label": "RELOOP/EXIT",
+   "kind": "button",
+   "x": 33.6,
+   "y": 36.4,
+   "w": 4.5,
+   "h": 3.5,
+   "layer": "base",
+   "section": "loop",
+   "midi": {
+    "name": "reloop",
+    "type": "note",
+    "ch": 1,
+    "code": 8,
+    "shift_name": null
+   },
+   "notes": "manual callout 11 [reloop_exit]"
+  },
+  {
+   "id": "cdj2000nxs2-hot-cue-call-delete",
+   "fig": "hot_cue_call_delete",
+   "label": "HOT CUE CALL/DELETE",
+   "kind": "button",
+   "x": 2.7,
+   "y": 49.9,
+   "w": 2.7,
+   "h": 2.1,
+   "layer": "base",
+   "section": "hot_cue",
+   "midi": {
+    "name": "hot_cue_call_delete",
+    "type": "note",
+    "ch": 1,
+    "code": 19,
+    "shift_name": null
+   },
+   "notes": "manual callout 12 [hot_cue_call_delete]"
+  },
+  {
+   "id": "cdj2000nxs2-hot-cue-a",
+   "fig": "hot_cue_a",
+   "label": "HOT CUE A / E",
+   "kind": "pad",
+   "x": 4.6,
+   "y": 25.3,
+   "w": 8.6,
+   "h": 3.7,
+   "layer": "base",
+   "section": "hot_cue",
+   "midi": {
+    "name": "hot_cue_a",
+    "type": "note",
+    "ch": 1,
+    "code": 24,
+    "shift_name": null
+   },
+   "notes": "manual callout 13; also sends hot_cue_e [hot_cue_a]"
+  },
+  {
+   "id": "cdj2000nxs2-hot-cue-b",
+   "fig": "hot_cue_b",
+   "label": "HOT CUE B / F",
+   "kind": "pad",
+   "x": 4.6,
+   "y": 31.5,
+   "w": 8.6,
+   "h": 3.7,
+   "layer": "base",
+   "section": "hot_cue",
+   "midi": {
+    "name": "hot_cue_b",
+    "type": "note",
+    "ch": 1,
+    "code": 25,
+    "shift_name": null
+   },
+   "notes": "manual callout 13; also sends hot_cue_f [hot_cue_b]"
+  },
+  {
+   "id": "cdj2000nxs2-hot-cue-c",
+   "fig": "hot_cue_c",
+   "label": "HOT CUE C / G",
+   "kind": "pad",
+   "x": 4.6,
+   "y": 37.6,
+   "w": 8.6,
+   "h": 3.7,
+   "layer": "base",
+   "section": "hot_cue",
+   "midi": {
+    "name": "hot_cue_c",
+    "type": "note",
+    "ch": 1,
+    "code": 26,
+    "shift_name": null
+   },
+   "notes": "manual callout 13; also sends hot_cue_g [hot_cue_c]"
+  },
+  {
+   "id": "cdj2000nxs2-hot-cue-d",
+   "fig": "hot_cue_d",
+   "label": "HOT CUE D / H",
+   "kind": "pad",
+   "x": 4.6,
+   "y": 43.6,
+   "w": 8.6,
+   "h": 3.7,
+   "layer": "base",
+   "section": "hot_cue",
+   "midi": {
+    "name": "hot_cue_d",
+    "type": "note",
+    "ch": 1,
+    "code": 27,
+    "shift_name": null
+   },
+   "notes": "manual callout 13; also sends hot_cue_h [hot_cue_d]"
+  },
+  {
+   "id": "cdj2000nxs2-quantize",
+   "fig": "quantize",
+   "label": "QUANTIZE",
+   "kind": "button",
+   "x": 18.7,
+   "y": 28.3,
+   "w": 2.7,
+   "h": 2.1,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "quantize",
+    "type": "note",
+    "ch": 1,
+    "code": 9,
+    "shift_name": null
+   },
+   "notes": "manual callout 20 [quantize]"
+  },
+  {
+   "id": "cdj2000nxs2-time-mode",
+   "fig": "time_mode",
+   "label": "TIME MODE/AUTO CUE",
+   "kind": "button",
+   "x": 18.5,
+   "y": 24.1,
+   "w": 3.1,
+   "h": 2.4,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "time_auto_cue",
+    "type": "note",
+    "ch": 1,
+    "code": 14,
+    "shift_name": null
+   },
+   "notes": "manual callout 21 [time_mode]"
+  },
+  {
+   "id": "cdj2000nxs2-touch-display",
+   "fig": "touch_display",
+   "label": "Main unit display (touch GUI)",
+   "kind": "button",
+   "x": 25.3,
+   "y": 8.9,
+   "w": 49.1,
+   "h": 23.2,
+   "layer": "base",
+   "section": "display",
+   "midi": {
+    "name": "needle",
+    "type": "cc",
+    "ch": 1,
+    "code": 28,
+    "shift_name": null
+   },
+   "notes": "manual callout r; also sends beat_loop_1_3, beat_loop_3_4, beat_loop_1_16, beat_loop_1_8, beat_loop_1_4, beat_loop_1_2, beat_loop_1, beat_loop_2, beat_loop_8, beat_loop_16, beat_loop_32, beat_jump_fwd, beat_jump_rev [touch_display]"
+  },
+  {
+   "id": "cdj2000nxs2-back",
+   "fig": "back",
+   "label": "BACK",
+   "kind": "button",
+   "x": 75.9,
+   "y": 8.0,
+   "w": 4.1,
+   "h": 2.7,
+   "layer": "base",
+   "section": "browser",
+   "midi": {
+    "name": "back",
+    "type": "note",
+    "ch": 1,
+    "code": 50,
+    "shift_name": null
+   },
+   "notes": "manual callout 32 [back]"
+  },
+  {
+   "id": "cdj2000nxs2-tag-track",
+   "fig": "tag_track",
+   "label": "TAG TRACK/REMOVE",
+   "kind": "button",
+   "x": 80.8,
+   "y": 8.0,
+   "w": 4.1,
+   "h": 2.7,
+   "layer": "base",
+   "section": "browser",
+   "midi": {
+    "name": "tag_track",
+    "type": "note",
+    "ch": 1,
+    "code": 48,
+    "shift_name": null
+   },
+   "notes": "manual callout 33 [tag_track]"
+  },
+  {
+   "id": "cdj2000nxs2-rotary-selector",
+   "fig": "rotary_selector",
+   "label": "Rotary selector",
+   "kind": "encoder",
+   "x": 74.3,
+   "y": 13.1,
+   "w": 9.6,
+   "h": 7.5,
+   "layer": "base",
+   "section": "browser",
+   "midi": {
+    "name": "encoder",
+    "type": "cc",
+    "ch": 1,
+    "code": 79,
+    "shift_name": null
+   },
+   "notes": "manual callout 34; also sends encoder_push [rotary_selector]"
+  },
+  {
+   "id": "cdj2000nxs2-disc-eject",
+   "fig": "disc_eject",
+   "label": "DISC EJECT",
+   "kind": "button",
+   "x": 89.2,
+   "y": 11.9,
+   "w": 5.5,
+   "h": 4.3,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "eject",
+    "type": "note",
+    "ch": 1,
+    "code": 47,
+    "shift_name": null
+   },
+   "notes": "manual callout 36 [disc_eject]"
+  },
+  {
+   "id": "cdj2000nxs2-touch-brake",
+   "fig": "touch_brake",
+   "label": "VINYL SPEED ADJUST TOUCH/BRAKE",
+   "kind": "knob",
+   "x": 89.7,
+   "y": 28.0,
+   "w": 4.5,
+   "h": 3.5,
+   "layer": "base",
+   "section": "vinyl",
+   "midi": {
+    "name": "touch_brake",
+    "type": "cc",
+    "ch": 1,
+    "code": 30,
+    "shift_name": null
+   },
+   "notes": "manual callout 39 [touch_brake]"
+  },
+  {
+   "id": "cdj2000nxs2-release-start",
+   "fig": "release_start",
+   "label": "VINYL SPEED ADJUST RELEASE/START",
+   "kind": "knob",
+   "x": 89.7,
+   "y": 35.1,
+   "w": 4.5,
+   "h": 3.5,
+   "layer": "base",
+   "section": "vinyl",
+   "midi": {
+    "name": "release_start",
+    "type": "cc",
+    "ch": 1,
+    "code": 31,
+    "shift_name": null
+   },
+   "notes": "manual callout 40 [release_start]"
+  },
+  {
+   "id": "cdj2000nxs2-call-prev",
+   "fig": "call_prev",
+   "label": "CUE/LOOP CALL (LOOP 1/2X)",
+   "kind": "button",
+   "x": 62.7,
+   "y": 36.8,
+   "w": 3.1,
+   "h": 2.4,
+   "layer": "base",
+   "section": "cue_loop_memory",
+   "midi": {
+    "name": "call_prev",
+    "type": "note",
+    "ch": 1,
+    "code": 12,
+    "shift_name": null
+   },
+   "notes": "manual callout 41 [call_prev]"
+  },
+  {
+   "id": "cdj2000nxs2-call-next",
+   "fig": "call_next",
+   "label": "CUE/LOOP CALL (LOOP 2X)",
+   "kind": "button",
+   "x": 67.3,
+   "y": 36.8,
+   "w": 3.1,
+   "h": 2.4,
+   "layer": "base",
+   "section": "cue_loop_memory",
+   "midi": {
+    "name": "call_next",
+    "type": "note",
+    "ch": 1,
+    "code": 11,
+    "shift_name": null
+   },
+   "notes": "manual callout 41 [call_next]"
+  },
+  {
+   "id": "cdj2000nxs2-delete",
+   "fig": "delete",
+   "label": "DELETE",
+   "kind": "button",
+   "x": 75.2,
+   "y": 36.5,
+   "w": 3.8,
+   "h": 2.9,
+   "layer": "base",
+   "section": "cue_loop_memory",
+   "midi": {
+    "name": "delete",
+    "type": "note",
+    "ch": 1,
+    "code": 13,
+    "shift_name": null
+   },
+   "notes": "manual callout 42 [delete]"
+  },
+  {
+   "id": "cdj2000nxs2-memory",
+   "fig": "memory",
+   "label": "MEMORY",
+   "kind": "button",
+   "x": 80.7,
+   "y": 36.8,
+   "w": 3.1,
+   "h": 2.4,
+   "layer": "base",
+   "section": "cue_loop_memory",
+   "midi": {
+    "name": "memory",
+    "type": "note",
+    "ch": 1,
+    "code": 10,
+    "shift_name": null
+   },
+   "notes": "manual callout 43 [memory]"
+  },
+  {
+   "id": "cdj2000nxs2-jog-mode",
+   "fig": "jog_mode",
+   "label": "JOG MODE",
+   "kind": "button",
+   "x": 92.1,
+   "y": 41.3,
+   "w": 4.8,
+   "h": 2.9,
+   "layer": "base",
+   "section": "jog",
+   "midi": {
+    "name": "jog_mode",
+    "type": "note",
+    "ch": 1,
+    "code": 18,
+    "shift_name": null
+   },
+   "notes": "manual callout 44 [jog_mode]"
+  },
+  {
+   "id": "cdj2000nxs2-sync",
+   "fig": "sync",
+   "label": "BEAT SYNC/INST.DOUBLES",
+   "kind": "button",
+   "x": 86.1,
+   "y": 48.3,
+   "w": 4.8,
+   "h": 3.7,
+   "layer": "base",
+   "section": "beat_sync",
+   "midi": {
+    "name": "sync",
+    "type": "note",
+    "ch": 1,
+    "code": 31,
+    "shift_name": null
+   },
+   "notes": "manual callout 46 [sync]"
+  },
+  {
+   "id": "cdj2000nxs2-master",
+   "fig": "master",
+   "label": "MASTER",
+   "kind": "button",
+   "x": 92.6,
+   "y": 48.3,
+   "w": 4.8,
+   "h": 3.7,
+   "layer": "base",
+   "section": "beat_sync",
+   "midi": {
+    "name": "master",
+    "type": "note",
+    "ch": 1,
+    "code": 30,
+    "shift_name": null
+   },
+   "notes": "manual callout 46 [master]"
+  },
+  {
+   "id": "cdj2000nxs2-tempo-range",
+   "fig": "tempo_range",
+   "label": "TEMPO range",
+   "kind": "button",
+   "x": 90.2,
+   "y": 54.7,
+   "w": 3.4,
+   "h": 2.7,
+   "layer": "base",
+   "section": "tempo",
+   "midi": {
+    "name": "tempo_range",
+    "type": "note",
+    "ch": 1,
+    "code": 16,
+    "shift_name": null
+   },
+   "notes": "manual callout 48 [tempo_range]"
+  },
+  {
+   "id": "cdj2000nxs2-master-tempo",
+   "fig": "master_tempo",
+   "label": "MASTER TEMPO",
+   "kind": "button",
+   "x": 90.2,
+   "y": 60.5,
+   "w": 3.4,
+   "h": 2.7,
+   "layer": "base",
+   "section": "tempo",
+   "midi": {
+    "name": "master_tempo",
+    "type": "note",
+    "ch": 1,
+    "code": 17,
+    "shift_name": null
+   },
+   "notes": "manual callout 49 [master_tempo]"
+  },
+  {
+   "id": "cdj2000nxs2-tempo-slider",
+   "fig": "tempo_slider",
+   "label": "TEMPO slider",
+   "kind": "fader",
+   "x": 88.5,
+   "y": 66.7,
+   "w": 6.2,
+   "h": 26.7,
+   "layer": "base",
+   "section": "tempo",
+   "midi": {
+    "name": "tempo_slider",
+    "type": "cc",
+    "ch": 1,
+    "code": 29,
+    "shift_name": null
+   },
+   "notes": "manual callout 50 [tempo_slider]"
+  },
+  {
+   "id": "cdj2000nxs2-tempo-reset",
+   "fig": "tempo_reset",
+   "label": "TEMPO RESET",
+   "kind": "button",
+   "x": 80.7,
+   "y": 78.3,
+   "w": 3.1,
+   "h": 2.4,
+   "layer": "base",
+   "section": "tempo",
+   "midi": {
+    "name": "tempo_reset",
+    "type": "note",
+    "ch": 1,
+    "code": 15,
+    "shift_name": null
+   },
+   "notes": "manual callout 51 [tempo_reset]"
+  }
+ ]
+}

@@ -21,8 +21,8 @@ const ENTRY = [
 	"export { render } from 'svelte/server';"
 ].join('\n');
 
-/** The only rail entries with a real planned feature behind them (PARITY-TODO). */
-const TODO_IDS = ['play-history'];
+/** The rail entries with a real planned feature behind them (PARITY-TODO); play-history shipped with PLAYS-9745. */
+const TODO_IDS = [];
 
 let mod;
 let plannedTitle;
@@ -68,13 +68,15 @@ test('every inert rail entry is a planned feature, and only the planned ones are
 		.map((tag) => unescape(titleOf(tag)))
 		.sort();
 	assert.deepEqual(inertTitles, TODO_IDS.map((id) => plannedTitle(id)).sort());
+	assert.throws(() => plannedTitle('play-history'), /no entry/, 'play-history is no longer catalogued as planned');
 });
 
 test('the dead glyphs and the Collection / iTunes / Devices text tabs are gone', () => {
 	const html = renderRail();
 	assert.doesNotMatch(html, /rail-label/);
 	assert.doesNotMatch(html, />\s*(iTunes|Devices)\s*</);
-	for (const dead of ['collection-bookmarks', 'explorer-grid', 'itunes-library', 'file-browser', 'beatport', 'video-output', 'cloud-lock']) {
+	assert.throws(() => plannedTitle('explorer-grid'), /no entry/, 'explorer-grid shipped as the Explorer source (#9747)');
+	for (const dead of ['collection-bookmarks', 'itunes-library', 'file-browser', 'beatport', 'video-output', 'cloud-lock']) {
 		assert.ok(!html.includes(unescape(plannedTitle(dead)).slice(0, 30)), `${dead} glyph still rendered`);
 	}
 });

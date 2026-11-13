@@ -265,8 +265,7 @@ describe('a load that fails leaves the first track able to get its stems (STEM-4
 		await rig.stepUntil(() => audiblyPlaying(deck()), 'track B to play after the reload');
 	});
 
-	// Quarantined: fails on every main run since #10797 (fd97825c3b, 485600b3ac on Tue 10 Nov 2026), #11533
-	it.skip('control: a schedule still in flight when the processor fails does not refuse the next load', async () => {
+	it('control: a schedule still in flight when the processor fails does not refuse the next load', async () => {
 		await rig.engine.load(1, SID_A);
 		await rig.waitFor(() => rig.stemParts(SID_A).requested() === 4, "track A's four stem part downloads to start");
 		rig.stemParts(SID_A).release();
@@ -287,8 +286,7 @@ describe('a load that fails leaves the first track able to get its stems (STEM-4
 		await rig.settle(10);
 	});
 
-	// Quarantined: fails on every main run since #10797 (fd97825c3b, 485600b3ac on Tue 10 Nov 2026), #11533
-	it.skip('control: a load already in flight when the processor fails still lands', async () => {
+	it('control: a load already in flight when the processor fails still lands', async () => {
 		// Catches the overshoot: ending the stem decode by bumping the load token
 		// in the processor-failure path also cancels a load that is in flight,
 		// which then resolves without loading anything and without an error.

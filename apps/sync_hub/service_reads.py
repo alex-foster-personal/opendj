@@ -5,6 +5,9 @@ Split out of :mod:`apps.sync_hub.service`.
 
 from __future__ import annotations
 
+import sqlite3
+from dataclasses import asdict
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from apps.shared.state import schema as state_schema
@@ -14,6 +17,7 @@ from apps.sync_hub import (
     engine,
     entitlement_gate,
     protocol,
+    r2_capability,
     service_shortfall,
     wire_version,
 )
@@ -25,6 +29,7 @@ from apps.sync_hub.service_models import (
     DigestResponse,
     HashPendingResponse,
     PullResponse,
+    R2CapabilityModel,
     RowsResponse,
     StatusResponse,
     SyncRowSampleModel,
@@ -34,6 +39,7 @@ from apps.sync_hub.service_wiring import (
     MAX_PULL_LIMIT,
     _apply_error,
     _auth,
+    _data_dir,
     _gate,
     _generation,
     _hub_conn,
@@ -122,6 +128,15 @@ def pull(
         )
 
 
+def _r2_capability(request: Request, conn: sqlite3.Connection) -> R2CapabilityModel | None:
+    """Measured presign capability; None unless this process is a hub."""
+    try:
+        capability = r2_capability.capability_for_hub(request.app.state, conn, _data_dir(request))
+    except r2_capability.R2CapabilityError as exc:
+        raise HTTPException(status_code=500, detail={"code": "SYNC_HUB_R2_CAPABILITY", "message": str(exc)}) from exc
+    return None if capability is None else R2CapabilityModel(**asdict(capability))
+
+
 @router.get("/status", response_model=StatusResponse, responses=_auth("status"))
 def status(
     request: Request,
@@ -156,6 +171,7 @@ def status(
             row_counts=counts,
             hub_generation=_generation(request, conn),
             **entitlement_gate.status_fields(request),
+            r2=_r2_capability(request, conn),
         )
 
 

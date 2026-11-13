@@ -1,91 +1,53 @@
-/** Capture pre-B5 gothic block heights for fixture regeneration (issue #11396). */
-import { readFileSync } from 'node:fs';
+/** Capture the pre-B5 gothic golden from the pre-B5 painter itself (issues #11396, #13446).
+ *
+ * The oracle for the self-decoded (legacy-p99) curve must never come from the
+ * code under test, so this loads render.ts from a detached checkout of
+ * PRE_B5_COMMIT (main before DECKUX-38 / B5) and calls its blockHeights the way
+ * its drawWaveRow did: p99 band norms, VARIANT_DEFAULT (blend) with the
+ * window's beat period, and the no-grid fallback (kick) without one.
+ */
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { loadTypeScriptModule } from '../load-typescript.mjs';
+/** Last main commit with the pre-B5 blocks painter. */
+export const PRE_B5_COMMIT = 'ef76df4099';
 
 const ROW_W = 1200;
-const ROW_H = 410;
-const HALF_H = (ROW_H - 10) / 2 - 1;
+const WINDOW_S = 24;
+const FRONTEND = fileURLToPath(new URL('../../../', import.meta.url));
 
-export async function captureGothicGolden(fixtureUrl) {
-	globalThis.Path2D = class {
-		constructor() {
-			this.rects = [];
-		}
-		rect(x, y, w, h) {
-			this.rects.push({ x, y, w, h });
-		}
-	};
-	const render = await loadTypeScriptModule('src/lib/components/rb/wave/render.ts');
-	await render.__test_loadBlockSnap();
-	const fx = JSON.parse(readFileSync(fixtureUrl, 'utf8'));
+/** Heights of the fixture window painted by the pre-B5 render module `render`. */
+export function preB5Heights(render, fx) {
 	const d = fx.detail;
-	const detail = { low: d.low, mid: d.mid, high: d.high, length: d.low.length };
-	const mono = '#cfcfcf';
-	const palette = {
-		bg: '#000000',
-		low: '#111111',
-		mid: '#222222',
-		high: '#333333',
-		mono,
-		tick: '#444444',
-		cueHotCue: '#35c04f',
-		cueLoop: '#e8a13a',
-		cueMemory: '#ff3b30',
-		cueOutline: '#c8cdd2',
-		phrase: '#888888'
-	};
-	const selfDecoded = { status: 'decoded', reason: null, preview_b64: null, preview_max: null };
-
-	const rowHeights = (beats, snap) => {
-		const anlz = {
-			stable_id: 'a'.repeat(40),
-			points: detail.length,
-			waveform: { kind: 'mono', preview: detail, detail },
-			beatgrid: { beat_count: beats.length, beats },
-			cues: [],
-			phrases: [],
-			vocals: { status: 'not_analyzed' },
-			beatgrid_source: 'rekordbox',
-			beatgrid_own_unavailable_reason: null,
-			local_waveform: selfDecoded
-		};
-		const rects = [];
-		const base = {
-			fillStyle: '',
-			fillRect(x, y, w, h) {
-				if (this.fillStyle === mono) rects.push({ x, y, w, h });
-			},
-			fill(path) {
-				if (this.fillStyle === mono) rects.push(...path.rects);
-			}
-		};
-		const ctx = new Proxy(base, {
-			get: (t, k) => (k in t ? t[k] : () => {}),
-			set: (t, k, v) => ((t[k] = v), true)
-		});
-		render.drawWaveRow(ctx, {
-			windowS: 24,
-			playheadFrac: 0.5,
-			widthCss: ROW_W,
-			heightCss: ROW_H,
-			positionMs: 12_000,
-			durationMs: 24_000,
-			anlz,
-			palette,
-			pitch: 1,
-			loop: null,
-			waveformDesign: 'blocks',
-			blocksSnap: snap
-		});
-		if (snap) return rects.sort((a, b) => a.x - b.x).map((r) => r.h / 2 / HALF_H);
-		const out = new Array(Math.ceil(ROW_W / render.BLOCK_PITCH_PX)).fill(0);
-		for (const r of rects) out[r.x / render.BLOCK_PITCH_PX] = r.h / 2 / HALF_H;
-		return out.map((v) => Math.round(v * HALF_H) / HALF_H);
-	};
-
+	const det = { low: d.low, mid: d.mid, high: d.high, length: d.low.length };
+	const norms = render.bandNormsFor({ detail: det });
+	const variant = render.BLOCKS_CFG.VARIANT_DEFAULT;
+	const bpb = (render.beatPeriodS(fx.beats) * (ROW_W / WINDOW_S)) / render.BLOCK_PITCH_PX;
 	return {
-		grid: rowHeights(fx.beats, false),
-		noGrid: rowHeights([], false)
+		grid: Array.from(render.blockHeights(det, ROW_W, norms, variant, bpb)),
+		noGrid: Array.from(render.blockHeights(det, ROW_W, norms, variant, null))
 	};
+}
+
+/** Check out PRE_B5_COMMIT detached, load its render.ts, and capture the golden. */
+export async function captureGothicGolden(fixtureUrl) {
+	const git = (...args) => execFileSync('git', args, { cwd: FRONTEND, stdio: 'pipe' });
+	const dir = mkdtempSync(join(tmpdir(), 'pre-b5-'));
+	const tree = join(dir, 'tree');
+	git('worktree', 'add', '-q', '--detach', tree, PRE_B5_COMMIT);
+	try {
+		const oldFrontend = join(tree, 'apps/webui/frontend');
+		symlinkSync(join(FRONTEND, 'node_modules'), join(oldFrontend, 'node_modules'));
+		const loader = pathToFileURL(join(oldFrontend, 'tests/unit/load-typescript.mjs')).href;
+		const { loadTypeScriptModule } = await import(loader);
+		const render = await loadTypeScriptModule('src/lib/components/rb/wave/render.ts');
+		if ('blocksCurveFor' in render) throw new Error(`${PRE_B5_COMMIT} is not a pre-B5 painter`);
+		return preB5Heights(render, JSON.parse(readFileSync(fixtureUrl, 'utf8')));
+	} finally {
+		git('worktree', 'remove', '--force', tree);
+		rmSync(dir, { recursive: true, force: true });
+	}
 }

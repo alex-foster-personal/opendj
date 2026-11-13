@@ -68,6 +68,8 @@ class DeckPerformanceSample(BaseModel):
     transport_pending: bool
     stem_status: Literal["unavailable", "ready", "error"]
     last_load_latency_ms: float | None = Field(default=None, ge=0)
+    last_load_blocking_stage_ms: dict[str, float] | None = None
+    last_load_stage_sources: dict[str, str] | None = None
     sync_error: str | None = Field(default=None, max_length=2048)
     processor_error: str | None = Field(default=None, max_length=2048)
 
@@ -101,6 +103,16 @@ class LiveHandlesSample(BaseModel):
     rafs: int = Field(ge=0)
 
 
+class PerfReadoutRowSample(BaseModel):
+    """One top-bar performance card row as the page drew it (PERFREADOUT-12579)."""
+
+    key: Literal["hz", "cache", "waveform", "memory"]
+    name: str = Field(max_length=128)
+    value: str = Field(max_length=64)
+    explainer: str = Field(max_length=1024)
+    detail: str = Field(max_length=4096)
+
+
 class ClientPerformanceSampleIn(BaseModel):
     client_sample_id: str = Field(min_length=1, max_length=128)
     client_session_id: str = Field(min_length=1, max_length=128)
@@ -121,6 +133,8 @@ class ClientPerformanceSampleIn(BaseModel):
     frame_probe: FrameProbeSample | None = None
     # Null unless ?perfprobe=1 armed the live handles probe (PERF-LEAK-11789).
     live_handles: LiveHandlesSample | None = None
+    # PERFREADOUT-12579: the card's perfReadoutRows(), read back by GET /readouts.
+    readout_rows: list[PerfReadoutRowSample] | None = Field(default=None, max_length=4)
 
 
 class ClientPerformanceSampleOut(BaseModel):
@@ -170,6 +184,16 @@ def latest_client_performance_sample(request: Request) -> dict[str, object]:
     if sample is None:
         raise HTTPException(status_code=404, detail="no client performance sample yet")
     return sample
+
+
+@router.get("/readouts")
+def latest_perf_readouts(request: Request) -> dict[str, object]:
+    """Return the top-bar card rows from the last sample, or 404 when none were posted."""
+    sample = getattr(request.app.state, "last_client_performance_sample", None)
+    rows = sample.get("readout_rows") if isinstance(sample, dict) else None
+    if not rows:
+        raise HTTPException(status_code=404, detail="no performance readout rows posted yet")
+    return {"event_id": sample["event_id"], "rows": rows}
 
 
 def _read_last_json_line(path: Path) -> dict[str, object] | None:

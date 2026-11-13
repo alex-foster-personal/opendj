@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 520362,
+  "measured_with_pr": 520507,
+  "sha": "f56327dbf4",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13651 assistant provider-policy HTTP client and api-types growth; CI measured +145 B gzip on other-lazy",
+  "payback": "none planned; OpenAPI contract types live on the shared client surface"
+}

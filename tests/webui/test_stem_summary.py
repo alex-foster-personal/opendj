@@ -7,6 +7,7 @@ Regression one-liners:
   - if mutating a returned summary poisons the next caller then broken
   - if every listed stem file is missing then summary is invalid naming those files
   - if one listed stem file is present then summary stays ready with that part's bytes
+  - if manifest.json is absent but stem files remain then summary is none, not ready
 """
 
 from __future__ import annotations
@@ -113,6 +114,15 @@ def test_summarize_ready_when_one_listed_file_present(tmp_path: Path) -> None:
     assert summary["groups"]["D"]["bytes"] == 0
     assert summary["groups"]["D"]["parts"] == []
     assert summary["total_bytes"] == 1000
+
+
+def test_summarize_none_when_manifest_absent_but_files_remain(tmp_path: Path) -> None:
+    """A bundle dir whose stems remain but whose manifest.json is gone reads none, not ready."""
+    sid = "track-no-manifest"
+    bundle = _write_bundle(tmp_path, sid)
+    (bundle / "manifest.json").unlink()
+    assert (bundle / "vocals.opus").is_file()
+    assert summarize_stem_bundle(sid, stems_dir=tmp_path) == {"status": "none"}
 
 
 # ----- listing cache -------------------------------------------------------

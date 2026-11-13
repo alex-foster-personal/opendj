@@ -37,6 +37,8 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
     "headphone_input_select": ("POST", "/api/v1/performance/headphones/inputs/select"),
     # CUEOUT-14: cue/master alignment.
     "headphone_alignment_mode": ("POST", "/api/v1/performance/headphones/alignment-mode"),
+    # IOPIN-12692: the calibration stimulus, the same typed command the I/O panel sends.
+    "headphone_calibration_probe": ("POST", "/api/v1/performance/headphones/calibration-probe"),
     "master_delay_ms": ("POST", "/api/v1/performance/headphones/master-delay"),
     "headphone_calibrate": ("POST", "/api/v1/performance/headphones/calibrate"),
     "headphone_calibrate_abort": ("POST", "/api/v1/performance/headphones/calibrate/abort"),
@@ -47,6 +49,8 @@ HEADPHONE_IPC_ROUTES: dict[str, tuple[str, str]] = {
 }
 
 HEADPHONE_ALIGNMENT_MODES = ("headphones_only", "delay_all", "hybrid")
+# keep in sync with apps/webui/frontend/src/lib/player/cue-latency.ts CALIBRATION_PROBE_KINDS
+HEADPHONE_CALIBRATION_PROBES = ("chirp", "click_train")
 BOOTH_SIGNAL_MODES = ("off", "follows_master", "independent")
 # keep in sync with apps/webui/frontend/src/lib/player/constants.ts HEADPHONE_OUTPUT_MODES
 # and apps/opendj_cli/catalog.py OUTPUT_MODE_VALUES (parity test in test_performance_headphones).
@@ -331,6 +335,15 @@ def _validate_head_delay_ms(value: object) -> float:
     return float(value)
 
 
+def _validate_calibration_probe(value: object) -> str:
+    if value not in HEADPHONE_CALIBRATION_PROBES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"calibration probe must be chirp or click_train, got {value}",
+        )
+    return value
+
+
 def _validate_alignment_mode(value: object) -> str:
     if value not in HEADPHONE_ALIGNMENT_MODES:
         raise HTTPException(
@@ -582,6 +595,24 @@ async def post_headphone_alignment_mode(
     value = _validate_alignment_mode(body.get("value"))
     return await _submit_headphone_command(
         request, {"type": "headphone_alignment_mode", "value": value}
+    )
+
+
+@router.post(
+    "/calibration-probe",
+    response_model=HeadphoneStateOut,
+    response_description="Headphone state after choosing the calibration stimulus",
+)
+async def post_headphone_calibration_probe(
+    request: Request,
+    body: Annotated[dict[str, Any], Body(..., title="HeadphoneCalibrationProbeBody")],
+) -> HeadphoneStateOut:
+    """IOPIN-12692: chirp or click_train, through the same typed command as the I/O panel.
+    The page refuses it while a calibration run is in flight."""
+    _require_page(request)
+    value = _validate_calibration_probe(body.get("value"))
+    return await _submit_headphone_command(
+        request, {"type": "headphone_calibration_probe", "value": value}
     )
 
 

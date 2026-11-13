@@ -10,6 +10,10 @@
 			"reason": "Issue #12369 tests BrowserPanel's actual extracted empty-state selector and shared filter helpers; source assertions trace pre-filter counts into its checkbox and TrackTable prop. These wiring checks do not claim rendered or live UI acceptance."
 		},
 		{
+			"file": "waveform-library-selector-ids.test.mjs",
+			"reason": "KEYB-13918 (PR #14890): pins that EdgeSamplerToggle.svelte registers its chip through use:areaTrackedSelectorLeaf with waveSamplerSelectorId(); the selector ids and tree moves run as real modules. An SSR render does not run use: actions, so the binding can only be read as text."
+		},
+		{
 			"file": "add-to-playlist-menu.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -354,8 +358,16 @@
 			"reason": "PR #6235 deck controls, written before GUARD-15 landed (#5857, Sat 31 Oct 2026): pins the AU/MA/loop-source wiring in Deck, JogDial, LoopSourceMenu and LoopCluster markup next to rendered-module IPC tests; render conversion owed by the PR's review-followup"
 		},
 		{
+			"file": "mixer-browser-compact-tier.test.mjs",
+			"reason": "SKINLAYOUT-13413 issue #13413: the contract is @container mixer/browser tier CSS in Mixer and BrowserPanel; SSR and jsdom have no container-query layout, so a render cannot observe it (the real-layout check is the left-over e2e)"
+		},
+		{
 			"file": "deck-compact-tier.test.mjs",
 			"reason": "SKINLAYOUT-10203 issue #10203: the contract is @container deck tier rules and data-priority wiring across Deck, DeckHeader, HotCueBank, and +page, not a single rendered mount"
+		},
+		{
+			"file": "deck-effects.test.mjs",
+			"reason": "#10282: pins that Deck.svelte no longer runs the deck-state effects moved to deck-effects.svelte.ts; the absence of a call is a source property no render can show"
 		},
 		{
 			"file": "deck-header-key-sync-order.test.mjs",
@@ -575,10 +587,6 @@
 		},
 		{
 			"file": "hot-cue-rename-on-create.test.mjs",
-			"reason": "pre-existing (ratchet seed 2026-10-07)"
-		},
-		{
-			"file": "hotkeys-overlay.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
@@ -862,6 +870,10 @@
 			"reason": "pre-existing (on main before the ratchet merged in #5857, Sat 31 Oct 2026; its seed predated them)"
 		},
 		{
+			"file": "perf-layout-library-first.test.mjs",
+			"reason": "SKINLAYOUT-10207: asserts the technically-working edge selectors in the /performance style block target .rb-wavestack and .rb-browser by grid area, never by row order (nth-child); a render cannot show which CSS selector a rule uses, so the selector text is the instrument."
+		},
+		{
 			"file": "perf-layout-feasibility.test.mjs",
 			"reason": "SKINLAYOUT-10201 (#10201): regexes /performance +page.svelte for grid-template-areas, minmax floors and the compact waverow media query so PERFORMANCE_LAYOUT_SPEC stays aligned with the shipped CSS; SSR does not surface those literals."
 		},
@@ -916,6 +928,10 @@
 		{
 			"file": "performance-recorder.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
+		},
+		{
+			"file": "performance-route-defer-imports.test.mjs",
+			"reason": "Issue #11466: bundle-budget acceptance needs static versus dynamic import() literals in /performance first-paint Svelte sources; SSR render does not expose those edges."
 		},
 		{
 			"file": "performance-stage-control.test.mjs",
@@ -1434,6 +1450,10 @@
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
 		{
+			"file": "track-table-artwork.test.mjs",
+			"reason": "Issue #13093: CSS and template source-shape contract for library row artwork cells (same instrument as track-table-cell-clip.test.mjs and pin-5a833ab52fda-artwork.test.mjs); no mount infra for TrackTable."
+		},
+		{
 			"file": "track-table-autoplay-icon.test.mjs",
 			"reason": "pre-existing (ratchet seed 2026-10-07)"
 		},
@@ -1602,10 +1622,6 @@
 			"reason": "DECKUX-5917b wiring pin: asserts each linked panel passes uiPrefs.deck_hover_link through deckHoverLinkId and never the raw hovered deck. Those are the expressions in Deck.svelte, WaveRow.svelte, ChannelStrip.svelte and TrackTable.svelte; rendering TrackTable needs the library and daemon, so the source is the instrument. The behavior itself is rendered-free in the first test and in the Playwright correspondence spec."
 		},
 		{
-			"file": "wave-quick-settings.test.mjs",
-			"reason": "WAVEQS-8348b..8348d wiring pin (PR #8348): asserts the popover and SettingsOverlay both reach previews only through SettingPreview, the popover writes via applySettingChange and never uiPrefs, and the glyph's verbatim title and open-focus selector. The popover's module graph pulls the rune settings singleton, so the source is the instrument; the rendered behavior is covered by wave-quick-settings.spec.ts against the real app."
-		},
-		{
 			"file": "backstage-nav.test.mjs",
 			"reason": "Asserts the +layout.svelte wiring (flag-gated BackstageNav and the flat sidebar branch) and the flag-file declaration. Rendering the whole root layout needs the daemon and the flag store, so the layout source is the instrument for these checks; the nav model itself is covered by rendered-free unit assertions."
 		},
@@ -1720,6 +1736,34 @@
 		{
 			"file": "usb-detect-surfaces.test.mjs",
 			"reason": "PR #11997 (USB detect toast and pulse): the toast and prefs logic run as real modules; the BrowserPanel.svelte and LibraryNav.svelte reads pin the openUsbPanel wiring from the detect toast and the per-stick pulse, which only fires on a live usb_stick event a static render cannot raise."
+		},
+		{
+			"file": "admin-tab.test.mjs",
+			"reason": "PR #14270 (admin panel deep links): adminPanelFromUrl and adminTabFromUrl run as a real module; the admin/+page.svelte read pins that the panel choice is gated on backstageEnabled() over $page.url and that each ADMIN_PANEL_IDS id has exactly one {#if} branch with no catch-all, a structural count over every branch that one SSR render (one URL, one branch) cannot give, and rendering the route needs $app/stores, $app/navigation and the daemon build-flags store, which the SSR helper does not stub."
+		},
+		{
+			"file": "app-mode-dropdown.test.mjs",
+			"reason": "PR #14393 (four-mode app dropdown, PERFMODE-13): APP_MODES, appModeForPath and the app_mode pref validator run as real modules; the TopBar.svelte read pins that the menu row's onclick calls _selectAppMode, which calls setAppMode to persist the pref, and that activeMode derives from $page.url.pathname and uiPrefs.app_mode, an event handler and store wiring SSR never fires, inside a 2,500-line TopBar that no unit test renders."
+		},
+		{
+			"file": "source-menu-viewport.test.mjs",
+			"reason": "PR #13948 (SOURCE menu viewport placement): placeFloating runs as a real module for every viewport branch; the AnalysisSourceToggle.svelte read pins the inputs _show feeds it (preferred below, gap 0, window.innerWidth and innerHeight, the 220x160 unmeasured fallback, the rounded left/top menuStyle), script that runs only on pointerenter or focusin with a measured DOM rect, which SSR has neither."
+		},
+		{
+			"file": "track-duration-contract.test.mjs",
+			"reason": "PR #14211 (duration_ms on the shared Track contract): pins TypeScript types, that api.ts aliases Track to the generated TrackOut with duration_ms and that BrowserPanel.svelte's script declares no local duration_ms extension or TrackWire type; types are erased before render, so markup cannot show their absence."
+		},
+		{
+			"file": "playlists-grid-live-refresh.test.mjs",
+			"reason": "Issue #13415: pins /playlists +page.svelte onMount bus subscriptions (subscribeKind playlists, subscribeResync, coalesced listPlaylists) and playlistThumbnailUrl(..., pl.updated_at); SSR render of the lazy route does not run onMount or a live library.changed invalidation."
+		},
+		{
+			"file": "cue-list.test.mjs",
+			"reason": "PR #14665 (Cues tab in the HOT CUE dropdown, DECKUX-9981): cueListRows, cueRowCommand and the per-session tab memory run as real modules; the PadModeMenu.svelte and Deck.svelte reads pin the wiring a server render cannot show, that the menu's row click calls cueRowCommand(deckId, row), that its restore handler passes the mutation revision and reversal id, and that Deck hands the bank's clearHotCueAt to onDeleteHotCue (handlers are not part of rendered markup)."
+		},
+		{
+			"file": "gothic-lyrics-trigger.test.mjs",
+			"reason": "PR #14033 (issue #13352, LYR-12): a scan over every .css and .svelte file under src that no Gothic-scoped rule targets the LYR trigger, its menu or the top bar and that LYR colours come only from the shared bsm-toggle tokens; the TopBar.svelte read pins that the button sits outside any conditional block, is bound to the lyrics action and carries no disabled attribute. A stylesheet-wide absence and an onclick binding are not visible in a server render of one component."
 		}
 	]
 }

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 374109,
+  "measured_with_pr": 374909,
+  "sha": "32bfd49e75",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 2 (PR 14806, branch rc-main-direct--r3-b2) grows the library surface by its 152 members' code: measured +800 B gzip at 32bfd49e75 over bundle 1's cut c7e5a14bdb (this branch's base once PR 14801 merges), ceiled to KiB. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

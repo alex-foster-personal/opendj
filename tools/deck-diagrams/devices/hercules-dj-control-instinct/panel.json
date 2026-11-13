@@ -16,9 +16,48 @@
  "out_of_scope": [
   "map hints not placed as controls (24): browse arrows, pitch CC, samples, scratch, HP vol",
   "rear and front panel jacks (poster fig 19-23)",
-  "pad mode selector (fig 6) and mode display (fig 3): one physical pad bank",
+  "pad mode selector (fig 6) and mode display (fig 3): the practice pad layer selector stands in",
+  "deck 2 LOOP 8 pad layer: no published wire (note 38 is a printed duplicate), renders inert",
   "pitch faders (fig 13): incremental CC, hinted not bound"
  ],
+ "pad_layer_groups": {
+  "d1": {
+   "label": "Deck 1 pad layer",
+   "default_mode": "hot_cue",
+   "modes": [
+    {
+     "id": "hot_cue",
+     "label": "HOT CUE"
+    },
+    {
+     "id": "beat_loop",
+     "label": "LOOP"
+    },
+    {
+     "id": "color_fx",
+     "label": "FX"
+    }
+   ]
+  },
+  "d2": {
+   "label": "Deck 2 pad layer",
+   "default_mode": "hot_cue",
+   "modes": [
+    {
+     "id": "hot_cue",
+     "label": "HOT CUE"
+    },
+    {
+     "id": "beat_loop",
+     "label": "LOOP"
+    },
+    {
+     "id": "color_fx",
+     "label": "FX"
+    }
+   ]
+  }
+ },
  "controls": [
   {
    "id": "d1-sync-toggle",
@@ -237,11 +276,11 @@
    "shift_midi": null
   },
   {
-   "id": "d1-hot-cue-a",
+   "id": "d1-pad-1",
    "fig": "2",
    "type": "pad",
    "label": "PAD 1",
-   "does": "Hot cue A (deck 1)",
+   "does": "Multifunction pad 1 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
    "x": 20.0,
    "y": 22.0,
    "w": 9.0,
@@ -252,14 +291,47 @@
     "kind": "note",
     "id": 13
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 1",
+     "does": "Hot cue A (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 13
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 1",
+     "does": "Beat loop 1 bar (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 9
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 1",
+     "does": "Colour FX filter (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 1
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d1-hot-cue-b",
+   "id": "d1-pad-2",
    "fig": "2",
    "type": "pad",
    "label": "PAD 2",
-   "does": "Hot cue B (deck 1)",
+   "does": "Multifunction pad 2 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
    "x": 29.5,
    "y": 22.0,
    "w": 9.0,
@@ -270,14 +342,47 @@
     "kind": "note",
     "id": 14
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 2",
+     "does": "Hot cue B (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 14
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 2",
+     "does": "Beat loop 2 bars (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 10
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 2",
+     "does": "Colour FX space (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 2
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d1-hot-cue-c",
+   "id": "d1-pad-3",
    "fig": "2",
    "type": "pad",
    "label": "PAD 3",
-   "does": "Hot cue C (deck 1)",
+   "does": "Multifunction pad 3 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
    "x": 20.0,
    "y": 41.0,
    "w": 9.0,
@@ -288,14 +393,47 @@
     "kind": "note",
     "id": 15
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 3",
+     "does": "Hot cue C (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 15
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 4",
+     "does": "Beat loop 4 bars (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 11
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 3",
+     "does": "Colour FX echo (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 3
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d1-hot-cue-d",
+   "id": "d1-pad-4",
    "fig": "2",
    "type": "pad",
    "label": "PAD 4",
-   "does": "Hot cue D (deck 1)",
+   "does": "Multifunction pad 4 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
    "x": 29.5,
    "y": 41.0,
    "w": 9.0,
@@ -306,86 +444,47 @@
     "kind": "note",
     "id": 16
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d1",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 4",
+     "does": "Hot cue D (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 16
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 8",
+     "does": "Beat loop 8 bars (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 12
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 4",
+     "does": "Colour FX next (deck 1)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 4
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d1-beat-loop-1",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 1",
-   "does": "Beat loop 1 bar (deck 1)",
-   "x": 20.0,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 9
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-beat-loop-2",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 2",
-   "does": "Beat loop 2 bars (deck 1)",
-   "x": 29.5,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 10
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-beat-loop-4",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 4",
-   "does": "Beat loop 4 bars (deck 1)",
-   "x": 20.0,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 11
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-beat-loop-8",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 8",
-   "does": "Beat loop 8 bars (deck 1)",
-   "x": 29.5,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 12
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-a",
+   "id": "d2-pad-1",
    "fig": "2",
    "type": "pad",
    "label": "PAD 1",
-   "does": "Hot cue A (deck 2)",
+   "does": "Multifunction pad 1 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
    "x": 236.0,
    "y": 22.0,
    "w": 9.0,
@@ -396,14 +495,47 @@
     "kind": "note",
     "id": 39
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 1",
+     "does": "Hot cue A (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 39
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 1",
+     "does": "Beat loop 1 bar (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 35
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 1",
+     "does": "Colour FX filter (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 27
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d2-hot-cue-b",
+   "id": "d2-pad-2",
    "fig": "2",
    "type": "pad",
    "label": "PAD 2",
-   "does": "Hot cue B (deck 2)",
+   "does": "Multifunction pad 2 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
    "x": 226.5,
    "y": 22.0,
    "w": 9.0,
@@ -414,14 +546,47 @@
     "kind": "note",
     "id": 40
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 2",
+     "does": "Hot cue B (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 40
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 2",
+     "does": "Beat loop 2 bars (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 36
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 2",
+     "does": "Colour FX space (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 28
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d2-hot-cue-c",
+   "id": "d2-pad-3",
    "fig": "2",
    "type": "pad",
    "label": "PAD 3",
-   "does": "Hot cue C (deck 2)",
+   "does": "Multifunction pad 3 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
    "x": 236.0,
    "y": 41.0,
    "w": 9.0,
@@ -432,14 +597,47 @@
     "kind": "note",
     "id": 41
    },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 3",
+     "does": "Hot cue C (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 41
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 4",
+     "does": "Beat loop 4 bars (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 37
+     },
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 3",
+     "does": "Colour FX echo (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 29
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
-   "id": "d2-hot-cue-d",
+   "id": "d2-pad-4",
    "fig": "2",
    "type": "pad",
    "label": "PAD 4",
-   "does": "Hot cue D (deck 2)",
+   "does": "Multifunction pad 4 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
    "x": 226.5,
    "y": 41.0,
    "w": 9.0,
@@ -450,61 +648,36 @@
     "kind": "note",
     "id": 42
    },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-beat-loop-1",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 1",
-   "does": "Beat loop 1 bar (deck 2)",
-   "x": 236.0,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 35
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-beat-loop-2",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 2",
-   "does": "Beat loop 2 bars (deck 2)",
-   "x": 226.5,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 36
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-beat-loop-4",
-   "fig": "2",
-   "type": "pad",
-   "label": "LOOP 4",
-   "does": "Beat loop 4 bars (deck 2)",
-   "x": 236.0,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 37
-   },
-   "shift_midi": null
+   "shift_midi": null,
+   "pad_layer_group": "d2",
+   "pad_layers": {
+    "hot_cue": {
+     "label": "PAD 4",
+     "does": "Hot cue D (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 42
+     },
+     "shift_midi": null
+    },
+    "beat_loop": {
+     "label": "LOOP 8",
+     "does": "Beat loop 8 bars (deck 2)",
+     "midi": null,
+     "shift_midi": null
+    },
+    "color_fx": {
+     "label": "FX 4",
+     "does": "Colour FX next (deck 2)",
+     "midi": {
+      "ch": 1,
+      "kind": "note",
+      "id": 30
+     },
+     "shift_midi": null
+    }
+   }
   },
   {
    "id": "ch1-ch-cue",
@@ -701,150 +874,6 @@
     "ch": 1,
     "kind": "cc",
     "id": 58
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-color-fx-c1-note1",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 1",
-   "does": "Colour FX filter (deck 1)",
-   "x": 20.0,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 1
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-color-fx-c1-note2",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 2",
-   "does": "Colour FX space (deck 1)",
-   "x": 29.5,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 2
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-color-fx-c1-note3",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 3",
-   "does": "Colour FX echo (deck 1)",
-   "x": 20.0,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 3
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-color-fx-c1-note4",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 4",
-   "does": "Colour FX next (deck 1)",
-   "x": 29.5,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 4
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-color-fx-c1-note27",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 1",
-   "does": "Colour FX filter (deck 2)",
-   "x": 236.0,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 27
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-color-fx-c1-note28",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 2",
-   "does": "Colour FX space (deck 2)",
-   "x": 226.5,
-   "y": 22.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 28
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-color-fx-c1-note29",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 3",
-   "does": "Colour FX echo (deck 2)",
-   "x": 236.0,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 29
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-color-fx-c1-note30",
-   "fig": "2",
-   "type": "pad",
-   "label": "FX 4",
-   "does": "Colour FX next (deck 2)",
-   "x": 226.5,
-   "y": 41.0,
-   "w": 9.0,
-   "h": 16.0,
-   "section": "effect",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 30
    },
    "shift_midi": null
   },

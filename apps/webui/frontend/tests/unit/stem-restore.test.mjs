@@ -1,4 +1,5 @@
 // requirement: STEM-37
+// requirement: STEMS-13763
 /**
  * Session / rescue stem restore (src/lib/rb/stem-restore.ts) against the
  * stem-hydration lifetime (src/lib/rb/stem-hydrate-wait.ts).
@@ -179,4 +180,33 @@ test('restore waits between stem dispatches when the first command puts stems ba
 		{ type: 'stem_solo', deck: 1, stem: 'vocal', solo: false },
 		{ type: 'stem_gain', deck: 1, stem: 'vocal', value: 0.25 }
 	]);
+});
+
+test('a restored deck whose track has no stem bundle restores quietly with saved stem effects', async () => {
+	/** [if] a restored deck settles stems unavailable (no bundle) [then] restore resolves with no dispatch and no error, [else stop]. */
+	const dispatched = [];
+	const query = () => ({
+		decks: {
+			1: {
+				stable_id: 'b'.repeat(40),
+				load_generation: 1,
+				stems: { status: 'unavailable', error: 'no stem bundle advertised', available_controls: [] }
+			}
+		}
+	});
+	const saved = {
+		vocal: { muted: true, solo: false, gain: 0.25 },
+		drums: { muted: false, solo: true, gain: 0.5 }
+	};
+	await restore.restoreStemControls(
+		async (command) => {
+			dispatched.push(command);
+			return {};
+		},
+		query,
+		1,
+		saved,
+		{ now: () => 0, sleep: async () => {} }
+	);
+	assert.deepEqual(dispatched, []);
 });

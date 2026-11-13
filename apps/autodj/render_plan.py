@@ -36,10 +36,12 @@ from apps.autodj.contract.models import RenderLayout, RenderPlanError
 from apps.autodj.plan import (
     FX_ACTIONS,
     FX_CONTROLS,
+    STEM_CONTROLS,
     PlanEvent,
     TransitionPlan,
     _transport_steps,
     beat_sync_reach_pct,
+    glide_span,
     hoistable,
     pair_beat_sync_fold,
     play_start_bar,
@@ -104,7 +106,7 @@ def layout_of(
     out_stored, in_stored = _bpm(out_profile), _bpm(in_profile)
     out_j, in_j = _judged_bpm(out_profile), _judged_bpm(in_profile)
     out_ratio = out_j / out_stored
-    if plan.tempo_mode == "sync_to_out":
+    if plan.tempo_mode in ("sync_to_out", "glide_to_in"):
         fold = pair_beat_sync_fold(out_j, in_j, beat_sync_reach_pct(in_profile))
         ratio = out_j / in_j * fold
     elif plan.tempo_mode == "none":
@@ -164,6 +166,7 @@ def incoming_trim_command(plan: TransitionPlan) -> dict[str, Any] | None:
 #: (tests/transition_score/test_render_path.py renders every one and measures the change).
 #: The performance engine creates every deck with Master Tempo on (audio-engine.svelte.ts).
 LIVE_MASTER_TEMPO = True
+STEM_RENDER_REFUSAL = "stems are not in the offline renderer (plan 20-04)"
 RENDERED_CONTROLS: frozenset[str] = frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"})
 
 
@@ -179,6 +182,10 @@ def _refuse_controls_the_render_cannot_apply(plan: TransitionPlan) -> None:
         if event.name in FX_CONTROLS or event.name in FX_ACTIONS:
             raise RenderPlanError(
                 f"{event.name} at bar {event.at_bar:g} cannot be rendered offline: {TRANSITION_FX_REFUSAL}"
+            )
+        if event.name in STEM_CONTROLS:
+            raise RenderPlanError(
+                f"{event.name} at bar {event.at_bar:g} cannot be rendered offline: {STEM_RENDER_REFUSAL}"
             )
         if event.kind == "do":
             continue
@@ -202,6 +209,7 @@ def _refuse_follower_tempo_moves(plan: TransitionPlan) -> None:
     """
     why = {
         "sync_to_out": "in a synced plan live execution moves the outgoing leader instead",
+        "glide_to_in": "in a synced plan live execution moves the outgoing leader instead",
         "none": "the render end is counted at the incoming deck's starting rate",
     }[plan.tempo_mode]
     for event in plan.events:
@@ -277,6 +285,28 @@ def renders_at_start(event: PlanEvent, plan: TransitionPlan, layout: RenderLayou
     return plan.out.start_bar + event.at_bar <= layout.start_out_bar or hoistable(event, plan)
 
 
+def glide_ramps(plan: TransitionPlan, layout: RenderLayout) -> list[dict[str, Any]]:
+    """#10148: a glide_to_in plan's glide as explicit per-bar tempo ramps on BOTH decks (``plan.rs`` has no leader):
+    the incoming deck from its synced ratio to 1.0 and the outgoing one by the same factor, so they stay locked and
+    the incoming ends at its own tempo. Empty for any other mode."""
+    span = glide_span(plan)
+    if span is None:
+        return []
+    start, end = span
+    factor = 1.0 / layout.in_ratio
+    rows: list[dict[str, Any]] = []
+    bar = start
+    while bar < end - 1e-9:
+        step = min(1.0, end - bar)
+        done = (bar + step - start) / (end - start)
+        for deck, ratio in ((plan.out.deck, layout.out_ratio), (plan.in_.deck, layout.in_ratio)):
+            to = round(ratio * (1.0 + (factor - 1.0) * done), 9)
+            ramp = {"type": "tempo", "deck": deck, "to": to, "over": {"bars": round(step, 9), "deck": plan.out.deck}}
+            rows.append({"at": {"deck": plan.out.deck, "bar": round(plan.out.start_bar + bar, 9)}, "ramp": ramp})
+        bar += step
+    return rows
+
+
 def _require_absolute_audio_paths(*audio: Path) -> None:
     for path in audio:
         if not path.is_absolute():
@@ -324,11 +354,14 @@ def compile_render_plan(
         {"at": at0, "cmd": {"type": "master_tempo", "deck": out_deck, "enabled": LIVE_MASTER_TEMPO}},
         {"at": at0, "cmd": {"type": "master_tempo", "deck": in_deck, "enabled": LIVE_MASTER_TEMPO}},
     ]
-    if not math.isclose(layout.out_ratio, 1.0, rel_tol=0.0, abs_tol=1e-9):
+    glide = glide_ramps(plan, layout)
+    out_end = layout.out_ratio / layout.in_ratio if glide else layout.out_ratio
+    if not math.isclose(layout.out_ratio, 1.0, rel_tol=0.0, abs_tol=1e-9) or glide:
         r = round(layout.out_ratio, 9)
+        reach = max(r, out_end, key=lambda value: abs(value - 1.0))
         events.extend(
             [
-                {"at": at0, "cmd": {"type": "pitch_range", "deck": out_deck, "range": _pitch_range_for(r)}},
+                {"at": at0, "cmd": {"type": "pitch_range", "deck": out_deck, "range": _pitch_range_for(reach)}},
                 {"at": at0, "cmd": {"type": "tempo", "deck": out_deck, "ratio": r}},
             ]
         )
@@ -378,6 +411,7 @@ def compile_render_plan(
         at = at0 if early else {"deck": out_deck, "bar": round(out_bar, 9)}
         body = {"ramp": _ramp(event, out_deck)} if event.kind == "ramp" else {"cmd": _command(event)}
         timed.append((out_bar, index, {"at": at, **body}))
+    timed.extend((row["at"]["bar"], len(plan.events) + i, row) for i, row in enumerate(glide))
     events += [row for _, _, row in sorted(timed, key=lambda item: (item[0], item[1]))]
     # The whole render clock: outgoing pre-context, every plan bar (a late launch or a pause waits on this clock too),
     # then the incoming bars still to play after the plan, converted to outgoing bars.

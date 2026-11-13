@@ -1,0 +1,18 @@
+{
+  "status_code": 200,
+  "turnaround_ms": 11220.7,
+  "stable_id": "pilot-vocal-04",
+  "headers": {
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "1",
+    "x-ratelimit-reset": "1731340800"
+  },
+  "body": {
+    "modelVersion": "auto-tagging-2.0",
+    "tags": [{"tag": "Vocal", "score": 0.93}, {"tag": "House", "score": 0.7}],
+    "segments": [
+      {"start": 0, "end": 30000, "scores": {"vocals": 0.2}},
+      {"start": 30000, "end": 90000, "scores": {"vocals": 0.88}}
+    ]
+  }
+}

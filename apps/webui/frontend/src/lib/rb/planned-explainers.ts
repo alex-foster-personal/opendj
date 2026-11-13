@@ -34,7 +34,7 @@ export const NOT_BUILT_MARK = 'Not built yet';
  * carry.
  */
 export const PLANNED_CONTROLS: Record<string, string> = {
-	fx: 'FX panel - opens the beat-effects rack - delay, echo, reverb, roll - synced to the deck tempo. Separate from the per-channel Sound Color FX dial on the mixer.',
+	fx: 'FX panel - opens the beat FX unit: CH SELECT 1 to 4 or master, effect, beat division with its time in ms, level, ON/OFF, quantize and X-PAD. It opens once the fx.beat_rack flag is on.',
 	'split-view': 'Split view - splits the window so the browser and the decks each get half, instead of the decks owning the top and the browser the bottom.',
 	'2-deck-view': '2-deck view - hides decks 3 and 4 and gives decks 1 and 2 the full width, for a two-deck set.',
 	'grid-view': 'Grid view - lays all four decks out in a 2x2 grid with equal space, rather than stacking their waveforms.',
@@ -42,25 +42,19 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'free-badge': 'Free plan - is the licence tier this copy runs on. Everything on this screen is included; the badge marks where paid tiers will differ once there are any.',
 	'hot-cue-menu': 'Hot cue bank menu - switches this pad bank between hot cues, beat loops, beat jump, and sampler, the way a performance-pad mode selector does.',
 	'collection-bookmarks': 'Collection bookmarks - filters the library to tracks you have starred or tagged as favorites, without opening a playlist.',
-	'explorer-grid': 'Explorer - browses the collection as folders on disk instead of playlists, so you can load from the file tree.',
 	'itunes-library': 'iTunes library - shows playlists imported from Apple Music / iTunes as a source next to the rekordbox collection.',
 	'file-browser': 'File browser - opens loose audio files that are not yet in the collection, for a one-off load onto a deck.',
 	'beatport': 'Beatport - browses purchased or streaming Beatport tracks as a library source, with purchase links when a row is streaming-only.',
 	'video-output': 'Video output - sends the master or a chosen deck to a second display or projector for visuals, separate from the headphone cue.',
 	'cloud-lock': 'Cloud library lock - marks this collection as the rekordbox Cloud / private copy so another laptop cannot write it at the same time.',
-	'play-history': 'Play history - lists tracks played this session and previous nights, with the same columns as the collection table.',
 	'master-dropdown': 'Master playlist - pins which playlist the NEXT / compatible filter treats as the master source, independent of which deck is MASTER.',
-	'single-column-layout': 'Single-column library - hides the playlist tree and gives the track table the full browser width.',
-	'split-column-layout': 'Split-column library - stacks two track tables side by side so two playlists can be compared without switching panes.',
-	'pane-prev-track': 'Previous track in pane - moves the table selection up one row and, when a deck is focused, prepares that row as the next load.',
-	'pane-next-track': 'Next track in pane - moves the table selection down one row and, when a deck is focused, prepares that row as the next load.',
 	// Pin 552a810ba13b, second sweep (issue #4089): the remaining /performance
 	// controls that still showed the bare stub.
 	'mixer-knob': 'Mixer dial - a channel control (trim, EQ band, color filter, or headphone mix and level) whose audio path is not wired on this build. Once it is, drag, scroll or arrow keys turn it, double-click resets it, shift-click hands it the global scroll wheel and alt-click links it to its partner dial.',
 	'crossfade-curve': 'Crossfade curve - picks how the crossfader blends the A and B buses: bass swap trades the low end between the two sides at the center point, linear is a plain level fade. Only the magic crossfader curve plays today.',
 	'feedback-pin-visibility': "Other users' pins - shows the comment pins collaborators left on this screen beside your own and the agents', so shared review feedback appears in place. Needs community sharing first.",
 	'context-menu-unavailable': 'Library action - this menu command will act on the selected tracks or playlist. Its handler is not connected yet, so choosing it changes nothing.',
-	'track-table-filter': 'Column filter - narrows the track table to rows matching a value you pick per column (genre, key, BPM range, rating), like the rekordbox column filter funnel.',
+	'track-table-filter': 'Column filter - will gather every active column filter in one place, like the rekordbox Track Filter bar. The BPM range, the keys, the genres and the minimum rating have their own funnels on the BPM, Key, Genre and Rating headers, and My Tags on the Tags header.',
 	'pad-mode-unbuilt': 'Pad mode - this performance-pad mode (for example slicer, sampler or keyboard) will turn the eight pads into its own controls. It is listed so the menu matches the hardware, but it is not built yet, so picking it changes nothing.',
 };
 
@@ -75,6 +69,12 @@ export const BUILT_CONTROLS: Record<string, string> = {
 	'scope-view-1': 'Phase scope - replaces the waveform stack with one dial per deck whose dot turns once per bar, so decks in phase turn together and a drifting deck leads or lags.',
 	'scope-view-2': 'Phase meter - replaces the waveform stack with one arc per deck showing how far its beat is ahead of (right) or behind (left) the master deck, in ms, for correcting drift by eye.',
 	information: 'Track information - opens the full record for the focused deck (the deck you last clicked, else the master): tags, analysis provenance, play counts and the file path.',
+	// BEATFX-14: the built FX panel (fx.beat_rack on); `fx` above stays the flag-off explainer.
+	'fx-panel': 'FX panel - opens the beat FX unit, laid out like a DJM Beat FX section: CH SELECT 1 to 4 or M, effect, BEAT back and forward with the time in ms at the tempo, LEVEL/DEPTH, ON/OFF, QUANTIZE and an X-PAD you touch to play the effect while held. Separate from the Sound Color FX dial on the mixer.',
+	'pane-prev-track': 'Previous track in pane - moves the table selection up one row and scrolls it into view; with nothing selected it selects the last row. Agents: opendj browser_prev_track.',
+	'pane-next-track': 'Next track in pane - moves the table selection down one row and scrolls it into view; with nothing selected it selects the first row. Agents: opendj browser_next_track.',
+	'single-column-layout': 'Single-column library - hides the playlist tree and gives the track table the full browser width.',
+	'split-column-layout': 'Split-column library - stacks two track tables side by side so two playlists can be compared without switching panes. Click a table to make it the active pane; drag rows onto the other table to add them to its playlist. Agents: opendj library_split_column.',
 	'autoplay-two-track': 'Two-track AutoPlay - AutoPlay plays the set on decks 1 and 2 only, two tracks at a time: each handoff loads the other of the two, and decks 3 and 4 stay yours for samples or a manual load. Off: AutoPlay may use any free deck when the partner deck is busy.'
 };
 

@@ -35,9 +35,9 @@ from typing import Literal
 
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.errors import _open_ro
-from apps.adapters.rekordbox.paths import is_streaming_path, resolve_asset_path
+from apps.adapters.rekordbox.paths import is_streaming_path
 from apps.shared import fs_residency, remote_status
-from apps.shared.platform_paths import PathMap, load_path_map, may_remap
+from apps.shared.platform_paths import PathMap, load_path_map, may_remap, resolve_asset_path
 from apps.shared.state import db as state_db
 from apps.shared.state import locations as track_locations
 from apps.shared.state.locations import ID_BIND_BATCH
@@ -375,7 +375,11 @@ def bulk_probe_paths(
         _recent_answers(rest, index, now, path_map, namespace) if budget.serves_recent else {}
     )
     stat_now, background = _triage(rest, index, budget, out, recent, path_map)
-    resolved = {path: resolve_asset_path(path).resolved for path in stat_now}
+    # One map for the whole pass: a resolve with no map reloads and re-validates
+    # path-map.json per path, which starves every other thread on a full scan.
+    resolved = {
+        path: resolve_asset_path(path, path_map=path_map).resolved for path in stat_now
+    }
     measured: dict[str, PathProbeResult] = {}
     for path, target in resolved.items():
         stat = _stat_size(target)

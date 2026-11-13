@@ -15,20 +15,50 @@ surface. Since Wed 4 Nov 2026 (ADR-NEW-bundle-budget-pr-delta) that ceiling is r
 
 - A **pull request** is charged by its own delta: each surface's bytes minus the same surface in
   main's measurement at the merge base, against the PR's own allowance, the sum of its own charge
-  files (default 0), plus a 128 B gzip build-noise floor per surface (`PR_DELTA_NOISE_BYTES`; two builds of the same source differ by 1 to 21 B). The absolute ceiling is only a warning on a PR, so main being over never reds
-  a PR that did not grow anything. Main's measurement is published by every push to main
+  files (default 0), plus a per-surface gzip build-noise floor (below). The absolute ceiling is
+  only a warning on a PR, so main being over never reds a PR that did not grow anything. Main's measurement is published by every push to main
   (`bundle-measure-<sha>`); when it is not there yet the job builds the merge base and says so.
 - A **push to main** measures, publishes and warns; the **nightly** schedule keeps the absolute
   ceiling and opens the issue "Bundle budget ceiling crossed on main (nightly ratchet)" on a
   crossing. Main's absolute size is a nightly ratchet; the repair is a rebaseline (below). Before Tue 3 Nov 2026 every PR that grew a surface rewrote one shared `limit:` number, so
 that file sat in 60 of 293 conflicting re-merges of main in a week. A PR now only ADDS a file.
 
+## Build-noise floor
+
+Two builds of the same source do not gzip to the same bytes. Content-hash file names change from
+head to head, and gzip compresses those names (and the import specifiers that carry them)
+differently each time. The spread is deterministic per head, so re-running CI never clears it,
+and it grows with the number of files on a surface:
+
+| Measured on | Same-source spread (gzip) |
+|:--|:--|
+| every surface, #8534 run 42043423398 (Thu 5 Nov 2026) | 1 to 21 B |
+| other-lazy (about 160 files, about 557 KB), PRs #14810, #13662, #13678, none changing frontend source | 72, 156 and 217 B |
+
+A fixed 128 B floor reds the 156 and 217 B spreads as growth and forced a 1 KiB charge file per branch,
+a wasted CI round trip each time. The floor is therefore per surface, scaled to main's
+measurement at the merge base:
+
+    noise floor = max(128 B, ceil(0.05% x main gzip bytes))
+
+| Surface (main gzip, Fri 13 Nov 2026, approximate) | Floor |
+|:--|--:|
+| marker surfaces (ai-sidebar, set-notes-editor and the rest, all under 82 KB) | 128 B |
+| library (about 325 KB) | about 163 B |
+| performance (about 399 KB) | about 200 B |
+| other-lazy (about 557 KB) | about 279 B |
+
+The floor is 128 B on every surface up to 256,000 B. On other-lazy it sits above the largest
+spread seen there (217 B) and still well under a real feature (a KiB and up). `noiseFloorBytes` in
+`scripts/bundle-budget-load.mjs` is the one definition; the gate and `pnpm bundle:charge` both
+call it, and the gate prints `noise <N>` on every surface's delta line.
+
 ## Before you push a frontend change
 
 Run `pnpm bundle:charge` from `apps/webui/frontend` on your branch. It builds this tree and the
 merge base with `origin/main` (or reads main's published measurement with `--baseline <json>`),
-then writes `budgets/<surface>/charges/<branch>.json` for every surface that grew beyond the
-128 B build-noise floor and prints one line per surface (`library +1500 charged`,
+then writes `budgets/<surface>/charges/<branch>.json` for every surface that grew beyond its
+build-noise floor and prints one line per surface (`library +1500 charged`,
 `performance +12 within noise`). Commit the written files. It edits no base and no other PR's
 charge. `--skip-build` reuses `./build`. Fill in `reason` and `payback` if the defaults do not say
 enough.

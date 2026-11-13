@@ -510,3 +510,51 @@ def test_undo_restores_both_sources(tmp_path: Any) -> None:
         assert stored.for_source("own") == grid_edit.IDENTITY
     finally:
         conn.close()
+
+
+# ---------- a beat or bar 1 at the playhead (GRIDEDIT-10115) -----------------
+
+
+def _grid_120_beat3_at_10s() -> list[dict[str, Any]]:
+    """A 120 BPM grid (one line every 0.5 s) whose beat at 10.000 s is bar position 3."""
+    return [{"t": k * 0.5, "n": ((k - 18) % 4) + 1, "bpm": 120.0} for k in range(64)]
+
+
+def _line_at(beats: list[dict[str, Any]], t_s: float) -> dict[str, Any]:
+    """The served line nearest ``t_s``."""
+    return min(beats, key=lambda beat: abs(float(beat["t"]) - t_s))
+
+
+@pytest.mark.requirement("GRIDEDIT-10115")
+def test_downbeat_at_moves_the_nearest_line_and_makes_it_bar_1() -> None:
+    """[if] downbeat at 10.120 s on a 120 BPM grid with beat 3 at 10 s [then] +120 ms and n=1 there, [else stop]."""
+    beats = _grid_120_beat3_at_10s()
+    assert _line_at(beats, 10.0)["n"] == 3, "positive control: the fixture's beat at 10 s is beat 3"
+    edit = grid_edit.edit_for_downbeat_at(beats, grid_edit.IDENTITY, 10.120)
+    assert edit.offset_ms == pytest.approx(120.0)
+    served = grid_edit.apply_to_beats(beats, edit)
+    line = _line_at(served, 10.120)
+    assert (line["t"], line["n"]) == (pytest.approx(10.120), 1)
+    assert grid_edit.edit_for_downbeat_at(beats, edit, 10.120) == edit, "a second call on bar 1 is a no-op"
+
+
+@pytest.mark.requirement("GRIDEDIT-10115")
+def test_beat_at_moves_the_offset_only_and_composes_with_the_stored_edit() -> None:
+    """[if] beat at 10.120 s [then] only the offset moves, from the stored edit's grid, [else stop]."""
+    beats = _grid_120_beat3_at_10s()
+    stored = grid_edit.make_edit(20.0, 1)
+    edit = grid_edit.edit_for_beat_at(beats, stored, 10.120)
+    assert (edit.offset_ms, edit.beat_shift) == (pytest.approx(120.0), 1)
+    assert _line_at(grid_edit.apply_to_beats(beats, edit), 10.120)["t"] == pytest.approx(10.120)
+
+
+@pytest.mark.requirement("GRIDEDIT-10115")
+def test_at_with_no_line_in_reach_is_refused_409() -> None:
+    """[if] the grid is empty or the move passes the offset limit [then] 409 GRID_EDIT_NO_BEAT_NEAR, [else stop]."""
+    with pytest.raises(grid_edit.GridEditError) as empty:
+        grid_edit.edit_for_beat_at([], grid_edit.IDENTITY, 1.0)
+    assert (empty.value.status, empty.value.code) == (409, "GRID_EDIT_NO_BEAT_NEAR")
+    near_limit = grid_edit.make_edit(450.0, 0)
+    with pytest.raises(grid_edit.GridEditError) as past:
+        grid_edit.edit_for_beat_at(_grid_120_beat3_at_10s(), near_limit, 10.45 + 0.2)
+    assert (past.value.status, past.value.code) == (409, "GRID_EDIT_NO_BEAT_NEAR")

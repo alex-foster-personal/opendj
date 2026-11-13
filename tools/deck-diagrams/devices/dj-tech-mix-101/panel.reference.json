@@ -9,7 +9,8 @@
  },
  "trace": {
   "source": "DJ-Tech MIX-101 User Manual (ManualsLib 1110404), Main Features page top-panel product figure",
-  "source_pdf_sha256": "3921a49fd4ca60c66c995ff4bd8a32524160d1b488a5c8a3291d2d7149e94ab7",
+  "source_pdf_sha256": null,
+  "source_pdf_note": "source PDF bytes unavailable: traced from the ManualsLib page-3 image (source_image_sha256); no PDF digest",
   "source_image_sha256": "5fd0a64d5aa9672627d5032f9f10ec531793ee15dbda9e65550e46fe39478344",
   "provenance": "https://www.manualslib.com/manual/1110404/Dj-Tech-Mix-101.html?page=3",
   "image_px": [

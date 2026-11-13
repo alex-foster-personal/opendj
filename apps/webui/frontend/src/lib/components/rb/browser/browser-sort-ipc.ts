@@ -3,15 +3,22 @@ export const BROWSER_SORT_KEYS = [
 	'plays',
 	'title',
 	'artist',
+	'album',
 	'key',
 	'bpm',
 	'rating',
+	'colour',
 	'comments',
 	'time',
 	'energy',
 	'genre',
 	'filename',
 	'location',
+	'date_added',
+	'bitrate',
+	'kind',
+	'last_played',
+	'played_at',
 	'lyrics',
 	'grid',
 	'autoplay',
@@ -24,6 +31,22 @@ export const BROWSER_SORT_KEYS = [
 
 export type SortKey = (typeof BROWSER_SORT_KEYS)[number];
 export type SortDir = 1 | -1;
+
+/** LIBUX-13803: keys whose first header click sorts descending (rekordbox Date Added: newest first). */
+const DESC_FIRST_SORT_KEYS: ReadonlySet<SortKey> = new Set<SortKey>([
+	'date_added',
+	'last_played'
+]);
+
+/** The direction a key's first header click sorts in: -1 for newest-first keys, else 1. */
+export function firstSortDir(key: SortKey): SortDir {
+	return DESC_FIRST_SORT_KEYS.has(key) ? -1 : 1;
+}
+
+/** The header tooltip's click cycle for a key, e.g. 'asc -> desc -> clear'. */
+export function sortCycleHint(key: SortKey): string {
+	return firstSortDir(key) === -1 ? 'newest -> oldest -> clear' : 'asc -> desc -> clear';
+}
 
 interface BrowserSortSnapshot {
 	sort_key: SortKey | null;

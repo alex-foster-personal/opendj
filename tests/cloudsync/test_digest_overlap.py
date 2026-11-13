@@ -25,7 +25,8 @@ the two in series again. The controls also assert, each against its own
 overshoot:
 
 * the local digest is still taken inside one read transaction (ADR 08 6b);
-* the ``digest`` phase still times the hub fetch alone, not the local hash;
+* the ``digest`` phase still times the hub fetch alone, not the local hash,
+  and the sibling ``local_digest`` phase carries the local hash;
 * a real hub refusal, and a real local database error, each propagate as
   themselves, and leave no worker thread behind; the failing local digest
   also waits for the in-flight hub request instead of abandoning it.
@@ -240,6 +241,7 @@ def test_the_digest_phase_times_the_hub_fetch_alone(
     spoke_conn: Callable[[Path], sqlite3.Connection],
 ) -> None:
     print("if cloudsync_digest_s counts the local hash as well as the hub fetch, then broken")
+    print("if cloudsync_local_digest_s misses a slow local hash, then broken")
     with TestClient(hub_app) as http:
         spoke, machine_id = _synced_spoke(tmp_path, http, SMALL_LIBRARY)
         conn = spoke_conn(spoke)
@@ -247,6 +249,10 @@ def test_the_digest_phase_times_the_hub_fetch_alone(
         timer = PhaseTimer()
         client._digests(TestClientTransport(http), conn, machine_id, timer=timer)
     _assert_met(probe)
+    local_s = timer._phase_s["local_digest"]
+    assert local_s >= SLOW_LOCAL_S, (
+        f"local_digest phase {local_s:.3f} s against a {SLOW_LOCAL_S} s local hash: the span must cover it"
+    )
     digest_s = timer._phase_s["digest"]
     assert 0 < digest_s < SLOW_LOCAL_S / 2, (
         f"digest phase {digest_s:.3f} s against a {SLOW_LOCAL_S} s local hash: the span must cover the hub fetch only"

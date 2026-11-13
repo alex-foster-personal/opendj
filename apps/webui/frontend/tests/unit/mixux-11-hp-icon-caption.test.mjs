@@ -34,7 +34,7 @@ after(() => {
 function renderCluster() {
 	const noop = () => {};
 	const props = Object.fromEntries(
-		['onmix', 'onlevel', 'ondelay', 'onrefresh', 'onacquire', 'onselect', 'onmaster', 'oninput', 'onmode', 'oncalibrate', 'onAlignmentMode'].map((name) => [name, noop])
+		['onmix', 'onlevel', 'ondelay', 'onrefresh', 'onacquire', 'onselect', 'onmaster', 'oninput', 'onmode', 'oncalibrate', 'onAlignmentMode', 'onprobe'].map((name) => [name, noop])
 	);
 	return ssr.render(ssr.Panel, { props: { state: ssr.mixerState.headphones, ...props } }).body;
 }

@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 483140,
+  "measured_with_pr": 487559,
+  "sha": "f095e4c6f2",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12538-selector-parent-cycle grows the performance surface; measured +4419 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

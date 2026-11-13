@@ -14,7 +14,7 @@ import pytest
 
 from apps.autodj.http import build_service
 from apps.autodj.plan import parse_plan
-from apps.autodj.profile import heard_profile
+from apps.autodj.profile import heard_profile, profile_from_payloads
 from apps.autodj.propose import propose_transition
 from apps.autodj.render_plan import compile_render_plan, layout_of
 from apps.transition_score.lanes import (
@@ -24,22 +24,29 @@ from apps.transition_score.lanes import (
     build_lanes,
     deck_peaks,
     knob_curves,
+    lane_energy,
     playing_spans,
 )
-from tests.autodj.fixtures import CHORUS, INTRO, OUTRO, profile
+from tests.autodj.fixtures import anlz_payload, profile, track_row
+from tests.transition_score.arrangements import ARRANGEMENT, IN_ARRANGEMENT
 
-ARRANGEMENT = ((INTRO, 16, 0.4, 0.3, False), (CHORUS, 16, 1.0, 1.0, True), (OUTRO, 16, 0.4, 0.8, False))
 ANCHOR = Path(Path.cwd().anchor)
 
 
 def _case(style: str):  # type: ignore[no-untyped-def]
     out_profile = profile("fixture-out", bpm=124.0, arrangement=ARRANGEMENT)
-    in_profile = profile("fixture-in", bpm=124.0, key="9A", arrangement=ARRANGEMENT)
+    in_profile = profile("fixture-in", bpm=124.0, key="9A", arrangement=IN_ARRANGEMENT)
     proposals = propose_transition(out_profile, in_profile, out_deck=1, in_deck=2, top=12)["proposals"]
     plan = next(parse_plan(p["plan"]) for p in proposals if p["plan"]["style"] == style)
     layout = layout_of(plan, out_profile, in_profile, 4)
     document = compile_render_plan(plan, out_profile, in_profile, 4, out_audio=ANCHOR, in_audio=ANCHOR)
     return plan, out_profile, layout, document
+
+
+def _rise_start(fader: list[tuple[float, float]]) -> float:
+    """Time of the last 0.0 breakpoint before the incoming fader first opens (the kill is hoisted to t0, #12872)."""
+    rise = next(i for i, (_, v) in enumerate(fader) if v > 0.0 and any(w == 0.0 for _, w in fader[:i]))
+    return next(t for t, v in reversed(fader[:rise]) if v == 0.0)
 
 
 def _write_wav(path: Path, samples: np.ndarray, rate: int = 48000) -> None:
@@ -77,7 +84,7 @@ def test_incoming_fader_curve_rises_from_zero_on_the_render_clock() -> None:
     assert values[-1] == pytest.approx(1.0), "if the incoming fader does not end at unity then a ramp was lost"
     times = [t for t, _ in fader]
     assert times == sorted(times), "if breakpoints go backwards in time then events were placed on the wrong clock"
-    first_zero = times[values.index(0.0)]
+    first_zero = _rise_start(fader)
     expected = (out_profile.time_of_bar(plan.out.start_bar) - layout.start_out_s) / layout.out_ratio
     assert first_zero == pytest.approx(expected, abs=1e-3), "if bar 0 is not the plan's first bar then lines drift"
 
@@ -249,16 +256,14 @@ def test_lanes_follow_the_jobs_shared_start_not_the_plans_own() -> None:
     plan, out_profile, layout, document = _case("crossfade")
     own = knob_curves(document, plan.out.deck, out_profile, layout)[plan.in_.deck]["fader"]
     earlier = layout.start_out_bar - 1.0
-    assert shared_start_out_bar(
-        [plan], out_profile, out_profile, 4, autodj=build_service()
-    ) == layout.start_out_bar
+    assert shared_start_out_bar([plan], out_profile, out_profile, 4, autodj=build_service()) == layout.start_out_bar
     shifted_layout = layout_of(plan, out_profile, out_profile, 4, start_out_bar=earlier)
     shifted_doc = compile_render_plan(
         plan, out_profile, out_profile, 4, out_audio=ANCHOR, in_audio=ANCHOR, start_out_bar=earlier
     )
     shifted = knob_curves(shifted_doc, plan.out.deck, out_profile, shifted_layout)[plan.in_.deck]["fader"]
-    first_zero = next(t for t, v in own if v == 0.0)
-    shifted_zero = next(t for t, v in shifted if v == 0.0)
+    first_zero = _rise_start(own)
+    shifted_zero = _rise_start(shifted)
     assert shifted_zero - first_zero == pytest.approx(out_profile.bar_s / layout.out_ratio, abs=1e-3), (
         "if an earlier shared start does not move the lines by the bars between then lanes drift from the audio"
     )
@@ -268,7 +273,7 @@ def test_knob_breakpoints_use_render_clock_when_outgoing_is_heard_pitched() -> N
     """[if] the outgoing deck is heard faster than stored [then] lane times divide by out_ratio, [else stop]."""
     out_stored = profile("fixture-out-heard-lane", bpm=120.0, arrangement=ARRANGEMENT)
     out_heard = heard_profile(out_stored, heard_bpm=127.2)
-    in_profile = profile("fixture-in-heard-lane", bpm=124.0, key="9A", arrangement=ARRANGEMENT)
+    in_profile = profile("fixture-in-heard-lane", bpm=124.0, key="9A", arrangement=IN_ARRANGEMENT)
     proposals = propose_transition(out_heard, in_profile, out_deck=1, in_deck=2, top=12)["proposals"]
     plan = next(parse_plan(p["plan"]) for p in proposals if p["plan"]["style"] == "crossfade")
     layout = layout_of(plan, out_heard, in_profile, 4)
@@ -276,9 +281,54 @@ def test_knob_breakpoints_use_render_clock_when_outgoing_is_heard_pitched() -> N
     document = compile_render_plan(plan, out_heard, in_profile, 4, out_audio=ANCHOR, in_audio=ANCHOR)
     curves = knob_curves(document, plan.out.deck, out_stored, layout)
     fader = curves[plan.in_.deck]["fader"]
-    values = [v for _, v in fader]
-    times = [t for t, _ in fader]
-    first_zero = times[values.index(0.0)]
+    first_zero = _rise_start(fader)
     plain_layout = dataclasses.replace(layout, out_ratio=1.0)
     expected_plain = out_stored.time_of_bar(plan.out.start_bar) - plain_layout.start_out_s
     assert first_zero == pytest.approx(expected_plain / layout.out_ratio, abs=1e-2)
+
+
+# ----- energy provenance per source profile (#12496, fan-out 17 sections 5a, 5d, 6) ------------------------------
+def _energy_profile(stable_id: str, evidence: str, level: int | None = None):  # type: ignore[no-untyped-def]
+    """A profile parsed from a served anlz document carrying MIK energy, only the waveform, or neither."""
+    anlz = anlz_payload(stable_id, bpm=124.0, arrangement=ARRANGEMENT)
+    if evidence == "mik":
+        end_s = anlz["beatgrid"]["beats"][-1]["t"] + 1.0
+        anlz |= {
+            "energy_source": "mik",
+            "energy_level": level,
+            "energy_segments": [
+                {"start_s": 0.0, "end_s": end_s, "level": level, "source": "mik", "start_clamped": False}
+            ],
+        }
+    elif evidence == "none":
+        anlz["waveform"] = None
+    bars = sum(row[1] for row in ARRANGEMENT)
+    return profile_from_payloads(anlz, track_row(stable_id, bpm=124.0, bars=bars))
+
+
+@pytest.mark.requirement("PERFORMANCE-SCREEN-14653")
+def test_both_mik_profiles_state_mik_and_give_the_cross_track_step() -> None:
+    """[if] both track profiles have MIK energy [then] both say mik and the lanes give the MIK step, [else stop]."""
+    energy = lane_energy(_energy_profile("out-mik", "mik", 6), _energy_profile("in-mik", "mik", 7))
+    assert (energy.out.source, energy.in_.source) == ("mik", "mik")
+    assert (energy.out.mik_level, energy.in_.mik_level, energy.cross_track_step) == (6, 7, 1)
+    assert "comparable" in energy.note
+
+
+@pytest.mark.requirement("PERFORMANCE-SCREEN-14653")
+def test_one_relative_profile_states_relative_and_never_compares_across_tracks() -> None:
+    """[if] one profile has only relative energy [then] it says relative and no cross-track step is given, [else stop]."""
+    energy = lane_energy(_energy_profile("out-mik", "mik", 6), _energy_profile("in-rel", "relative"))
+    assert (energy.out.source, energy.in_.source) == ("mik", "relative")
+    assert energy.in_.mik_level is None
+    assert energy.cross_track_step is None, "if relative energy yields a step then it overstates comparability"
+    assert "not compared" in energy.note and "in-rel has relative energy only" in energy.note
+
+
+@pytest.mark.requirement("PERFORMANCE-SCREEN-14653")
+def test_profiles_without_energy_evidence_state_none_and_no_step() -> None:
+    """[if] neither profile has energy evidence [then] both say none and no cross-track step is given, [else stop]."""
+    energy = lane_energy(_energy_profile("out-bare", "none"), _energy_profile("in-bare", "none"))
+    assert (energy.out.source, energy.in_.source) == ("none", "none")
+    assert energy.cross_track_step is None
+    assert "out-bare has no energy evidence" in energy.note and "in-bare has no energy evidence" in energy.note

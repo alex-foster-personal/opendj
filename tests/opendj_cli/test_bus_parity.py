@@ -20,11 +20,21 @@
 from __future__ import annotations
 
 import re
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
 
-from apps.opendj_cli.catalog import BEAT_FX_EFFECT_VALUES, PAD_MODE_VALUES, RAMPABLE_TYPES, VERBS, Expectation
+from apps.opendj_cli.catalog import (
+    BEAT_FX_EFFECT_VALUES,
+    BEAT_FX_TRIPLET_BEAT_VALUES,
+    BEAT_JUMP_SIZE_VALUES,
+    PAD_MODE_VALUES,
+    RAMPABLE_TYPES,
+    TRANSITION_PRESET_VALUES,
+    VERBS,
+    Expectation,
+)
 from apps.opendj_cli.confirm import checks_for, verdict
 from apps.opendj_cli.orders import parse_script
 from apps.opendj_cli.verbs import (
@@ -46,11 +56,12 @@ _SAMPLE_TOKENS = (
     "A", "bad", "beat", "low", "next", "top", "vocal",
     "beatgrid", "own", "practice", "hybrid", "pickup", "tri-band", "mono-dev", "mono", "auto", "ai",
     "phase-meter", "smooth", "in", "elastic", "tone", "sections", "space", "stems", "exact", "move", "halo", "half",
-    "hot-cue",
+    "hot-cue", "chirp",
     "performance", "browser.tree", "300", "open", "second-screen", "bars", "beats_bars", "grid_lines", "off",
     "center",
     "sides",
-    "echo", "helix", "spiral", "master",
+    "echo", "helix", "spiral", "master", "two-deck", "1-3", "bass-swap-8", "red", "jobs",
+    "{}",
 )
 
 
@@ -272,6 +283,48 @@ def test_set_perf_view_and_show_pads_build_the_bus_commands() -> None:
         parse_invocation(["set_perf_view", "grid"])
 
 
+def test_set_deck_layout_builds_the_bus_command_and_refuses_bad_values() -> None:
+    """[if] the top bar's deck layout toggle has no verb [then] an agent cannot pick two or four decks, [else stop]."""
+    assert parse_invocation(["set_deck_layout", "two-deck"]).command == {"type": "set_deck_layout", "layout": "two-deck"}
+    assert parse_invocation(["set_deck_layout", "four-deck"]).command == {
+        "type": "set_deck_layout",
+        "layout": "four-deck",
+    }
+    with pytest.raises(InvocationError, match="two-deck\\|four-deck"):
+        parse_invocation(["set_deck_layout", "three-deck"])
+
+
+def test_toggle_large_library_builds_the_bus_command() -> None:
+    """[if] right Option's large library has no verb [then] an agent cannot toggle it, [else stop]."""
+    assert parse_invocation(["toggle_large_library"]).command == {"type": "toggle_large_library"}
+
+
+@pytest.mark.requirement("LYR-14854")
+@pytest.mark.parametrize(("token", "enabled"), [("on", True), ("true", True), ("off", False), ("false", False)])
+def test_set_lyrics_global_builds_the_bus_command(token: str, enabled: bool) -> None:
+    """[if] opendj set_lyrics_global on|off|true|false does not build the LYR button's typed command [then] parity breaks, [else stop]."""
+    assert parse_invocation(["set_lyrics_global", token]).command == {"type": "set_lyrics_global", "enabled": enabled}
+    assert parse_invocation(["set_lyrics_global", f"enabled={token}"]).command == {
+        "type": "set_lyrics_global", "enabled": enabled,
+    }
+
+
+@pytest.mark.requirement("LYR-14854")
+@pytest.mark.parametrize("tokens", [[], ["maybe"], ["on", "extra"], ["on", "deck=1"], ["on", "overlay=lyrics"]])
+def test_set_lyrics_global_refuses_missing_invalid_and_extra_arguments(tokens: list[str]) -> None:
+    """[if] set_lyrics_global with a missing, non-boolean or extra argument reaches the bus [then] an agent writes a bad pref, [else stop]."""
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_lyrics_global", *tokens])
+
+
+@pytest.mark.requirement("LYR-14854")
+def test_set_lyrics_global_is_discoverable_in_the_verb_list() -> None:
+    """[if] --list-verbs does not name set_lyrics_global with its one enabled field [then] agents cannot find it, [else stop]."""
+    rows = [row for row in describe_verbs() if row["command"] == "set_lyrics_global"]
+    assert len(rows) == 1
+    assert ts_contract.command_fields()["set_lyrics_global"] == {"enabled": False}
+
+
 def test_pad_mode_builds_the_bus_command_and_tracks_catalog_ids() -> None:
     """[if] pad_mode is not reachable from the CLI or its enum drifts from the catalog [then] agent parity is broken, [else stop]."""
     assert parse_invocation(["pad_mode", "2", "pad-fx-1"]).command == {
@@ -284,6 +337,22 @@ def test_pad_mode_builds_the_bus_command_and_tracks_catalog_ids() -> None:
     catalog_path = Path("apps/webui/frontend/src/lib/rb/pad-mode-catalog.ts")
     catalog_ids = re.findall(r"\{ id: '([a-z0-9-]+)'", catalog_path.read_text(encoding="utf-8"))
     assert list(PAD_MODE_VALUES) == catalog_ids
+
+
+@pytest.mark.requirement("OJ-14010")
+def test_transition_preset_builds_the_bus_command_and_tracks_the_ts_preset_ids() -> None:
+    """[if] transition_preset misses the CLI, takes an unknown id or drifts from TRANSITION_PRESETS [then] parity breaks, [else stop]."""
+    for preset in TRANSITION_PRESET_VALUES:
+        assert parse_invocation(["transition_preset", preset]).command == {
+            "type": "transition_preset",
+            "preset": preset,
+        }
+    with pytest.raises(InvocationError, match="bass-swap-8"):
+        parse_invocation(["transition_preset", "echo-out-8"])
+    source = (REPO_ROOT / "apps/webui/frontend/src/lib/rb/transition-presets.ts").read_text(encoding="utf-8")
+    ts_ids = re.findall(r"^\t\tid: '([a-z0-9-]+)',$", source, flags=re.MULTILINE)
+    assert tuple(ts_ids) == TRANSITION_PRESET_VALUES
+    assert ts_contract.command_fields()["transition_preset"] == {"preset": False}
 
 
 def test_set_deck_number_art_builds_the_bus_command() -> None:
@@ -305,6 +374,22 @@ def test_mixer_placement_builds_the_bus_command() -> None:
     }
     with pytest.raises(InvocationError, match=r"center\|sides"):
         parse_invocation(["mixer_placement", "left"])
+
+
+@pytest.mark.requirement("MIDI-13228")
+def test_mixer_deck_pair_select_builds_the_bus_command() -> None:
+    """[if] an agent sends mixer_deck_pair_select [then] the CLI builds the same bus command MIDI dispatches (#13228), [else stop]."""
+    assert parse_invocation(["mixer_deck_pair_select", "2-4"]).command == {
+        "type": "mixer_deck_pair_select",
+        "pair": "2-4",
+    }
+    assert parse_invocation(["mixer_deck_pair_select", "1-3", "3"]).command == {
+        "type": "mixer_deck_pair_select",
+        "pair": "1-3",
+        "deck": 3,
+    }
+    with pytest.raises(InvocationError, match=r"1-3\|2-4"):
+        parse_invocation(["mixer_deck_pair_select", "1-2"])
 
 
 def test_autoplay_verdict_builds_the_bus_command() -> None:
@@ -658,6 +743,18 @@ def test_beat_jump_size_builds_the_bus_command_for_every_rekordbox_size() -> Non
         parse_invocation(["beat_jump_size", "1", "3"])
 
 
+@pytest.mark.requirement("DECKUX-14853")
+def test_beat_jump_size_catalog_tracks_the_typed_command() -> None:
+    """[if] the CLI size list, its usage hint or its fields drift from BEAT_JUMP_SIZES and the TS union [then] parity breaks, [else stop]."""
+    source = (REPO_ROOT / "apps/webui/frontend/src/lib/rb/beat-jump-size.svelte.ts").read_text(encoding="utf-8")
+    match = re.search(r"^export const BEAT_JUMP_SIZES = \[([^\]]+)\] as const;$", source, flags=re.MULTILINE)
+    assert match is not None, "if BEAT_JUMP_SIZES is not found in beat-jump-size.svelte.ts then this guard is blind"
+    assert tuple(float(token) for token in match.group(1).split(",")) == BEAT_JUMP_SIZE_VALUES
+    hint = "|".join(f"{size:g}" for size in BEAT_JUMP_SIZE_VALUES)
+    assert VERBS["beat_jump_size"].usage() == f"<deck:1-4> <beats:{hint}>"
+    assert ts_contract.command_fields()["beat_jump_size"] == {"deck": False, "beats": False}
+
+
 def test_color_fx_all_reaches_every_channel_as_one_command() -> None:
     """COLORFX-13: deck=all is color_fx-only and reaches the bus command agents send."""
     assert parse_invocation(["color_fx", "all", "space"]).command == {
@@ -695,24 +792,17 @@ def test_beat_jump_accepts_a_half_beat_and_refuses_other_fractions() -> None:
 
 @pytest.mark.requirement("FXECHO-10722")
 def test_beat_fx_effect_values_match_ts_catalog() -> None:
-    """[if] BEAT_FX_EFFECT_VALUES drifts from TIME_FX_BUILT_EFFECT_NAMES [then] agent parity breaks, [else stop]."""
+    """[if] BEAT_FX_EFFECT_VALUES drifts from the beat FX registry names [then] agent parity breaks, [else stop]."""
 
+    effects_dir = REPO_ROOT / "apps/webui/frontend/src/lib/rb/fx/beat-fx-effects"
     catalog_path = REPO_ROOT / "apps/webui/frontend/src/lib/rb/fx/time-fx-catalog.ts"
-    built: list[str] = []
-    block_name: str | None = None
-    block_built = False
-    for line in catalog_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("name:"):
-            block_name = stripped.split("'")[1]
-            block_built = False
-        elif stripped == "builtOnMain: true," and block_name is not None:
-            block_built = True
-        elif (stripped.startswith("}),") or stripped == "})") and block_name is not None:
-            if block_built:
-                built.append(block_name)
-            block_name = None
-    assert tuple(built) == BEAT_FX_EFFECT_VALUES
+    registered: list[str] = []
+    for stem in re.findall(r"^import '\./([\w-]+)';$", (effects_dir / "index.ts").read_text(encoding="utf-8"), re.M):
+        # time-effects.ts registers every time catalog row; any other effect file names itself.
+        source = catalog_path if stem == "time-effects" else effects_dir / f"{stem}.ts"
+        registered += re.findall(r"^\s*name: '(\w+)',$", source.read_text(encoding="utf-8"), re.M)
+    assert registered, "no beat FX effects found in the registry"
+    assert tuple(registered) == BEAT_FX_EFFECT_VALUES
 
 
 def test_beat_fx_cli_builds_the_bus_command() -> None:
@@ -722,3 +812,126 @@ def test_beat_fx_cli_builds_the_bus_command() -> None:
         "effect": "helix",
         "enabled": True,
     }
+
+
+# --- WAVEQS-8348e (issue #12521): the popover switches that gained the overlay verb ---
+
+
+@pytest.mark.requirement("WAVEQS-8348e")
+@pytest.mark.parametrize("overlay", ["sections", "lyrics", "lyrics_scrub", "jog_radial"])
+@pytest.mark.parametrize("enabled", [True, False])
+def test_set_waveform_overlay_cli_builds_each_popover_switch(overlay: str, enabled: bool) -> None:
+    """[if] the CLI sets a popover overlay on or off [then] the bus command carries it, [else stop]."""
+    word = "true" if enabled else "false"
+    assert parse_invocation(["set_waveform_overlay", overlay, word]).command == {
+        "type": "set_waveform_overlay", "overlay": overlay, "enabled": enabled,
+    }
+
+
+@pytest.mark.requirement("WAVEQS-8348e")
+@pytest.mark.parametrize("overlay", ["beats", "lyric_scrub", "scrub"])
+def test_set_waveform_overlay_cli_refuses_an_unknown_overlay(overlay: str) -> None:
+    """[if] the CLI gets an overlay name the bus does not know [then] InvocationError, [else stop]."""
+    with pytest.raises(InvocationError):
+        parse_invocation(["set_waveform_overlay", overlay, "true"])
+
+
+@pytest.mark.requirement("TRANSAI-14006")
+def test_stem_gain_accepts_the_other_part() -> None:
+    """[if] opendj stem_gain --deck 1 --stem other --value 0 parses [then] it builds the stem_gain other command, [else stop]."""
+    parsed = parse_invocation(["stem_gain", "--deck", "1", "--stem", "other", "--value", "0"])
+    assert parsed.command == {"type": "stem_gain", "deck": 1, "stem": "other", "value": 0.0}
+    assert parsed.verb.observes[0].path == ("decks", "{deck}", "stems", "controls", "{stem}", "gain")
+
+
+@pytest.mark.requirement("BEATFX-14616")
+def test_beat_fx_cli_sends_time_ms_and_notes_range_and_exclusivity() -> None:
+    """[if] opendj beat_fx time_ms=375 does not reach the bus as time_ms, or the note lacks 1..4000 and beats [then] CLI parity breaks, [else stop]."""
+    assert parse_invocation(["beat_fx", "effect=echo", "time_ms=375"]).command == {
+        "type": "beat_fx",
+        "effect": "echo",
+        "time_ms": 375,
+    }
+    note = VERBS["beat_fx"].note
+    assert "1..4000 ms" in note and "time_ms and beats in one command are refused" in note
+
+
+@pytest.mark.requirement("BEATFX-14715")
+def test_beat_fx_cli_sends_triplet_beats_and_matches_the_ts_triplet_set() -> None:
+    """[if] opendj beat_fx triplet=true beats=1/3 misses the bus or the triplet set drifts from mod-fx-lfo [then] CLI parity breaks, [else stop]."""
+    assert parse_invocation(["beat_fx", "triplet=true", "beats=1/3"]).command == {
+        "type": "beat_fx",
+        "triplet": True,
+        "beats": 1 / 3,
+    }
+    lfo_source = (REPO_ROOT / "apps/webui/frontend/src/lib/rb/mod-fx-lfo.ts").read_text(encoding="utf-8")
+    ts_list = re.search(r"TRIPLET_CYCLE_BEATS = \[([^\]]+)\]", lfo_source)
+    assert ts_list is not None, "TRIPLET_CYCLE_BEATS not found in mod-fx-lfo.ts"
+    ts_values = tuple(float(Fraction(part.replace(" ", ""))) for part in ts_list.group(1).split(","))
+    assert ts_values == BEAT_FX_TRIPLET_BEAT_VALUES
+    assert "triplet=true" in VERBS["beat_fx"].note
+    with pytest.raises(ValueError, match="beats"):
+        parse_invocation(["beat_fx", "beats=3"])
+
+
+@pytest.mark.requirement("BEATFX-14526")
+def test_beat_fx_cli_takes_crush_with_level_and_no_beats() -> None:
+    """[if] opendj beat_fx effect=crush level=0.4 is refused or grows a beats field [then] agents cannot crush, [else stop]."""
+    assert parse_invocation(["beat_fx", "effect=crush", "level=0.4", "enabled=true"]).command == {
+        "type": "beat_fx",
+        "effect": "crush",
+        "level": 0.4,
+        "enabled": True,
+    }
+
+
+@pytest.mark.requirement("LIBUX-02")
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (["library_panels_toggle"], {"type": "library_panels_toggle"}),
+        (["library_panels_toggle", "true"], {"type": "library_panels_toggle", "collapsed": True}),
+        (["library_panels_toggle", "false"], {"type": "library_panels_toggle", "collapsed": False}),
+    ],
+)
+def test_library_panels_toggle_cli_builds_the_same_bus_command_as_the_chevron(
+    tokens: list[str], expected: dict[str, object],
+) -> None:
+    """[if] the CLI verb runs [then] it emits the chevron's library_panels_toggle command, [else stop]."""
+    command = parse_invocation(tokens).command
+    assert command == expected
+    wire = ts_contract.command_fields()["library_panels_toggle"]
+    assert wire == {"collapsed": True}
+
+
+@pytest.mark.requirement("LIBUX-02")
+def test_library_panels_toggle_cli_rejects_a_non_boolean_and_stays_apart_from_legacy_panels() -> None:
+    """[if] collapsed is not a boolean [then] InvocationError, and the legacy verb keeps its own type, [else stop]."""
+    with pytest.raises(InvocationError):
+        parse_invocation(["library_panels_toggle", "maybe"])
+    assert parse_invocation(["library_panels", "next", "true"]).command == {
+        "type": "library_panels", "panel": "next", "collapsed": True,
+    }
+
+
+# --- DECKUX-6794 (issue #12534): snapped grid_jump shares one command contract across UI, CLI and Rust ---
+
+
+@pytest.mark.requirement("DECKUX-6794")
+@pytest.mark.parametrize(("deck", "bars"), [("1", 4), ("2", -4), ("1", 8), ("2", -8)])
+def test_grid_jump_cli_builds_the_command_the_keys_send(deck: str, bars: int) -> None:
+    """[if] `opendj grid_jump` cannot send the keys' 4 or 8 bar step [then] parity breaks, [else stop]."""
+    assert parse_invocation(["grid_jump", deck, str(bars)]).command == {
+        "type": "grid_jump",
+        "deck": int(deck),
+        "bars": bars,
+    }
+
+
+@pytest.mark.requirement("DECKUX-6794")
+def test_grid_jump_cli_matches_the_wire_contract_and_refuses_a_fractional_step() -> None:
+    """[if] the CLI drifts from grid_jump {deck, bars} or takes 2.5 bars [then] broken, [else stop]."""
+    assert ts_contract.command_fields()["grid_jump"] == {"deck": False, "bars": False}
+    with pytest.raises(InvocationError, match="bars must be an integer"):
+        parse_invocation(["grid_jump", "1", "2.5"])
+

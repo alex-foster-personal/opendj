@@ -17,6 +17,7 @@ Each test states its acceptance criterion in the form "if <scenario> then
 from __future__ import annotations
 
 import inspect
+import json
 import math
 from pathlib import Path
 
@@ -419,6 +420,130 @@ def test_rendered_table_shows_weights_not_released() -> None:
     )
     assert "Masked Diffusion Beat This!" in lane_md
     assert WEIGHTS_NOT_RELEASED in lane_md
+
+
+# ----- Partition composition through lane and report output (issue #13079) -
+
+
+_PARTITION_CASES = {
+    "fixed_only": (("fixed-track",), 1, 0),
+    "dynamic_only": (("dynamic-track",), 0, 1),
+    "both": (("fixed-track", "dynamic-track"), 1, 1),
+}
+
+
+def _partition_fixtures() -> tuple[dict[str, dict], dict[str, dict]]:
+    """One constant-grid and one ramp fixture, each answered by a fixed 120 BPM grid."""
+    fixed_times = click_grid(120.0, 60)
+    ramp_times = ramp_grid(120.0, 140.0, 60)
+    ramp_bpms = [60.0 / (ramp_times[i + 1] - ramp_times[i]) for i in range(len(ramp_times) - 1)]
+    ramp_bpms.append(140.0)
+    fixtures = {
+        "fixed-track": _minimal_fixture(
+            is_dynamic=False, ref_beats=_fixture_triples(fixed_times, 120.0), stable_id="fixed-track"
+        ),
+        "dynamic-track": _minimal_fixture(
+            is_dynamic=True, ref_beats=_fixture_triples(ramp_times, ramp_bpms), stable_id="dynamic-track"
+        ),
+    }
+    answer = {"beats": fixed_times, "downbeats": None, "native_bpm": 120.0}
+    return fixtures, {sid: dict(answer) for sid in fixtures}
+
+
+def _lane_cells(tmp_path: Path, ids: tuple[str, ...]) -> tuple[dict, dict]:
+    """(eval_partition, arm) from beatgrid_lane.score_bundle over the chosen fixtures."""
+    fixtures, results = _partition_fixtures()
+    bundle = tmp_path / "lane"
+    bundle.mkdir(parents=True)
+    (bundle / "manifest.json").write_text(json.dumps({"fixtures": [fixtures[i] for i in ids]}))
+    arm = {"role": "candidate", "payload": {"results": {i: results[i] for i in ids}}}
+    scored = beatgrid_lane.score_bundle(bundle, {"constant_120": arm})
+    return scored["eval_partition"], scored["arms"]["constant_120"]
+
+
+def _report_cells(tmp_path: Path, ids: tuple[str, ...]) -> tuple[dict, dict]:
+    """(eval_partition, candidate) from report.main's JSON over the chosen fixtures."""
+    fixtures, results = _partition_fixtures()
+    out = tmp_path / "report"
+    out.mkdir(parents=True)
+    manifest = {
+        "fixtures": [fixtures[i] for i in ids],
+        "denominator": {
+            key: 0
+            for key in (
+                "rows_total",
+                "rows_audio_present",
+                "rows_surveyed",
+                "rows_with_rbx_grid",
+                "rows_grid_fixed",
+                "rows_grid_dynamic",
+                "rows_no_grid",
+                "rows_anlz_error",
+            )
+        },
+        "population": {"eligible_fixed": 10, "eligible_dynamic": 2},
+        "selection": {"built_fixed": 1, "built_dynamic": 1, "dropped": 0},
+        "excerpt": {
+            "min_duration_s": 60.0,
+            "length_s": 45.0,
+            "start_fraction": 0.3,
+            "sample_rate": 22050,
+            "guard_s": 2.0,
+        },
+        "seed": 1,
+    }
+    full = {
+        "candidate": "constant_120",
+        "candidate_version": "0",
+        "license": "MIT",
+        "shippable": True,
+        "emits_downbeats": False,
+        "results": {i: results[i] for i in ids},
+    }
+    (out / "manifest.json").write_text(json.dumps(manifest))
+    (out / "full.json").write_text(json.dumps(full))
+    beatgrid_report.main(
+        [
+            "--fixtures",
+            str(out / "manifest.json"),
+            "--full",
+            str(out / "full.json"),
+            "--out-md",
+            str(out / "round.md"),
+            "--out-json",
+            str(out / "round.json"),
+            "--round",
+            "1",
+        ]
+    )
+    payload = json.loads((out / "round.json").read_text())
+    return payload["eval_partition"], payload["candidates"][0]
+
+
+@pytest.mark.parametrize("case", sorted(_PARTITION_CASES))
+@pytest.mark.parametrize("cells", [_lane_cells, _report_cells], ids=["lane", "report"])
+def test_partition_cells_follow_fixture_composition(tmp_path: Path, cells, case: str) -> None:
+    """If a fixture holds only fixed, only dynamic, or both partitions then each output cell counts only its own."""
+    ids, want_fixed, want_dynamic = _PARTITION_CASES[case]
+    eval_partition, scored = cells(tmp_path, ids)
+    assert (eval_partition["n_fixed"], eval_partition["n_dynamic"]) == (want_fixed, want_dynamic)
+    assert scored["fixed"]["n"] == want_fixed
+    assert scored["dynamic"]["n"] == want_dynamic
+    if want_fixed:
+        assert scored["fixed"]["f_measure_mean"] == pytest.approx(1.0)
+    if want_dynamic:
+        assert scored["dynamic"]["f_measure_mean"] < 0.9
+
+
+@pytest.mark.parametrize("cells", [_lane_cells, _report_cells], ids=["lane", "report"])
+def test_mixed_fixture_partition_scores_match_single_partition_scores(tmp_path: Path, cells) -> None:
+    """If both partitions are present then each cell equals the score of that partition scored alone."""
+    _, fixed_alone = cells(tmp_path / "fixed", _PARTITION_CASES["fixed_only"][0])
+    _, dynamic_alone = cells(tmp_path / "dynamic", _PARTITION_CASES["dynamic_only"][0])
+    _, both = cells(tmp_path / "both", _PARTITION_CASES["both"][0])
+    assert both["fixed"] == fixed_alone["fixed"]
+    assert both["dynamic"] == dynamic_alone["dynamic"]
+    assert both["fixed"] != both["dynamic"]
 
 
 # ----- Fixed-tempo F regression guard (NATIVE-01, issue #2053) -----------

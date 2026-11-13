@@ -1,0 +1,2394 @@
+{
+  "source": "https://www.reloop.com/media/custom/upload/Reloop-Mixon4_MIDI-Map.pdf",
+  "archived": "local only (not committed): Reloop-Mixon4_MIDI-Map.pdf",
+  "fetched": "Fri 13 Nov 2026",
+  "device": "Mixon 4",
+  "vendor": "Reloop",
+  "channel_conventions": {
+    "decks": "deck 1/2/3/4 controls: status 0x94/0x95/0x96/0x97 (and 0xB4..0xB7, 0xE4..0xE7) = MIDI ch 5..8; deck 3/4 = layer deck_cd",
+    "pads": "deck 1/2/3/4 pads: status 0x90..0x93 = MIDI ch 1..4",
+    "mixer": "mixer channel k uses status 0x9(3+k)/0xB(3+k)",
+    "fx": "effect unit 1/2: status 0x98/0x99 and 0xB8/0xB9 = MIDI ch 9/10",
+    "global": "status 0x9A/0xBA = MIDI ch 11",
+    "shift": "+SHIFT rows are separate codes on the same channel",
+    "pads_mode": "HOT CUE mode; other pad modes in footnotes.md"
+  },
+  "controls": [
+    {
+      "name": "l_pad1",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "layer": "base",
+      "notes": "L PAD 1 HOT CUE mode note [l_pad1]"
+    },
+    {
+      "name": "l_pad1_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 1 HOT CUE mode note [l_pad1]"
+    },
+    {
+      "name": "l_pad1_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 0,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 1 HOT CUE mode note [l_pad1]"
+    },
+    {
+      "name": "l_pad1_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 64,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 1 HOT CUE mode note [l_pad1]"
+    },
+    {
+      "name": "l_pad2",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "layer": "base",
+      "notes": "L PAD 2 HOT CUE mode note [l_pad2]"
+    },
+    {
+      "name": "l_pad2_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 2 HOT CUE mode note [l_pad2]"
+    },
+    {
+      "name": "l_pad2_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 2 HOT CUE mode note [l_pad2]"
+    },
+    {
+      "name": "l_pad2_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 65,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 2 HOT CUE mode note [l_pad2]"
+    },
+    {
+      "name": "l_pad3",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "layer": "base",
+      "notes": "L PAD 3 HOT CUE mode note [l_pad3]"
+    },
+    {
+      "name": "l_pad3_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 3 HOT CUE mode note [l_pad3]"
+    },
+    {
+      "name": "l_pad3_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 3 HOT CUE mode note [l_pad3]"
+    },
+    {
+      "name": "l_pad3_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 66,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 3 HOT CUE mode note [l_pad3]"
+    },
+    {
+      "name": "l_pad4",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "layer": "base",
+      "notes": "L PAD 4 HOT CUE mode note [l_pad4]"
+    },
+    {
+      "name": "l_pad4_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 4 HOT CUE mode note [l_pad4]"
+    },
+    {
+      "name": "l_pad4_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 4 HOT CUE mode note [l_pad4]"
+    },
+    {
+      "name": "l_pad4_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 67,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 4 HOT CUE mode note [l_pad4]"
+    },
+    {
+      "name": "l_pad5",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "layer": "base",
+      "notes": "L PAD 5 HOT CUE mode note [l_pad5]"
+    },
+    {
+      "name": "l_pad5_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 5 HOT CUE mode note [l_pad5]"
+    },
+    {
+      "name": "l_pad5_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 5 HOT CUE mode note [l_pad5]"
+    },
+    {
+      "name": "l_pad5_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 68,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 5 HOT CUE mode note [l_pad5]"
+    },
+    {
+      "name": "l_pad6",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "layer": "base",
+      "notes": "L PAD 6 HOT CUE mode note [l_pad6]"
+    },
+    {
+      "name": "l_pad6_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 6 HOT CUE mode note [l_pad6]"
+    },
+    {
+      "name": "l_pad6_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 6 HOT CUE mode note [l_pad6]"
+    },
+    {
+      "name": "l_pad6_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 69,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 6 HOT CUE mode note [l_pad6]"
+    },
+    {
+      "name": "l_pad7",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "layer": "base",
+      "notes": "L PAD 7 HOT CUE mode note [l_pad7]"
+    },
+    {
+      "name": "l_pad7_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 7 HOT CUE mode note [l_pad7]"
+    },
+    {
+      "name": "l_pad7_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 7 HOT CUE mode note [l_pad7]"
+    },
+    {
+      "name": "l_pad7_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 70,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 7 HOT CUE mode note [l_pad7]"
+    },
+    {
+      "name": "l_pad8",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "layer": "base",
+      "notes": "L PAD 8 HOT CUE mode note [l_pad8]"
+    },
+    {
+      "name": "l_pad8_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "layer": "shift",
+      "notes": "+SHIFT L PAD 8 HOT CUE mode note [l_pad8]"
+    },
+    {
+      "name": "l_pad8_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PAD 8 HOT CUE mode note [l_pad8]"
+    },
+    {
+      "name": "l_pad8_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 3,
+      "code": 71,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PAD 8 HOT CUE mode note [l_pad8]"
+    },
+    {
+      "name": "l_mode_hotcue",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 22,
+      "layer": "base",
+      "notes": "L HOT CUE mode button note (on release) [l_hotcue]"
+    },
+    {
+      "name": "l_mode_hotcue_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 22,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L HOT CUE mode button note (on release) [l_hotcue]"
+    },
+    {
+      "name": "l_mode_loop_roll",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 23,
+      "layer": "base",
+      "notes": "L LOOP ROLL mode button note (on release) [l_loop_roll]"
+    },
+    {
+      "name": "l_mode_loop_roll_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 87,
+      "layer": "shift",
+      "notes": "+SHIFT L LOOP ROLL mode button note (on release) [l_loop_roll]"
+    },
+    {
+      "name": "l_mode_loop_roll_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 23,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L LOOP ROLL mode button note (on release) [l_loop_roll]"
+    },
+    {
+      "name": "l_mode_loop_roll_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 87,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L LOOP ROLL mode button note (on release) [l_loop_roll]"
+    },
+    {
+      "name": "l_mode_sampler",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 24,
+      "layer": "base",
+      "notes": "L SAMPLER mode button note (on release) [l_sampler]"
+    },
+    {
+      "name": "l_mode_sampler_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 88,
+      "layer": "shift",
+      "notes": "+SHIFT L SAMPLER mode button note (on release) [l_sampler]"
+    },
+    {
+      "name": "l_mode_sampler_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 24,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L SAMPLER mode button note (on release) [l_sampler]"
+    },
+    {
+      "name": "l_mode_sampler_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 88,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L SAMPLER mode button note (on release) [l_sampler]"
+    },
+    {
+      "name": "l_mode_slicer",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 25,
+      "layer": "base",
+      "notes": "L SLICER mode button note (on release) [l_slicer]"
+    },
+    {
+      "name": "l_mode_slicer_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 89,
+      "layer": "shift",
+      "notes": "+SHIFT L SLICER mode button note (on release) [l_slicer]"
+    },
+    {
+      "name": "l_mode_slicer_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 25,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L SLICER mode button note (on release) [l_slicer]"
+    },
+    {
+      "name": "l_mode_slicer_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 89,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L SLICER mode button note (on release) [l_slicer]"
+    },
+    {
+      "name": "l_sync",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 14,
+      "layer": "base",
+      "notes": "L SYNC note [l_sync]"
+    },
+    {
+      "name": "l_sync_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 78,
+      "layer": "shift",
+      "notes": "+SHIFT L SYNC note [l_sync]"
+    },
+    {
+      "name": "l_sync_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 14,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L SYNC note [l_sync]"
+    },
+    {
+      "name": "l_sync_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 78,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L SYNC note [l_sync]"
+    },
+    {
+      "name": "l_cue",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 13,
+      "layer": "base",
+      "notes": "L CUE note [l_cue]"
+    },
+    {
+      "name": "l_cue_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 77,
+      "layer": "shift",
+      "notes": "+SHIFT L CUE note [l_cue]"
+    },
+    {
+      "name": "l_cue_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 13,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L CUE note [l_cue]"
+    },
+    {
+      "name": "l_cue_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 77,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L CUE note [l_cue]"
+    },
+    {
+      "name": "l_play",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 12,
+      "layer": "base",
+      "notes": "L PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_play_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 76,
+      "layer": "shift",
+      "notes": "+SHIFT L PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_play_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 12,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_play_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 76,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_slip",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 15,
+      "layer": "base",
+      "notes": "L SLIP note (position estimated) [l_slip]"
+    },
+    {
+      "name": "l_slip_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 79,
+      "layer": "shift",
+      "notes": "+SHIFT L SLIP note (position estimated) [l_slip]"
+    },
+    {
+      "name": "l_slip_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 15,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L SLIP note (position estimated) [l_slip]"
+    },
+    {
+      "name": "l_slip_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 79,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L SLIP note (position estimated) [l_slip]"
+    },
+    {
+      "name": "l_keylock",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 16,
+      "layer": "base",
+      "notes": "L KEY LOCK note (position estimated) [l_keylock]"
+    },
+    {
+      "name": "l_keylock_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 80,
+      "layer": "shift",
+      "notes": "+SHIFT L KEY LOCK note (position estimated) [l_keylock]"
+    },
+    {
+      "name": "l_keylock_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 16,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L KEY LOCK note (position estimated) [l_keylock]"
+    },
+    {
+      "name": "l_keylock_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 80,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L KEY LOCK note (position estimated) [l_keylock]"
+    },
+    {
+      "name": "l_keysync",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 17,
+      "layer": "base",
+      "notes": "L KEY SYNC note (position estimated) [l_keysync]"
+    },
+    {
+      "name": "l_keysync_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 81,
+      "layer": "shift",
+      "notes": "+SHIFT L KEY SYNC note (position estimated) [l_keysync]"
+    },
+    {
+      "name": "l_keysync_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 17,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L KEY SYNC note (position estimated) [l_keysync]"
+    },
+    {
+      "name": "l_keysync_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 81,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L KEY SYNC note (position estimated) [l_keysync]"
+    },
+    {
+      "name": "l_loop",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 5,
+      "code": 8,
+      "layer": "base",
+      "notes": "L LOOP relative encoder (3Fh/41h) [l_loop]"
+    },
+    {
+      "name": "l_loop_cd",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 7,
+      "code": 8,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L LOOP relative encoder (3Fh/41h) [l_loop]"
+    },
+    {
+      "name": "l_autoloop",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 8,
+      "layer": "base",
+      "notes": "L AUTO LOOP note [l_autoloop]"
+    },
+    {
+      "name": "l_autoloop_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 8,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L AUTO LOOP note [l_autoloop]"
+    },
+    {
+      "name": "l_param_minus",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 10,
+      "layer": "base",
+      "notes": "L PARAM - note [l_param_minus]"
+    },
+    {
+      "name": "l_param_minus_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 74,
+      "layer": "shift",
+      "notes": "+SHIFT L PARAM - note [l_param_minus]"
+    },
+    {
+      "name": "l_param_minus_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 10,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PARAM - note [l_param_minus]"
+    },
+    {
+      "name": "l_param_minus_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 74,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PARAM - note [l_param_minus]"
+    },
+    {
+      "name": "l_param_plus",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "layer": "base",
+      "notes": "L PARAM + note [l_param_plus]"
+    },
+    {
+      "name": "l_param_plus_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 75,
+      "layer": "shift",
+      "notes": "+SHIFT L PARAM + note [l_param_plus]"
+    },
+    {
+      "name": "l_param_plus_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PARAM + note [l_param_plus]"
+    },
+    {
+      "name": "l_param_plus_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 75,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT L PARAM + note [l_param_plus]"
+    },
+    {
+      "name": "l_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 11,
+      "code": 3,
+      "layer": "base",
+      "notes": "SHIFT note (global channel 0Ah) [l_shift]"
+    },
+    {
+      "name": "l_deck",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 18,
+      "layer": "base",
+      "notes": "L DECK switch note (vendor channel column 6 7 4 5) [l_deck]"
+    },
+    {
+      "name": "l_deck_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 18,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L DECK switch note (vendor channel column 6 7 4 5) [l_deck]"
+    },
+    {
+      "name": "l_jog",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "layer": "base",
+      "notes": "L JOG WHEEL relative (3Fh/41h); touch note 0x07 [l_jog]"
+    },
+    {
+      "name": "l_jog_cd",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 7,
+      "code": 6,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L JOG WHEEL relative (3Fh/41h); touch note 0x07 [l_jog]"
+    },
+    {
+      "name": "l_jog_touch",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "layer": "base",
+      "notes": "L JOG TOUCH note [l_jog]"
+    },
+    {
+      "name": "l_jog_touch_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 7,
+      "code": 7,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L JOG TOUCH note [l_jog]"
+    },
+    {
+      "name": "l_pitch",
+      "section": "deck_l",
+      "type": "pitchbend",
+      "ch": 5,
+      "code": null,
+      "layer": "base",
+      "notes": "L PITCH pitch bend (status En; vendor cells D1/D2) [l_pitch]"
+    },
+    {
+      "name": "l_pitch_cd",
+      "section": "deck_l",
+      "type": "pitchbend",
+      "ch": 7,
+      "code": null,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 L PITCH pitch bend [l_pitch]"
+    },
+    {
+      "name": "l_fx1",
+      "section": "fx_l",
+      "type": "cc",
+      "ch": 9,
+      "code": 0,
+      "layer": "base",
+      "notes": "FX unit L EFFECT 1 absolute CC [l_fx1]"
+    },
+    {
+      "name": "l_fx_on1",
+      "section": "fx_l",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "layer": "base",
+      "notes": "FX unit L ON 1 note [l_fx_on1]"
+    },
+    {
+      "name": "l_fx2",
+      "section": "fx_l",
+      "type": "cc",
+      "ch": 9,
+      "code": 1,
+      "layer": "base",
+      "notes": "FX unit L EFFECT 2 absolute CC [l_fx2]"
+    },
+    {
+      "name": "l_fx_on2",
+      "section": "fx_l",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "layer": "base",
+      "notes": "FX unit L ON 2 note [l_fx_on2]"
+    },
+    {
+      "name": "l_fx3",
+      "section": "fx_l",
+      "type": "cc",
+      "ch": 9,
+      "code": 2,
+      "layer": "base",
+      "notes": "FX unit L EFFECT 3 absolute CC [l_fx3]"
+    },
+    {
+      "name": "l_fx_on3",
+      "section": "fx_l",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "layer": "base",
+      "notes": "FX unit L ON 3 note [l_fx_on3]"
+    },
+    {
+      "name": "l_fx_param",
+      "section": "fx_l",
+      "type": "cc",
+      "ch": 9,
+      "code": 3,
+      "layer": "base",
+      "notes": "FX unit L PARAMETER relative (3Fh/41h); push note 0x03 [l_fx_param]"
+    },
+    {
+      "name": "l_fx_param_push",
+      "section": "fx_l",
+      "type": "note",
+      "ch": 9,
+      "code": 3,
+      "layer": "base",
+      "notes": "FX unit L PARAMETER push note [l_fx_param]"
+    },
+    {
+      "name": "l_fx_tap",
+      "section": "fx_l",
+      "type": "note",
+      "ch": 9,
+      "code": 4,
+      "layer": "base",
+      "notes": "FX unit L TAP note [l_fx_tap]"
+    },
+    {
+      "name": "r_pad1",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "layer": "base",
+      "notes": "R PAD 1 HOT CUE mode note [r_pad1]"
+    },
+    {
+      "name": "r_pad1_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 64,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 1 HOT CUE mode note [r_pad1]"
+    },
+    {
+      "name": "r_pad1_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 0,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 1 HOT CUE mode note [r_pad1]"
+    },
+    {
+      "name": "r_pad1_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 64,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 1 HOT CUE mode note [r_pad1]"
+    },
+    {
+      "name": "r_pad2",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "layer": "base",
+      "notes": "R PAD 2 HOT CUE mode note [r_pad2]"
+    },
+    {
+      "name": "r_pad2_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 65,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 2 HOT CUE mode note [r_pad2]"
+    },
+    {
+      "name": "r_pad2_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 1,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 2 HOT CUE mode note [r_pad2]"
+    },
+    {
+      "name": "r_pad2_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 65,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 2 HOT CUE mode note [r_pad2]"
+    },
+    {
+      "name": "r_pad3",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "layer": "base",
+      "notes": "R PAD 3 HOT CUE mode note [r_pad3]"
+    },
+    {
+      "name": "r_pad3_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 3 HOT CUE mode note [r_pad3]"
+    },
+    {
+      "name": "r_pad3_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 2,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 3 HOT CUE mode note [r_pad3]"
+    },
+    {
+      "name": "r_pad3_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 66,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 3 HOT CUE mode note [r_pad3]"
+    },
+    {
+      "name": "r_pad4",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "layer": "base",
+      "notes": "R PAD 4 HOT CUE mode note [r_pad4]"
+    },
+    {
+      "name": "r_pad4_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 67,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 4 HOT CUE mode note [r_pad4]"
+    },
+    {
+      "name": "r_pad4_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 3,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 4 HOT CUE mode note [r_pad4]"
+    },
+    {
+      "name": "r_pad4_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 67,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 4 HOT CUE mode note [r_pad4]"
+    },
+    {
+      "name": "r_pad5",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "layer": "base",
+      "notes": "R PAD 5 HOT CUE mode note [r_pad5]"
+    },
+    {
+      "name": "r_pad5_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 68,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 5 HOT CUE mode note [r_pad5]"
+    },
+    {
+      "name": "r_pad5_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 4,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 5 HOT CUE mode note [r_pad5]"
+    },
+    {
+      "name": "r_pad5_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 68,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 5 HOT CUE mode note [r_pad5]"
+    },
+    {
+      "name": "r_pad6",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "layer": "base",
+      "notes": "R PAD 6 HOT CUE mode note [r_pad6]"
+    },
+    {
+      "name": "r_pad6_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 69,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 6 HOT CUE mode note [r_pad6]"
+    },
+    {
+      "name": "r_pad6_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 5,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 6 HOT CUE mode note [r_pad6]"
+    },
+    {
+      "name": "r_pad6_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 69,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 6 HOT CUE mode note [r_pad6]"
+    },
+    {
+      "name": "r_pad7",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "layer": "base",
+      "notes": "R PAD 7 HOT CUE mode note [r_pad7]"
+    },
+    {
+      "name": "r_pad7_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 70,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 7 HOT CUE mode note [r_pad7]"
+    },
+    {
+      "name": "r_pad7_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 7 HOT CUE mode note [r_pad7]"
+    },
+    {
+      "name": "r_pad7_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 70,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 7 HOT CUE mode note [r_pad7]"
+    },
+    {
+      "name": "r_pad8",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "layer": "base",
+      "notes": "R PAD 8 HOT CUE mode note [r_pad8]"
+    },
+    {
+      "name": "r_pad8_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 2,
+      "code": 71,
+      "layer": "shift",
+      "notes": "+SHIFT R PAD 8 HOT CUE mode note [r_pad8]"
+    },
+    {
+      "name": "r_pad8_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 7,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PAD 8 HOT CUE mode note [r_pad8]"
+    },
+    {
+      "name": "r_pad8_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 4,
+      "code": 71,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PAD 8 HOT CUE mode note [r_pad8]"
+    },
+    {
+      "name": "r_mode_hotcue",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 22,
+      "layer": "base",
+      "notes": "R HOT CUE mode button note (on release) [r_hotcue]"
+    },
+    {
+      "name": "r_mode_hotcue_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R HOT CUE mode button note (on release) [r_hotcue]"
+    },
+    {
+      "name": "r_mode_loop_roll",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 23,
+      "layer": "base",
+      "notes": "R LOOP ROLL mode button note (on release) [r_loop_roll]"
+    },
+    {
+      "name": "r_mode_loop_roll_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 87,
+      "layer": "shift",
+      "notes": "+SHIFT R LOOP ROLL mode button note (on release) [r_loop_roll]"
+    },
+    {
+      "name": "r_mode_loop_roll_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R LOOP ROLL mode button note (on release) [r_loop_roll]"
+    },
+    {
+      "name": "r_mode_loop_roll_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 87,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R LOOP ROLL mode button note (on release) [r_loop_roll]"
+    },
+    {
+      "name": "r_mode_sampler",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 24,
+      "layer": "base",
+      "notes": "R SAMPLER mode button note (on release) [r_sampler]"
+    },
+    {
+      "name": "r_mode_sampler_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 88,
+      "layer": "shift",
+      "notes": "+SHIFT R SAMPLER mode button note (on release) [r_sampler]"
+    },
+    {
+      "name": "r_mode_sampler_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R SAMPLER mode button note (on release) [r_sampler]"
+    },
+    {
+      "name": "r_mode_sampler_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 88,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R SAMPLER mode button note (on release) [r_sampler]"
+    },
+    {
+      "name": "r_mode_slicer",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 25,
+      "layer": "base",
+      "notes": "R SLICER mode button note (on release) [r_slicer]"
+    },
+    {
+      "name": "r_mode_slicer_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 89,
+      "layer": "shift",
+      "notes": "+SHIFT R SLICER mode button note (on release) [r_slicer]"
+    },
+    {
+      "name": "r_mode_slicer_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R SLICER mode button note (on release) [r_slicer]"
+    },
+    {
+      "name": "r_mode_slicer_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 89,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R SLICER mode button note (on release) [r_slicer]"
+    },
+    {
+      "name": "r_sync",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 14,
+      "layer": "base",
+      "notes": "R SYNC note [r_sync]"
+    },
+    {
+      "name": "r_sync_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 78,
+      "layer": "shift",
+      "notes": "+SHIFT R SYNC note [r_sync]"
+    },
+    {
+      "name": "r_sync_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R SYNC note [r_sync]"
+    },
+    {
+      "name": "r_sync_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 78,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R SYNC note [r_sync]"
+    },
+    {
+      "name": "r_cue",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 13,
+      "layer": "base",
+      "notes": "R CUE note [r_cue]"
+    },
+    {
+      "name": "r_cue_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 77,
+      "layer": "shift",
+      "notes": "+SHIFT R CUE note [r_cue]"
+    },
+    {
+      "name": "r_cue_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 13,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R CUE note [r_cue]"
+    },
+    {
+      "name": "r_cue_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 77,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R CUE note [r_cue]"
+    },
+    {
+      "name": "r_play",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 12,
+      "layer": "base",
+      "notes": "R PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_play_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 76,
+      "layer": "shift",
+      "notes": "+SHIFT R PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_play_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 12,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_play_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 76,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_slip",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 15,
+      "layer": "base",
+      "notes": "R SLIP note (position estimated) [r_slip]"
+    },
+    {
+      "name": "r_slip_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 79,
+      "layer": "shift",
+      "notes": "+SHIFT R SLIP note (position estimated) [r_slip]"
+    },
+    {
+      "name": "r_slip_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R SLIP note (position estimated) [r_slip]"
+    },
+    {
+      "name": "r_slip_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 79,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R SLIP note (position estimated) [r_slip]"
+    },
+    {
+      "name": "r_keylock",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 16,
+      "layer": "base",
+      "notes": "R KEY LOCK note (position estimated) [r_keylock]"
+    },
+    {
+      "name": "r_keylock_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 80,
+      "layer": "shift",
+      "notes": "+SHIFT R KEY LOCK note (position estimated) [r_keylock]"
+    },
+    {
+      "name": "r_keylock_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R KEY LOCK note (position estimated) [r_keylock]"
+    },
+    {
+      "name": "r_keylock_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 80,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R KEY LOCK note (position estimated) [r_keylock]"
+    },
+    {
+      "name": "r_keysync",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 17,
+      "layer": "base",
+      "notes": "R KEY SYNC note (position estimated) [r_keysync]"
+    },
+    {
+      "name": "r_keysync_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 81,
+      "layer": "shift",
+      "notes": "+SHIFT R KEY SYNC note (position estimated) [r_keysync]"
+    },
+    {
+      "name": "r_keysync_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R KEY SYNC note (position estimated) [r_keysync]"
+    },
+    {
+      "name": "r_keysync_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 81,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R KEY SYNC note (position estimated) [r_keysync]"
+    },
+    {
+      "name": "r_loop",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 6,
+      "code": 8,
+      "layer": "base",
+      "notes": "R LOOP relative encoder (3Fh/41h) [r_loop]"
+    },
+    {
+      "name": "r_loop_cd",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 8,
+      "code": 8,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R LOOP relative encoder (3Fh/41h) [r_loop]"
+    },
+    {
+      "name": "r_autoloop",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "layer": "base",
+      "notes": "R AUTO LOOP note [r_autoloop]"
+    },
+    {
+      "name": "r_autoloop_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R AUTO LOOP note [r_autoloop]"
+    },
+    {
+      "name": "r_param_minus",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 10,
+      "layer": "base",
+      "notes": "R PARAM - note [r_param_minus]"
+    },
+    {
+      "name": "r_param_minus_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 74,
+      "layer": "shift",
+      "notes": "+SHIFT R PARAM - note [r_param_minus]"
+    },
+    {
+      "name": "r_param_minus_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PARAM - note [r_param_minus]"
+    },
+    {
+      "name": "r_param_minus_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 74,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PARAM - note [r_param_minus]"
+    },
+    {
+      "name": "r_param_plus",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "layer": "base",
+      "notes": "R PARAM + note [r_param_plus]"
+    },
+    {
+      "name": "r_param_plus_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 75,
+      "layer": "shift",
+      "notes": "+SHIFT R PARAM + note [r_param_plus]"
+    },
+    {
+      "name": "r_param_plus_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PARAM + note [r_param_plus]"
+    },
+    {
+      "name": "r_param_plus_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 75,
+      "layer": "deck_cd_shift",
+      "notes": "deck 3/4 +SHIFT R PARAM + note [r_param_plus]"
+    },
+    {
+      "name": "r_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 11,
+      "code": 3,
+      "layer": "base",
+      "notes": "SHIFT note (global channel 0Ah) [r_shift]"
+    },
+    {
+      "name": "r_deck",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "layer": "base",
+      "notes": "R DECK switch note (vendor channel column 6 7 4 5) [r_deck]"
+    },
+    {
+      "name": "r_deck_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 18,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R DECK switch note (vendor channel column 6 7 4 5) [r_deck]"
+    },
+    {
+      "name": "r_jog",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 6,
+      "code": 6,
+      "layer": "base",
+      "notes": "R JOG WHEEL relative (3Fh/41h); touch note 0x07 [r_jog]"
+    },
+    {
+      "name": "r_jog_cd",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 8,
+      "code": 6,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R JOG WHEEL relative (3Fh/41h); touch note 0x07 [r_jog]"
+    },
+    {
+      "name": "r_jog_touch",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "layer": "base",
+      "notes": "R JOG TOUCH note [r_jog]"
+    },
+    {
+      "name": "r_jog_touch_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R JOG TOUCH note [r_jog]"
+    },
+    {
+      "name": "r_pitch",
+      "section": "deck_r",
+      "type": "pitchbend",
+      "ch": 6,
+      "code": null,
+      "layer": "base",
+      "notes": "R PITCH pitch bend (status En; vendor cells D1/D2) [r_pitch]"
+    },
+    {
+      "name": "r_pitch_cd",
+      "section": "deck_r",
+      "type": "pitchbend",
+      "ch": 8,
+      "code": null,
+      "layer": "deck_cd",
+      "notes": "deck 3/4 R PITCH pitch bend [r_pitch]"
+    },
+    {
+      "name": "r_fx1",
+      "section": "fx_r",
+      "type": "cc",
+      "ch": 10,
+      "code": 0,
+      "layer": "base",
+      "notes": "FX unit R EFFECT 1 absolute CC [r_fx1]"
+    },
+    {
+      "name": "r_fx_on1",
+      "section": "fx_r",
+      "type": "note",
+      "ch": 10,
+      "code": 0,
+      "layer": "base",
+      "notes": "FX unit R ON 1 note [r_fx_on1]"
+    },
+    {
+      "name": "r_fx2",
+      "section": "fx_r",
+      "type": "cc",
+      "ch": 10,
+      "code": 1,
+      "layer": "base",
+      "notes": "FX unit R EFFECT 2 absolute CC [r_fx2]"
+    },
+    {
+      "name": "r_fx_on2",
+      "section": "fx_r",
+      "type": "note",
+      "ch": 10,
+      "code": 1,
+      "layer": "base",
+      "notes": "FX unit R ON 2 note [r_fx_on2]"
+    },
+    {
+      "name": "r_fx3",
+      "section": "fx_r",
+      "type": "cc",
+      "ch": 10,
+      "code": 2,
+      "layer": "base",
+      "notes": "FX unit R EFFECT 3 absolute CC [r_fx3]"
+    },
+    {
+      "name": "r_fx_on3",
+      "section": "fx_r",
+      "type": "note",
+      "ch": 10,
+      "code": 2,
+      "layer": "base",
+      "notes": "FX unit R ON 3 note [r_fx_on3]"
+    },
+    {
+      "name": "r_fx_param",
+      "section": "fx_r",
+      "type": "cc",
+      "ch": 10,
+      "code": 3,
+      "layer": "base",
+      "notes": "FX unit R PARAMETER relative (3Fh/41h); push note 0x03 [r_fx_param]"
+    },
+    {
+      "name": "r_fx_param_push",
+      "section": "fx_r",
+      "type": "note",
+      "ch": 10,
+      "code": 3,
+      "layer": "base",
+      "notes": "FX unit R PARAMETER push note [r_fx_param]"
+    },
+    {
+      "name": "r_fx_tap",
+      "section": "fx_r",
+      "type": "note",
+      "ch": 10,
+      "code": 4,
+      "layer": "base",
+      "notes": "FX unit R TAP note [r_fx_tap]"
+    },
+    {
+      "name": "ch3_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 0,
+      "layer": "base",
+      "notes": "CH3 GAIN absolute CC [ch3_gain]"
+    },
+    {
+      "name": "ch3_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH3 HIGH absolute CC [ch3_high]"
+    },
+    {
+      "name": "ch3_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH3 MID absolute CC [ch3_mid]"
+    },
+    {
+      "name": "ch3_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH3 LOW absolute CC [ch3_low]"
+    },
+    {
+      "name": "ch3_filter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH3 FILTER absolute CC [ch3_filter]"
+    },
+    {
+      "name": "ch3_filter_fx",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH3 FILTER FX note [ch3_filter_fx]"
+    },
+    {
+      "name": "ch3_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH3 LOAD note [ch3_load]"
+    },
+    {
+      "name": "ch3_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH3 CUE (headphone) note [ch3_cue]"
+    },
+    {
+      "name": "ch3_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH3 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E [ch3_fader]"
+    },
+    {
+      "name": "ch3_fader_start_up",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 93,
+      "layer": "shift",
+      "notes": "+SHIFT CH3 FADER START UP note [ch3_fader]"
+    },
+    {
+      "name": "ch3_fader_start_down",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 94,
+      "layer": "shift",
+      "notes": "+SHIFT CH3 FADER START DOWN note [ch3_fader]"
+    },
+    {
+      "name": "ch3_cf_assign_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH3 CF ASSIGNMENT A note; T 0x05, B 0x06 [ch3_cf_assign]"
+    },
+    {
+      "name": "ch3_cf_assign_t",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH3 CF ASSIGNMENT T note [ch3_cf_assign]"
+    },
+    {
+      "name": "ch3_cf_assign_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 6,
+      "layer": "base",
+      "notes": "CH3 CF ASSIGNMENT B note [ch3_cf_assign]"
+    },
+    {
+      "name": "ch1_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 0,
+      "layer": "base",
+      "notes": "CH1 GAIN absolute CC [ch1_gain]"
+    },
+    {
+      "name": "ch1_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH1 HIGH absolute CC [ch1_high]"
+    },
+    {
+      "name": "ch1_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH1 MID absolute CC [ch1_mid]"
+    },
+    {
+      "name": "ch1_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH1 LOW absolute CC [ch1_low]"
+    },
+    {
+      "name": "ch1_filter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH1 FILTER absolute CC [ch1_filter]"
+    },
+    {
+      "name": "ch1_filter_fx",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH1 FILTER FX note [ch1_filter_fx]"
+    },
+    {
+      "name": "ch1_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH1 LOAD note [ch1_load]"
+    },
+    {
+      "name": "ch1_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH1 CUE (headphone) note [ch1_cue]"
+    },
+    {
+      "name": "ch1_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH1 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E [ch1_fader]"
+    },
+    {
+      "name": "ch1_fader_start_up",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 93,
+      "layer": "shift",
+      "notes": "+SHIFT CH1 FADER START UP note [ch1_fader]"
+    },
+    {
+      "name": "ch1_fader_start_down",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 94,
+      "layer": "shift",
+      "notes": "+SHIFT CH1 FADER START DOWN note [ch1_fader]"
+    },
+    {
+      "name": "ch1_cf_assign_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH1 CF ASSIGNMENT A note; T 0x05, B 0x06 [ch1_cf_assign]"
+    },
+    {
+      "name": "ch1_cf_assign_t",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH1 CF ASSIGNMENT T note [ch1_cf_assign]"
+    },
+    {
+      "name": "ch1_cf_assign_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "layer": "base",
+      "notes": "CH1 CF ASSIGNMENT B note [ch1_cf_assign]"
+    },
+    {
+      "name": "ch2_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 0,
+      "layer": "base",
+      "notes": "CH2 GAIN absolute CC [ch2_gain]"
+    },
+    {
+      "name": "ch2_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH2 HIGH absolute CC [ch2_high]"
+    },
+    {
+      "name": "ch2_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH2 MID absolute CC [ch2_mid]"
+    },
+    {
+      "name": "ch2_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH2 LOW absolute CC [ch2_low]"
+    },
+    {
+      "name": "ch2_filter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH2 FILTER absolute CC [ch2_filter]"
+    },
+    {
+      "name": "ch2_filter_fx",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH2 FILTER FX note [ch2_filter_fx]"
+    },
+    {
+      "name": "ch2_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH2 LOAD note [ch2_load]"
+    },
+    {
+      "name": "ch2_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH2 CUE (headphone) note [ch2_cue]"
+    },
+    {
+      "name": "ch2_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH2 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E [ch2_fader]"
+    },
+    {
+      "name": "ch2_fader_start_up",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 93,
+      "layer": "shift",
+      "notes": "+SHIFT CH2 FADER START UP note [ch2_fader]"
+    },
+    {
+      "name": "ch2_fader_start_down",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 94,
+      "layer": "shift",
+      "notes": "+SHIFT CH2 FADER START DOWN note [ch2_fader]"
+    },
+    {
+      "name": "ch2_cf_assign_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH2 CF ASSIGNMENT A note; T 0x05, B 0x06 [ch2_cf_assign]"
+    },
+    {
+      "name": "ch2_cf_assign_t",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH2 CF ASSIGNMENT T note [ch2_cf_assign]"
+    },
+    {
+      "name": "ch2_cf_assign_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "layer": "base",
+      "notes": "CH2 CF ASSIGNMENT B note [ch2_cf_assign]"
+    },
+    {
+      "name": "ch4_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 0,
+      "layer": "base",
+      "notes": "CH4 GAIN absolute CC [ch4_gain]"
+    },
+    {
+      "name": "ch4_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH4 HIGH absolute CC [ch4_high]"
+    },
+    {
+      "name": "ch4_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH4 MID absolute CC [ch4_mid]"
+    },
+    {
+      "name": "ch4_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH4 LOW absolute CC [ch4_low]"
+    },
+    {
+      "name": "ch4_filter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH4 FILTER absolute CC [ch4_filter]"
+    },
+    {
+      "name": "ch4_filter_fx",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "layer": "base",
+      "notes": "CH4 FILTER FX note [ch4_filter_fx]"
+    },
+    {
+      "name": "ch4_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "layer": "base",
+      "notes": "CH4 LOAD note [ch4_load]"
+    },
+    {
+      "name": "ch4_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "layer": "base",
+      "notes": "CH4 CUE (headphone) note [ch4_cue]"
+    },
+    {
+      "name": "ch4_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH4 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E [ch4_fader]"
+    },
+    {
+      "name": "ch4_fader_start_up",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 93,
+      "layer": "shift",
+      "notes": "+SHIFT CH4 FADER START UP note [ch4_fader]"
+    },
+    {
+      "name": "ch4_fader_start_down",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 94,
+      "layer": "shift",
+      "notes": "+SHIFT CH4 FADER START DOWN note [ch4_fader]"
+    },
+    {
+      "name": "ch4_cf_assign_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 4,
+      "layer": "base",
+      "notes": "CH4 CF ASSIGNMENT A note; T 0x05, B 0x06 [ch4_cf_assign]"
+    },
+    {
+      "name": "ch4_cf_assign_t",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 5,
+      "layer": "base",
+      "notes": "CH4 CF ASSIGNMENT T note [ch4_cf_assign]"
+    },
+    {
+      "name": "ch4_cf_assign_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "layer": "base",
+      "notes": "CH4 CF ASSIGNMENT B note [ch4_cf_assign]"
+    },
+    {
+      "name": "cue_vol",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 11,
+      "code": 7,
+      "layer": "base",
+      "notes": "HEADPHONE CUE VOL absolute CC [cue_vol]"
+    },
+    {
+      "name": "cue_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 11,
+      "code": 3,
+      "layer": "base",
+      "notes": "CUE MIX absolute CC [cue_mix]"
+    },
+    {
+      "name": "sampler_vol",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 11,
+      "code": 2,
+      "layer": "base",
+      "notes": "SAMPLER volume absolute CC [sampler_vol]"
+    },
+    {
+      "name": "cf_curve",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 11,
+      "code": 1,
+      "layer": "base",
+      "notes": "CF CURVE (left 0, middle 64, right 127) [cf_curve]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 11,
+      "code": 0,
+      "layer": "base",
+      "notes": "CROSSFADER absolute CC [xfader]"
+    },
+    {
+      "name": "trax",
+      "section": "browser",
+      "type": "cc",
+      "ch": 11,
+      "code": 4,
+      "layer": "base",
+      "notes": "TRAX relative (3Fh/41h); push note 0x00 [trax]"
+    },
+    {
+      "name": "trax_push",
+      "section": "browser",
+      "type": "note",
+      "ch": 11,
+      "code": 0,
+      "layer": "base",
+      "notes": "TRAX push note [trax]"
+    },
+    {
+      "name": "back",
+      "section": "browser",
+      "type": "note",
+      "ch": 11,
+      "code": 1,
+      "layer": "base",
+      "notes": "BACK note [back]"
+    }
+  ]
+}

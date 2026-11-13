@@ -244,6 +244,107 @@ describe('executeSilenceDropoutPlan honest stop', () => {
 		assert.equal(actHarness.deckStates[2].stable_id, 'deck-2-track');
 	});
 
+	it('processor-error dropout stops live decks, notifies listeners, and arms AutoPlay recovery', async () => {
+		// Issue #13431: cause-specific handling through the action handler, not only the table.
+		actHarness.resetAutoPlaySilenceRecovery();
+		actHarness.deckStates[1].playing = true;
+		actHarness.deckStates[1].audible = true;
+		actHarness.setDispatchPerformanceCommandStub(async () => {});
+		const stopped = [];
+		const off = actHarness.onSilenceDropoutStopped((decks) => stopped.push([...decks]));
+
+		const plan = actHarness.planSilenceDropout({
+			decks: [
+				{ ...BASE_DECKS[0], processor_error: 'Deck 1 processor failed - boom' },
+				BASE_DECKS[1]
+			],
+			events: [{ t: 't', kind: 'xrun', message: 'noise', severity: 'warn' }],
+			autoplay_enabled: true,
+			has_playable_next: true
+		});
+		try {
+			await actHarness.executeSilenceDropoutPlan(plan);
+		} finally {
+			off();
+		}
+
+		assert.equal(plan.cause, 'processor-error');
+		assert.match(plan.toast, /cause=processor-error/);
+		assert.match(plan.cause_message, /cause=processor-error/);
+		assert.deepEqual(
+			actHarness
+				.getDispatchPerformanceCommandCalls()
+				.filter((cmd) => cmd.type === 'play' && cmd.playing === false)
+				.map((cmd) => cmd.deck),
+			[1]
+		);
+		assert.deepEqual(stopped, [[1]]);
+		assert.equal(actHarness.isSilenceRecovering(), true, 'AutoPlay must recover, not idle-disarm');
+		actHarness.resetAutoPlaySilenceRecovery();
+	});
+
+	it('warning-level xrun only stops honestly as cause=unknown without AutoPlay recovery', async () => {
+		// Issue #13431: warn-severity xrun windows are noise, not a cause (LIVE-01).
+		actHarness.resetAutoPlaySilenceRecovery();
+		actHarness.deckStates[1].playing = true;
+		actHarness.deckStates[1].audible = true;
+		actHarness.setDispatchPerformanceCommandStub(async () => {});
+
+		const plan = actHarness.planSilenceDropout({
+			decks: [BASE_DECKS[0], BASE_DECKS[1]],
+			events: [{ t: 't', kind: 'xrun', message: '3 xrun(s) in 2000ms', severity: 'warn' }],
+			autoplay_enabled: false,
+			has_playable_next: true
+		});
+		await actHarness.executeSilenceDropoutPlan(plan);
+
+		assert.equal(plan.cause, 'unknown');
+		assert.match(plan.cause_message, /cause=unknown/);
+		assert.doesNotMatch(plan.toast, /cause=xrun/);
+		assert.match(plan.toast, /last=none/);
+		assert.deepEqual(
+			actHarness.getDispatchPerformanceCommandCalls().map((cmd) => cmd.deck),
+			[1]
+		);
+		assert.equal(actHarness.isSilenceRecovering(), false);
+	});
+
+	it('healthy audible sample after a processor-error dropout resets the watchdog and recovery', async () => {
+		// Issue #13431: one dropout is one stop; healthy audio re-arms the edge for the next one.
+		actHarness.resetAutoPlaySilenceRecovery();
+		actHarness.deckStates[1].playing = true;
+		actHarness.deckStates[1].audible = true;
+		actHarness.setDispatchPerformanceCommandStub(async () => {});
+		const windowMs = actHarness.SILENT_WHILE_PLAYING_MS;
+
+		let fold = actHarness.foldSilenceSample(undefined, { playing: true, masterRms: 0, tMs: 0 });
+		fold = actHarness.foldSilenceSample(fold, { playing: true, masterRms: 0, tMs: windowMs });
+		assert.equal(fold.verdict, 'silent-while-playing');
+
+		const plan = actHarness.planSilenceDropout({
+			decks: [{ ...BASE_DECKS[0], processor_error: 'boom' }],
+			events: [],
+			autoplay_enabled: true,
+			has_playable_next: true
+		});
+		await actHarness.executeSilenceDropoutPlan(plan);
+		assert.equal(plan.cause, 'processor-error');
+		assert.equal(actHarness.isSilenceRecovering(), true);
+
+		fold = actHarness.foldSilenceSample(fold, {
+			playing: true,
+			audible: true,
+			masterRms: 0.2,
+			tMs: windowMs + 100
+		});
+		assert.deepEqual(
+			{ verdict: fold.verdict, silentSinceMs: fold.silentSinceMs, reported: fold.reported },
+			{ verdict: 'ok', silentSinceMs: null, reported: false }
+		);
+		actHarness.noteAutoPlayFollowerPlayDispatched();
+		assert.equal(actHarness.isSilenceRecovering(), false, 'follower play clears recovery');
+	});
+
 	it('clears live flags without unload when pause dispatch throws', async () => {
 		actHarness.deckStates[1].playing = true;
 		actHarness.deckStates[1].audible = true;

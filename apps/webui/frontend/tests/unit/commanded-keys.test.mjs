@@ -7,6 +7,10 @@
  * - if Cmd+2 is pressed then beats are not 0 and value is not 0.125 immediately
  * - if nothing is selected and 2 is pressed then deck layout Cmd+2 must still resolve
  * - if two knobs are shift-selected and 5 is pressed then both must move to 0.5
+ * - if = from the default length is not 8, then 16, then still 16 beats then broken (#9455)
+ * - if - from 1 beat goes below 1 then broken (#9455)
+ * - if a digit glide ignores the stored length then broken (#9455)
+ * - if = or - is claimed with nothing selected (loop resize must keep them) then broken (#9455)
  */
 
 import assert from 'node:assert/strict';
@@ -33,6 +37,7 @@ function makeDeps({
 	settingsOpen = () => false
 } = {}) {
 	const calls = { setAbsolute: [], startGlides: [], prevented: 0, stopped: 0 };
+	const store = { beats: 4 };
 	const deps = {
 		selectedIds: () => selectedIds,
 		readValue: (id) => (values.has(id) ? values.get(id) : null),
@@ -42,7 +47,11 @@ function makeDeps({
 		},
 		startGlides: (moves) => calls.startGlides.push([...moves]),
 		isTyping,
-		settingsOpen
+		settingsOpen,
+		beats: () => store.beats,
+		setBeats: (beats) => {
+			store.beats = beats;
+		}
 	};
 	const run = (partial) => {
 		let prevented = false;
@@ -61,7 +70,7 @@ function makeDeps({
 		const result = ck.handleCommandedKeydown(event, deps);
 		return { result, calls, prevented, stopped, values };
 	};
-	return { run, deps, calls, values };
+	return { run, deps, calls, values, store };
 }
 
 test('COMMANDED_POSITIONS matches the 1-9 table', () => {
@@ -303,8 +312,8 @@ test('performanceCommandsInScope lists dial commands in both dial and fader scop
 	const dial = registry.performanceCommandsInScope('dial');
 	const fader = registry.performanceCommandsInScope('fader');
 	const global = registry.performanceCommandsInScope('global');
-	assert.equal(dial.length, 18);
-	assert.equal(fader.length, 18);
+	assert.equal(dial.length, 20);
+	assert.equal(fader.length, 20);
 	for (const def of dial) {
 		assert.ok(def.scopes.includes('dial') && def.scopes.includes('fader'));
 	}
@@ -318,7 +327,7 @@ test('registryCommandCandidates builds Cmd-K performance rows', async () => {
 	const registry = await loadTypeScriptModule('src/lib/keyboard/command-registry.ts');
 	const cmdk = await loadTypeScriptModule('src/lib/rb/cmdk-actions.ts');
 	const rows = cmdk.registryCommandCandidates(registry.performanceCommandsInScope('dial'));
-	assert.equal(rows.length, 18);
+	assert.equal(rows.length, 20);
 	assert.ok(rows.every((row) => row.command.type === 'performance'));
 	const jump2 = rows.find((row) => row.id === 'dial.jump.2');
 	const pos5 = rows.find((row) => row.id === 'dial.position.5');
@@ -386,4 +395,92 @@ test('PRRT_kwDOSEvNd861F5GB: the dial commands are run through the command regis
 		'utf8'
 	);
 	assert.match(knobs, /runPerformanceCommand\(/);
+});
+
+// ----- #9455 (D4): = and - double and halve the commanded move length -----
+
+const KEY = { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+
+function lengthBag(beats) {
+	const bag = makeDeps({ selectedIds: ['4:low'], values: new Map([['4:low', 0.2]]) });
+	if (beats !== undefined) bag.store.beats = beats;
+	return bag;
+}
+
+test('if a dial is selected and = is pressed from the default then 8, again 16, again still 16', () => {
+	/** [if] = is pressed three times from the default 4 [then] the length reads 8, 16, 16 and each press is claimed, [else stop]. */
+	const bag = lengthBag();
+	const seen = [];
+	for (let i = 0; i < 3; i += 1) {
+		const { result, prevented, stopped } = bag.run({ ...KEY, key: '=' });
+		assert.deepEqual(result, []);
+		assert.ok(prevented && stopped);
+		seen.push(bag.store.beats);
+	}
+	assert.deepEqual(seen, [8, 16, 16]);
+	assert.equal(bag.calls.startGlides.length, 0);
+	const shifted = lengthBag();
+	shifted.run({ ...KEY, key: '+', shiftKey: true });
+	assert.equal(shifted.store.beats, 8);
+});
+
+test('if - is pressed from 1 beat then it stays 1', () => {
+	/** [if] - and _ are pressed with the length at 1 beat [then] the length stays 1, [else stop]. */
+	const bag = lengthBag(1);
+	bag.run({ ...KEY, key: '-' });
+	assert.equal(bag.store.beats, 1);
+	bag.run({ ...KEY, key: '_', shiftKey: true });
+	assert.equal(bag.store.beats, 1);
+	const halving = lengthBag();
+	halving.run({ ...KEY, key: '-' });
+	assert.equal(halving.store.beats, 2);
+});
+
+test('a digit glide uses the stored length after = is pressed', () => {
+	/** [if] = takes the length to 8 and then 5 is pressed [then] the planned glide is 8 beats, [else stop]. */
+	const bag = lengthBag();
+	bag.run({ ...KEY, key: '=' });
+	bag.run({ ...KEY, key: '5' });
+	assert.deepEqual(bag.calls.startGlides, [[{ controlId: '4:low', from: 0.2, to: 0.5, beats: 8 }]]);
+});
+
+test('= and - are not claimed with nothing selected, with Cmd held, or on repeat do not step', () => {
+	/** [if] nothing is selected or Cmd is held [then] = is not claimed; a repeat is claimed but does not step, [else stop]. */
+	const empty = makeDeps({ selectedIds: [] });
+	const bare = empty.run({ ...KEY, key: '=' });
+	assert.equal(bare.result, null);
+	assert.equal(bare.prevented, false);
+	assert.equal(empty.store.beats, 4);
+	const bag = lengthBag();
+	assert.equal(bag.run({ ...KEY, key: '=', metaKey: true }).result, null);
+	assert.deepEqual(bag.run({ ...KEY, key: '=', repeat: true }).result, []);
+	assert.equal(bag.store.beats, 4);
+});
+
+test('stepCommandedBeats walks 1, 2, 4, 8, 16 and refuses a length off the ladder', () => {
+	/** [if] the ladder is walked both ways [then] it clamps at 1 and 16 and throws for 3, [else stop]. */
+	assert.deepEqual([...ck.COMMANDED_BEAT_STEPS], [1, 2, 4, 8, 16]);
+	assert.equal(ck.stepCommandedBeats(16, 'longer'), 16);
+	assert.equal(ck.stepCommandedBeats(2, 'shorter'), 1);
+	assert.throws(() => ck.stepCommandedBeats(3, 'longer'), RangeError);
+});
+
+test('the registry runs dial.duration.longer and .shorter in dial and fader scope', async () => {
+	/** [if] the registry runs the two length commands on a host [then] the length steps; without a host it throws, [else stop]. */
+	const registry = await loadTypeScriptModule('src/lib/keyboard/command-registry.ts');
+	for (const id of ['dial.duration.longer', 'dial.duration.shorter']) {
+		const def = registry.listPerformanceCommands().find((d) => d.id === id);
+		assert.ok(def, `${id} not registered`);
+		assert.ok(def.scopes.includes('dial') && def.scopes.includes('fader'), `${id} scopes`);
+	}
+	const bag = lengthBag();
+	registry.runCommand('dial.duration.longer', { timeStamp: 0, commanded: bag.deps });
+	assert.equal(bag.store.beats, 8);
+	registry.runCommand('dial.duration.shorter', { timeStamp: 0, commanded: bag.deps });
+	registry.runCommand('dial.duration.shorter', { timeStamp: 0, commanded: bag.deps });
+	assert.equal(bag.store.beats, 2);
+	assert.throws(
+		() => registry.runCommand('dial.duration.longer', { timeStamp: 0 }),
+		/no dial or fader host/
+	);
 });

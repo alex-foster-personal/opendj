@@ -201,6 +201,9 @@ class ListingOut(BaseModel):
     screenshots: list[ScreenshotOut]
     capability_kind: str | None = None
     store_surface: str | None = None
+    provider_owner: str | None = None
+    official_docs_url: str | None = None
+    allowed_use_review: str | None = None
 
 
 class ProviderQuotaOut(BaseModel):
@@ -209,6 +212,54 @@ class ProviderQuotaOut(BaseModel):
     remaining: int | None
     reset_at: int | None
     retry_after_s: int | None
+
+
+class CyaniteFactsOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    free_web_monthly_analyses: int
+    api_base_fee_eur_month: int
+    similarity_catalog_min_tracks: int
+    rate_limit_headers: list[str]
+
+
+class CyaniteReadyOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    plugin_id: str
+    configured: bool
+    quota: ProviderQuotaOut | None = None
+
+
+class CyaniteEnrichIn(BaseModel):
+    stable_id: str
+    library_track_id: str
+    input_fingerprint: str
+    observed_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds"))
+
+
+class CyaniteEnrichOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    claims: list[dict[str, object]]
+    quota: ProviderQuotaOut | None
+
+
+class EpidemicReadyOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    plugin_id: str
+    configured: bool
+    quota: ProviderQuotaOut | None = None
+
+
+class EpidemicEnrichIn(BaseModel):
+    stable_id: str
+    reference_track_id: str
+    input_fingerprint: str
+    observed_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds"))
+
+
+class EpidemicEnrichOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    claims: list[dict[str, object]]
+    quota: ProviderQuotaOut | None
 
 
 class ProviderSurfaceOut(BaseModel):
@@ -408,6 +459,9 @@ def _listing_out(plugin_id: str, listing: Listing) -> ListingOut:
         ],
         capability_kind=listing.capability_kind,
         store_surface=listing.store_surface,
+        provider_owner=listing.provider_owner,
+        official_docs_url=listing.official_docs_url,
+        allowed_use_review=listing.allowed_use_review,
     )
 
 

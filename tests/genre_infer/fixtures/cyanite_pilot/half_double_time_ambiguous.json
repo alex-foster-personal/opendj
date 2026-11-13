@@ -1,0 +1,16 @@
+{
+  "status_code": 200,
+  "turnaround_ms": 9102.0,
+  "stable_id": "pilot-ambig-02",
+  "headers": {
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "3",
+    "x-ratelimit-reset": "1731340800"
+  },
+  "body": {
+    "modelVersion": "auto-tagging-2.0",
+    "BpmV2": {"bpm": 87, "version": "BpmV2"},
+    "tags": [{"tag": "Downtempo", "score": 0.71}],
+    "segments": [{"start": 0, "end": 15000, "scores": {"energy": 0.55}}]
+  }
+}

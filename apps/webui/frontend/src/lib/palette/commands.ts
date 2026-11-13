@@ -45,6 +45,7 @@ export type PaletteIpcCommand =
 	| { type: 'playlist_undo' }
 	| { type: 'playlist_redo' }
 	| { type: 'tech_mode_toggle' }
+	| { type: 'toggle_large_library' }
 	| { type: 'wave_zoom_step'; direction: 'in' | 'out' };
 
 export type PaletteBarRun =
@@ -463,6 +464,28 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		available: () => true
 	},
 	{
+		id: 'section.jump_next',
+		title: 'Jump to next section',
+		keywords: ['section', 'jump', 'phrase', 'next'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-section-jump-next',
+		run: null,
+		waits: 'Acts on the most recent deck the performance hotkeys track, not a bar pick.',
+		available: () => true
+	},
+	{
+		id: 'section.jump_previous',
+		title: 'Jump to previous section',
+		keywords: ['section', 'jump', 'phrase', 'previous', 'back'],
+		args: [],
+		menu: null,
+		hotkey: 'performance-section-jump-previous',
+		run: null,
+		waits: 'Acts on the most recent deck the performance hotkeys track, not a bar pick.',
+		available: () => true
+	},
+	{
 		id: 'tempo.step_fine',
 		title: 'Step tempo fine',
 		keywords: ['tempo', 'pitch', 'nudge', 'comma', 'period'],
@@ -525,8 +548,19 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		menu: null,
 		hotkey: 'edge-sampler-tab',
 		run: null,
+		waits: 'Digits 1 through 0 fire tabs on the awake edge when the edge sampler is on (Electron).',
+		available: () => true
+	},
+	{
+		id: 'edge_sampler.page_set',
+		title: 'Page edge sampler set',
+		keywords: ['sampler', 'edge', 'page', 'set', 'bank'],
+		args: [],
+		menu: null,
+		hotkey: 'edge-sampler-page',
+		run: null,
 		waits:
-			'Digits 1 through 0 fire tabs on the last edge used when the edge sampler is on (Electron).',
+			"PageUp / PageDown page the awake edge's set back or forward when the edge sampler is on (Electron).",
 		available: () => true
 	},
 	{
@@ -602,6 +636,16 @@ const SPECS: readonly PaletteCommandSpec[] = [
 		hotkey: 'tech-mode-opt',
 		run: null,
 		waits: 'A hold-only gesture, not a palette pick.',
+		available: () => true
+	},
+	{
+		id: 'library.large_toggle',
+		title: 'Large library',
+		keywords: ['library', 'large', 'grow', 'option'],
+		args: [],
+		menu: null,
+		hotkey: 'large-library',
+		run: { kind: 'bar', build: () => ({ via: 'ipc', command: { type: 'toggle_large_library' } }) },
 		available: () => true
 	},
 	{
@@ -691,8 +735,11 @@ const exclusions = {
 	'track.grid_edit':
 		'Locks or edits the grid of the track a deck holds; reached from the deck right-click menu, the deck menu, and the grid buttons; the menu keeps this disabled until a lock flag ships.',
 	'track.library_job': NEEDS_TRACK,
+	'title_fix.scan': NEEDS_TRACK,
 	'track.stems.generate': NEEDS_TRACK,
 	'track.remove_from_library': NEEDS_TRACK,
+	'track.undelete': NEEDS_TRACK,
+	'track.tag_list_add': NEEDS_TRACK,
 	'track.offload': NEEDS_TRACK,
 	'track.offload_restore': NEEDS_TRACK,
 	'track.pair': NEEDS_TRACK,
@@ -718,6 +765,7 @@ const exclusions = {
 	'smartlist.update': NEEDS_LIST,
 	'smartlist.delete': NEEDS_LIST,
 	'smartlist.duplicate': NEEDS_LIST,
+	'smartlist.refresh': NEEDS_LIST,
 	'library.refresh': NEEDS_SOURCE,
 	'library.folders': NEEDS_SOURCE,
 	'perf.view':

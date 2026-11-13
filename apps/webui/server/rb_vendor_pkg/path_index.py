@@ -22,9 +22,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from apps.adapters.rekordbox.config import FILE_EXISTS_TTL_S
-from apps.adapters.rekordbox.paths import resolve_asset_path
 from apps.shared import fs_residency
-from apps.shared.platform_paths import load_path_map
+from apps.shared.platform_paths import PathMap, load_path_map, resolve_asset_path
 from apps.shared.state import machine_identity
 
 _SQL_CHUNK: int = 500
@@ -60,15 +59,18 @@ def _is_stale(checked_at: datetime, *, now: datetime | None = None) -> bool:
     return anchor - checked_at > timedelta(seconds=FILE_EXISTS_TTL_S)
 
 
-def measure_logical_path(path: str) -> tuple[int | None, int | None, str | None]:
+def measure_logical_path(
+    path: str, *, path_map: PathMap | None = None
+) -> tuple[int | None, int | None, str | None]:
     """Materialised size and mtime of a library path, and the file measured.
 
     Size and mtime are None when the path does not resolve, is missing, is not a
     file, or is a dataless stub. This is the background refresher's stat;
     request handlers stat through ``track_rows._stat_size`` so the per-request
-    budget stays observable in one place.
+    budget stays observable in one place. A batch caller hands in the
+    ``path_map`` it loaded once; without one the map is reloaded per path.
     """
-    resolved = resolve_asset_path(path).resolved
+    resolved = resolve_asset_path(path, path_map=path_map).resolved
     if resolved is None:
         return None, None, None
     measured = fs_residency.materialised_stat(resolved)

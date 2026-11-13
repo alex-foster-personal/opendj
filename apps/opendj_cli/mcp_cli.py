@@ -23,7 +23,14 @@ def run(
         action="store_true",
         help="allow destructive library verbs in this process (tests only)",
     )
+    parser.add_argument(
+        "--persona-run",
+        action="store_true",
+        help="cli-mcp persona harness server (destructive stays gated; issue #11277)",
+    )
     args = parser.parse_args(list(rest))
+    if args.persona_run and args.enable_destructive:
+        parser.error("persona cli-mcp runs cannot pass --enable-destructive")
     if args.enable_destructive:
         os.environ[ENABLE_DESTRUCTIVE_ENV] = "1"
     from apps.opendj_cli.mcp_server import run_stdio

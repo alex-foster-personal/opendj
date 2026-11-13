@@ -10,6 +10,7 @@ Writeback classification for plan/diff ``open_db()`` paths lives in
 """
 from __future__ import annotations
 
+import csv
 import json
 import sqlite3
 from collections import Counter, defaultdict
@@ -94,7 +95,38 @@ def get_status() -> dict[str, Any]:
         "fingerprint_available": fp["fingerprint_available"],
         "fingerprint_reason": fp.get("reason"),
         "writeback_enabled": writeback_enabled(),
+        "ratings_diff": ratings_diff_summary(SYNC_DIR / "ratings-diff.csv"),
     }
+
+
+def ratings_diff_summary(csv_path: Path) -> dict[str, Any]:
+    """Count pending ratings-diff rows by resolution, read-only, naming a malformed CSV."""
+    summary: dict[str, Any] = {
+        "present": csv_path.exists(),
+        "row_count": 0,
+        "by_resolution": {},
+        "error": None,
+    }
+    if not summary["present"]:
+        return summary
+    counts: Counter[str] = Counter()
+    try:
+        with csv_path.open("r", newline="", encoding="utf-8") as fp:
+            reader = csv.DictReader(fp)
+            if "resolution" not in (reader.fieldnames or []):
+                summary["error"] = "ratings-diff.csv has no resolution column"
+                return summary
+            for line_no, row in enumerate(reader, start=2):
+                if None in row:
+                    summary["error"] = f"ratings-diff.csv line {line_no} has extra fields"
+                    return summary
+                counts[row.get("resolution") or ""] += 1
+    except (csv.Error, UnicodeDecodeError, OSError) as exc:
+        summary["error"] = f"ratings-diff.csv unreadable: {exc}"
+        return summary
+    summary["row_count"] = sum(counts.values())
+    summary["by_resolution"] = dict(counts)
+    return summary
 
 
 def ensure_djay_working_copy() -> Path:
@@ -320,6 +352,29 @@ def run_playlist_apply(
     }
 
 
+def unmatched_rating_rows(
+    rb_ratings: dict[str, int],
+    djay_ratings: dict[str, int],
+    pairs: list[tuple[str, str]],
+) -> list[Any]:
+    """Return no-write ratings-diff rows for rated tracks with no matched pair (SYNC-12985)."""
+    from apps.audit.sync_diff import DiffRow
+    from apps.sync.ratings import unmatched_rating_diffs
+
+    return [
+        DiffRow(
+            rb_content_id=d.rb_id,
+            djay_uuid=d.djay_uuid,
+            field="rating",
+            rb_value=str(d.rb_rating) if d.rb_id else "",
+            djay_value=str(d.djay_rating) if d.djay_uuid else "",
+            resolution="unmatched",
+            action_hint="skip (no match)",
+        )
+        for d in unmatched_rating_diffs(rb_ratings, djay_ratings, pairs)
+    ]
+
+
 def run_metadata_plan(
     *,
     matches_path: Path | None = None,
@@ -348,7 +403,9 @@ def run_metadata_plan(
     rb_db = open_db()
     try:
         rb_analysis = {a.uuid_or_id: a for a in rb_iter_analysis(rb_db)}
-        rb_ratings = {str(t.id): (t.rating or 0) for t in rb_iter_tracks(rb_db)}
+        rb_tracks = list(rb_iter_tracks(rb_db))
+        rb_ratings = {str(t.id): (t.rating or 0) for t in rb_tracks}
+        rb_rating_mtimes = {str(t.id): getattr(t, "updated_at", None) for t in rb_tracks}
     finally:
         try:
             rb_db.close()
@@ -356,7 +413,9 @@ def run_metadata_plan(
             pass
 
     djay_analysis = {a.uuid_or_id: a for a in djay_iter_analysis(djay_path)}
-    djay_ratings = {t.uuid: (t.rating or 0) for t in djay_iter_tracks(djay_path)}
+    djay_tracks = list(djay_iter_tracks(djay_path))
+    djay_ratings = {t.uuid: (t.rating or 0) for t in djay_tracks}
+    djay_rating_mtimes = {t.uuid: getattr(t, "modified_at", None) for t in djay_tracks}
     pairs = list(
         sync_diff.iter_match_pairs(resolved_matches, min_confidence=min_confidence)
     )
@@ -368,7 +427,10 @@ def run_metadata_plan(
         djay_ratings,
         pairs,
         prefer=resolved_prefer,
+        rb_rating_modified_by_id=rb_rating_mtimes,
+        djay_rating_modified_by_uuid=djay_rating_mtimes,
     )
+    rating_rows.extend(unmatched_rating_rows(rb_ratings, djay_ratings, pairs))
     analysis_csv = resolved_out / "analysis-diff.csv"
     ratings_csv = resolved_out / "ratings-diff.csv"
     sync_diff.write_diff_csv(analysis_rows, analysis_csv)
@@ -553,12 +615,24 @@ def run_ratings_apply(
     dry_run: bool = True,
     diff_csv: Path | None = None,
     live: bool = False,
-    cautious: bool = False,  # noqa: ARG001 - kept for its keyword callers
-    bulk: bool = False,  # noqa: ARG001 - kept for its keyword callers
+    cautious: bool = False,
+    bulk: bool = False,
     tracks: list[str] | None = None,
     i_understand_the_risks: bool = False,
 ) -> dict[str, Any]:
+    """Dry-run or live ratings apply through the CLI's dry-run, cautious, bulk sequence.
+
+    Safety refusals raise typed ``RbDjaySyncError`` codes: ``LIVE_WRITE_REFUSED``
+    (no acknowledgement), ``WRITEBACK_DISABLED``, ``SAFETY_ABORT`` (a live-write
+    rail refused, e.g. Rekordbox is running, or the cautious-then-bulk staging
+    was not followed).
+    """
     from apps.sync import apply_ratings  # noqa: PLC0415
+    from apps.sync.safety import (
+        SafetyAbort,
+        mark_cautious_success,
+        require_cautious_before_bulk,
+    )
 
     resolved_csv = diff_csv or (SYNC_DIR / "ratings-diff.csv")
     rows = load_diff_rows(resolved_csv)
@@ -578,14 +652,35 @@ def run_ratings_apply(
     except RekordboxWritebackDisabled as exc:
         raise RbDjaySyncError(exc.message, code="WRITEBACK_DISABLED") from exc
     only_tracks = set(tracks) if tracks else None
-    apply_ratings.live_run(
-        rows,
-        rb_db_path=paths.REKORDBOX_LIVE_DB,
-        djay_db_path=paths.DJAY_LIVE_DB,
-        only_tracks=only_tracks,
-        flag_ok=i_understand_the_risks,
-    )
-    return {"dry_run": False, "row_count": len(rows)}
+    if cautious == bulk:
+        raise RbDjaySyncError(
+            "live ratings apply needs exactly one of cautious or bulk",
+            code="SAFETY_ABORT",
+        )
+    if cautious and not only_tracks:
+        raise RbDjaySyncError(
+            "cautious ratings apply requires selected tracks",
+            code="SAFETY_ABORT",
+        )
+    try:
+        if bulk:
+            require_cautious_before_bulk("apply_ratings")
+        rc = apply_ratings.live_run(
+            rows,
+            rb_db_path=paths.REKORDBOX_LIVE_DB,
+            djay_db_path=paths.DJAY_LIVE_DB,
+            only_tracks=only_tracks,
+            flag_ok=i_understand_the_risks,
+        )
+    except SafetyAbort as exc:
+        raise RbDjaySyncError(str(exc), code="SAFETY_ABORT") from exc
+    if rc == 0 and cautious:
+        mark_cautious_success("apply_ratings")
+    return {
+        "dry_run": False,
+        "row_count": len(rows),
+        "stage": "cautious" if cautious else "bulk",
+    }
 
 
 def _resolve_stable_id(state_conn: sqlite3.Connection, rb_content_id: str) -> str:
@@ -681,6 +776,7 @@ __all__ = [
     "get_status",
     "list_djay_playlists",
     "playlist_rb_djay_diff",
+    "ratings_diff_summary",
     "run_analysis_apply",
     "run_cues_apply",
     "run_cues_plan",
@@ -689,4 +785,5 @@ __all__ = [
     "run_playlist_apply",
     "run_playlist_plan",
     "run_ratings_apply",
+    "unmatched_rating_rows",
 ]

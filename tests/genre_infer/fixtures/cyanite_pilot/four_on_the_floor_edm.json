@@ -1,0 +1,25 @@
+{
+  "status_code": 200,
+  "turnaround_ms": 8421.5,
+  "consent_recorded_at": "2026-11-01T12:00:00+00:00",
+  "stable_id": "pilot-edm-01",
+  "headers": {
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "4",
+    "x-ratelimit-reset": "1731340800",
+    "parallel-quota": "2"
+  },
+  "body": {
+    "__typename": "AudioAnalysisV6",
+    "modelVersion": "auto-tagging-2.0",
+    "BpmV2": {"bpm": 128, "version": "BpmV2"},
+    "tags": [
+      {"tag": "House", "score": 0.91},
+      {"tag": "Energetic", "score": 0.88}
+    ],
+    "segments": [
+      {"start": 0, "end": 10000, "scores": {"energy": 0.7, "movement": 0.8}},
+      {"start": 10000, "end": 20000, "scores": {"energy": 0.75, "movement": 0.82}}
+    ]
+  }
+}

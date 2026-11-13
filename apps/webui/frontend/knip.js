@@ -165,6 +165,15 @@ export default {
 		'src/lib/keyboard/command-registry.ts',
 		// #10270 / #9804 NOISE kernel: unit tests until color-fx-graph splices it in.
 		'src/lib/rb/color-fx-noise.ts',
+		// Edge sampler client (#10778), search, sets and store logic (#11102) and store core
+		// (#10784): the store imports each module now, but part of each module's exports stay
+		// unit-test-only until the edge components and agent parity land (port map rows 22-27).
+		'src/lib/player/sampler/{sampler-types,sampler-repeat,api-sampler}.ts',
+		'src/lib/player/sampler/{edge-search,sampler-sets,sampler-store-logic}.ts',
+		'src/lib/player/sampler/sampler-store.svelte.ts',
+		// Edge sampler engine sub-chain (#10782 warm pool, #11127 capture vector): pure modules
+		// loaded only by unit tests until the engine (port map row 18) imports them.
+		'src/lib/player/sampler/{sampler-warm,sampler-capture-vector}.ts',
 		'tests/unit/color-fx-noise-entry.mjs',
 		'tests/unit/variant-setting-entry.mjs',
 		'tests/unit/variant-setting-test-row.mjs'

@@ -26,7 +26,7 @@ import {
 	type PerformanceSessionSnapshotInput
 } from '$lib/rb/performance-session-snapshot';
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
-import { restoreStemControls } from '$lib/rb/stem-restore';
+import { restoreFailureToastMessage, restoreStemControls } from '$lib/rb/stem-restore';
 import {
 	consumeLibraryModeExitFlag,
 	libraryRescueHold,
@@ -264,7 +264,14 @@ async function _restoreDeck(
 		if (exc instanceof Error && exc.message === RESTORE_DISPOSED) throw exc;
 		const message = exc instanceof Error ? exc.message : String(exc);
 		if (isExpectedStemsLoadingMessage(message)) return;
-		pushToast(`session restore deck ${deckId} failed: ${message}`, 'error');
+		console.warn(`[session-restore] deck ${deckId} failed: ${message}`);
+		// #13771: clear the tile rather than leave a half-loaded track, and say the next step.
+		try {
+			await dispatch({ type: 'unload', deck: deckId });
+		} catch (unloadExc) {
+			console.warn(`[session-restore] deck ${deckId} unload after failure failed`, unloadExc);
+		}
+		pushToast(restoreFailureToastMessage(deckId), 'error');
 	}
 }
 

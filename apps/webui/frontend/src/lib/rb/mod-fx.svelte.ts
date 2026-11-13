@@ -7,7 +7,8 @@
  * re-anchors when the deck's effective tempo moves by 0.05 BPM or more
  * (carrying the beat forward, so the phase never jumps) and re-locks to the
  * grid with the graph's 10 ms wet crossfade when the playhead lands more than
- * 50 ms from where it should be (seek, beat jump, loop wrap, hot cue). If the
+ * 50 ms from where it should be (seek, beat jump, loop wrap, hot cue) or when
+ * the deck's beatgrid is replaced (a re-analysis or grid edit). If the
  * tempo vanishes mid-effect the last anchor keeps running. With no grid, no
  * downbeat or no tempo in 40..300 BPM, and no time_ms, the instance is inert
  * and `modFxView()` names why.
@@ -23,8 +24,10 @@ import { deckEffectiveBpm, getDeckState } from '$lib/player/state.svelte';
 import type { AnlzBeat } from './anlz-types';
 import { gridBeatPosition } from './beat-sync-math';
 import {
+	MOD_FX_CYCLE_BEATS,
 	MOD_FX_MAX_BPM,
 	MOD_FX_MIN_BPM,
+	MOD_FX_TIME_MS,
 	lfoAnchor,
 	lfoCycleSeconds,
 	lfoPhase,
@@ -48,7 +51,7 @@ export const MOD_FX_NO_TEMPO_REASON =
 export const MOD_FX_OFF_GRID_REASON =
 	'the playhead is outside the beatgrid, so the LFO cannot lock: move inside the grid, or set time_ms';
 
-export type ModFxEffect = 'flanger' | 'phaser';
+export type ModFxEffect = 'flanger' | 'phaser' | 'trans';
 
 /** What the flanger / phaser graph node must offer; injected so this module never builds audio. */
 export interface ModFxNodePort {
@@ -85,6 +88,8 @@ interface Instance {
 	deck: DeckId;
 	node: ModFxNodePort;
 	anchor: LfoAnchor | null;
+	/** The beatgrid the anchor was locked to; a new grid revision re-locks. */
+	beats: readonly AnlzBeat[];
 	tempoBpm: number | null;
 	inertReason: string | null;
 	lastPositionSec: number;
@@ -98,6 +103,9 @@ interface DeckReading {
 	/** Track seconds per context second, for extrapolating the playhead. */
 	rate: number;
 }
+
+/** One shared empty grid, so a deck with no grid does not read as a new grid every tick. */
+const NO_BEATS: readonly AnlzBeat[] = Object.freeze([]);
 
 const _instances = new Map<number, Instance>();
 let _nextId = 1;
@@ -114,7 +122,7 @@ function _deckTempo(deck: DeckId): number | null {
 function _deckReading(deck: DeckId): DeckReading {
 	const st = getDeckState(deck);
 	return {
-		beats: st.anlz?.beatgrid.beats ?? [],
+		beats: st.anlz?.beatgrid.beats ?? NO_BEATS,
 		positionSec: Math.max(0, st.position_ms / 1000),
 		rate: st.playing ? st.pitch : 0
 	};
@@ -134,6 +142,7 @@ function _inertReason(
 }
 
 function _remember(inst: Instance, reading: DeckReading, now: number): void {
+	inst.beats = reading.beats;
 	inst.lastPositionSec = reading.positionSec;
 	inst.lastContextTime = now;
 	inst.lastRate = reading.rate;
@@ -192,7 +201,10 @@ function _tick(): void {
 		}
 		const reading = _deckReading(inst.deck);
 		const expected = inst.lastPositionSec + (now - inst.lastContextTime) * inst.lastRate;
-		if (Math.abs(reading.positionSec - expected) > JUMP_THRESHOLD_SEC) {
+		if (
+			reading.beats !== inst.beats ||
+			Math.abs(reading.positionSec - expected) > JUMP_THRESHOLD_SEC
+		) {
 			_lock(inst, now, true);
 			continue;
 		}
@@ -235,12 +247,28 @@ export function attachModFx(deck: DeckId, node: ModFxNodePort): ModFxHandle {
 		throw new Error('mod-fx: node.crossfadeWet must be a function');
 	if (node.context === null || typeof node.context?.currentTime !== 'number')
 		throw new Error('mod-fx: node.context.currentTime must be a number');
+	if (!(MOD_FX_CYCLE_BEATS as readonly number[]).includes(node.cycleBeats))
+		throw new Error(
+			`mod-fx: node.cycleBeats must be one of ${MOD_FX_CYCLE_BEATS.join(', ')}, got ${String(node.cycleBeats)}`
+		);
+	if (
+		node.timeMs !== null &&
+		!(
+			typeof node.timeMs === 'number' &&
+			node.timeMs >= MOD_FX_TIME_MS.min &&
+			node.timeMs <= MOD_FX_TIME_MS.max
+		)
+	)
+		throw new Error(
+			`mod-fx: node.timeMs must be null or within ${MOD_FX_TIME_MS.min}..${MOD_FX_TIME_MS.max}, got ${String(node.timeMs)}`
+		);
 	const id = _nextId++;
 	const inst: Instance = {
 		id,
 		deck,
 		node,
 		anchor: null,
+		beats: NO_BEATS,
 		tempoBpm: null,
 		inertReason: null,
 		lastPositionSec: 0,

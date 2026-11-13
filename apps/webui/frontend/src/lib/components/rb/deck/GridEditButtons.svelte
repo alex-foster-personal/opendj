@@ -29,6 +29,8 @@
 	// the shared dispatcher, so a press shares the lifecycle lock and error
 	// state with every other deck control.
 	import { isUsbTrackId } from '$lib/rb/track-source';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { gridEditSelId } from './deck-pad-selector-ids';
 	import type { DeckId, DeckState } from '$lib/rb/deck-state-types';
 	import {
 		GRID_ADJUST_REPEAT_DELAY_MS,
@@ -157,6 +159,7 @@
 		title={adjustTitle}
 		aria-label={`grid adjust deck ${deckId}`}
 		data-testid={`grid-adjust-deck-${deckId}`}
+		use:selectorNode={{ id: gridEditSelId(deckId, 'adjust'), kind: 'leaf', enabled: unavailable === null }}
 		data-rust-command="grid_edit"
 		data-offset-ms={offsetMs}
 		onpointerdown={onAdjustPointerDown}
@@ -178,6 +181,7 @@
 		title={shiftTitle}
 		aria-label={`grid shift deck ${deckId}`}
 		data-testid={`grid-shift-deck-${deckId}`}
+		use:selectorNode={{ id: gridEditSelId(deckId, 'shift'), kind: 'leaf', enabled: unavailable === null }}
 		data-rust-command="grid_edit"
 		data-beat-shift={beatShift}
 		onclick={onShiftClick}

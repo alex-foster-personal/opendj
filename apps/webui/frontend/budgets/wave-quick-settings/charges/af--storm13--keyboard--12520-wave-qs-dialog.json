@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 14739,
+  "measured_with_pr": 15854,
+  "sha": "ca76c2af6c",
+  "date": "Fri 13 Nov 2026",
+  "reason": "Issue #12520 (WAVEQS-8348d) puts the shared focusTrap (src/lib/keyboard/focus-trap.ts) on the waveform quick-settings dialog so Tab cycles inside it. Measured +1115 B gzip on wave-quick-settings over main (other-lazy -1226 B in the same run, within noise); ceiled to KiB. The surface is lazy, so first paint does not grow.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

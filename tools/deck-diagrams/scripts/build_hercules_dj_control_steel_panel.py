@@ -8,7 +8,8 @@ Sources:
 - Trace: English user manual section 4.1 top face (page 6). PDF sha256 below; crop 780x520 at
   offset +95+115 on page-06.png (full render, not committed).
 - Wires: HERCULES_DJ_CONTROL_STEEL_MAP (manufacturer section 9 via device-maps.json). Every
-  message is CC channel 1; shift_midi is always null.
+  message is CC channel 1. Each keypad key is one hit target whose shift_midi carries the
+  documented SHIFT + key CC (keys 1-2 -> hot cue G-H, keys 3-6 -> hinted shift wires).
 
 Run: uv run python tools/deck-diagrams/scripts/build_hercules_dj_control_steel_panel.py
 """
@@ -36,6 +37,14 @@ ALIGN_TOL_MM = 1.5
 TRACE_DATE = "Thu 12 Nov 2026"
 TRACE_ISSUE = "#10928"
 _PLATE_W_PX = IMAGE_PX[0]
+CONTROL_COUNT = 76
+
+# SHIFT + keypad key CC per physical key (manual section 9): keys 1-2 send hot cue G-H,
+# keys 3-6 send the hinted shift wires. One hit target per key; the renderer picks shift_midi.
+_SHIFT_KEYPAD_CC: dict[str, int] = {
+    **{f"d1-hot-cue-{s}": cc for s, cc in zip("abcdef", (100, 101, 102, 103, 104, 105))},
+    **{f"d2-hot-cue-{s}": cc for s, cc in zip("abcdef", (106, 107, 108, 109, 110, 111))},
+}
 
 
 @dataclass(frozen=True)
@@ -153,15 +162,8 @@ def _assemble_px() -> dict[str, tuple[int, int, int, int]]:
     px.update(_PX_DECK_1)
     for k1, k2 in _DECK_1_TO_2.items():
         px[k2] = _mirror_px(_PX_DECK_1[k1])
-    px["d1-hot-cue-g"] = px["d1-hot-cue-a"]
-    px["d1-hot-cue-h"] = px["d1-hot-cue-b"]
-    px["d2-hot-cue-g"] = px["d2-hot-cue-a"]
-    px["d2-hot-cue-h"] = px["d2-hot-cue-b"]
-    for slot in "cdef":
-        px[f"d1-shift-hot-cue-{slot}"] = px[f"d1-hot-cue-{slot}"]
-        px[f"d2-shift-hot-cue-{slot}"] = px[f"d2-hot-cue-{slot}"]
-    if len(px) != 88:
-        raise RuntimeError(f"expected 88 traced controls, got {len(px)}")
+    if len(px) != CONTROL_COUNT:
+        raise RuntimeError(f"expected {CONTROL_COUNT} traced controls, got {len(px)}")
     return px
 
 
@@ -192,22 +194,18 @@ _META: dict[str, tuple[str, str, str, str, str, int]] = {
     "d2-pitch": ("14", "fader", "PITCH", "Tempo slider deck 2", "deck", 59),
     "d1-shift": ("2", "button", "SHIFT", "Hold for secondary pad functions (deck 1)", "deck", 115),
     "d2-shift": ("2", "button", "SHIFT", "Hold for secondary pad functions (deck 2)", "deck", 116),
-    "d1-hot-cue-a": ("9", "pad", "KEY 1", "Hot cue A (deck 1)", "performance", 1),
-    "d1-hot-cue-b": ("9", "pad", "KEY 2", "Hot cue B (deck 1)", "performance", 2),
+    "d1-hot-cue-a": ("9", "pad", "KEY 1", "Hot cue A; SHIFT hot cue G (deck 1)", "performance", 1),
+    "d1-hot-cue-b": ("9", "pad", "KEY 2", "Hot cue B; SHIFT hot cue H (deck 1)", "performance", 2),
     "d1-hot-cue-c": ("9", "pad", "KEY 3", "Hot cue C (deck 1)", "performance", 3),
     "d1-hot-cue-d": ("9", "pad", "KEY 4", "Hot cue D (deck 1)", "performance", 4),
     "d1-hot-cue-e": ("9", "pad", "KEY 5", "Hot cue E (deck 1)", "performance", 5),
     "d1-hot-cue-f": ("9", "pad", "KEY 6", "Hot cue F (deck 1)", "performance", 6),
-    "d1-hot-cue-g": ("9", "pad", "KEY 7", "Hot cue G shift layer (deck 1)", "performance", 100),
-    "d1-hot-cue-h": ("9", "pad", "KEY 8", "Hot cue H shift layer (deck 1)", "performance", 101),
-    "d2-hot-cue-a": ("9", "pad", "KEY 1", "Hot cue A (deck 2)", "performance", 25),
-    "d2-hot-cue-b": ("9", "pad", "KEY 2", "Hot cue B (deck 2)", "performance", 26),
+    "d2-hot-cue-a": ("9", "pad", "KEY 1", "Hot cue A; SHIFT hot cue G (deck 2)", "performance", 25),
+    "d2-hot-cue-b": ("9", "pad", "KEY 2", "Hot cue B; SHIFT hot cue H (deck 2)", "performance", 26),
     "d2-hot-cue-c": ("9", "pad", "KEY 3", "Hot cue C (deck 2)", "performance", 27),
     "d2-hot-cue-d": ("9", "pad", "KEY 4", "Hot cue D (deck 2)", "performance", 28),
     "d2-hot-cue-e": ("9", "pad", "KEY 5", "Hot cue E (deck 2)", "performance", 29),
     "d2-hot-cue-f": ("9", "pad", "KEY 6", "Hot cue F (deck 2)", "performance", 30),
-    "d2-hot-cue-g": ("9", "pad", "KEY 7", "Hot cue G shift layer (deck 2)", "performance", 106),
-    "d2-hot-cue-h": ("9", "pad", "KEY 8", "Hot cue H shift layer (deck 2)", "performance", 107),
     "ch1-ch-cue": ("21", "button", "CUE SELECT", "Headphone preview deck 1", "mixer", 20),
     "ch1-fader": ("22", "fader", "VOL", "Deck 1 channel fader", "mixer", 50),
     "d1-trim": ("3", "knob", "GAIN", "Channel gain deck 1", "mixer", 51),
@@ -236,10 +234,6 @@ _META: dict[str, tuple[str, str, str, str, str, int]] = {
     "d1-kill-treble": ("4", "button", "KILL TREBLE", "Kill treble deck 1", "mixer", 14),
     "d1-kill-medium": ("4", "button", "KILL MEDIUM", "Kill mids deck 1", "mixer", 15),
     "d1-kill-bass": ("4", "button", "KILL BASS", "Kill bass deck 1", "mixer", 16),
-    "d1-shift-hot-cue-c": ("2", "pad", "KEY 3 + SHIFT", "Shift on keypad 3 deck 1", "performance", 102),
-    "d1-shift-hot-cue-d": ("2", "pad", "KEY 4 + SHIFT", "Shift on keypad 4 deck 1", "performance", 103),
-    "d1-shift-hot-cue-e": ("2", "pad", "KEY 5 + SHIFT", "Shift on keypad 5 deck 1", "performance", 104),
-    "d1-shift-hot-cue-f": ("2", "pad", "KEY 6 + SHIFT", "Shift on keypad 6 deck 1", "performance", 105),
     "d1-fx-control-1": ("1", "encoder", "CONTROL 1", "FX control 1 deck 1", "effect", 65),
     "d1-fx-control-2": ("1", "encoder", "CONTROL 2", "FX control 2 deck 1", "effect", 66),
     "d2-previous": ("16", "button", "PREVIOUS", "Move back in the track (deck 2)", "deck", 33),
@@ -250,10 +244,6 @@ _META: dict[str, tuple[str, str, str, str, str, int]] = {
     "d2-kill-treble": ("4", "button", "KILL TREBLE", "Kill treble deck 2", "mixer", 38),
     "d2-kill-medium": ("4", "button", "KILL MEDIUM", "Kill mids deck 2", "mixer", 39),
     "d2-kill-bass": ("4", "button", "KILL BASS", "Kill bass deck 2", "mixer", 40),
-    "d2-shift-hot-cue-c": ("2", "pad", "KEY 3 + SHIFT", "Shift on keypad 3 deck 2", "performance", 108),
-    "d2-shift-hot-cue-d": ("2", "pad", "KEY 4 + SHIFT", "Shift on keypad 4 deck 2", "performance", 109),
-    "d2-shift-hot-cue-e": ("2", "pad", "KEY 5 + SHIFT", "Shift on keypad 5 deck 2", "performance", 110),
-    "d2-shift-hot-cue-f": ("2", "pad", "KEY 6 + SHIFT", "Shift on keypad 6 deck 2", "performance", 111),
     "d2-fx-control-1": ("1", "encoder", "CONTROL 1", "FX control 1 deck 2", "effect", 67),
     "d2-fx-control-2": ("1", "encoder", "CONTROL 2", "FX control 2 deck 2", "effect", 68),
     "scratch": ("7", "button", "SCRATCH", "Toggle jog scratch vs seek", "browse", 41),
@@ -314,11 +304,11 @@ def _controls() -> list[Control]:
                 h,
                 section,
                 Wire(1, "cc", cc),
-                None,
+                Wire(1, "cc", _SHIFT_KEYPAD_CC[cid]) if cid in _SHIFT_KEYPAD_CC else None,
             )
         )
-    if len(out) != 88:
-        raise SystemExit(f"[ERROR] expected 88 controls, got {len(out)}")
+    if len(out) != CONTROL_COUNT:
+        raise SystemExit(f"[ERROR] expected {CONTROL_COUNT} controls, got {len(out)}")
     for cid in _PX_REPEAT:
         if cid not in _META:
             raise SystemExit(f"[ERROR] repeat pass names unknown control {cid!r}")
@@ -421,7 +411,7 @@ def build() -> dict[str, object]:
             "Pitch bend +/- buttons (manual fig 12-13): no dedicated wires in the live map",
             "Rear-panel USB (manual callout 26)",
             "Branding print and mounting hardware",
-            "shift_midi: Steel uses software shift only; every control keeps shift_midi null",
+            "shift_midi: only the keypad keys carry a SHIFT wire; other controls use software shift",
         ],
         "controls": [asdict(c) for c in controls],
     }

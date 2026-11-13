@@ -74,6 +74,15 @@ from .artwork_export import (
     verify_artwork,
     write_artwork,
 )
+from .classic_export import (
+    ClassicExportError,
+    ClassicPlan,
+    ClassicPlaylistInput,
+    ClassicTrackInput,
+    apply_classic_export,
+    plan_classic_export,
+    readback_classic_export,
+)
 from .pdb_writer import PdbWriterError, pdb_export_from_dict, write_export_pdb
 from .reader import read_usb_export, validate_invariants
 
@@ -370,6 +379,64 @@ def _cmd_write_pdb(args: argparse.Namespace) -> int:
 
 
 # -----------------------------------------------------------------------
+# ``classic`` subcommands (classic device export to a directory).
+# -----------------------------------------------------------------------
+
+
+def _load_classic_plan(path: Path) -> ClassicPlan:
+    return ClassicPlan.from_payload(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _cmd_classic_plan(args: argparse.Namespace) -> int:
+    tracks = [
+        ClassicTrackInput(
+            source_path=Path(t["source"]).expanduser().resolve(),
+            title=t["title"],
+            artist=t["artist"],
+            album=t["album"],
+            bpm=float(t["bpm"]),
+            key_name=t["key"],
+        )
+        for t in json.loads(args.tracks)
+    ]
+    playlists = [
+        ClassicPlaylistInput(name=p["name"], pdb_track_ids=tuple(p["track_ids"])) for p in json.loads(args.playlists)
+    ]
+    try:
+        plan = plan_classic_export(tracks, playlists)
+    except ClassicExportError as exc:
+        json.dump({"error": exc.code, "message": exc.message}, sys.stderr)
+        sys.stderr.write("\n")
+        return 1
+    json.dump(plan.to_payload(), sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_classic_apply(args: argparse.Namespace) -> int:
+    plan = _load_classic_plan(Path(args.plan))
+    target = Path(args.target).expanduser().resolve()
+    try:
+        result = apply_classic_export(plan, target)
+    except ClassicExportError as exc:
+        json.dump({"error": exc.code, "message": exc.message}, sys.stderr)
+        sys.stderr.write("\n")
+        return 1
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_classic_readback(args: argparse.Namespace) -> int:
+    plan = _load_classic_plan(Path(args.plan))
+    target = Path(args.target).expanduser().resolve()
+    result = readback_classic_export(plan, target)
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0 if result.get("verified") else 1
+
+
+# -----------------------------------------------------------------------
 # ``artwork`` subcommand (USBEXP-10048).
 # -----------------------------------------------------------------------
 
@@ -653,6 +720,24 @@ def main(argv: list[str] | None = None) -> int:
     pdb.add_argument("--target", required=True, help="USB volume root.")
     pdb.add_argument("--spec", required=True, help="JSON file describing tracks and lookup tables.")
     pdb.set_defaults(func=_cmd_write_pdb)
+
+    classic = sub.add_parser("classic", help="Classic rekordbox export to a directory (plan/apply/readback).")
+    classic_sub = classic.add_subparsers(dest="classic_cmd", required=True)
+
+    cl_plan = classic_sub.add_parser("plan", help="Build an export plan.")
+    cl_plan.add_argument("--tracks", required=True, help="JSON list of track specs.")
+    cl_plan.add_argument("--playlists", required=True, help="JSON list of playlist specs.")
+    cl_plan.set_defaults(func=_cmd_classic_plan)
+
+    cl_apply = classic_sub.add_parser("apply", help="Apply a plan to an empty directory.")
+    cl_apply.add_argument("--target", required=True, help="Empty directory to receive the export.")
+    cl_apply.add_argument("--plan", required=True, help="Plan JSON path from classic plan.")
+    cl_apply.set_defaults(func=_cmd_classic_apply)
+
+    cl_readback = classic_sub.add_parser("readback", help="Verify plan receipts on disk.")
+    cl_readback.add_argument("--target", required=True, help="Export directory.")
+    cl_readback.add_argument("--plan", required=True, help="Plan JSON used for apply.")
+    cl_readback.set_defaults(func=_cmd_classic_readback)
 
     art = sub.add_parser("artwork", help="Plan or write the stick track artwork (USBEXP-10048).")
     art.add_argument("--target", required=True, help="USB volume root.")

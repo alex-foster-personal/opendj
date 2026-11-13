@@ -86,6 +86,7 @@ require_command spctl
 [ -z "${MDT_SHIP_UNSIGNED:-}" ] || die "MDT_SHIP_UNSIGNED must not be set for just release"
 [ -n "${MDT_MACOS_SIGNING_IDENTITY:-}" ] || die "MDT_MACOS_SIGNING_IDENTITY is required for just release"
 [ -n "${MDT_MACOS_NOTARY_KEYCHAIN_PROFILE:-}" ] || die "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE is required for just release"
+[ -n "${MDT_MACOS_NOTARY_KEYCHAIN:-}" ] || die "MDT_MACOS_NOTARY_KEYCHAIN (the keychain file holding that profile) is required for just release"
 [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] || die "TAURI_SIGNING_PRIVATE_KEY is required for just release"
 
 version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$CONF")"

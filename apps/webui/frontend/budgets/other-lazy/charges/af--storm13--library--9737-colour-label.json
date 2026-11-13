@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557761,
+  "measured_with_pr": 557995,
+  "sha": "b92346971b",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--9737-colour-label grows the other-lazy surface; measured +234 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

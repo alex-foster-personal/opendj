@@ -1,0 +1,2042 @@
+{
+  "device": "DJM-A9",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 666,
+    "height": 652
+  },
+  "layers": [
+    "base"
+  ],
+  "out_of_scope": [
+    "No SHIFT layer: the DJM-A9 has no SHIFT button and the MIDI list documents no +SHIFT rows",
+    "Rotary selectors (C1 INPUT, R14 SEND CH, R25 EFFECT SELECT) join one representative position; every position stays in midi.json",
+    "R18 X-PAD joins its slide CC; the touch CC stays in midi.json",
+    "R27 TIME joins its MSB CC; the LSB CC stays in midi.json",
+    "Controls the MIDI list does not document: MIC LEVEL 1 and 2, +48V, MIDI ON/OFF and START/STOP, CENTER LOCK, level meters, display",
+    "No MIDI input: the list has no MIDI-OUT column, so there are no LED rows"
+  ],
+  "controls": [
+    {
+      "id": "djm-a9-mic-eq-hi",
+      "fig": "l1",
+      "label": "MIC EQ HI",
+      "kind": "knob",
+      "x": 4.955,
+      "y": 27.454,
+      "w": 3.0781,
+      "h": 3.1442,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_eq_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[l1] L1 MIC EQ HI. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-mic-eq-low",
+      "fig": "l2",
+      "label": "MIC EQ LOW",
+      "kind": "knob",
+      "x": 4.955,
+      "y": 33.2055,
+      "w": 3.0781,
+      "h": 3.2975,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_eq_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[l2] L2 MIC EQ LOW. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-talkover",
+      "fig": "l3",
+      "label": "TALKOVER",
+      "kind": "button",
+      "x": 5.4805,
+      "y": 40.1074,
+      "w": 2.2523,
+      "h": 2.3006,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "talkover",
+        "type": "note",
+        "ch": 1,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[l3] L3 TALK OVER. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-mic-fx-echo",
+      "fig": "l4",
+      "label": "ECHO",
+      "kind": "button",
+      "x": 4.955,
+      "y": 45.7055,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_fx_echo",
+        "type": "cc",
+        "ch": 1,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[l4] L4 MIC FX ECHO. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-mic-fx-pitch",
+      "fig": "l5",
+      "label": "PITCH",
+      "kind": "button",
+      "x": 4.955,
+      "y": 50.5368,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_fx_pitch",
+        "type": "cc",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[l5] L5 MIC FX PITCH. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-mic-fx-megaphone",
+      "fig": "l6",
+      "label": "MEGAPHONE",
+      "kind": "button",
+      "x": 4.955,
+      "y": 55.3681,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_fx_megaphone",
+        "type": "cc",
+        "ch": 1,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[l6] L6 MIC FX MEGAPHONE. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-mic-fx-parameter",
+      "fig": "l7",
+      "label": "PARAMETER",
+      "kind": "knob",
+      "x": 5.1051,
+      "y": 61.3497,
+      "w": 3.0781,
+      "h": 3.3742,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_fx_parameter",
+        "type": "cc",
+        "ch": 1,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[l7] L7 MIC FX PARAMETER. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-mic-reverb",
+      "fig": "l8",
+      "label": "MIC REVERB",
+      "kind": "button",
+      "x": 4.955,
+      "y": 70.092,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_reverb",
+        "type": "note",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[l8] L8 MIC REVERB. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-mic-reverb-parameter",
+      "fig": "l9",
+      "label": "PARAMETER",
+      "kind": "knob",
+      "x": 5.1051,
+      "y": 75.2301,
+      "w": 3.0781,
+      "h": 3.4509,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_reverb_parameter",
+        "type": "cc",
+        "ch": 1,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[l9] L9 MIC REVERB PARAMETER. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-mic-on",
+      "fig": "l10",
+      "label": "MIC ON",
+      "kind": "button",
+      "x": 5.1802,
+      "y": 89.1871,
+      "w": 2.8529,
+      "h": 2.8374,
+      "layer": "base",
+      "section": "mic",
+      "midi": {
+        "name": "mic_on",
+        "type": "note",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[l10] L10 MIC ON. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-bluetooth",
+      "fig": "l11",
+      "label": "BLUETOOTH",
+      "kind": "button",
+      "x": 16.5916,
+      "y": 21.5491,
+      "w": 3.6036,
+      "h": 2.3006,
+      "layer": "base",
+      "section": "bluetooth",
+      "midi": {
+        "name": "bluetooth",
+        "type": "note",
+        "ch": 1,
+        "code": 112,
+        "shift_name": null
+      },
+      "notes": "[l11] L11 BLUETOOTH. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-space",
+      "fig": "l12",
+      "label": "SPACE",
+      "kind": "button",
+      "x": 14.1141,
+      "y": 45.7055,
+      "w": 3.0781,
+      "h": 1.9172,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_space",
+        "type": "note",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[l12] L12 SOUND COLOR FX SPACE. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-dub-echo",
+      "fig": "l13",
+      "label": "DUB ECHO",
+      "kind": "button",
+      "x": 19.2943,
+      "y": 45.7055,
+      "w": 3.1532,
+      "h": 1.8405,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_dub_echo",
+        "type": "note",
+        "ch": 1,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[l13] L13 SOUND COLOR FX DUB ECHO. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-crush",
+      "fig": "l14",
+      "label": "CRUSH",
+      "kind": "button",
+      "x": 14.1141,
+      "y": 50.5368,
+      "w": 3.0781,
+      "h": 1.9172,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_crush",
+        "type": "note",
+        "ch": 1,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[l14] L14 SOUND COLOR FX CRUSH. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-sweep",
+      "fig": "l15",
+      "label": "SWEEP",
+      "kind": "button",
+      "x": 19.2943,
+      "y": 50.6135,
+      "w": 3.0781,
+      "h": 1.8405,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_sweep",
+        "type": "note",
+        "ch": 1,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[l15] L15 SOUND COLOR FX SWEEP. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-noise",
+      "fig": "l16",
+      "label": "NOISE",
+      "kind": "button",
+      "x": 14.1141,
+      "y": 55.3681,
+      "w": 3.1532,
+      "h": 1.9172,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_noise",
+        "type": "note",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[l16] L16 SOUND COLOR FX NOISE. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-filter",
+      "fig": "l17",
+      "label": "FILTER",
+      "kind": "button",
+      "x": 19.2943,
+      "y": 55.3681,
+      "w": 3.0781,
+      "h": 1.8405,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_filter",
+        "type": "note",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[l17] L17 SOUND COLOR FX FILTER. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-cfx-parameter",
+      "fig": "l18",
+      "label": "PARAMETER",
+      "kind": "knob",
+      "x": 16.6667,
+      "y": 61.273,
+      "w": 3.2282,
+      "h": 3.3742,
+      "layer": "base",
+      "section": "sound_color_fx",
+      "midi": {
+        "name": "cfx_parameter",
+        "type": "cc",
+        "ch": 1,
+        "code": 108,
+        "shift_name": null
+      },
+      "notes": "[l18] L18 SOUND COLOR FX PARAMETER. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-phones-a-link-cue",
+      "fig": "l19",
+      "label": "LINK CUE",
+      "kind": "button",
+      "x": 14.1141,
+      "y": 69.7086,
+      "w": 3.6036,
+      "h": 2.684,
+      "layer": "base",
+      "section": "headphones_a",
+      "midi": {
+        "name": "phones_a_link_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[l19] L19 HEADPHONES A LINK CUE A. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-phones-a-mono-split",
+      "fig": "l20",
+      "label": "MONO SPLIT",
+      "kind": "button",
+      "x": 19.2943,
+      "y": 69.7086,
+      "w": 3.6036,
+      "h": 2.684,
+      "layer": "base",
+      "section": "headphones_a",
+      "midi": {
+        "name": "phones_a_mono_split",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[l20] L20 HEADPHONES A MONO/SPLIT. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-phones-a-mix",
+      "fig": "l21",
+      "label": "MIX",
+      "kind": "knob",
+      "x": 16.5916,
+      "y": 75.1534,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "headphones_a",
+      "midi": {
+        "name": "phones_a_mixing",
+        "type": "cc",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[l21] L21 HEADPHONES A MIXING. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-phones-a-level",
+      "fig": "l22",
+      "label": "LEVEL",
+      "kind": "knob",
+      "x": 16.7417,
+      "y": 81.9018,
+      "w": 3.3784,
+      "h": 3.5276,
+      "layer": "base",
+      "section": "headphones_a",
+      "midi": {
+        "name": "phones_a_level",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[l22] L22 HEADPHONES A LEVEL. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-input",
+      "fig": "c1_1",
+      "label": "CH1 INPUT",
+      "kind": "knob",
+      "x": 28.7538,
+      "y": 7.1319,
+      "w": 3.003,
+      "h": 3.1442,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_input_a",
+        "type": "note",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR A. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch1-trim",
+      "fig": "c2_1",
+      "label": "CH1 TRIM",
+      "kind": "knob",
+      "x": 28.6036,
+      "y": 14.2638,
+      "w": 3.3033,
+      "h": 3.4509,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_trim",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[c2_1] C2 CH1 TRIM. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-hi",
+      "fig": "c3_1",
+      "label": "CH1 HI",
+      "kind": "knob",
+      "x": 28.6036,
+      "y": 21.4724,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[c3_1] C3 CH1 HI. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-mid",
+      "fig": "c4_1",
+      "label": "CH1 MID",
+      "kind": "knob",
+      "x": 28.6036,
+      "y": 29.1411,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[c4_1] C4 CH1 MID. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-low",
+      "fig": "c5_1",
+      "label": "CH1 LOW",
+      "kind": "knob",
+      "x": 28.6036,
+      "y": 36.8098,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[c5_1] C5 CH1 LOW. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-color",
+      "fig": "c6_1",
+      "label": "CH1 COLOR",
+      "kind": "knob",
+      "x": 28.1532,
+      "y": 46.7791,
+      "w": 4.2042,
+      "h": 4.3712,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_color",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[c6_1] C6 CH1 COLOR. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-cue-a",
+      "fig": "c7_1",
+      "label": "CH1 CUE A",
+      "kind": "button",
+      "x": 26.2012,
+      "y": 56.8252,
+      "w": 4.1291,
+      "h": 1.7638,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_cue_a",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[c7_1] C7 CH1 CUE A. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch1-cue-b",
+      "fig": "c7_1",
+      "label": "CH1 CUE B",
+      "kind": "button",
+      "x": 31.6817,
+      "y": 56.9018,
+      "w": 2.6276,
+      "h": 1.6871,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_cue_b",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[c7_1] C7 CH1 CUE B. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch1-fader",
+      "fig": "c8_1",
+      "label": "CH1 CH FADER",
+      "kind": "fader",
+      "x": 27.4775,
+      "y": 67.7147,
+      "w": 5.1802,
+      "h": 11.8098,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_fader",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[c8_1] C8 CH1 CH FADER. PDF p2; slide; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch1-xf-assign",
+      "fig": "c9_1",
+      "label": "CH1 A THRU B",
+      "kind": "button",
+      "x": 28.6787,
+      "y": 84.816,
+      "w": 3.4535,
+      "h": 2.0706,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "ch1_crossfader_assign",
+        "type": "cc",
+        "ch": 1,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[c9_1] C9 CH1 CROSSFADER ASSIGN. PDF p2; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "id": "djm-a9-ch2-input",
+      "fig": "c1_2",
+      "label": "CH2 INPUT",
+      "kind": "knob",
+      "x": 39.3393,
+      "y": 7.1319,
+      "w": 3.003,
+      "h": 3.1442,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_input_a",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR A. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch2-trim",
+      "fig": "c2_2",
+      "label": "CH2 TRIM",
+      "kind": "knob",
+      "x": 39.1892,
+      "y": 14.2638,
+      "w": 3.3033,
+      "h": 3.4509,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_trim",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[c2_2] C2 CH2 TRIM. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch2-hi",
+      "fig": "c3_2",
+      "label": "CH2 HI",
+      "kind": "knob",
+      "x": 39.1892,
+      "y": 21.4724,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[c3_2] C3 CH2 HI. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch2-mid",
+      "fig": "c4_2",
+      "label": "CH2 MID",
+      "kind": "knob",
+      "x": 39.1892,
+      "y": 29.1411,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[c4_2] C4 CH2 MID. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch2-low",
+      "fig": "c5_2",
+      "label": "CH2 LOW",
+      "kind": "knob",
+      "x": 39.1892,
+      "y": 36.8098,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[c5_2] C5 CH2 LOW. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch2-color",
+      "fig": "c6_2",
+      "label": "CH2 COLOR",
+      "kind": "knob",
+      "x": 38.7387,
+      "y": 46.7791,
+      "w": 4.2042,
+      "h": 4.3712,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_color",
+        "type": "cc",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[c6_2] C6 CH2 COLOR. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch2-cue-a",
+      "fig": "c7_2",
+      "label": "CH2 CUE A",
+      "kind": "button",
+      "x": 36.7117,
+      "y": 56.8252,
+      "w": 4.1291,
+      "h": 1.8405,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_cue_a",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[c7_2] C7 CH2 CUE A. PDF p3; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch2-cue-b",
+      "fig": "c7_2",
+      "label": "CH2 CUE B",
+      "kind": "button",
+      "x": 42.2673,
+      "y": 56.9018,
+      "w": 2.6276,
+      "h": 1.6871,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_cue_b",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[c7_2] C7 CH2 CUE B. PDF p3; 00 OFF / 7F ON; sheet anomaly: CH2 prints this row differently from CH1, CH3 and CH4; transcribed as printed, see footnotes."
+    },
+    {
+      "id": "djm-a9-ch2-fader",
+      "fig": "c8_2",
+      "label": "CH2 CH FADER",
+      "kind": "fader",
+      "x": 38.1381,
+      "y": 67.7147,
+      "w": 5.1051,
+      "h": 11.8098,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_fader",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[c8_2] C8 CH2 CH FADER. PDF p3; slide; printed as 00 OFF / 7F ON Trigger/Toggle; sheet anomaly: CH2 prints this row differently from CH1, CH3 and CH4; transcribed as printed, see footnotes."
+    },
+    {
+      "id": "djm-a9-ch2-xf-assign",
+      "fig": "c9_2",
+      "label": "CH2 A THRU B",
+      "kind": "button",
+      "x": 39.2643,
+      "y": 84.816,
+      "w": 3.4535,
+      "h": 2.0706,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "ch2_crossfader_assign",
+        "type": "cc",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[c9_2] C9 CH2 CROSSFADER ASSIGN. PDF p3; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "id": "djm-a9-ch3-input",
+      "fig": "c1_3",
+      "label": "CH3 INPUT",
+      "kind": "knob",
+      "x": 49.9249,
+      "y": 7.1319,
+      "w": 3.003,
+      "h": 3.1442,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_input_a",
+        "type": "note",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR A. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch3-trim",
+      "fig": "c2_3",
+      "label": "CH3 TRIM",
+      "kind": "knob",
+      "x": 49.7748,
+      "y": 14.2638,
+      "w": 3.3033,
+      "h": 3.4509,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_trim",
+        "type": "cc",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[c2_3] C2 CH3 TRIM. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch3-hi",
+      "fig": "c3_3",
+      "label": "CH3 HI",
+      "kind": "knob",
+      "x": 49.7748,
+      "y": 21.4724,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[c3_3] C3 CH3 HI. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch3-mid",
+      "fig": "c4_3",
+      "label": "CH3 MID",
+      "kind": "knob",
+      "x": 49.7748,
+      "y": 29.1411,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[c4_3] C4 CH3 MID. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch3-low",
+      "fig": "c5_3",
+      "label": "CH3 LOW",
+      "kind": "knob",
+      "x": 49.7748,
+      "y": 36.8098,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[c5_3] C5 CH3 LOW. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch3-color",
+      "fig": "c6_3",
+      "label": "CH3 COLOR",
+      "kind": "knob",
+      "x": 49.3243,
+      "y": 46.7791,
+      "w": 4.2042,
+      "h": 4.3712,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_color",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[c6_3] C6 CH3 COLOR. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch3-cue-a",
+      "fig": "c7_3",
+      "label": "CH3 CUE A",
+      "kind": "button",
+      "x": 47.2973,
+      "y": 56.8252,
+      "w": 4.1291,
+      "h": 1.7638,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_cue_a",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[c7_3] C7 CH3 CUE A. PDF p3; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch3-cue-b",
+      "fig": "c7_3",
+      "label": "CH3 CUE B",
+      "kind": "button",
+      "x": 52.8529,
+      "y": 56.9018,
+      "w": 2.6276,
+      "h": 1.6871,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_cue_b",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[c7_3] C7 CH3 CUE B. PDF p3; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch3-fader",
+      "fig": "c8_3",
+      "label": "CH3 CH FADER",
+      "kind": "fader",
+      "x": 48.6486,
+      "y": 67.7147,
+      "w": 5.2553,
+      "h": 11.8098,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_fader",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[c8_3] C8 CH3 CH FADER. PDF p3; slide; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch3-xf-assign",
+      "fig": "c9_3",
+      "label": "CH3 A THRU B",
+      "kind": "button",
+      "x": 49.8498,
+      "y": 84.816,
+      "w": 3.4535,
+      "h": 2.0706,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "ch3_crossfader_assign",
+        "type": "cc",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[c9_3] C9 CH3 CROSSFADER ASSIGN. PDF p3; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "id": "djm-a9-ch4-input",
+      "fig": "c1_4",
+      "label": "CH4 INPUT",
+      "kind": "knob",
+      "x": 60.5105,
+      "y": 7.1319,
+      "w": 3.003,
+      "h": 3.1442,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_input_a",
+        "type": "note",
+        "ch": 1,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR A. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch4-trim",
+      "fig": "c2_4",
+      "label": "CH4 TRIM",
+      "kind": "knob",
+      "x": 60.3604,
+      "y": 14.2638,
+      "w": 3.3033,
+      "h": 3.4509,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_trim",
+        "type": "cc",
+        "ch": 1,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[c2_4] C2 CH4 TRIM. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch4-hi",
+      "fig": "c3_4",
+      "label": "CH4 HI",
+      "kind": "knob",
+      "x": 60.3604,
+      "y": 21.4724,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[c3_4] C3 CH4 HI. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch4-mid",
+      "fig": "c4_4",
+      "label": "CH4 MID",
+      "kind": "knob",
+      "x": 60.3604,
+      "y": 29.1411,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[c4_4] C4 CH4 MID. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch4-low",
+      "fig": "c5_4",
+      "label": "CH4 LOW",
+      "kind": "knob",
+      "x": 60.3604,
+      "y": 36.8098,
+      "w": 3.4535,
+      "h": 3.6043,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[c5_4] C5 CH4 LOW. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch4-color",
+      "fig": "c6_4",
+      "label": "CH4 COLOR",
+      "kind": "knob",
+      "x": 59.9099,
+      "y": 46.7791,
+      "w": 4.2042,
+      "h": 4.3712,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_color",
+        "type": "cc",
+        "ch": 1,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[c6_4] C6 CH4 COLOR. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch4-cue-a",
+      "fig": "c7_4",
+      "label": "CH4 CUE A",
+      "kind": "button",
+      "x": 57.8829,
+      "y": 56.7485,
+      "w": 4.0541,
+      "h": 1.8405,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_cue_a",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[c7_4] C7 CH4 CUE A. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch4-cue-b",
+      "fig": "c7_4",
+      "label": "CH4 CUE B",
+      "kind": "button",
+      "x": 63.4384,
+      "y": 56.9018,
+      "w": 2.6276,
+      "h": 1.6871,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_cue_b",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[c7_4] C7 CH4 CUE B. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-ch4-fader",
+      "fig": "c8_4",
+      "label": "CH4 CH FADER",
+      "kind": "fader",
+      "x": 59.3093,
+      "y": 67.7147,
+      "w": 5.2553,
+      "h": 11.8098,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_fader",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[c8_4] C8 CH4 CH FADER. PDF p4; slide; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-ch4-xf-assign",
+      "fig": "c9_4",
+      "label": "CH4 A THRU B",
+      "kind": "button",
+      "x": 60.4354,
+      "y": 84.816,
+      "w": 3.4535,
+      "h": 2.0706,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "ch4_crossfader_assign",
+        "type": "cc",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[c9_4] C9 CH4 CROSSFADER ASSIGN. PDF p4; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "id": "djm-a9-crossfader",
+      "fig": "c10",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 40.5405,
+      "y": 92.0245,
+      "w": 11.6366,
+      "h": 5.2914,
+      "layer": "base",
+      "section": "crossfader",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[c10] C10 CROSSFADER. PDF p4; slide 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-master-level",
+      "fig": "r1",
+      "label": "MASTER LEVEL",
+      "kind": "knob",
+      "x": 71.5465,
+      "y": 5.3681,
+      "w": 3.6036,
+      "h": 3.8344,
+      "layer": "base",
+      "section": "master",
+      "midi": {
+        "name": "master_level",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[r1] R1 MASTER LEVEL. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-booth-eq-hi",
+      "fig": "r2",
+      "label": "BOOTH EQ HI",
+      "kind": "knob",
+      "x": 71.997,
+      "y": 39.954,
+      "w": 2.7778,
+      "h": 2.9908,
+      "layer": "base",
+      "section": "booth",
+      "midi": {
+        "name": "booth_eq_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 109,
+        "shift_name": null
+      },
+      "notes": "[r2] R2 BOOTH MONITOR EQ HI. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-booth-eq-low",
+      "fig": "r3",
+      "label": "BOOTH EQ LOW",
+      "kind": "knob",
+      "x": 71.997,
+      "y": 44.862,
+      "w": 2.7778,
+      "h": 2.9908,
+      "layer": "base",
+      "section": "booth",
+      "midi": {
+        "name": "booth_eq_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 110,
+        "shift_name": null
+      },
+      "notes": "[r3] R3 BOOTH MONITOR EQ LOW. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-booth-level",
+      "fig": "r4",
+      "label": "BOOTH LEVEL",
+      "kind": "knob",
+      "x": 71.5465,
+      "y": 49.9233,
+      "w": 3.6036,
+      "h": 3.8344,
+      "layer": "base",
+      "section": "booth",
+      "midi": {
+        "name": "booth_level",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[r4] R4 BOOTH LEVEL. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-master-cue-a",
+      "fig": "r5",
+      "label": "CUE A",
+      "kind": "button",
+      "x": 69.4444,
+      "y": 56.7485,
+      "w": 4.1291,
+      "h": 1.8405,
+      "layer": "base",
+      "section": "master_cue",
+      "midi": {
+        "name": "master_cue_a",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[r5] R5 MASTER CUE A. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-master-cue-b",
+      "fig": "r6",
+      "label": "CUE B",
+      "kind": "button",
+      "x": 75.0,
+      "y": 56.9018,
+      "w": 2.6276,
+      "h": 1.6871,
+      "layer": "base",
+      "section": "master_cue",
+      "midi": {
+        "name": "master_cue_b",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[r6] R6 MASTER CUE B. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-phones-b-link-cue",
+      "fig": "r7",
+      "label": "LINK CUE",
+      "kind": "button",
+      "x": 69.4444,
+      "y": 65.2607,
+      "w": 2.8529,
+      "h": 2.3773,
+      "layer": "base",
+      "section": "headphones_b",
+      "midi": {
+        "name": "phones_b_link_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[r7] R7 HEADPHONES B LINK CUE. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-phones-b-mono-split",
+      "fig": "r8",
+      "label": "MONO SPLIT",
+      "kind": "button",
+      "x": 74.7748,
+      "y": 65.2607,
+      "w": 2.7027,
+      "h": 2.3773,
+      "layer": "base",
+      "section": "headphones_b",
+      "midi": {
+        "name": "phones_b_mono_split",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[r8] R8 HEADPHONES B MONO/SPLIT. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-phones-b-mix",
+      "fig": "r9",
+      "label": "MIX",
+      "kind": "knob",
+      "x": 71.997,
+      "y": 69.7853,
+      "w": 2.8529,
+      "h": 2.9908,
+      "layer": "base",
+      "section": "headphones_b",
+      "midi": {
+        "name": "phones_b_mixing",
+        "type": "cc",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[r9] R9 HEADPHONES B MIXING. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-phones-b-level",
+      "fig": "r10",
+      "label": "LEVEL",
+      "kind": "knob",
+      "x": 71.997,
+      "y": 75.3834,
+      "w": 2.8529,
+      "h": 3.1442,
+      "layer": "base",
+      "section": "headphones_b",
+      "midi": {
+        "name": "phones_b_level",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[r10] R10 HEADPHONES B LEVEL. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-eq-curve",
+      "fig": "r11",
+      "label": "EQ CURVE",
+      "kind": "button",
+      "x": 72.8228,
+      "y": 81.5951,
+      "w": 2.4775,
+      "h": 2.0706,
+      "layer": "base",
+      "section": "curves",
+      "midi": {
+        "name": "eq_curve",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[r11] R11 EQ CURVE. PDF p4; slide ISOLATOR 00, EQ 7F."
+    },
+    {
+      "id": "djm-a9-ch-fader-curve",
+      "fig": "r12",
+      "label": "CH FADER CURVE",
+      "kind": "button",
+      "x": 72.8228,
+      "y": 86.3497,
+      "w": 2.4775,
+      "h": 2.1472,
+      "layer": "base",
+      "section": "curves",
+      "midi": {
+        "name": "ch_fader_curve",
+        "type": "cc",
+        "ch": 1,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[r12] R12 CH FADER CURVE. PDF p4; slide LEFT 00, CENTER 40, RIGHT 7F."
+    },
+    {
+      "id": "djm-a9-crossfader-curve",
+      "fig": "r13",
+      "label": "CROSSFADER CURVE",
+      "kind": "button",
+      "x": 72.8228,
+      "y": 91.1043,
+      "w": 2.4775,
+      "h": 2.1472,
+      "layer": "base",
+      "section": "curves",
+      "midi": {
+        "name": "crossfader_curve",
+        "type": "cc",
+        "ch": 1,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[r13] R13 CROSSFADER CURVE. PDF p4; slide LEFT 00, CENTER 40, RIGHT 7F."
+    },
+    {
+      "id": "djm-a9-send-ch",
+      "fig": "r14",
+      "label": "SEND CH",
+      "kind": "knob",
+      "x": 81.0811,
+      "y": 6.0583,
+      "w": 2.7778,
+      "h": 2.9908,
+      "layer": "base",
+      "section": "multi_io",
+      "midi": {
+        "name": "send_ch_ch1",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[r14] R14 MULTI I/O SEND CH CH1. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-insert-source",
+      "fig": "r15",
+      "label": "INSERT SOURCE",
+      "kind": "button",
+      "x": 88.3634,
+      "y": 6.5951,
+      "w": 1.4264,
+      "h": 2.5307,
+      "layer": "base",
+      "section": "multi_io",
+      "midi": {
+        "name": "insert_source",
+        "type": "note",
+        "ch": 1,
+        "code": 111,
+        "shift_name": null
+      },
+      "notes": "[r15] R15 MULTI I/O INSERT SOURCE. PDF p5; slide RETURN 00, USB 7F."
+    },
+    {
+      "id": "djm-a9-send-level",
+      "fig": "r16",
+      "label": "SEND LEVEL",
+      "kind": "knob",
+      "x": 80.7057,
+      "y": 13.3436,
+      "w": 3.4535,
+      "h": 3.7577,
+      "layer": "base",
+      "section": "multi_io",
+      "midi": {
+        "name": "send_level",
+        "type": "cc",
+        "ch": 1,
+        "code": 113,
+        "shift_name": null
+      },
+      "notes": "[r16] R16 MULTI I/O SEND LEVEL. PDF p5; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-insert",
+      "fig": "r17",
+      "label": "INSERT",
+      "kind": "button",
+      "x": 87.6126,
+      "y": 13.8804,
+      "w": 2.7027,
+      "h": 2.7607,
+      "layer": "base",
+      "section": "multi_io",
+      "midi": {
+        "name": "insert",
+        "type": "cc",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[r17] R17 MULTI I/O INSERT. PDF p5; 00 OFF / 7F ON Toggle."
+    },
+    {
+      "id": "djm-a9-x-pad",
+      "fig": "r18",
+      "label": "X-PAD",
+      "kind": "fader",
+      "x": 80.7808,
+      "y": 35.8896,
+      "w": 16.4414,
+      "h": 2.7607,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "x_pad_slide",
+        "type": "cc",
+        "ch": 1,
+        "code": 116,
+        "shift_name": null
+      },
+      "notes": "[r18] R18 X-PAD slide. PDF p5; 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-beat-left",
+      "fig": "r19",
+      "label": "BEAT <",
+      "kind": "button",
+      "x": 82.5826,
+      "y": 41.411,
+      "w": 4.2793,
+      "h": 1.9172,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "beat_left",
+        "type": "cc",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[r19] R19 BEAT (LEFT). PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-beat-right",
+      "fig": "r20",
+      "label": "BEAT >",
+      "kind": "button",
+      "x": 91.1411,
+      "y": 41.411,
+      "w": 4.2793,
+      "h": 1.9172,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "beat_right",
+        "type": "cc",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[r20] R20 BEAT (RIGHT). PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-auto-tap",
+      "fig": "r21",
+      "label": "AUTO/TAP",
+      "kind": "button",
+      "x": 83.4084,
+      "y": 45.9356,
+      "w": 2.1021,
+      "h": 2.1472,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "auto_tap",
+        "type": "cc",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[r21] R21 AUTO/TAP. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-tap",
+      "fig": "r22",
+      "label": "TAP",
+      "kind": "button",
+      "x": 87.1622,
+      "y": 44.5552,
+      "w": 3.4535,
+      "h": 3.5276,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "tap",
+        "type": "cc",
+        "ch": 1,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[r22] R22 TAP. PDF p5; 00 OFF / 7F ON Trigger."
+    },
+    {
+      "id": "djm-a9-quantize",
+      "fig": "r23",
+      "label": "QUANTIZE",
+      "kind": "button",
+      "x": 92.7928,
+      "y": 45.7822,
+      "w": 2.1021,
+      "h": 2.1472,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "quantize",
+        "type": "note",
+        "ch": 1,
+        "code": 118,
+        "shift_name": null
+      },
+      "notes": "[r23] R23 QUANTIZE. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-fx-freq-low",
+      "fig": "r24",
+      "label": "LOW",
+      "kind": "button",
+      "x": 82.5075,
+      "y": 51.227,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_frequency_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 104,
+        "shift_name": null
+      },
+      "notes": "[r24] R24 EFFECT FREQUENCY LOW. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-fx-freq-mid",
+      "fig": "r24",
+      "label": "MID",
+      "kind": "button",
+      "x": 87.3123,
+      "y": 51.227,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_frequency_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 103,
+        "shift_name": null
+      },
+      "notes": "[r24] R24 EFFECT FREQUENCY MID. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-fx-freq-hi",
+      "fig": "r24",
+      "label": "HI",
+      "kind": "button",
+      "x": 92.1171,
+      "y": 51.227,
+      "w": 3.2282,
+      "h": 1.9939,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_frequency_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 102,
+        "shift_name": null
+      },
+      "notes": "[r24] R24 EFFECT FREQUENCY HI. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "id": "djm-a9-fx-select",
+      "fig": "r25",
+      "label": "EFFECT SELECT",
+      "kind": "knob",
+      "x": 87.2372,
+      "y": 55.9816,
+      "w": 3.3033,
+      "h": 3.5276,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_select_delay",
+        "type": "cc",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[r25] R25 EFFECT SELECT DELAY. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-1",
+      "fig": "r26",
+      "label": "1",
+      "kind": "button",
+      "x": 81.7568,
+      "y": 64.4172,
+      "w": 2.6276,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_1",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT 1. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-2",
+      "fig": "r26",
+      "label": "2",
+      "kind": "button",
+      "x": 85.7357,
+      "y": 64.4172,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_2",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT 2. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-3",
+      "fig": "r26",
+      "label": "3",
+      "kind": "button",
+      "x": 89.6396,
+      "y": 64.4172,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_3",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT 3. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-4",
+      "fig": "r26",
+      "label": "4",
+      "kind": "button",
+      "x": 93.5435,
+      "y": 64.4172,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_4",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT 4. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-mic",
+      "fig": "r26",
+      "label": "MIC",
+      "kind": "button",
+      "x": 81.7568,
+      "y": 68.7883,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_mic",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT MIC. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-cf-a",
+      "fig": "r26",
+      "label": "CF.A",
+      "kind": "button",
+      "x": 85.7357,
+      "y": 68.7883,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_cf_a",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT CF.A. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-cf-b",
+      "fig": "r26",
+      "label": "CF.B",
+      "kind": "button",
+      "x": 89.6396,
+      "y": 68.7883,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_cf_b",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT CF.B. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-ch-select-mst",
+      "fig": "r26",
+      "label": "MST",
+      "kind": "button",
+      "x": 93.5435,
+      "y": 68.7883,
+      "w": 2.5526,
+      "h": 1.5337,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_ch_select_mst",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[r26] R26 CH SELECT MST. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "id": "djm-a9-fx-time",
+      "fig": "r27",
+      "label": "TIME",
+      "kind": "knob",
+      "x": 86.9369,
+      "y": 74.3098,
+      "w": 3.9039,
+      "h": 3.9877,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_time_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[r27] R27 TIME MSB. PDF p6; 00 to 7F; halved for FLANGER, PHASER or FILTER; a negative value is sent as positive."
+    },
+    {
+      "id": "djm-a9-fx-level-depth",
+      "fig": "r28",
+      "label": "LEVEL/DEPTH",
+      "kind": "knob",
+      "x": 87.012,
+      "y": 82.4387,
+      "w": 3.7538,
+      "h": 3.8344,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_level_depth",
+        "type": "cc",
+        "ch": 1,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[r28] R28 LEVEL/DEPTH. PDF p6; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "id": "djm-a9-fx-on-off",
+      "fig": "r29",
+      "label": "ON/OFF",
+      "kind": "button",
+      "x": 86.7868,
+      "y": 90.7209,
+      "w": 4.4294,
+      "h": 4.4479,
+      "layer": "base",
+      "section": "beat_fx",
+      "midi": {
+        "name": "fx_on_off",
+        "type": "cc",
+        "ch": 1,
+        "code": 114,
+        "shift_name": null
+      },
+      "notes": "[r29] R29 BEAT FX ON/OFF. PDF p6; 00 OFF / 7F ON Toggle; same CC as R18 X-PAD touch as printed, see footnotes."
+    }
+  ]
+}

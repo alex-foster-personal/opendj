@@ -69,6 +69,18 @@ export type AgentEvent =
 	| { type: 'done'; reason: DoneReason }
 	| { type: 'error'; code: string; message: string };
 
+export interface ProviderCatalogHit {
+	provider: string;
+	provider_label: string;
+	catalog_constraint: string;
+	title: string;
+	in_owned_library?: boolean;
+}
+
+export interface ProviderCatalogHitLabel extends ProviderCatalogHit {
+	assistant_label: string;
+}
+
 export const AGENT_EVENT_TYPES = [
 	'tier',
 	'text',
@@ -79,3 +91,9 @@ export const AGENT_EVENT_TYPES = [
 	'done',
 	'error'
 ] as const satisfies readonly AgentEvent['type'][];
+
+/**
+ * Chat-kit ToolTrace uses `running` | `ok` | `failed` only. Map agent-session
+ * `ToolStatus` rows through `agentToolStatusToTrace` in agent-session.ts
+ * (running/held -> running, ok -> ok, failed/declined -> failed).
+ */

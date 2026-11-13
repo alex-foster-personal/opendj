@@ -7,12 +7,17 @@ Regression lines (one-line if/then, house format):
   then broken
 - if indexed stem bundles are re-separated on Modal instead of hydrated first
   then broken
+- if jobs work against an installed data dir launches real metadata/language
+  subprocesses that resolve state outside that dir (issue #13412) then broken
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
+import sys
 import threading
 import wave
 from dataclasses import dataclass
@@ -258,3 +263,93 @@ def test_lane_stems_hydrates_indexed_bundle_before_modal(
     assert manifest_written["done"]
     assert any("sid-a hydrated from fleet index" in line for line in progress_lines)
     assert not any("modal_roformer_spike.py" in " ".join(cmd) for cmd in recorder.cmds)
+
+
+_LINGUA_STUB = '''"""Test stub: lingua's builder surface, enough for the zero-candidate path."""
+
+
+class _Detector:
+    """Never consulted: every staged track has zero candidates."""
+
+
+class LanguageDetectorBuilder:
+    """Mirror of lingua's builder entry point used by lyrics_oltf_language.py."""
+
+    @classmethod
+    def from_all_languages(cls) -> "LanguageDetectorBuilder":
+        return cls()
+
+    def build(self) -> _Detector:
+        return _Detector()
+'''
+
+_ENV_PROBE = (
+    "import json, os, sys\n"
+    "from apps.shared.paths import STATE_DIR\n"
+    "with open(sys.argv[1], 'w', encoding='utf-8') as fh:\n"
+    "    json.dump({'MDT_DATA_DIR': os.environ.get('MDT_DATA_DIR'), 'STATE_DIR': str(STATE_DIR)}, fh)\n"
+)
+
+
+def test_jobs_work_real_subprocess_stages_resolve_installed_data_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #13412: jobs work with the DEFAULT runner launches metadata + language as real subprocesses that read and write only the installed data dir."""
+    from apps.lyrics import batch as batch_mod
+    from apps.lyrics import worker
+
+    use_local_mode(monkeypatch)
+    monkeypatch.delenv("MDT_DATA_DIR", raising=False)
+    state_dir, paths = _seed_state(tmp_path, ["sid-a"])
+    assert not state_dir.resolve().is_relative_to(PROJECT_ROOT.resolve())
+    job = jobs_mod.enqueue(state_dir, "lyricsync", ["sid-a"])
+    corpus_dir = paths.eval_dir / f"job-{job.id}"
+    candidates_dir = paths.eval_dir / "candidates"
+    candidates_dir.mkdir(parents=True)
+    fetch_key = hashlib.sha1(b"Artist sid-a|Title sid-a|60").hexdigest()[:16]
+    (candidates_dir / f"{fetch_key}.json").write_text(json.dumps({"candidates": []}), encoding="utf-8")
+
+    stub_dir = tmp_path / "stubs"
+    stub_dir.mkdir()
+    (stub_dir / "lingua.py").write_text(_LINGUA_STUB, encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(stub_dir), str(PROJECT_ROOT)]))
+    # Swap only the uv launchers for this interpreter: the stage scripts and their
+    # argv come from the real Cmds builders and run as real child processes.
+    monkeypatch.setattr(batch_mod, "UV_PY", (sys.executable,))
+    monkeypatch.setattr(batch_mod, "UV_SCRIPT", (sys.executable,))
+
+    probe_out = tmp_path / "probe.json"
+    launched: list[list[str]] = []
+
+    def lane_stems(_cmds: Cmds, _report: BatchReport, _runner, _progress, _paths) -> None:
+        """Stems are out of scope here (Modal); leave the lane idle."""
+
+    def lane_candidates(cmds: Cmds, _report: BatchReport, runner, _progress) -> None:
+        """Run the real language stage plus an env probe through the batch runner."""
+        launched.append(cmds.language())
+        runner(cmds.language())
+        runner([sys.executable, "-c", _ENV_PROBE, str(probe_out)])
+
+    def stop_after_language(*_args: object, **_kwargs: object) -> None:
+        """Stop the run before ASR (Modal) once both subprocess stages ran."""
+        raise StageBlocked("test stop after language")
+
+    monkeypatch.setattr(batch_mod, "_lane_stems", lane_stems)
+    monkeypatch.setattr(batch_mod, "_lane_candidates", lane_candidates)
+    monkeypatch.setattr(batch_mod, "_stage_asr", stop_after_language)
+
+    assert worker.work_once(state_dir) is True
+
+    (done,) = jobs_mod.list_jobs(state_dir)
+    assert done.status == "failed"
+    assert "test stop after language" in (done.note or "")
+    rows = json.loads((corpus_dir / "tracks.json").read_text(encoding="utf-8"))
+    assert [(r["stable_id"], r["meta_join"]) for r in rows] == [("sid-a", "exact")]
+    language = json.loads((corpus_dir / "language.json").read_text(encoding="utf-8"))
+    assert [(r["track_id"], r["status"]) for r in language] == [(rows[0]["track_id"], "no-text")]
+    assert launched and launched[0][launched[0].index("--state-dir") + 1] == str(state_dir)
+    probe = json.loads(probe_out.read_text(encoding="utf-8"))
+    assert probe["MDT_DATA_DIR"] == str(paths.data_dir)
+    assert probe["STATE_DIR"] == str(state_dir)
+    assert "MDT_DATA_DIR" not in os.environ

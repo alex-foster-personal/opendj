@@ -1,3 +1,5 @@
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
+
 /**
  * The right-click registry, loaded off the first-paint path (W28).
  *
@@ -40,7 +42,9 @@ function fetchRegistry(): void {
 			if (report === null) {
 				// Idle preload only: nobody is looking at a menu yet, and the
 				// next right-click tries again and reports its own failure.
-				console.error('[context-menu] registry chunk failed to preload', e);
+				if (!isPageGoingAway()) {
+					console.error('[context-menu] registry chunk failed to preload', e);
+				}
 				return;
 			}
 			// The right-click already suppressed the browser menu, so a silent

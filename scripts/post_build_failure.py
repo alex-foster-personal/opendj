@@ -20,10 +20,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from apps.shared.telemetry.sink import (
+    SINK_EVENTS_PER_MINUTE,
     event_from_headless_dmg_log,
     post_build_failure,
     sink_files,
@@ -59,12 +62,23 @@ def _keys_in_sink(keys: set[str]) -> set[str]:
     return found
 
 
+def _wait_for_next_minute() -> None:
+    """Sleep into the next UTC minute; the sink admits SINK_EVENTS_PER_MINUTE rows a minute per
+    process and drops the rest without a word."""
+    now = datetime.now(tz=UTC)
+    time.sleep(60.5 - now.second - now.microsecond / 1_000_000)
+
+
 def post_batch(batch_file: Path, host: str | None) -> int:
     records = {_sink_key(record): record for record in json.loads(batch_file.read_text())}
     already = _keys_in_sink(set(records))
+    posted = 0
     for key, record in records.items():
         if key in already:
             continue
+        if posted and posted % SINK_EVENTS_PER_MINUTE == 0:
+            _wait_for_next_minute()
+        posted += 1
         post_build_failure(
             message=(
                 f"CI failed workflow={record['workflow']}{key}"

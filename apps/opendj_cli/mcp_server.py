@@ -47,6 +47,7 @@ from apps.opendj_cli.mcp_genre_tools import register_genre_tools
 from apps.opendj_cli.mcp_key_tools import register_key_tools
 from apps.opendj_cli.mcp_list_totals_tools import register_list_totals_tools
 from apps.opendj_cli.mcp_offload_tools import register_offload_tools
+from apps.opendj_cli.mcp_perf_readout_tools import register_perf_readout_tools
 from apps.opendj_cli.mcp_played_length_tools import register_played_length_tools
 from apps.opendj_cli.mcp_playlist_tools import register_playlist_tools
 from apps.opendj_cli.mcp_rec_tools import register_rec_tools
@@ -55,7 +56,9 @@ from apps.opendj_cli.mcp_rekordbox_analyse_tools import register_rekordbox_analy
 from apps.opendj_cli.mcp_remote_tools import register_remote_tools
 from apps.opendj_cli.mcp_requests_tools import register_requests_tools
 from apps.opendj_cli.mcp_safety import (
+    PERSONA_MCP_TOOLS,
     SafetyRefusal,
+    UPDATE_APPLY_TOOL,
     guard_library_request,
     guard_order,
     validate_api_path,
@@ -81,6 +84,9 @@ from apps.opendj_cli.verbs import InvocationError, parse_invocation
 
 SERVER_NAME = "opendj-mcp"
 SERVER_VERSION = "0.1.0"
+# Re-exported from :mod:`mcp_safety` for persona-engine callers (issues #3067, #11277).
+PERSONA_STEP_MCP_TOOLS = PERSONA_MCP_TOOLS
+PERSONA_BLOCKED_UPDATE_TOOL = UPDATE_APPLY_TOOL
 PROBE_TIMEOUT_S = 3.0
 UI_URL_NOTE = (
     "Open in browser MCP only; does not move the installed desktop shell window. "
@@ -481,7 +487,11 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         SPACE, ECHO, CRUSH; switching effect removes the old one and returns the knob
         to 12 o'clock unless ``value`` is given (COLORFX-8341). ``color_fx`` also
         takes ``deck=all`` to put one named effect on every channel; ``value`` and
-        ``effect=next`` are refused with ``deck=all`` (COLORFX-13).
+        ``effect=next`` are refused with ``deck=all`` (COLORFX-13). ``beat_fx``
+        drives the beat FX unit (target, effect, beats, level, enabled, quantize)
+        and ``beat_fx_release`` holds or lets go of Release FX (``held``); both
+        are refused while ``fx.beat_rack`` is off and read back from the
+        mirror's ``beat_fx`` field (BEATFX-12).
         """
         try:
             origin = _resolve_verified_origin()
@@ -715,6 +725,12 @@ def create_server(*, command_timeout_s: float = ORDER_TIMEOUT_S) -> MCPServer:
         engine_not_running=_engine_not_running,
     )
     register_list_totals_tools(
+        server,
+        lock_path=lambda: _state.lock_path,
+        tool_error=_tool_error,
+        engine_not_running=_engine_not_running,
+    )
+    register_perf_readout_tools(
         server,
         lock_path=lambda: _state.lock_path,
         tool_error=_tool_error,

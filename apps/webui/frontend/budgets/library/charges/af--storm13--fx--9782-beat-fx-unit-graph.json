@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373178,
+  "measured_with_pr": 373888,
+  "sha": "8cb8d07414",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--fx--9782-beat-fx-unit-graph (stacked on the beat FX effect registry) grows the library surface: the channel graph now carries the flag-gated beat FX insert and the echo slot kernel; measured +710 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

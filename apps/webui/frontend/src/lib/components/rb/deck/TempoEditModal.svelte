@@ -11,7 +11,12 @@
 	import { camelotKeyColor } from '$lib/rb/camelot-color';
 	import { coalesceLatest } from '$lib/rb/coalesce';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import { beatSyncFeaturesInert, beatSyncInertTip } from '$lib/player/grid-features';
+	import {
+		beatSyncClockMaster,
+		beatSyncFeaturesInert,
+		beatSyncInertTip,
+		effectiveBeatSync
+	} from '$lib/player/grid-features';
 	import { deckKeyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -21,6 +26,7 @@
 		pushTempoTap,
 		TAP_TEMPO_MIN_TAPS,
 		runTempoWrites,
+		followerTempoLock,
 		tapTempoBpm,
 		tempoWritesFromTargetBpm
 	} from '$lib/rb/tempo-edit';
@@ -77,6 +83,23 @@
 		});
 	}
 
+	/** DECKUX-13420: why the engine refuses a tempo write on this deck now, or
+	 * null. A playing Beat Sync follower of a playing master is locked; the
+	 * master is the one the engine syncs to (a gridless master is no clock). */
+	function _tempoLock(id: DeckId): string | null {
+		const master = masterDeckId;
+		const syncMaster =
+			master !== undefined && deckStates[master].playing
+				? beatSyncClockMaster(master, deckStates[master])
+				: null;
+		return followerTempoLock({
+			deck: id,
+			playing: deckStates[id].playing,
+			beatSync: effectiveBeatSync(deckStates[id]),
+			syncMaster
+		});
+	}
+
 	function _formatBpm(bpm: number | null): string {
 		return bpm === null ? '--.--' : bpm.toFixed(2);
 	}
@@ -119,7 +142,7 @@
 		pressT0Ms?: number
 	): Promise<boolean> {
 		const base = _baseBpm(id);
-		if (base === null) return false;
+		if (base === null || _tempoLock(id) !== null) return false;
 		const writes = tempoWritesFromTargetBpm({
 			deck: id,
 			targetBpm,
@@ -296,21 +319,23 @@
 		{@const keyPlayhead = deckKeyAtPlayheadNow(deck)}
 		{@const keyText = keyPlayhead.display ?? '--'}
 		{@const keyColor = camelotKeyColor(keyText === '--' ? null : keyText)}
+		{@const lock = loaded ? _tempoLock(id) : null}
 		<div class="deck-row" class:primary={id === deckId} class:unloaded={!loaded}>
 			<span class="deck-label">CH{id}</span>
 			<input
 				type="text"
 				class="bpm-input"
 				disabled={!loaded}
+				readonly={lock !== null}
 				value={drafts[id]}
 				data-testid={`tempo-edit-bpm-deck-${id}`}
 				aria-label={`tempo bpm deck ${id}`}
-				title={loaded ? 'Effective playback BPM' : 'No track loaded'}
+				title={lock ?? (loaded ? 'Effective playback BPM' : 'No track loaded')}
 				oninput={(e) => (drafts[id] = e.currentTarget.value)}
 				onblur={(e) => onBpmBlur(id, e)}
 				onkeydown={(e) => onBpmKeydown(id, e)}
 			/>
-			{#if loaded && buttons.halve}
+			{#if loaded && lock === null && buttons.halve}
 				<button
 					type="button"
 					class="halve-btn"
@@ -322,7 +347,7 @@
 					Halve
 				</button>
 			{/if}
-			{#if loaded && buttons.double}
+			{#if loaded && lock === null && buttons.double}
 				<button
 					type="button"
 					class="double-btn"
@@ -334,7 +359,7 @@
 					Double
 				</button>
 			{/if}
-			{#if id === deckId && loaded}
+			{#if id === deckId && loaded && lock === null}
 				<button
 					type="button"
 					class="tap-btn"
@@ -368,6 +393,9 @@
 					title={`Pitch ${sliderPct >= 0 ? '+' : ''}${sliderPct}%`}
 					oninput={onSliderInput}
 				/>
+			{/if}
+			{#if lock !== null}
+				<span class="tempo-lock" data-testid={`tempo-edit-lock-deck-${id}`}>{lock}</span>
 			{/if}
 			<div class="context-controls">
 				<button
@@ -531,6 +559,11 @@
 	}
 	.tempo-slider {
 		flex: 0 0 200px;
+	}
+	.tempo-lock {
+		width: 100%;
+		font-size: 10px;
+		color: var(--rb-orange);
 	}
 	.context-controls {
 		display: flex;

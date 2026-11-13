@@ -14,10 +14,11 @@ export async function listDeletedPlaylists(): Promise<DeletedPlaylistOut[]> {
 	return await unwrap(api.GET('/api/v1/playlists/deleted'));
 }
 
-export async function undeletePlaylist(playlistId: string): Promise<PlaylistRowWire> {
+/** Restore a deleted playlist, CAS-guarded by the `etag` from its deleted-list row. */
+export async function undeletePlaylist(playlistId: string, etag: string): Promise<PlaylistRowWire> {
 	return await unwrap(
 		api.POST('/api/v1/playlists/{playlist_id}:undelete', {
-			params: { path: { playlist_id: playlistId } }
+			params: { path: { playlist_id: playlistId }, header: { 'If-Match': etag } }
 		})
 	);
 }

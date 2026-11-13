@@ -11,7 +11,10 @@ import { readFrontendSource } from './engine-source.mjs';
 const ENGINE =
 	readFrontendSource('src/lib/rb/audio-engine.svelte.ts') +
 	'\n' +
-	readFrontendSource('src/lib/rb/deck-channel-graph.ts');
+	readFrontendSource('src/lib/rb/deck-channel-graph.ts') +
+	'\n' +
+	// #12665: the per-deck node construction now lives in the shared core builder.
+	readFrontendSource('src/lib/rb/deck-channel-graph-core.ts');
 const COLOR =
 	readFrontendSource('src/lib/rb/color-fx.ts') +
 	'\n' +
@@ -53,6 +56,7 @@ test('the inactive filter half is silenced, not left in series', () => {
 	// lp-to-hp (or hp-to-lp) chain anywhere in the engine.
 	assert.doesNotMatch(ENGINE, /filterLp\.connect\(filterHp\)/);
 	assert.doesNotMatch(ENGINE, /filterHp\.connect\(filterLp\)/);
-	assert.match(ENGINE, /filterLp\.connect\(filterLpWet\);/);
-	assert.match(ENGINE, /filterHp\.connect\(filterHpWet\);/);
+	// FXFILT-09: wireFilterSide connects each side into its own wet gain, through a second section at 24 dB/oct.
+	assert.match(ENGINE, /wireFilterSide\(deps\.ctx, filterLp, filterLpWet, FILTER_SLOPE_DB_OCT\);/);
+	assert.match(ENGINE, /wireFilterSide\(deps\.ctx, filterHp, filterHpWet, FILTER_SLOPE_DB_OCT\);/);
 });

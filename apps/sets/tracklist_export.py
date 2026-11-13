@@ -406,7 +406,7 @@ def _cue_quote(text: str) -> str:
 
 
 def _cue_index_time(seconds_from_segment: float) -> str:
-    total_frames = max(0, round(seconds_from_segment * 75))
+    total_frames = max(0, math.floor(seconds_from_segment * 75 + 1e-9))
     frames = total_frames % 75
     total_secs = total_frames // 75
     minutes, secs = divmod(total_secs, 60)
@@ -423,25 +423,36 @@ def _segment_for_row(segments: list[tuple[str, float]], start_s: float) -> str |
     return name
 
 
-def _render_cue(tracklist: Tracklist) -> str:
+def _cue_track_lines(rows: Sequence[TracklistRow], base_s: float, first_no: int) -> list[str]:
+    """Render TRACK blocks with TITLE, PERFORMER and INDEX 01 relative to ``base_s``."""
+    lines: list[str] = []
+    for offset, row in enumerate(rows):
+        lines.append(f"  TRACK {first_no + offset:02d} AUDIO")
+        lines.append(f'    TITLE "{_cue_quote(row.title or row.display_name)}"')
+        if row.artist:
+            lines.append(f'    PERFORMER "{_cue_quote(row.artist)}"')
+        lines.append(f"    INDEX 01 {_cue_index_time(row.start_s - base_s)}")
+    return lines
+
+
+def render_cue_sheet(tracklist: Tracklist, audio_name: str | None) -> str:
+    """Render a CUE over one recording file, or with no FILE line when ``audio_name`` is None (#10086)."""
     lines: list[str] = [f'TITLE "{_cue_quote(tracklist.session_id)}"']
     if not tracklist.rows:
         return "\n".join(lines) + "\n"
-
-    if not tracklist.segments:
+    if audio_name is None:
         lines.append('REM COMMENT "no recorded audio"')
-        lines.append(f'FILE "{_cue_quote(tracklist.session_id)}.wav" WAVE')
-        track_no = 1
-        base = 0.0
-        for row in tracklist.rows:
-            lines.append(f"  TRACK {track_no:02d} AUDIO")
-            title = row.title or row.display_name
-            lines.append(f'    TITLE "{_cue_quote(title)}"')
-            if row.artist:
-                lines.append(f'    PERFORMER "{_cue_quote(row.artist)}"')
-            rel = row.start_s - base
-            lines.append(f"    INDEX 01 {_cue_index_time(rel)}")
-            track_no += 1
+    else:
+        lines.append(f'FILE "{_cue_quote(audio_name)}" WAVE')
+    lines.extend(_cue_track_lines(tracklist.rows, 0.0, 1))
+    return "\n".join(lines) + "\n"
+
+
+def _render_cue(tracklist: Tracklist) -> str:
+    if not tracklist.segments:
+        return render_cue_sheet(tracklist, None)
+    lines: list[str] = [f'TITLE "{_cue_quote(tracklist.session_id)}"']
+    if not tracklist.rows:
         return "\n".join(lines) + "\n"
 
     by_segment: dict[str, list[TracklistRow]] = {}
@@ -461,15 +472,8 @@ def _render_cue(tracklist: Tracklist) -> str:
         if first_path and first_path.lower().endswith((".wav", ".wave")):
             ext = "WAVE"
         lines.append(f'FILE "{_cue_quote(seg_name)}" {ext}')
-        for row in rows_in_seg:
-            lines.append(f"  TRACK {track_no:02d} AUDIO")
-            title = row.title or row.display_name
-            lines.append(f'    TITLE "{_cue_quote(title)}"')
-            if row.artist:
-                lines.append(f'    PERFORMER "{_cue_quote(row.artist)}"')
-            rel = row.start_s - seg_start
-            lines.append(f"    INDEX 01 {_cue_index_time(rel)}")
-            track_no += 1
+        lines.extend(_cue_track_lines(rows_in_seg, seg_start, track_no))
+        track_no += len(rows_in_seg)
 
     return "\n".join(lines) + "\n"
 
@@ -500,6 +504,26 @@ def _render_m3u8(tracklist: Tracklist) -> str:
     if not tracklist.rows:
         return ""
     return body
+
+
+def render_plain_tracklist(tracklist: Tracklist) -> str:
+    """Render ``mm:ss  Artist - Title`` lines for a plain tracklist file (#10086)."""
+    if not tracklist.rows:
+        return ""
+    lines = [f"{row.start_label}  {row.display_name}" for row in tracklist.rows]
+    return "\n".join(lines) + "\n"
+
+
+def write_tracklist_files(directory: Path, tracklist: Tracklist) -> list[Path]:
+    """Write ``<session_id>.cue`` and ``<session_id>.tracklist.txt`` beside the joined recording (#10086)."""
+    directory.mkdir(parents=True, exist_ok=True)
+    cue_path = directory / tracklist_filename(tracklist.session_id, "cue")
+    txt_path = directory / f"{tracklist.session_id}.tracklist.txt"
+    joined = sets_paths.joined_recording_path(directory, tracklist.session_id)
+    audio_name = joined.name if joined.exists() else None
+    cue_path.write_text(render_cue_sheet(tracklist, audio_name), encoding="utf-8")
+    txt_path.write_text(render_plain_tracklist(tracklist), encoding="utf-8")
+    return [cue_path, txt_path]
 
 
 def render_tracklist(tracklist: Tracklist, fmt: TracklistFormat) -> str:

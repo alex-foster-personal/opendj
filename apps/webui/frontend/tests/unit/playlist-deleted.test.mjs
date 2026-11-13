@@ -42,7 +42,8 @@ test('listDeletedPlaylists GETs /api/v1/playlists/deleted', async () => {
 				vendor_pl_id: 'gone',
 				deleted_at: '2026-09-13T00:00:00Z',
 				updated_at: '2026-09-13T00:00:01Z',
-				track_count: 2
+				track_count: 2,
+				etag: '"etag-1"'
 			}
 		]);
 	};
@@ -55,7 +56,7 @@ test('listDeletedPlaylists GETs /api/v1/playlists/deleted', async () => {
 	assert.equal(rows[0].playlist_id, 'pl-1');
 });
 
-test('undeletePlaylist POSTs without If-Match', async () => {
+test('undeletePlaylist POSTs with the deleted-row etag as If-Match', async () => {
 	let seen;
 	globalThis.fetch = async (request) => {
 		seen = request;
@@ -72,11 +73,11 @@ test('undeletePlaylist POSTs without If-Match', async () => {
 		});
 	};
 
-	const row = await playlistDeleted.undeletePlaylist('pl-1');
+	const row = await playlistDeleted.undeletePlaylist('pl-1', '"etag-1"');
 
 	assert.equal(seen.url, `${API_BASE}/api/v1/playlists/pl-1:undelete`);
 	assert.equal(seen.method, 'POST');
-	assert.equal(seen.headers.get('if-match'), null);
+	assert.equal(seen.headers.get('if-match'), '"etag-1"');
 	assert.equal(row.name, 'Back');
 });
 
@@ -86,12 +87,12 @@ test('409 and 404 responses throw', async () => {
 			status: 409,
 			headers: { 'content-type': 'application/json' }
 		});
-	await assert.rejects(playlistDeleted.undeletePlaylist('pl-live'), /409/);
+	await assert.rejects(playlistDeleted.undeletePlaylist('pl-live', '"etag-live"'), /409/);
 
 	globalThis.fetch = async () =>
 		new Response(JSON.stringify({ detail: { error: 'not_found' } }), {
 			status: 404,
 			headers: { 'content-type': 'application/json' }
 		});
-	await assert.rejects(playlistDeleted.undeletePlaylist('pl-missing'), /404/);
+	await assert.rejects(playlistDeleted.undeletePlaylist('pl-missing', '"etag-missing"'), /404/);
 });

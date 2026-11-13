@@ -115,10 +115,15 @@ def test_the_chooser_picks_by_intent_not_by_score(monkeypatch: pytest.MonkeyPatc
     """The proposal score already leans toward the intent, so it is inverted here: only the chooser's order can pass."""
     order = [name for name, _bars in _PREFERENCES[parse_intent("smooth")]]
 
+    def rank(style: str) -> int:
+        """The chooser's own rule: a style outside the intent's order (the cut fallback, a #10152 repair switched to
+        cut, an escape) ranks after every listed one."""
+        return order.index(style) if style in order else len(order)
+
     def inverted(*args: Any, **kwargs: Any) -> dict[str, Any]:
         document = propose_transition(*args, **kwargs)
         rows = document["proposals"]
-        return {**document, "proposals": [{**row, "score": 0.5 + 0.01 * order.index(row["style"])} for row in rows]}
+        return {**document, "proposals": [{**row, "score": 0.5 + 0.01 * rank(row["style"])} for row in rows]}
 
     monkeypatch.setattr(lookahead, "propose_transition", inverted)
     rows = inverted(OUT, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=48.0, live=_mirror(), top=None)[
@@ -126,10 +131,8 @@ def test_the_chooser_picks_by_intent_not_by_score(monkeypatch: pytest.MonkeyPatc
     ]
     styles = {row["style"] for row in rows}
     assert len(styles) > 1, "control: one style cannot tell intent from score"
-    assert max(rows, key=lambda row: row["score"])["style"] != min(styles, key=order.index), (
-        "control: the two must disagree"
-    )
-    assert _decide([IN]).style == min(styles, key=order.index), "if the score beat the intent's order then broken"
+    assert max(rows, key=lambda row: row["score"])["style"] != min(styles, key=rank), "control: the two must disagree"
+    assert _decide([IN]).style == min(styles, key=rank), "if the score beat the intent's order then broken"
 
 
 def test_a_repeated_style_sits_out_while_another_is_eligible() -> None:

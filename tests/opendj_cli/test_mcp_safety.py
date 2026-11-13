@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from apps.opendj_cli.mcp_safety import (
     _DESTRUCTIVE_PATH_PATTERNS,
     SafetyRefusal,
+    _is_recorder_lifecycle_path,
     agent_audio_mode,
     canonical_api_path,
     guard_library_request,
@@ -16,11 +20,80 @@ from apps.opendj_cli.mcp_safety import (
     validate_api_path,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_OPENAPI = REPO_ROOT / "apps" / "webui" / "openapi.json"
+_OPENAPI_PARAM_EXAMPLES = {
+    "{session_id}": "2026-11-11T22-00-00",
+    "{segment}": "0",
+    "{idx}": "0",
+    "{fmt}": "json",
+}
+_SETS_MUTATION_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_DOCUMENTED_SETS_GET_QUERY_VARIANTS: tuple[tuple[str, str], ...] = (
+    ("/api/sets?limit=1", "/api/sets"),
+    ("/api/sets#frag", "/api/sets"),
+    ("/api/sets/recorder?limit=1", "/api/sets/recorder"),
+    ("/api/sets/recorder#frag", "/api/sets/recorder"),
+)
+
+
+def _concrete_openapi_sets_path(template: str) -> str:
+    path = template
+    for token, value in _OPENAPI_PARAM_EXAMPLES.items():
+        path = path.replace(token, value)
+    return path
+
+
+def _documented_sets_operations() -> list[tuple[str, str]]:
+    spec = json.loads(_OPENAPI.read_text(encoding="utf-8"))
+    operations: list[tuple[str, str]] = []
+    for template, methods in spec["paths"].items():
+        if not template.startswith("/api/sets"):
+            continue
+        concrete = _concrete_openapi_sets_path(template)
+        for method in methods:
+            if method.startswith("x-"):
+                continue
+            operations.append((method.upper(), concrete))
+    return operations
+
+
+def _documented_sets_get_paths() -> list[str]:
+    return [path for method, path in _documented_sets_operations() if method in {"GET", "HEAD"}]
+
+
+def _documented_sets_mutation_operations() -> list[tuple[str, str]]:
+    return [
+        (method, path)
+        for method, path in _documented_sets_operations()
+        if method in _SETS_MUTATION_METHODS
+    ]
+
 
 def test_destructive_patterns_cover_delete_and_ingest() -> None:
     methods = {method for method, _ in _DESTRUCTIVE_PATH_PATTERNS}
     assert "DELETE" in methods
     assert "POST" in methods
+
+
+@pytest.mark.requirement("LIBM-14825")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/tracks/t-a:delete",
+        "/api/v1/tracks/t-a%3Adelete",
+        "/api/v1/tracks//t-a:delete",
+        "/api/v1/tracks/t-a:delete?x=1",
+    ],
+)
+def test_the_track_delete_custom_method_is_destructive(path: str) -> None:
+    """[if] an agent POSTs /tracks/{id}:delete without the destructive switch [then] it is refused before dispatch, [else stop]."""
+    with pytest.raises(SafetyRefusal) as error:
+        guard_library_request("POST", path, environ={})
+    assert error.value.code == "destructive_blocked"
+    # Control: the destructive switch is what opens it, and the soft :remove stays open.
+    guard_library_request("POST", path, environ={"OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"})
+    guard_library_request("POST", "/api/v1/tracks/t-a:remove", environ={})
 
 
 def test_guard_order_prepends_mute_for_play() -> None:
@@ -232,6 +305,33 @@ def test_validate_recorder_rejects_other_writes(path: str) -> None:
 def test_validate_v1_permissions_are_unchanged(method: str | None) -> None:
     """[if] a v1 path is validated [then] every existing method stays allowed, [else stop]."""
     assert validate_api_path("/api/v1/tracks", method=method) == "/api/v1/tracks"
+
+
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize("path", _documented_sets_get_paths())
+def test_documented_sets_get_routes_allowed(path: str) -> None:
+    """[if] openapi lists a sets GET [then] validate_api_path admits it, [else stop]."""
+    got = validate_api_path(path, method="GET")
+    assert got.startswith("/api/sets")
+
+
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize(("path", "canonical"), _DOCUMENTED_SETS_GET_QUERY_VARIANTS)
+def test_documented_sets_get_query_or_fragment_allowed(path: str, canonical: str) -> None:
+    """[if] a sets GET has query or fragment [then] the gate strips and allows, [else stop]."""
+    assert validate_api_path(path, method="GET") == canonical
+
+
+@pytest.mark.requirement("SET-12315")
+@pytest.mark.parametrize(("method", "path"), _documented_sets_mutation_operations())
+def test_documented_sets_mutations_refused(method: str, path: str) -> None:
+    """[if] openapi lists a sets mutation [then] gate refuses unless REC lifecycle, [else stop]."""
+    if method == "POST" and _is_recorder_lifecycle_path(path):
+        assert validate_api_path(path, method=method) == path
+        return
+    with pytest.raises(SafetyRefusal) as error:
+        validate_api_path(path, method=method)
+    assert error.value.code == "invalid_path"
 
 
 def test_guard_library_writeback() -> None:

@@ -59,6 +59,6 @@ A 2nd-order Butterworth is one biquad with Q = 0.707 (1 divided by the square ro
 
 The colored waveform uses Butterworth biquads with Q = 1 divided by root 2, two per band edge
 (`apps/audio-engine/src/waveform.rs`). The deck filter knob passes Q = 0.707 to Web Audio
-(`FILTER_Q` in `apps/audio-engine/src/mixer.rs`), but Web Audio reads low-pass and high-pass Q in
+(`FILTER_Q_DB` in `apps/audio-engine/src/mixer.rs`), but Web Audio reads low-pass and high-pass Q in
 dB, so the corner carries about +0.7 dB of lift instead of -3 dB: close to Butterworth, not
 exactly it (`apps/audio-engine/src/dsp.rs` documents this).

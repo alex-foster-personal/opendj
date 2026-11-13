@@ -25,6 +25,7 @@
 	});
 
 	async function onCancel(item: LibraryJobItem): Promise<void> {
+		if (libraryJobsStore.refusal !== null) return;
 		error = null;
 		try {
 			await cancelLibraryJob(item.lane, item.stable_id);
@@ -35,7 +36,7 @@
 	}
 
 	async function onDrop(beforeId: string | null): Promise<void> {
-		if (dragId === null || dragId === beforeId) return;
+		if (dragId === null || dragId === beforeId || libraryJobsStore.refusal !== null) return;
 		error = null;
 		try {
 			await reorderLibraryJob(lane, dragId, beforeId);
@@ -53,6 +54,7 @@
 	{open}
 	{lane}
 	{error}
+	refusal={libraryJobsStore.refusal}
 	{running}
 	{pending}
 	onSelectLane={(next) => (lane = next)}

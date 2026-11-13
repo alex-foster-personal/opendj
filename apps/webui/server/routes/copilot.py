@@ -4,10 +4,13 @@ CONTRACT (downstream ``play-it-sort-action`` builds against this):
 
   POST /api/v1/copilot/find-similar-tracks
     body:  FindSimilarIn {stable_id, mode, limit?}
-    200:   FindSimilarOut {stable_id, mode, provider, candidates: [{stable_id, score}]}
-    404:   ErrorBody {error: "not_found", message}   (unknown track or unmeasured
-           genre vector -- never an empty list for "never measured")
-    422:   ErrorBody {error: "invalid", message}    (unknown mode or unimplemented mode)
+    200:   FindSimilarOut {stable_id, mode, provider,
+           candidates: [{stable_id, score, rationale_numbers?}]}
+    404:   ErrorBody {error: "not_found", message}   (unknown track; Generic also when
+           no genre vector -- never an empty list for "never measured")
+    422:   ErrorBody {error: "insufficient_data", message, details}
+           when Specific mode's current track lacks bpm or key (same contract as
+           suggest-next). 422 {error: "invalid"} for unknown or unimplemented mode.
 
   POST /api/v1/copilot/suggest-next
     body:  SuggestNextIn  {stable_id, session_ids?, top_n?, explain?}
@@ -85,6 +88,7 @@ router = APIRouter(prefix="/copilot", tags=["copilot"])
 MOUNT_UNDER_API_PREFIX = True
 _read_state = Depends(get_read_state)
 _niche_intel = build_niche_intel()
+FindSimilarMode = Literal["generic", "specific", "niche"]
 
 
 # --- request / response models (defined here; models.py is integrator-owned)
@@ -155,9 +159,10 @@ class NicheCitationOut(BaseModel):
     source: Literal["structure", "user"]
 
 
-class NicheSimilarCandidateOut(BaseModel):
+class FindSimilarCandidateOut(BaseModel):
     stable_id: str
     score: float
+    rationale_numbers: dict[str, float] = Field(default_factory=dict)
     citations: list[NicheCitationOut] = Field(default_factory=list)
 
 
@@ -167,7 +172,8 @@ class FindSimilarIn(BaseModel):
         "niche",
         description=(
             "generic: JEV genre-vector cosine neighbours; "
-            "niche: labelled region matches; specific: not implemented."
+            "specific: BPM/Camelot/energy track_compatibility (no genre cosine); "
+            "niche: labelled region matches only."
         ),
     )
     limit: int = Field(20, ge=1, le=200)
@@ -185,7 +191,7 @@ class FindSimilarOut(BaseModel):
     mode: FindSimilarMode
     provider: str
     query_labels: list[str] = Field(default_factory=list)
-    candidates: list[NicheSimilarCandidateOut]
+    candidates: list[FindSimilarCandidateOut]
 
 
 # ----------------------------------------------------------- _helpers
@@ -350,11 +356,11 @@ def _pressure_out(session_tracks: list[Track]) -> PeakPressureOut:
     "/find-similar-tracks",
     response_model=FindSimilarOut,
     responses={
-        404: {
+        404: {"model": ErrorBody, "description": "unknown track or unmeasured genre vector"},
+        422: {
             "model": ErrorBody,
-            "description": "unknown track or unmeasured genre vector (generic)",
+            "description": "insufficient_data (Specific) or invalid/unimplemented mode",
         },
-        422: {"model": ErrorBody, "description": "unknown or unimplemented mode"},
     },
 )
 def find_similar_tracks_route(
@@ -362,34 +368,32 @@ def find_similar_tracks_route(
     request: Request,
     backend: StateBackend = _read_state,
 ) -> FindSimilarOut | JSONResponse:
-    if body.mode == "specific":
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=ErrorBody(
-                error="invalid",
-                message=f"find-similar mode {body.mode!r} is not implemented yet",
-            ).model_dump(),
-        )
-    if body.mode == "niche":
-        try:
-            backend.get_track(body.stable_id)
-        except NotFoundError as exc:
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content=ErrorBody(error="not_found", message=str(exc)).model_dump(),
-            )
     state_db_path = get_library_state_db(request)
-    data_dir = get_library_data_dir(request)
     try:
-        with _library_read(state_db_path) as conn:
-            if body.mode == "generic":
+        backend.get_track(body.stable_id)
+    except NotFoundError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=ErrorBody(error="not_found", message=str(exc)).model_dump(),
+        )
+    try:
+        if body.mode == "specific":
+            library = _load_library(backend)
+            doc = find_similar_tracks(
+                sqlite3.connect(":memory:"),
+                stable_id=body.stable_id,
+                mode=body.mode,
+                limit=body.limit,
+                library=library,
+            )
+        elif body.mode == "generic":
+            with _library_read(state_db_path) as conn:
                 doc = find_similar_tracks(
-                    conn,
-                    stable_id=body.stable_id,
-                    mode="generic",
-                    limit=body.limit,
+                    conn, stable_id=body.stable_id, mode=body.mode, limit=body.limit
                 )
-            elif body.mode == "niche":
+        elif body.mode == "niche":
+            data_dir = get_library_data_dir(request)
+            with _library_read(state_db_path) as conn:
                 doc = _niche_intel.niche_find_similar(
                     conn,
                     data_dir,
@@ -397,18 +401,27 @@ def find_similar_tracks_route(
                     limit=body.limit,
                     query_labels=body.accepted_labels,
                 )
-            else:
-                return JSONResponse(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    content=ErrorBody(
-                        error="invalid",
-                        message=f"find-similar mode {body.mode!r} is not implemented yet",
-                    ).model_dump(),
-                )
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                content=ErrorBody(
+                    error="invalid",
+                    message=f"find-similar mode {body.mode!r} is not implemented yet",
+                ).model_dump(),
+            )
     except FileNotFoundError as exc:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=ErrorBody(error="no_library_db", message=str(exc)).model_dump(),
+        )
+    except InsufficientDataError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=ErrorBody(
+                error="insufficient_data",
+                message=str(exc),
+                details={"stable_id": body.stable_id, "missing": exc.missing},
+            ).model_dump(),
         )
     except genre_service.UnknownTrack as exc:
         return JSONResponse(
@@ -425,25 +438,26 @@ def find_similar_tracks_route(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=ErrorBody(error="invalid", message=str(exc)).model_dump(),
         )
-    if body.mode == "generic":
-        return FindSimilarOut(
-            stable_id=doc["stable_id"],
-            mode=doc["mode"],
-            provider=doc["provider"],
-            candidates=[
-                NicheSimilarCandidateOut(
-                    stable_id=row["stable_id"],
-                    score=row["score"],
-                )
-                for row in doc["candidates"]
-            ],
-        )
+    stable_id = str(doc["stable_id"])
+    mode_out = doc["mode"]
+    provider = str(doc["provider"])
+    raw_candidates = doc["candidates"]
+    if not isinstance(mode_out, str) or mode_out not in ("generic", "specific", "niche"):
+        raise AssertionError(f"unexpected find-similar mode: {mode_out!r}")
     return FindSimilarOut(
-        stable_id=doc["stable_id"],
-        mode=doc["mode"],
-        provider=doc["provider"],
-        query_labels=list(doc["query_labels"]),
-        candidates=[NicheSimilarCandidateOut(**row) for row in doc["candidates"]],
+        stable_id=stable_id,
+        mode=mode_out,
+        provider=provider,
+        query_labels=[str(label) for label in doc.get("query_labels", ())],
+        candidates=[
+            FindSimilarCandidateOut(
+                stable_id=str(row["stable_id"]),
+                score=float(row["score"]),
+                rationale_numbers=dict(row.get("rationale_numbers", {})),
+                citations=[NicheCitationOut(**cite) for cite in row.get("citations", ())],
+            )
+            for row in raw_candidates
+        ],
     )
 
 

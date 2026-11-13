@@ -67,7 +67,8 @@ async function _deletePairingsCreatedSince(page: Page, before: ReadonlySet<strin
 async function _capture(page: Page, positions: [number, number]): Promise<void> {
 	for (const [index, position_ms] of positions.entries()) {
 		await page.evaluate(
-			([deck, ms]) => window.musicDjToolsPerformance!.dispatch({ type: 'seek', deck, position_ms: ms }),
+			([deck, ms]) =>
+				window.musicDjToolsPerformance!.dispatch({ type: 'seek', deck, position_ms: ms, exact: true }),
 			[index + 1, position_ms] as const
 		);
 	}
@@ -92,7 +93,6 @@ function _isPairingCapturePost(url: string, method: string): boolean {
 test('Capture with 2 checked decks creates the pairing and records a sync snapshot each time', async ({
 	page
 }) => {
-	test.fixme(true, 'capture position 120 ms off, see #13528');
 	await page.setViewportSize({ width: 1600, height: 900 });
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);

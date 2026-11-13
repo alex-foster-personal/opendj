@@ -26,12 +26,14 @@ from __future__ import annotations
 
 import json
 import threading
+import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, Literal, Protocol
 
+from apps.analysis_key.canon import canonical_key_text
 from apps.analysis_loudness.http import auto_gain
 
 # --- data models (dict-shaped; pydantic is a view layer) -----------------
@@ -97,6 +99,9 @@ class Track:
     notes: str | None = None
     genre: str | None = None
     comments: str | None = None
+    # Issue #10029: the file's own year (4 digits) and record label, from its tags.
+    year: int | None = None
+    label: str | None = None
     last_played_at: str | None = None
     # PREF-01: {"regular": float|None, "min": float|None, "max": float|None},
     # or None when never set for this track. Never fabricated.
@@ -186,13 +191,30 @@ class TrackFilter:
     q: str | None = None
     bpm_min: float | None = None
     bpm_max: float | None = None
-    key: str | None = None
+    # Issue #9739: canonical Camelot keys (8A, 9B); a track matches any of them.
+    keys: tuple[str, ...] = ()
     rating_min: int | None = None
     tag: str | None = None
+    # Issue #9742: normalised My Tag names; "or" keeps a track holding any, "and" one holding all.
+    mytags: tuple[str, ...] = ()
+    mytag_mode: Literal["and", "or"] = "or"
     color_ids: tuple[int, ...] = ()
     cursor: str | None = None
     limit: int = DEFAULT_LIMIT
     show_deleted: bool = False
+
+
+def normalize_mytag_name(name: str) -> str:
+    """A My Tag name as the tag catalog compares it (NFKC, case-folded, trimmed; library_org.normalize_tag_name)."""
+    return unicodedata.normalize("NFKC", name).casefold().strip()
+
+
+def track_matches_mytags(track: Track, mytags: tuple[str, ...], mode: Literal["and", "or"]) -> bool:
+    """True when a track holds any (``or``) or all (``and``) of the normalised tags (none: every track)."""
+    if not mytags:
+        return True
+    held = {normalize_mytag_name(tag) for tag in track.tags or []}
+    return all(tag in held for tag in mytags) if mode == "and" else any(tag in held for tag in mytags)
 
 
 def effective_track_color_id(color_id: int | None) -> int:
@@ -441,6 +463,7 @@ class StateBackend(Protocol):
     def get_track(self, stable_id: str) -> Track: ...
     def get_tracks_bulk(self, stable_ids: Sequence[str], *, live_only: bool = False) -> dict[str, Track]: ...
     def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
+    def list_file_paths(self) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
     def get_playlist_page(
@@ -545,14 +568,16 @@ class InMemoryBackend:
             tracks = [t for t in tracks if t.bpm is not None and t.bpm >= flt.bpm_min]
         if flt.bpm_max is not None:
             tracks = [t for t in tracks if t.bpm is not None and t.bpm <= flt.bpm_max]
-        if flt.key:
-            tracks = [t for t in tracks if t.key == flt.key]
+        if flt.keys:
+            tracks = [t for t in tracks if canonical_key_text(t.key) in flt.keys]
         if flt.rating_min is not None:
             tracks = [t for t in tracks if t.rating is not None and t.rating >= flt.rating_min]
         if flt.tag:
             tracks = [t for t in tracks if flt.tag in (t.tags or [])]
         if flt.color_ids:
             tracks = [t for t in tracks if track_matches_color_ids(t, flt.color_ids)]
+        if flt.mytags:
+            tracks = [t for t in tracks if track_matches_mytags(t, flt.mytags, flt.mytag_mode)]
         tracks.sort(key=lambda t: t.stable_id)
         limit = max(1, min(flt.limit, MAX_LIMIT))
         start = 0
@@ -600,6 +625,11 @@ class InMemoryBackend:
                 sid: self._tracks[sid].file_path
                 for sid in stable_ids if sid in self._tracks
             }
+
+    def list_file_paths(self) -> dict[str, str | None]:
+        """Every track's ``file_path`` by stable_id, for the Explorer folder tree (LIBUX-9747)."""
+        with self._mutex:
+            return {sid: track.file_path for sid, track in self._tracks.items()}
 
     def list_playlists(self) -> list[Playlist]:
         from apps.webui.server.inbox_playlist import (

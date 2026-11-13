@@ -61,7 +61,16 @@ WARM_OPEN_BUDGET = 40
 #: 1,960 -> 2,040 (Thu 5 Nov 2026, GRID-OCTAVE-02 and SRCFLAG-01): every row gained
 #: bpm_disputed, bpm_alternatives, bpm_pick and source_flags, about 64 bytes at
 #: their defaults (measured 2,024 per row).
-ROW_BYTES_BUDGET = 2_040
+#: 2,040 -> 2,330 (Fri 13 Nov 2026): every row gained 14 fields the library table reads,
+#: about 260 bytes at their defaults: color_id (PR #10679), tracklist_hidden (NOWP-11487),
+#: genre_family and genre_family_color (issue #11310), remote_stem_status (PR #12736),
+#: deck_load_refusal (PR #12142) and the eight-field LIBEDIT-9179 edit shape (PR #9179).
+#: comments (about 16 bytes) is NOT among them: it belongs on index rows only (CMDK-04).
+#: Measured 2,319 per row once comments left the listing row again.
+#: 2,330 -> 2,360 (Fri 13 Nov 2026, LIBUX-13803, PR #13803): every row gained date_added
+#: for the Date Added column, 26 bytes with a date in it (measured 2,345 per row). The
+#: other new library columns (album, last played, colour) ride the table row, not this one.
+ROW_BYTES_BUDGET = 2_360
 PREVIEW_LEVEL, REANALYZED_LEVEL, OUTSIDE_LEVEL = 5, 9, 13
 
 #: What each row has on disk, cycled by row number.

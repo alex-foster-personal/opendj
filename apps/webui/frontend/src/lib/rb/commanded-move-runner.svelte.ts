@@ -13,6 +13,14 @@
  * programmatic writers are still not detected. MIDI pickup is not handled here.
  */
 
+import { prefersReducedMotion } from '$lib/motion/reduced-motion';
+import {
+	COMMANDED_SETTLE_MS,
+	commandedSettleDirection,
+	presentCommandedMove,
+	type CommandedMovePresentation,
+	type CommandedSettleDirection
+} from './commanded-move-presentation';
 import { beginAnimation, endAnimation } from './dial-animations.svelte';
 import { frameOrTimeout } from './frame-backstop';
 import {
@@ -82,12 +90,29 @@ let _clock: CommandedMoveClock = _defaultClock;
 const _active = new Map<string, _Move>();
 const _log: CommandedMoveRecord[] = [];
 
+/** One completed move's landing (#14036): a new `seq` restarts the control's CSS settle. */
+export interface CommandedMoveLanding {
+	readonly seq: number;
+	readonly direction: CommandedSettleDirection;
+}
+
+/** D6 (#9717): reactive target and progress per driven control; Knob and VFader read it.
+ * `landed` (#14036) holds a completed move's landing for one settle length; visual only. */
+export const commandedMoveView = $state<{
+	active: Record<string, CommandedMovePresentation>;
+	landed: Record<string, CommandedMoveLanding>;
+}>({ active: {}, landed: {} });
+
+let _landingSeq = 0;
+
 let _handSubscribed = false;
 let _handUnsub: (() => void) | null = null;
 
 class _Move {
 	readonly controlId: string;
 	readonly plan: CommandedMovePlan;
+	/** Value the move started from, kept for the presentation; startPrimary may rebaseline. */
+	readonly from: number;
 	token: symbol;
 	stopped = false;
 	startPrimary: number;
@@ -109,6 +134,7 @@ class _Move {
 	) {
 		this.controlId = controlId;
 		this.plan = plan;
+		this.from = startPrimary;
 		this.token = token;
 		this.startPrimary = startPrimary;
 		this.partnerId = partnerId;
@@ -126,6 +152,7 @@ class _Move {
 	stop(outcome: CommandedMoveOutcome, reason: string | null, end: CommandedMoveEndReason): void {
 		if (this.stopped) return;
 		this.stopped = true;
+		this._unpublish();
 		_pushLog({
 			control_id: this.controlId,
 			planned_end_ms: this.plan.endMs,
@@ -139,7 +166,22 @@ class _Move {
 	fail(err: unknown): void {
 		if (this.stopped) return;
 		this.stopped = true;
+		this._unpublish();
 		this._reject(err);
+	}
+
+	publish(nowMs: number): void {
+		if (this.stopped || _active.get(this.controlId) !== this) return;
+		commandedMoveView.active[this.controlId] = presentCommandedMove(
+			this.plan,
+			this.from,
+			nowMs,
+			prefersReducedMotion()
+		);
+	}
+
+	private _unpublish(): void {
+		if (_active.get(this.controlId) === this) delete commandedMoveView.active[this.controlId];
 	}
 
 	cancel(reason: string = 'cancelled'): void {
@@ -217,6 +259,8 @@ export function startCommandedMove(
 	});
 	move.token = token;
 	_active.set(controlId, move);
+	delete commandedMoveView.landed[controlId];
+	move.publish(now);
 	void _drive(move);
 	return {
 		get controlId() {
@@ -245,6 +289,16 @@ export function activeCommandedMoveIds(): string[] {
 	return [..._active.keys()];
 }
 
+/** The landing of the move that just completed on `controlId` (cleared after the settle), or null. */
+export function commandedMoveLanding(controlId: string): CommandedMoveLanding | null {
+	return commandedMoveView.landed[controlId] ?? null;
+}
+
+/** Target and progress of the commanded move driving `controlId`, or null when none runs. */
+export function commandedMovePresentation(controlId: string): CommandedMovePresentation | null {
+	return commandedMoveView.active[controlId] ?? null;
+}
+
 export function _setCommandedMoveClockForTests(clock: CommandedMoveClock | null): void {
 	_clock = clock ?? _defaultClock;
 }
@@ -252,6 +306,8 @@ export function _setCommandedMoveClockForTests(clock: CommandedMoveClock | null)
 export function _resetCommandedMovesForTests(): void {
 	for (const move of _active.values()) move.cancel('test reset');
 	_active.clear();
+	commandedMoveView.active = {};
+	commandedMoveView.landed = {};
 	_log.length = 0;
 	_clock = _defaultClock;
 	if (_handUnsub !== null) {
@@ -259,6 +315,16 @@ export function _resetCommandedMovesForTests(): void {
 		_handUnsub = null;
 	}
 	_handSubscribed = false;
+}
+
+function _recordLanding(controlId: string, from: number, landed: number): void {
+	const direction = commandedSettleDirection(from, landed);
+	if (direction === 0) return;
+	const seq = ++_landingSeq;
+	commandedMoveView.landed[controlId] = { seq, direction };
+	setTimeout(() => {
+		if (commandedMoveView.landed[controlId]?.seq === seq) delete commandedMoveView.landed[controlId];
+	}, COMMANDED_SETTLE_MS);
 }
 
 async function _drive(move: _Move): Promise<void> {
@@ -293,7 +359,9 @@ async function _drive(move: _Move): Promise<void> {
 			// With a link, the end primary includes stagger, exactly as a drag to that target.
 			move.lastWritten = written.primary;
 			move.lastWrittenPartner = written.secondary;
+			move.publish(t);
 			if (finished) {
+				_recordLanding(id, move.from, written.primary);
 				move.stop('completed', null, 'completed');
 				return;
 			}

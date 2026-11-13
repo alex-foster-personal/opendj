@@ -1,0 +1,2638 @@
+{
+  "source": "https://downloads.support.alphatheta.com/software_info/dj-mixers/DJM-S7/DJM-S7_MIDI_Message_v100_E.pdf",
+  "archived": "(private path)",
+  "fetched": "Fri 13 Nov 2026",
+  "sha256": "f345cf74d993288f7a2a6552a9d9af8c4d2bb03bac6440981281530cd85cd028",
+  "device": "DJM-S7",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "channel_conventions": {
+    "deck": "Status 9n/Bn resolves n=0/1 to channels 1/2 per deck fig (D1-x, Mx-1, M9 = deck 1).",
+    "pads": "Status 9p resolves to channels 8/9 (D1-x / D2-x).",
+    "global": "Explicit statuses 94/95/96 and B4/B5/B6 map to channels 5/6/7. Status bytes are authoritative over printed decimal channel references."
+  },
+  "controls": [
+    {
+      "name": "m2_1_trim_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "layer": "base",
+      "notes": "[m2_1] PDF p2, TRIM. Printed channel 1/2, status Bn, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m2_1_trim_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "layer": "base",
+      "notes": "[m2_1] PDF p2, TRIM. Printed channel 1/2, status Bn, Data1 24h (printed dec 4 36). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m2_2_trim_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "layer": "base",
+      "notes": "[m2_2] PDF p2, TRIM. Printed channel 1/2, status Bn, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m2_2_trim_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 36,
+      "layer": "base",
+      "notes": "[m2_2] PDF p2, TRIM. Printed channel 1/2, status Bn, Data1 24h (printed dec 4 36). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m3_1_iso_high_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "layer": "base",
+      "notes": "[m3_1] PDF p2, ISO HIGH. Printed channel 1/2, status Bn, Data1 07h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m3_1_iso_high_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "layer": "base",
+      "notes": "[m3_1] PDF p2, ISO HIGH. Printed channel 1/2, status Bn, Data1 27h (printed dec 7 39). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m3_2_iso_high_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 7,
+      "layer": "base",
+      "notes": "[m3_2] PDF p2, ISO HIGH. Printed channel 1/2, status Bn, Data1 07h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m3_2_iso_high_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 39,
+      "layer": "base",
+      "notes": "[m3_2] PDF p2, ISO HIGH. Printed channel 1/2, status Bn, Data1 27h (printed dec 7 39). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m4_1_iso_mid_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "layer": "base",
+      "notes": "[m4_1] PDF p2, ISO MID. Printed channel 1/2, status Bn, Data1 0Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m4_1_iso_mid_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "layer": "base",
+      "notes": "[m4_1] PDF p2, ISO MID. Printed channel 1/2, status Bn, Data1 2Bh (printed dec 11 43). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m4_2_iso_mid_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 11,
+      "layer": "base",
+      "notes": "[m4_2] PDF p2, ISO MID. Printed channel 1/2, status Bn, Data1 0Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m4_2_iso_mid_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 43,
+      "layer": "base",
+      "notes": "[m4_2] PDF p2, ISO MID. Printed channel 1/2, status Bn, Data1 2Bh (printed dec 11 43). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m5_1_iso_low_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "layer": "base",
+      "notes": "[m5_1] PDF p2, ISO LOW. Printed channel 1/2, status Bn, Data1 0Fh (printed dec 15 47). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m5_1_iso_low_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "layer": "base",
+      "notes": "[m5_1] PDF p2, ISO LOW. Printed channel 1/2, status Bn, Data1 2Fh (printed dec 15 47). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m5_2_iso_low_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 15,
+      "layer": "base",
+      "notes": "[m5_2] PDF p2, ISO LOW. Printed channel 1/2, status Bn, Data1 0Fh (printed dec 15 47). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m5_2_iso_low_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 47,
+      "layer": "base",
+      "notes": "[m5_2] PDF p2, ISO LOW. Printed channel 1/2, status Bn, Data1 2Fh (printed dec 15 47). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m6_1_filter_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "layer": "base",
+      "notes": "[m6_1] PDF p2, FILTER. Printed channel 1/2, status Bn, Data1 01h (printed dec 1 33). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m6_1_filter_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "layer": "base",
+      "notes": "[m6_1] PDF p2, FILTER. Printed channel 1/2, status Bn, Data1 21h (printed dec 1 33). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m6_2_filter_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "layer": "base",
+      "notes": "[m6_2] PDF p2, FILTER. Printed channel 1/2, status Bn, Data1 01h (printed dec 1 33). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m6_2_filter_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 33,
+      "layer": "base",
+      "notes": "[m6_2] PDF p2, FILTER. Printed channel 1/2, status Bn, Data1 21h (printed dec 1 33). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m7_booth_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 9,
+      "layer": "base",
+      "notes": "[m7] PDF p2, BOOTH LEVEL. Printed channel 7, status B6, Data1 09h (printed dec 9 41). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m7_booth_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 41,
+      "layer": "base",
+      "notes": "[m7] PDF p2, BOOTH LEVEL. Printed channel 7, status B6, Data1 29h (printed dec 9 41). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m8_master_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 8,
+      "layer": "base",
+      "notes": "[m8] PDF p2, MASTER LEVEL. Printed channel 7, status B6, Data1 08h (printed dec 8 40). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m8_master_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 40,
+      "layer": "base",
+      "notes": "[m8] PDF p2, MASTER LEVEL. Printed channel 7, status B6, Data1 28h (printed dec 8 40). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "d5_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 63,
+      "layer": "base",
+      "notes": "[d5] PDF p2, SHIFT. Printed channel 7, status 96, Data1 3Fh (printed dec 63)."
+    },
+    {
+      "name": "m9_ch_fader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "layer": "base",
+      "notes": "[m9] PDF p2, CH FADER. Printed channel 1/2, status Bn, Data1 13h (printed dec 19 51). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "name": "m9_ch_fader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "layer": "base",
+      "notes": "[m9] PDF p2, CH FADER. Printed channel 1/2, status Bn, Data1 33h (printed dec 19 51). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "name": "m10_ch_fader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 19,
+      "layer": "base",
+      "notes": "[m10] PDF p2, CH FADER. Printed channel 1/2, status Bn, Data1 13h (printed dec 19 51). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "name": "m10_ch_fader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 51,
+      "layer": "base",
+      "notes": "[m10] PDF p2, CH FADER. Printed channel 1/2, status Bn, Data1 33h (printed dec 19 51). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "name": "m9_ch_fader_shift_mode_zero_not_zero",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 102,
+      "layer": "shift_mode",
+      "notes": "[m9] PDF p2, CH FADER, condition: Zero -> not Zero, +SHIFT. Printed channel 1/2, status 9n, Data1 66h (printed dec 102). OFF = 0 (0x00), ON = 127 (0x7F) Start with Sync Setting"
+    },
+    {
+      "name": "m10_ch_fader_shift_mode_zero_not_zero",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 102,
+      "layer": "shift_mode",
+      "notes": "[m10] PDF p2, CH FADER, condition: Zero -> not Zero, +SHIFT. Printed channel 1/2, status 9n, Data1 66h (printed dec 102). OFF = 0 (0x00), ON = 127 (0x7F) Start with Sync Setting"
+    },
+    {
+      "name": "m9_ch_fader_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[m9] PDF p2, CH FADER, +SHIFT. Printed channel 1/2, status 9n, Data1 51h (printed dec 81). OFF = 0 (0x00), ON = 127 (0x7F) Start from Current Cue Point."
+    },
+    {
+      "name": "m10_ch_fader_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[m10] PDF p2, CH FADER, +SHIFT. Printed channel 1/2, status 9n, Data1 51h (printed dec 81). OFF = 0 (0x00), ON = 127 (0x7F) Start from Current Cue Point."
+    },
+    {
+      "name": "m9_ch_fader_shift_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[m9] PDF p2, CH FADER, +SHIFT. Printed channel 1/2, status 9n, Data1 53h (printed dec 83). OFF = 0 (0x00), ON = 127 (0x7F) Start from HOT CUE1 Point."
+    },
+    {
+      "name": "m10_ch_fader_shift_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[m10] PDF p2, CH FADER, +SHIFT. Printed channel 1/2, status 9n, Data1 53h (printed dec 83). OFF = 0 (0x00), ON = 127 (0x7F) Start from HOT CUE1 Point."
+    },
+    {
+      "name": "m9_ch_fader_shift_mode_not_zero_zero",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "layer": "shift_mode",
+      "notes": "[m9] PDF p2, CH FADER, condition: not Zero -> Zero, +SHIFT. Printed channel 1/2, status 9n, Data1 52h (printed dec 82). OFF = 0 (0x00), ON = 127 (0x7F)"
+    },
+    {
+      "name": "m10_ch_fader_shift_mode_not_zero_zero",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 82,
+      "layer": "shift_mode",
+      "notes": "[m10] PDF p2, CH FADER, condition: not Zero -> Zero, +SHIFT. Printed channel 1/2, status 9n, Data1 52h (printed dec 82). OFF = 0 (0x00), ON = 127 (0x7F)"
+    },
+    {
+      "name": "m11_crossfader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 31,
+      "layer": "base",
+      "notes": "[m11] PDF p2, CROSSFADER. Printed channel 7, status B6, Data1 1Fh (printed dec 31 63). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) CROSSFADER REVERSE OFF : Min at left side, Max at right side CROSSFADER REVERSE ON : Min at right side, Max at lef"
+    },
+    {
+      "name": "m11_crossfader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 63,
+      "layer": "base",
+      "notes": "[m11] PDF p2, CROSSFADER. Printed channel 7, status B6, Data1 3Fh (printed dec 31 63). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) CROSSFADER REVERSE OFF : Min at left side, Max at right side CROSSFADER REVERSE ON : Min at right side, Max at lef"
+    },
+    {
+      "name": "m11_crossfader_shift_mode_min_not_min",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 102,
+      "layer": "shift_mode",
+      "notes": "[m11] PDF p2, CROSSFADER, condition: Min -> not Min, +SHIFT. Printed channel 2, status 91, Data1 66h (printed dec 102). OFF = 0 (0x00), ON = 127 (0x7F) Start with Sync Setting"
+    },
+    {
+      "name": "m11_crossfader_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[m11] PDF p2, CROSSFADER, +SHIFT. Printed channel 2, status 91, Data1 51h (printed dec 81). OFF = 0 (0x00), ON = 127 (0x7F) Start from Current Cue Point."
+    },
+    {
+      "name": "m11_crossfader_shift_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[m11] PDF p2, CROSSFADER, +SHIFT. Printed channel 2, status 91, Data1 53h (printed dec 83). OFF = 0 (0x00), ON = 127 (0x7F) Start from HOT CUE1 Point."
+    },
+    {
+      "name": "m11_crossfader_shift_mode_not_min_min",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 82,
+      "layer": "shift_mode",
+      "notes": "[m11] PDF p2, CROSSFADER, condition: not Min -> Min, +SHIFT. Printed channel 2, status 91, Data1 52h (printed dec 82). OFF = 0 (0x00), ON = 127 (0x7F)"
+    },
+    {
+      "name": "m11_crossfader_shift_mode_max_not_max",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 102,
+      "layer": "shift_mode",
+      "notes": "[m11] PDF p2, CROSSFADER, condition: Max -> not Max, +SHIFT. Printed channel 1, status 90, Data1 66h (printed dec 102). OFF = 0 (0x00), ON = 127 (0x7F) Start with Sync Setting"
+    },
+    {
+      "name": "m11_crossfader_shift_3",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "layer": "shift",
+      "notes": "[m11] PDF p2, CROSSFADER, +SHIFT. Printed channel 1, status 90, Data1 51h (printed dec 81). OFF = 0 (0x00), ON = 127 (0x7F) Start from Current Cue Point."
+    },
+    {
+      "name": "m11_crossfader_shift_4",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "layer": "shift",
+      "notes": "[m11] PDF p2, CROSSFADER, +SHIFT. Printed channel 1, status 90, Data1 53h (printed dec 83). OFF = 0 (0x00), ON = 127 (0x7F) Start from HOT CUE1 Point."
+    },
+    {
+      "name": "m11_crossfader_shift_mode_not_max_max",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "layer": "shift_mode",
+      "notes": "[m11] PDF p2, CROSSFADER, condition: not Max -> Max, +SHIFT. Printed channel 1, status 90, Data1 52h (printed dec 82). OFF = 0 (0x00), ON = 127 (0x7F)"
+    },
+    {
+      "name": "m12_headphone_vol_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 13,
+      "layer": "base",
+      "notes": "[m12] PDF p2, HEADPHONE VOL. Printed channel 7, status B6, Data1 0Dh (printed dec 13 45). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m12_headphone_vol_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 45,
+      "layer": "base",
+      "notes": "[m12] PDF p2, HEADPHONE VOL. Printed channel 7, status B6, Data1 2Dh (printed dec 13 45). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m13_headphone_mix_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 12,
+      "layer": "base",
+      "notes": "[m13] PDF p2, HEADPHONE MIX. Printed channel 7, status B6, Data1 0Ch (printed dec 12 44). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m13_headphone_mix_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 44,
+      "layer": "base",
+      "notes": "[m13] PDF p2, HEADPHONE MIX. Printed channel 7, status B6, Data1 2Ch (printed dec 12 44). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m14_headphone_cuefader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 14,
+      "layer": "base",
+      "notes": "[m14] PDF p2, HEADPHONE CUEFADER. Printed channel 7, status B6, Data1 0Eh (printed dec 14 46). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m14_headphone_cuefader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 46,
+      "layer": "base",
+      "notes": "[m14] PDF p2, HEADPHONE CUEFADER. Printed channel 7, status B6, Data1 2Eh (printed dec 14 46). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m15_mic_on_off_talkover",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 79,
+      "layer": "base",
+      "notes": "[m15] PDF p2, MIC ON/ OFF/TALKOVER. Printed channel 7, status B6, Data1 4Fh (printed dec 79). OFF=0x00, ON=0x40, TALKOVER=0x7F"
+    },
+    {
+      "name": "m17_mic_tone_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 4,
+      "layer": "base",
+      "notes": "[m17] PDF p2, MIC TONE. Printed channel 7, status B6, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m17_mic_tone_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 36,
+      "layer": "base",
+      "notes": "[m17] PDF p2, MIC TONE. Printed channel 7, status B6, Data1 24h (printed dec 4 36). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m18_bluetooth_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 5,
+      "layer": "base",
+      "notes": "[m18] PDF p2, BLUETOOTH LEVEL. Printed channel 7, status B6, Data1 05h (printed dec 4 37). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m18_bluetooth_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 37,
+      "layer": "base",
+      "notes": "[m18] PDF p2, BLUETOOTH LEVEL. Printed channel 7, status B6, Data1 25h (printed dec 4 37). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m19_aux_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 11,
+      "layer": "base",
+      "notes": "[m19] PDF p2, AUX LEVEL. Printed channel 7, status B6, Data1 0Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m19_aux_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 43,
+      "layer": "base",
+      "notes": "[m19] PDF p2, AUX LEVEL. Printed channel 7, status B6, Data1 2Bh (printed dec 11 43). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m21_cross_fader_reverse",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 24,
+      "layer": "base",
+      "notes": "[m21] PDF p3, CROSS FADER REVERSE. Printed channel 7, status 96, Data1 18h (printed dec 24). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "m22_cross_fader_curve_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 1,
+      "layer": "base",
+      "notes": "[m22] PDF p3, CROSS FADER CURVE. Printed channel 7, status B6, Data1 01h (printed dec 1 33). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m22_cross_fader_curve_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 33,
+      "layer": "base",
+      "notes": "[m22] PDF p3, CROSS FADER CURVE. Printed channel 7, status B6, Data1 21h (printed dec 1 33). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m23_channel_1_fader_curve_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 2,
+      "layer": "base",
+      "notes": "[m23] PDF p3, CHANNEL 1 FADER CURVE. Printed channel 7, status B6, Data1 02h (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m23_channel_1_fader_curve_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 34,
+      "layer": "base",
+      "notes": "[m23] PDF p3, CHANNEL 1 FADER CURVE. Printed channel 7, status B6, Data1 22h (printed dec 2 34). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m24_channel1_fader_reverse",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 25,
+      "layer": "base",
+      "notes": "[m24] PDF p3, CHANNEL1 FADER REVERSE. Printed channel 7, status 96, Data1 19h (printed dec 25). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "m25_channel_2fader_reverse",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 32,
+      "layer": "base",
+      "notes": "[m25] PDF p3, CHANNEL 2FADER REVERSE. Printed channel 7, status 96, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "m26_channel_2_fader_curve_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 7,
+      "layer": "base",
+      "notes": "[m26] PDF p3, CHANNEL 2 FADER CURVE. Printed channel 7, status B6, Data1 07h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "m26_channel_2_fader_curve_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 39,
+      "layer": "base",
+      "notes": "[m26] PDF p3, CHANNEL 2 FADER CURVE. Printed channel 7, status B6, Data1 27h (printed dec 7 39). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e1_echo_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 0,
+      "layer": "mode",
+      "notes": "[e1] PDF p3, ECHO, condition: BEAT FX selected. Printed channel 7, status 96, Data1 00h (printed dec 0). ON=0x7F"
+    },
+    {
+      "name": "e1_echo_mode_serato_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 112,
+      "layer": "mode",
+      "notes": "[e1] PDF p3, ECHO, condition: SERATO FX selected. Printed channel 5, status 94, Data1 70h (printed dec 112). ON=0x7F"
+    },
+    {
+      "name": "e1_echo_mode_loop_midi1_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 48,
+      "layer": "mode",
+      "notes": "[e1] PDF p3, ECHO, condition: LOOP MIDI1 selected. Printed channel 7, status 96, Data1 30h (printed dec 48). ON=0x7F"
+    },
+    {
+      "name": "e1_echo_mode_loop_midi2_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 54,
+      "layer": "mode",
+      "notes": "[e1] PDF p3, ECHO, condition: LOOP MIDI2 selected. Printed channel 7, status 96, Data1 36h (printed dec 54). ON=0x7F"
+    },
+    {
+      "name": "e1_echo_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[e1] PDF p3, ECHO, +SHIFT. Printed channel 7, status 96, Data1 0Ch (printed dec 12). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e2_backspin_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 1,
+      "layer": "mode",
+      "notes": "[e2] PDF p3, BACKSPIN, condition: BEAT FX selected. Printed channel 7, status 96, Data1 01h (printed dec 1). ON=0x7F"
+    },
+    {
+      "name": "e2_backspin_mode_serato_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 113,
+      "layer": "mode",
+      "notes": "[e2] PDF p3, BACKSPIN, condition: SERATO FX selected. Printed channel 5, status 94, Data1 71h (printed dec 113). ON=0x7F"
+    },
+    {
+      "name": "e2_backspin_mode_loop_midi1_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 49,
+      "layer": "mode",
+      "notes": "[e2] PDF p3, BACKSPIN, condition: LOOP MIDI1 selected. Printed channel 7, status 96, Data1 31h (printed dec 49). ON=0x7F"
+    },
+    {
+      "name": "e2_backspin_mode_loop_midi2_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 55,
+      "layer": "mode",
+      "notes": "[e2] PDF p3, BACKSPIN, condition: LOOP MIDI2 selected. Printed channel 7, status 96, Data1 37h (printed dec 55). ON=0x7F"
+    },
+    {
+      "name": "e2_backspin_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[e2] PDF p3, BACKSPIN, +SHIFT. Printed channel 7, status 96, Data1 0Dh (printed dec 13). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e3_control_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 2,
+      "layer": "mode",
+      "notes": "[e3] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 02h (printed dec 2). ON=0x7F"
+    },
+    {
+      "name": "e3_flanger_mode_serato_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 114,
+      "layer": "mode",
+      "notes": "[e3] PDF p3, FLANGER, condition: SERATO FX selected. Printed channel 7, status 94, Data1 72h (printed dec 114). ON=0x7F"
+    },
+    {
+      "name": "e3_flanger_mode_loop_midi1_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 50,
+      "layer": "mode",
+      "notes": "[e3] PDF p3, FLANGER, condition: LOOP MIDI1 selected. Printed channel 7, status 96, Data1 32h (printed dec 50). ON=0x7F"
+    },
+    {
+      "name": "e3_flanger_mode_loop_midi2_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 56,
+      "layer": "mode",
+      "notes": "[e3] PDF p3, FLANGER, condition: LOOP MIDI2 selected. Printed channel 7, status 96, Data1 38h (printed dec 56). ON=0x7F"
+    },
+    {
+      "name": "e3_flanger_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[e3] PDF p3, FLANGER, +SHIFT. Printed channel 7, status 96, Data1 0Eh (printed dec 14). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e4_control_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 3,
+      "layer": "mode",
+      "notes": "[e4] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 03h (printed dec 3). ON=0x7F"
+    },
+    {
+      "name": "e4_reverb_mode_serato_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 112,
+      "layer": "mode",
+      "notes": "[e4] PDF p3, REVERB, condition: SERATO FX selected. Printed channel 7, status 95, Data1 70h (printed dec 112). ON=0x7F"
+    },
+    {
+      "name": "e4_reverb_mode_loop_midi1_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 51,
+      "layer": "mode",
+      "notes": "[e4] PDF p3, REVERB, condition: LOOP MIDI1 selected. Printed channel 7, status 96, Data1 33h (printed dec 51). ON=0x7F"
+    },
+    {
+      "name": "e4_reverb_mode_loop_midi2_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 57,
+      "layer": "mode",
+      "notes": "[e4] PDF p3, REVERB, condition: LOOP MIDI2 selected. Printed channel 7, status 96, Data1 39h (printed dec 57). ON=0x7F"
+    },
+    {
+      "name": "e4_reverb_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[e4] PDF p3, REVERB, +SHIFT. Printed channel 7, status 96, Data1 0Fh (printed dec 15). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e5_control_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 4,
+      "layer": "mode",
+      "notes": "[e5] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 04h (printed dec 4). ON=0x7F"
+    },
+    {
+      "name": "e5_vinyl_brake_mode_serato_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 113,
+      "layer": "mode",
+      "notes": "[e5] PDF p3, VINYL BRAKE, condition: SERATO FX selected. Printed channel 7, status 95, Data1 71h (printed dec 113). ON=0x7F"
+    },
+    {
+      "name": "e5_vinyl_brake_mode_loop_midi1_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 52,
+      "layer": "mode",
+      "notes": "[e5] PDF p3, VINYL BRAKE, condition: LOOP MIDI1 selected. Printed channel 7, status 96, Data1 34h (printed dec 52). ON=0x7F"
+    },
+    {
+      "name": "e5_vinyl_brake_mode_loop_midi2_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 58,
+      "layer": "mode",
+      "notes": "[e5] PDF p3, VINYL BRAKE, condition: LOOP MIDI2 selected. Printed channel 7, status 96, Data1 3Ah (printed dec 58). ON=0x7F"
+    },
+    {
+      "name": "e5_vinyl_brake_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 21,
+      "layer": "shift",
+      "notes": "[e5] PDF p3, VINYL BRAKE, +SHIFT. Printed channel 7, status 96, Data1 15h (printed dec 21). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e6_control_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 5,
+      "layer": "mode",
+      "notes": "[e6] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 05h (printed dec 5). ON=0x7F"
+    },
+    {
+      "name": "e6_phaser_mode_serato_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 114,
+      "layer": "mode",
+      "notes": "[e6] PDF p3, PHASER, condition: SERATO FX selected. Printed channel 7, status 96, Data1 72h (printed dec 114). ON=0x7F"
+    },
+    {
+      "name": "e6_phaser_mode_loop_midi1_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 53,
+      "layer": "mode",
+      "notes": "[e6] PDF p3, PHASER, condition: LOOP MIDI1 selected. Printed channel 7, status 96, Data1 35h (printed dec 53). ON=0x7F"
+    },
+    {
+      "name": "e6_phaser_mode_loop_midi2_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 59,
+      "layer": "mode",
+      "notes": "[e6] PDF p3, PHASER, condition: LOOP MIDI2 selected. Printed channel 7, status 96, Data1 3Bh (printed dec 59). ON=0x7F"
+    },
+    {
+      "name": "e6_phaser_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 23,
+      "layer": "shift",
+      "notes": "[e6] PDF p3, PHASER, +SHIFT. Printed channel 7, status 96, Data1 17h (printed dec 23). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e7_control_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 6,
+      "layer": "mode",
+      "notes": "[e7] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e7_beat_left_mode_serato_fx_selected_fx1_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "layer": "mode",
+      "notes": "[e7] PDF p3, BEAT LEFT, condition: SERATO FX selected FX1-1/2/3. Printed channel 5, status 94, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e7_beat_left_mode_serato_fx_selected_fx2_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "layer": "mode",
+      "notes": "[e7] PDF p3, BEAT LEFT, condition: SERATO FX selected FX2-1/2/3. Printed channel 6, status 95, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e7_beat_left_shift_mode_serato_fx_selected_fx1_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 18,
+      "layer": "shift_mode",
+      "notes": "[e7] PDF p3, BEAT LEFT, condition: SERATO FX selected FX1-1/2/3, +SHIFT. Printed channel 5, status 94, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e7_beat_left_shift_mode_serato_fx_selected_fx2_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 18,
+      "layer": "shift_mode",
+      "notes": "[e7] PDF p3, BEAT LEFT, condition: SERATO FX selected FX2-1/2/3, +SHIFT. Printed channel 6, status 95, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e8_control_mode_beat_fx_selected",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 7,
+      "layer": "mode",
+      "notes": "[e8] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e8_beat_right_mode_serato_fx_selected_fx1_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "layer": "mode",
+      "notes": "[e8] PDF p3, BEAT RIGHT, condition: SERATO FX selected FX1-1/2/3. Printed channel 5, status 94, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e8_beat_right_mode_serato_fx_selected_fx2_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "layer": "mode",
+      "notes": "[e8] PDF p3, BEAT RIGHT, condition: SERATO FX selected FX2-1/2/3. Printed channel 6, status 95, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e8_beat_right_shift_mode_serato_fx_selected_fx1_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 19,
+      "layer": "shift_mode",
+      "notes": "[e8] PDF p3, BEAT RIGHT, condition: SERATO FX selected FX1-1/2/3, +SHIFT. Printed channel 5, status 94, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e8_beat_right_shift_mode_serato_fx_selected_fx2_1_2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 19,
+      "layer": "shift_mode",
+      "notes": "[e8] PDF p3, BEAT RIGHT, condition: SERATO FX selected FX2-1/2/3, +SHIFT. Printed channel 6, status 95, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e9_tap",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 10,
+      "layer": "base",
+      "notes": "[e9] PDF p3, TAP. Printed channel 7, status 96, Data1 0Ah (printed dec 10). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e9_tap_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 22,
+      "layer": "shift",
+      "notes": "[e9] PDF p3, TAP, +SHIFT. Printed channel 7, status 96, Data1 16h (printed dec 22). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 80,
+      "layer": "base",
+      "notes": "[e10] PDF p4, . Printed channel 5, status 94, Data1 50h (printed dec 80). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control_mode_serato_fx_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 71,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, , condition: SERATO FX selected ECHO. Printed channel 5, status 94, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control_mode_serato_fx_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 72,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, , condition: SERATO FX selected BACK SPIN. Printed channel 5, status 94, Data1 48h (printed dec 72). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control_mode_serato_fx_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 73,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, , condition: SERATO FX selected FLANGER. Printed channel 5, status 94, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control_mode_serato_fx_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 71,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, , condition: SERATO FX selected REVERB. Printed channel 6, status 95, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control_mode_serato_fx_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, , condition: SERATO FX selected VINYL BRAKE. Printed channel 6, status 95, Data1 48h (printed dec 72). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_control_mode_serato_fx_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, , condition: SERATO FX selected PHASER. Printed channel 6, status 95, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi1_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 48,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected ECHO. Printed channel 5, status 94, Data1 30h (printed dec 48). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi1_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 49,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected BACK SPIN. Printed channel 5, status 94, Data1 31h (printed dec 49). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi1_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 50,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected FLANGER. Printed channel 5, status 94, Data1 32h (printed dec 50). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi1_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 51,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected REVERB. Printed channel 5, status 94, Data1 33h (printed dec 51). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi1_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 52,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected VINYL BRAKE. Printed channel 5, status 94, Data1 34h (printed dec 52). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi1_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 53,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected PHASER. Printed channel 5, status 94, Data1 35h (printed dec 53). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi2_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 54,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected ECHO. Printed channel 5, status 94, Data1 36h (printed dec 54). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi2_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 55,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected BACK SPIN. Printed channel 5, status 94, Data1 37h (printed dec 55). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi2_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 56,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected FLANGER. Printed channel 5, status 94, Data1 38h (printed dec 56). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi2_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 57,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected REVERB. Printed channel 5, status 94, Data1 39h (printed dec 57). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi2_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 58,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected VINYL BRAKE. Printed channel 5, status 94, Data1 3Ah (printed dec 58). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_mode_loop_midi2_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 59,
+      "layer": "mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected PHASER. Printed channel 5, status 94, Data1 3Bh (printed dec 59). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, +SHIFT. Printed channel 5, status 94, Data1 66h (printed dec 102). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 115,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected ECHO, +SHIFT. Printed channel 5, status 94, Data1 73h (printed dec 115). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 116,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected BACK SPIN, +SHIFT. Printed channel 5, status 94, Data1 74h (printed dec 116). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 117,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected FLANGER, +SHIFT. Printed channel 5, status 94, Data1 75h (printed dec 117). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 118,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected REVERB, +SHIFT. Printed channel 5, status 94, Data1 76h (printed dec 118). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 119,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected VINYL BRAKE, +SHIFT. Printed channel 5, status 94, Data1 77h (printed dec 119). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 120,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI1 selected PHASER, +SHIFT. Printed channel 5, status 94, Data1 78h (printed dec 120). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi2_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 121,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected ECHO, +SHIFT. Printed channel 5, status 94, Data1 79h (printed dec 121). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi2_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 122,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected BACK SPIN, +SHIFT. Printed channel 5, status 94, Data1 7Ah (printed dec 122). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi2_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 123,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected FLANGER, +SHIFT. Printed channel 5, status 94, Data1 7Bh (printed dec 123). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi2_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 124,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected REVERB, +SHIFT. Printed channel 5, status 94, Data1 7Ch (printed dec 124). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi2_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 125,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected VINYL BRAKE, +SHIFT. Printed channel 5, status 94, Data1 7Dh (printed dec 125). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e10_ch1_effect_lever_shift_mode_loop_midi2_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 126,
+      "layer": "shift_mode",
+      "notes": "[e10] PDF p4, CH1 EFFECT LEVER, condition: LOOP MIDI2 selected PHASER, +SHIFT. Printed channel 5, status 94, Data1 7Eh (printed dec 126). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_control",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 80,
+      "layer": "base",
+      "notes": "[e11] PDF p4, . Printed channel 6, status 95, Data1 50h (printed dec 80). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_control_mode_serato_fx_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 71,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, , condition: SERATO FX selected ECHO. Printed channel 5, status 94, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_control_mode_serato_fx_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 72,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, , condition: SERATO FX selected BACK SPIN. Printed channel 5, status 94, Data1 48h (printed dec 72). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_control_mode_serato_fx_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 73,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, , condition: SERATO FX selected FLANGER. Printed channel 5, status 94, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_control_mode_serato_fx_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 71,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, , condition: SERATO FX selected REVERB. Printed channel 6, status 95, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_control_mode_serato_fx_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, , condition: SERATO FX selected VINYL BRAKE. Printed channel 6, status 95, Data1 48h (printed dec 72). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_control_mode_serato_fx_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, , condition: SERATO FX selected PHASER. Printed channel 6, status 95, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi1_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 48,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected ECHO. Printed channel 5, status 94, Data1 30h (printed dec 48). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi1_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 49,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected BACK SPIN. Printed channel 5, status 94, Data1 31h (printed dec 49). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi1_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 50,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected FLANGER. Printed channel 5, status 94, Data1 32h (printed dec 50). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi1_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 51,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected REVERB. Printed channel 5, status 94, Data1 33h (printed dec 51). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi1_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 52,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected VINYL BRAKE. Printed channel 5, status 94, Data1 34h (printed dec 52). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi1_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 53,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected PHASER. Printed channel 5, status 94, Data1 35h (printed dec 53). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi2_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 54,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected ECHO. Printed channel 5, status 94, Data1 36h (printed dec 54). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi2_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 55,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected BACK SPIN. Printed channel 5, status 94, Data1 37h (printed dec 55). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi2_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 56,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected FLANGER. Printed channel 5, status 94, Data1 38h (printed dec 56). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi2_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 57,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected REVERB. Printed channel 5, status 94, Data1 39h (printed dec 57). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi2_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 58,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected VINYL BRAKE. Printed channel 5, status 94, Data1 3Ah (printed dec 58). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_mode_loop_midi2_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 59,
+      "layer": "mode",
+      "notes": "[e11] PDF p4, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected PHASER. Printed channel 5, status 94, Data1 3Bh (printed dec 59). While the lever switch is ON, a MIDI signal is transmitted periodically at the set beat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 102,
+      "layer": "shift",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, +SHIFT. Printed channel 6, status 95, Data1 66h (printed dec 102). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 115,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected ECHO, +SHIFT. Printed channel 6, status 95, Data1 73h (printed dec 115). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 116,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected BACK SPIN, +SHIFT. Printed channel 6, status 95, Data1 74h (printed dec 116). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 117,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected FLANGER, +SHIFT. Printed channel 6, status 95, Data1 75h (printed dec 117). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 118,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected REVERB, +SHIFT. Printed channel 6, status 95, Data1 76h (printed dec 118). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 119,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected VINYL BRAKE, +SHIFT. Printed channel 6, status 95, Data1 77h (printed dec 119). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 120,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI1 selected PHASER, +SHIFT. Printed channel 6, status 95, Data1 78h (printed dec 120). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi2_selected_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 121,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected ECHO, +SHIFT. Printed channel 6, status 95, Data1 79h (printed dec 121). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi2_selected_back_spin",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 122,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected BACK SPIN, +SHIFT. Printed channel 6, status 95, Data1 7Ah (printed dec 122). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi2_selected_flanger",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 123,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected FLANGER, +SHIFT. Printed channel 6, status 95, Data1 7Bh (printed dec 123). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi2_selected_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 124,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected REVERB, +SHIFT. Printed channel 6, status 95, Data1 7Ch (printed dec 124). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi2_selected_vinyl_brake",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 125,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected VINYL BRAKE, +SHIFT. Printed channel 6, status 95, Data1 7Dh (printed dec 125). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e11_ch2_effect_lever_shift_mode_loop_midi2_selected_phaser",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 126,
+      "layer": "shift_mode",
+      "notes": "[e11] PDF p5, CH2 EFFECT LEVER, condition: LOOP MIDI2 selected PHASER, +SHIFT. Printed channel 6, status 95, Data1 7Eh (printed dec 126). MIDI signal transmission only once when using SHIFT + LEVER. Not repeat."
+    },
+    {
+      "name": "e12_level_depth_mode_beat_fx_loop_midi1_loop_midi2_selected_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 10,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: BEAT FX /LOOP MIDI1 /LOOP MIDI2 selected. Printed channel 7, status B6, Data1 0Ah (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_beat_fx_loop_midi1_loop_midi2_selected_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 42,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: BEAT FX /LOOP MIDI1 /LOOP MIDI2 selected. Printed channel 7, status B6, Data1 2Ah (printed dec 2 34). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_echo_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected ECHO. Printed channel 5, status B4, Data1 02h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_echo_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 34,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected ECHO. Printed channel 5, status B4, Data1 22h (printed dec 4 36). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_back_spin_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 4,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected BACK SPIN. Printed channel 5, status B4, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_back_spin_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 36,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected BACK SPIN. Printed channel 5, status B4, Data1 24h (printed dec 4 36). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_flanger_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected FLANGER. Printed channel 5, status B4, Data1 06h (printed dec 6 38). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_flanger_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 38,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected FLANGER. Printed channel 5, status B4, Data1 26h (printed dec 6 38). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_reverb_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 2,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected REVERB. Printed channel 6, status B5, Data1 02h (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_reverb_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 34,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected REVERB. Printed channel 6, status B5, Data1 22h (printed dec 2 34). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_vinyl_brake_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 4,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected VINYL BRAKE. Printed channel 6, status B5, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_vinyl_brake_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 36,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected VINYL BRAKE. Printed channel 6, status B5, Data1 24h (printed dec 4 36). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_phaser_msb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 6,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected PHASER. Printed channel 6, status B5, Data1 06h (printed dec 6 38). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "e12_level_depth_mode_serato_fx_selected_phaser_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 38,
+      "layer": "mode",
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: SERATO FX selected PHASER. Printed channel 6, status B5, Data1 26h (printed dec 6 38). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "d1_1_control",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "layer": "base",
+      "notes": "[d1_1] PDF p5, . Printed channel 7, status Bn, Data1 40h (printed dec 64). Difference count value from when previous operated Turn clockwise: 0x01~0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F~0x62(max) (1~30clicks/40msec)"
+    },
+    {
+      "name": "d2_1_control",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "layer": "base",
+      "notes": "[d2_1] PDF p5, . Printed channel 7, status Bn, Data1 40h (printed dec 64). Difference count value from when previous operated Turn clockwise: 0x01~0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F~0x62(max) (1~30clicks/40msec)"
+    },
+    {
+      "name": "d1_1_control_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 100,
+      "layer": "shift",
+      "notes": "[d1_1] PDF p5, , +SHIFT. Printed channel 7, status Bn, Data1 64h (printed dec 100)."
+    },
+    {
+      "name": "d2_1_control_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 100,
+      "layer": "shift",
+      "notes": "[d2_1] PDF p5, , +SHIFT. Printed channel 7, status Bn, Data1 64h (printed dec 100)."
+    },
+    {
+      "name": "d1_1_browse_mode_rotate_while_pressing_echo_button_serato",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 80,
+      "layer": "mode",
+      "notes": "[d1_1] PDF p5, BROWSE, condition: rotate while pressing ECHO button (SERATO FX selected), held with FX button. Printed channel 5, status B4, Data1 50h (printed dec 80)."
+    },
+    {
+      "name": "d2_1_browse_mode_rotate_while_pressing_echo_button_serato",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 80,
+      "layer": "mode",
+      "notes": "[d2_1] PDF p5, BROWSE, condition: rotate while pressing ECHO button (SERATO FX selected), held with FX button. Printed channel 5, status B4, Data1 50h (printed dec 80)."
+    },
+    {
+      "name": "d1_1_browse_mode_rotate_while_pressing_back_spin_button_s",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 81,
+      "layer": "mode",
+      "notes": "[d1_1] PDF p5, BROWSE, condition: rotate while pressing BACK SPIN button (SERATO FX selected), held with FX button. Printed channel 5, status B4, Data1 51h (printed dec 81)."
+    },
+    {
+      "name": "d2_1_browse_mode_rotate_while_pressing_back_spin_button_s",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 81,
+      "layer": "mode",
+      "notes": "[d2_1] PDF p5, BROWSE, condition: rotate while pressing BACK SPIN button (SERATO FX selected), held with FX button. Printed channel 5, status B4, Data1 51h (printed dec 81)."
+    },
+    {
+      "name": "d1_1_browse_mode_rotate_while_pressing_flanger_button_ser",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 82,
+      "layer": "mode",
+      "notes": "[d1_1] PDF p5, BROWSE, condition: rotate while pressing FLANGER button (SERATO FX selected), held with FX button. Printed channel 5, status B4, Data1 52h (printed dec 82)."
+    },
+    {
+      "name": "d2_1_browse_mode_rotate_while_pressing_flanger_button_ser",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 82,
+      "layer": "mode",
+      "notes": "[d2_1] PDF p5, BROWSE, condition: rotate while pressing FLANGER button (SERATO FX selected), held with FX button. Printed channel 5, status B4, Data1 52h (printed dec 82)."
+    },
+    {
+      "name": "d1_1_browse_mode_rotate_while_pressing_reverb_button_sera",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 83,
+      "layer": "mode",
+      "notes": "[d1_1] PDF p5, BROWSE, condition: rotate while pressing REVERB button (SERATO FX selected), held with FX button. Printed channel 6, status B5, Data1 53h (printed dec 83)."
+    },
+    {
+      "name": "d2_1_browse_mode_rotate_while_pressing_reverb_button_sera",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 83,
+      "layer": "mode",
+      "notes": "[d2_1] PDF p5, BROWSE, condition: rotate while pressing REVERB button (SERATO FX selected), held with FX button. Printed channel 6, status B5, Data1 53h (printed dec 83)."
+    },
+    {
+      "name": "d1_1_browse_mode_rotate_while_pressing_vinyl_brake_button",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 84,
+      "layer": "mode",
+      "notes": "[d1_1] PDF p5, BROWSE, condition: rotate while pressing VINYL BRAKE button (SERATO FX selected), held with FX button. Printed channel 6, status B5, Data1 54h (printed dec 84)."
+    },
+    {
+      "name": "d2_1_browse_mode_rotate_while_pressing_vinyl_brake_button",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 84,
+      "layer": "mode",
+      "notes": "[d2_1] PDF p5, BROWSE, condition: rotate while pressing VINYL BRAKE button (SERATO FX selected), held with FX button. Printed channel 6, status B5, Data1 54h (printed dec 84)."
+    },
+    {
+      "name": "d1_1_browse_mode_rotate_while_pressing_phaser_button_sera",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 85,
+      "layer": "mode",
+      "notes": "[d1_1] PDF p5, BROWSE, condition: rotate while pressing PHASER button (SERATO FX selected), held with FX button. Printed channel 6, status B5, Data1 55h (printed dec 85)."
+    },
+    {
+      "name": "d2_1_browse_mode_rotate_while_pressing_phaser_button_sera",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 85,
+      "layer": "mode",
+      "notes": "[d2_1] PDF p5, BROWSE, condition: rotate while pressing PHASER button (SERATO FX selected), held with FX button. Printed channel 6, status B5, Data1 55h (printed dec 85)."
+    },
+    {
+      "name": "d1_1_browse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "layer": "base",
+      "notes": "[d1_1] PDF p5, BROWSE. Printed channel 7, status 9n, Data1 41h (printed dec 65). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_1_browse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "layer": "base",
+      "notes": "[d2_1] PDF p5, BROWSE. Printed channel 7, status 9n, Data1 41h (printed dec 65). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_1_browse_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "layer": "shift",
+      "notes": "[d1_1] PDF p5, BROWSE, +SHIFT. Printed channel 7, status 9n, Data1 42h (printed dec 66). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_1_browse_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "layer": "shift",
+      "notes": "[d2_1] PDF p5, BROWSE, +SHIFT. Printed channel 7, status 9n, Data1 42h (printed dec 66). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_2_back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 104,
+      "layer": "base",
+      "notes": "[d1_2] PDF p5, BACK. Printed channel 7, status 9n, Data1 68h (printed dec 104). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_2_back",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 104,
+      "layer": "base",
+      "notes": "[d2_2] PDF p5, BACK. Printed channel 7, status 9n, Data1 68h (printed dec 104). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_2_back_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 103,
+      "layer": "shift",
+      "notes": "[d1_2] PDF p5, BACK, +SHIFT. Printed channel 7, status 9n, Data1 67h (printed dec 103). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_2_back_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 103,
+      "layer": "shift",
+      "notes": "[d2_2] PDF p5, BACK, +SHIFT. Printed channel 7, status 9n, Data1 67h (printed dec 103). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_3_load",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "layer": "base",
+      "notes": "[d1_3] PDF p5, LOAD. Printed channel 1/2, status 9n, Data1 46h (printed dec 70). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_3_load",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 70,
+      "layer": "base",
+      "notes": "[d2_3] PDF p5, LOAD. Printed channel 1/2, status 9n, Data1 46h (printed dec 70). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_3_load_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "layer": "shift",
+      "notes": "[d1_3] PDF p5, LOAD, +SHIFT. Printed channel 1/2, status 9n, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_3_load_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 71,
+      "layer": "shift",
+      "notes": "[d2_3] PDF p5, LOAD, +SHIFT. Printed channel 1/2, status 9n, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_4_control",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "layer": "base",
+      "notes": "[d1_4] PDF p5, . Printed channel 1/2, status 9n, Data1 44h (printed dec 68). OFF=0x00,1/4beat = 0x01,1/2beat = 0x02,1beat = 0x03,2beats = 0x04, 4beats = 0x05,8beats = 0x06,16beats = 0x07, LOOP OPTION=ON"
+    },
+    {
+      "name": "d2_4_control",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 68,
+      "layer": "base",
+      "notes": "[d2_4] PDF p5, . Printed channel 1/2, status 9n, Data1 44h (printed dec 68). OFF=0x00,1/4beat = 0x01,1/2beat = 0x02,1beat = 0x03,2beats = 0x04, 4beats = 0x05,8beats = 0x06,16beats = 0x07, LOOP OPTION=ON"
+    },
+    {
+      "name": "d1_4_auto_loop",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "layer": "base",
+      "notes": "[d1_4] PDF p5, AUTO LOOP. Printed channel 1/2, status 9n, Data1 14h (printed dec 20). OFF=0x00, ON=0x7F LOOP OPTION=OFF"
+    },
+    {
+      "name": "d2_4_auto_loop",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "layer": "base",
+      "notes": "[d2_4] PDF p5, AUTO LOOP. Printed channel 1/2, status 9n, Data1 14h (printed dec 20). OFF=0x00, ON=0x7F LOOP OPTION=OFF"
+    },
+    {
+      "name": "d1_4_auto_loop_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 80,
+      "layer": "shift",
+      "notes": "[d1_4] PDF p5, AUTO LOOP, +SHIFT. Printed channel 1/2, status 9n, Data1 50h (printed dec 80). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_4_auto_loop_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 80,
+      "layer": "shift",
+      "notes": "[d2_4] PDF p5, AUTO LOOP, +SHIFT. Printed channel 1/2, status 9n, Data1 50h (printed dec 80). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_5_loop_half",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "layer": "base",
+      "notes": "[d1_5] PDF p5, LOOP HALF. Printed channel 1/2, status 9n, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_5_loop_half",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 18,
+      "layer": "base",
+      "notes": "[d2_5] PDF p5, LOOP HALF. Printed channel 1/2, status 9n, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_5_loop_half_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "layer": "shift",
+      "notes": "[d1_5] PDF p5, LOOP HALF, +SHIFT. Printed channel 1/2, status 9n, Data1 10h (printed dec 16). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_5_loop_half_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "layer": "shift",
+      "notes": "[d2_5] PDF p5, LOOP HALF, +SHIFT. Printed channel 1/2, status 9n, Data1 10h (printed dec 16). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_6_loop_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "layer": "base",
+      "notes": "[d1_6] PDF p5, LOOP DOUBLE. Printed channel 1/2, status 9n, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_6_loop_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "layer": "base",
+      "notes": "[d2_6] PDF p5, LOOP DOUBLE. Printed channel 1/2, status 9n, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_6_loop_double_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "layer": "shift",
+      "notes": "[d1_6] PDF p5, LOOP DOUBLE, +SHIFT. Printed channel 1/2, status 9n, Data1 11h (printed dec 17). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_6_loop_double_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "layer": "shift",
+      "notes": "[d2_6] PDF p5, LOOP DOUBLE, +SHIFT. Printed channel 1/2, status 9n, Data1 11h (printed dec 17). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_7_param1_left",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "layer": "base",
+      "notes": "[d1_7] PDF p5, PARAM1 (LEFT). Printed channel 1/2, status 9n, Data1 24h (printed dec 36). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_7_param1_left",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 36,
+      "layer": "base",
+      "notes": "[d2_7] PDF p5, PARAM1 (LEFT). Printed channel 1/2, status 9n, Data1 24h (printed dec 36). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_7_param1_left_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "layer": "shift",
+      "notes": "[d1_7] PDF p5, PARAM1 (LEFT), +SHIFT. Printed channel 1/2, status 9n, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_7_param1_left_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "layer": "shift",
+      "notes": "[d2_7] PDF p5, PARAM1 (LEFT), +SHIFT. Printed channel 1/2, status 9n, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_8_param1_right",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "layer": "base",
+      "notes": "[d1_8] PDF p6, PARAM1 (RIGHT). Printed channel 1/2, status 9n, Data1 2Ch (printed dec 44). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_8_param1_right",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "layer": "base",
+      "notes": "[d2_8] PDF p6, PARAM1 (RIGHT). Printed channel 1/2, status 9n, Data1 2Ch (printed dec 44). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_8_param1_right_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[d1_8] PDF p6, PARAM1 (RIGHT), +SHIFT. Printed channel 1/2, status 9n, Data1 09h (printed dec 9). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_8_param1_right_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[d2_8] PDF p6, PARAM1 (RIGHT), +SHIFT. Printed channel 1/2, status 9n, Data1 09h (printed dec 9). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_9_hot_cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "layer": "base",
+      "notes": "[d1_9] PDF p6, HOT CUE. Printed channel 1/2, status 9n, Data1 1Bh (printed dec 27). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_9_hot_cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "layer": "base",
+      "notes": "[d2_9] PDF p6, HOT CUE. Printed channel 1/2, status 9n, Data1 1Bh (printed dec 27). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_9_hot_cue_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "layer": "shift",
+      "notes": "[d1_9] PDF p6, HOT CUE, +SHIFT. Printed channel 1/2, status 9n, Data1 69h (printed dec 105). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_9_hot_cue_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 105,
+      "layer": "shift",
+      "notes": "[d2_9] PDF p6, HOT CUE, +SHIFT. Printed channel 1/2, status 9n, Data1 69h (printed dec 105). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_10_control",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "layer": "base",
+      "notes": "[d1_10] PDF p6, . Printed channel 1/2, status 9n, Data1 1Eh (printed dec 30). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_10_control",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 30,
+      "layer": "base",
+      "notes": "[d2_10] PDF p6, . Printed channel 1/2, status 9n, Data1 1Eh (printed dec 30). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_10_roll_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "layer": "shift",
+      "notes": "[d1_10] PDF p6, ROLL, +SHIFT. Printed channel 1/2, status 9n, Data1 6Bh (printed dec 107). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_10_roll_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 107,
+      "layer": "shift",
+      "notes": "[d2_10] PDF p6, ROLL, +SHIFT. Printed channel 1/2, status 9n, Data1 6Bh (printed dec 107). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_11_saved_loop",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "layer": "base",
+      "notes": "[d1_11] PDF p6, SAVED LOOP. Printed channel 1/2, status 9n, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_11_saved_loop",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "layer": "base",
+      "notes": "[d2_11] PDF p6, SAVED LOOP. Printed channel 1/2, status 9n, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_11_saved_loop_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 109,
+      "layer": "shift",
+      "notes": "[d1_11] PDF p6, SAVED LOOP, +SHIFT. Printed channel 1/2, status 9n, Data1 6Dh (printed dec 109). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_11_saved_loop_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 109,
+      "layer": "shift",
+      "notes": "[d2_11] PDF p6, SAVED LOOP, +SHIFT. Printed channel 1/2, status 9n, Data1 6Dh (printed dec 109). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_12_sampler",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "layer": "base",
+      "notes": "[d1_12] PDF p6, SAMPLER. Printed channel 1/2, status 9n, Data1 22h (printed dec 34). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_12_sampler",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 34,
+      "layer": "base",
+      "notes": "[d2_12] PDF p6, SAMPLER. Printed channel 1/2, status 9n, Data1 22h (printed dec 34). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_12_sampler_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 111,
+      "layer": "shift",
+      "notes": "[d1_12] PDF p6, SAMPLER, +SHIFT. Printed channel 1/2, status 9n, Data1 6Fh (printed dec 111). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_12_sampler_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 111,
+      "layer": "shift",
+      "notes": "[d2_12] PDF p6, SAMPLER, +SHIFT. Printed channel 1/2, status 9n, Data1 6Fh (printed dec 111). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_13_pad1",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "layer": "base",
+      "notes": "[d1_13] PDF p6, PAD1. Printed channel 8/9, status 9p, Data1 00h (printed dec 0). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_13_pad1",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "layer": "base",
+      "notes": "[d2_13] PDF p6, PAD1. Printed channel 8/9, status 9p, Data1 00h (printed dec 0). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_13_pad1_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "layer": "shift",
+      "notes": "[d1_13] PDF p6, PAD1, +SHIFT. Printed channel 8/9, status 9p, Data1 08h (printed dec 8). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_13_pad1_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 8,
+      "layer": "shift",
+      "notes": "[d2_13] PDF p6, PAD1, +SHIFT. Printed channel 8/9, status 9p, Data1 08h (printed dec 8). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_14_pad2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "layer": "base",
+      "notes": "[d1_14] PDF p6, PAD2. Printed channel 8/9, status 9p, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_14_pad2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "layer": "base",
+      "notes": "[d2_14] PDF p6, PAD2. Printed channel 8/9, status 9p, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_14_pad2_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[d1_14] PDF p6, PAD2, +SHIFT. Printed channel 8/9, status 9p, Data1 09h (printed dec 9). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_14_pad2_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 9,
+      "layer": "shift",
+      "notes": "[d2_14] PDF p6, PAD2, +SHIFT. Printed channel 8/9, status 9p, Data1 09h (printed dec 9). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_15_pad3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "layer": "base",
+      "notes": "[d1_15] PDF p6, PAD3. Printed channel 8/9, status 9p, Data1 02h (printed dec 2). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_15_pad3",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "layer": "base",
+      "notes": "[d2_15] PDF p6, PAD3. Printed channel 8/9, status 9p, Data1 02h (printed dec 2). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_15_pad3_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "layer": "shift",
+      "notes": "[d1_15] PDF p6, PAD3, +SHIFT. Printed channel 8/9, status 9p, Data1 0Ah (printed dec 10). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_15_pad3_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 10,
+      "layer": "shift",
+      "notes": "[d2_15] PDF p6, PAD3, +SHIFT. Printed channel 8/9, status 9p, Data1 0Ah (printed dec 10). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_16_pad4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "layer": "base",
+      "notes": "[d1_16] PDF p6, PAD4. Printed channel 8/9, status 9p, Data1 03h (printed dec 3). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_16_pad4",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 3,
+      "layer": "base",
+      "notes": "[d2_16] PDF p6, PAD4. Printed channel 8/9, status 9p, Data1 03h (printed dec 3). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_16_pad4_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "layer": "shift",
+      "notes": "[d1_16] PDF p6, PAD4, +SHIFT. Printed channel 8/9, status 9p, Data1 0Bh (printed dec 11). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_16_pad4_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 11,
+      "layer": "shift",
+      "notes": "[d2_16] PDF p6, PAD4, +SHIFT. Printed channel 8/9, status 9p, Data1 0Bh (printed dec 11). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_17_pad5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 4,
+      "layer": "base",
+      "notes": "[d1_17] PDF p6, PAD5. Printed channel 8/9, status 9p, Data1 04h (printed dec 4). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_17_pad5",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 4,
+      "layer": "base",
+      "notes": "[d2_17] PDF p6, PAD5. Printed channel 8/9, status 9p, Data1 04h (printed dec 4). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_17_pad5_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[d1_17] PDF p6, PAD5, +SHIFT. Printed channel 8/9, status 9p, Data1 0Ch (printed dec 12). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_17_pad5_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 12,
+      "layer": "shift",
+      "notes": "[d2_17] PDF p6, PAD5, +SHIFT. Printed channel 8/9, status 9p, Data1 0Ch (printed dec 12). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_18_pad6",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 5,
+      "layer": "base",
+      "notes": "[d1_18] PDF p6, PAD6. Printed channel 8/9, status 9p, Data1 05h (printed dec 5). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_18_pad6",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 5,
+      "layer": "base",
+      "notes": "[d2_18] PDF p6, PAD6. Printed channel 8/9, status 9p, Data1 05h (printed dec 5). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_18_pad6_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[d1_18] PDF p6, PAD6, +SHIFT. Printed channel 8/9, status 9p, Data1 0Dh (printed dec 13). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_18_pad6_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 13,
+      "layer": "shift",
+      "notes": "[d2_18] PDF p6, PAD6, +SHIFT. Printed channel 8/9, status 9p, Data1 0Dh (printed dec 13). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_19_pad7",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "layer": "base",
+      "notes": "[d1_19] PDF p6, PAD7. Printed channel 8/9, status 9p, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_19_pad7",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 6,
+      "layer": "base",
+      "notes": "[d2_19] PDF p6, PAD7. Printed channel 8/9, status 9p, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_19_pad7_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[d1_19] PDF p6, PAD7, +SHIFT. Printed channel 8/9, status 9p, Data1 0Eh (printed dec 14). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_19_pad7_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 14,
+      "layer": "shift",
+      "notes": "[d2_19] PDF p6, PAD7, +SHIFT. Printed channel 8/9, status 9p, Data1 0Eh (printed dec 14). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_20_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "layer": "base",
+      "notes": "[d1_20] PDF p6, PAD 8. Printed channel 8/9, status 9p, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_20_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 7,
+      "layer": "base",
+      "notes": "[d2_20] PDF p6, PAD 8. Printed channel 8/9, status 9p, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d1_20_pad_8_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[d1_20] PDF p6, PAD 8, +SHIFT. Printed channel 8/9, status 9p, Data1 0Fh (printed dec 15). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d2_20_pad_8_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 15,
+      "layer": "shift",
+      "notes": "[d2_20] PDF p6, PAD 8, +SHIFT. Printed channel 8/9, status 9p, Data1 0Fh (printed dec 15). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d3_sampler_volume_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 3,
+      "layer": "base",
+      "notes": "[d3] PDF p6, SAMPLER VOLUME. Printed channel 7, status B6, Data1 03h (printed dec 3 35). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "d3_sampler_volume_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 35,
+      "layer": "base",
+      "notes": "[d3] PDF p6, SAMPLER VOLUME. Printed channel 7, status B6, Data1 23h (printed dec 3 35). LSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "name": "d4_panel",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 120,
+      "layer": "base",
+      "notes": "[d4] PDF p6, PANEL. Printed channel 7, status 96, Data1 78h (printed dec 120). OFF=0x00, ON=0x7F"
+    },
+    {
+      "name": "d4_panel_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 121,
+      "layer": "shift",
+      "notes": "[d4] PDF p6, PANEL, +SHIFT. Printed channel 7, status 96, Data1 79h (printed dec 121). OFF=0x00, ON=0x7F"
+    }
+  ],
+  "out_of_scope": [
+    "M16 MIC LEVEL: hardware control",
+    "M20 CROSSFADER FEELING ADJUST: hardware control"
+  ]
+}

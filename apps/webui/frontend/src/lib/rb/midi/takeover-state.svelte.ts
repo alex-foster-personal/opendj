@@ -9,8 +9,14 @@ import {
 	makeTakeoverIdentity,
 	type TakeoverDecision
 } from './takeover-policy';
-import { midiTakeoverUi, onMidiTakeoverModeChange } from './takeover-ui.svelte';
+import {
+	midiTakeoverUi,
+	onMidiDisplacedWarningChange,
+	onMidiTakeoverModeChange,
+	setMidiDisplacedWarning
+} from './takeover-ui.svelte';
 import { registerTakeoverRearm } from './webmidi.svelte';
+import { DisplacedControlWarning } from './displaced-control-warning';
 
 // Seeded from the leaf, which may have been set (IPC, MIDI settings) before
 // this module loaded with the rest of the MIDI runtime.
@@ -36,7 +42,44 @@ function refreshGhost(functionId: string): void {
 	}
 	const ghosts = untrack(() => midiTakeoverUi.ghosts);
 	midiTakeoverUi.ghosts = { ...ghosts, [functionId]: next };
+	syncDisplacedWarning();
 }
+
+// PVPIN-12193: the recurring orange toast while any ghost stays displaced.
+const displacedWarning = new DisplacedControlWarning(
+	typeof window === 'undefined' ? null : window.localStorage
+);
+let displacedWarningTimer: ReturnType<typeof setTimeout> | null = null;
+let displacedWarningSink: ((disable: () => void) => void) | null = null;
+
+/** action-glue registers the toast here, so this policy owner never imports the stores. */
+export function registerDisplacedWarningSink(sink: (disable: () => void) => void): void {
+	displacedWarningSink = sink;
+}
+
+/** Show the displaced-control toast when due and arm the next 30 s check. */
+function syncDisplacedWarning(): void {
+	const sink = displacedWarningSink;
+	if (sink === null) return;
+	const ghosts = untrack(() => midiTakeoverUi.ghosts);
+	const displaced = Object.values(ghosts).filter((ghost) => ghost !== null).length;
+	const step = displacedWarning.update(displaced, Date.now());
+	if (step.show) {
+		// Turn off goes through the leaf, so the MIDI panel toggle shows it and can undo it.
+		sink(() => setMidiDisplacedWarning(false));
+	}
+	if (displacedWarningTimer !== null) clearTimeout(displacedWarningTimer);
+	displacedWarningTimer =
+		step.nextCheckAt === null
+			? null
+			: setTimeout(syncDisplacedWarning, Math.max(0, step.nextCheckAt - Date.now()));
+}
+
+onMidiDisplacedWarningChange((enabled) => {
+	if (enabled) displacedWarning.enable();
+	else displacedWarning.disable();
+	syncDisplacedWarning();
+});
 
 onMidiTakeoverModeChange((mode) => {
 	policy.setMode(mode);

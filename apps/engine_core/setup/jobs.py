@@ -46,7 +46,8 @@ def _mode_args(payload: dict[str, Any]) -> list[str]:
 
     Relative roots are refused for the same reason a relative data dir is:
     the worker's cwd is the engine's, which is not somewhere the operator
-    chose, so a relative path would walk a folder nobody asked about.
+    chose, so a relative path would walk a folder nobody asked about. A
+    ``..`` segment is refused too: the walk would not be the folder named.
     """
     mode = payload.get("mode", "rekordbox")
     if mode not in {"rekordbox", "folder"}:
@@ -62,6 +63,8 @@ def _mode_args(payload: dict[str, Any]) -> list[str]:
             raise _reject("roots", root, "entries must be non-empty strings")
         if not Path(root).is_absolute():
             raise _reject("roots", root, "entries must be absolute paths")
+        if ".." in Path(root).parts:
+            raise _reject("roots", root, "entries must be canonical, with no '..' segment")
         resolved = Path(root).resolve(strict=False)
         if resolved == resolved.parent:
             raise _reject("roots", root, "entries must not be the filesystem root")

@@ -6,6 +6,7 @@
 import { fetchStemAudioArrayBuffers, STEM_LAYOUT_PART_NAMES } from '$lib/rb/api-rb';
 import { assertDeckReplacementAllowed } from '$lib/rb/audio-engine-guards';
 import { _controlSegmentAt, type _DeckProcessor, type _DeckRuntime } from '$lib/rb/deck-runtime';
+import { supplementDeckLoadKpiWithStemStages } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import {
 	awaitStemArtifact,
@@ -482,6 +483,7 @@ export async function _upgradeDeckStems(
 			_holdNeutralStems(deck, { token, processor: created.processor, state: readyState });
 			built = null;
 			stages.total = Math.round(performance.now() - t0);
+			if (token === rt.loadToken) supplementDeckLoadKpiWithStemStages(deck, stableId, st, stages);
 			recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, {
 				...decoded.labels,
 				landed: 'held_neutral',
@@ -495,6 +497,7 @@ export async function _upgradeDeckStems(
 		built = null; // landed, held as pendingStemUpgrade, or retired as stale: no longer this function's to free
 		if (landed === 'deferred') stages.deferredToStop = 1;
 		stages.total = Math.round(performance.now() - t0);
+		if (token === rt.loadToken) supplementDeckLoadKpiWithStemStages(deck, stableId, st, stages);
 		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, {
 			...decoded.labels,
 			landed,

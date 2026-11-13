@@ -41,6 +41,21 @@ from pydantic import BaseModel, Field
 from apps.sync_hub import enrollment, enrollment_credentials, machine_credentials
 from apps.sync_hub.protocol import MachineRow
 
+#: How long the enroll transaction's ``BEGIN IMMEDIATE`` waits for the writer
+#: lock, in seconds (#9684). The winner of a two-machine race on one grant
+#: holds the lock for about 2 ms on an idle host (measured Fri 13 Nov 2026),
+#: but on a loaded runner its thread can be descheduled while holding it, and
+#: the loser then hit the 5 s request default and raised ``database is
+#: locked`` instead of reaching the grant check and its declared 401. Enroll
+#: runs once per machine, so the longer ceiling costs nothing on the happy
+#: path; it stays under the client's 30 s ``DEFAULT_TIMEOUT_S``.
+ENROLL_BUSY_TIMEOUT_S: float = 20.0
+
+
+def wait_longer_for_enroll_lock(conn: sqlite3.Connection) -> None:
+    """Raise this request handle's busy wait to :data:`ENROLL_BUSY_TIMEOUT_S`."""
+    conn.execute(f"PRAGMA busy_timeout = {int(ENROLL_BUSY_TIMEOUT_S * 1000)}")
+
 
 class EnrollCredentialModel(BaseModel):
     """The credential the joining machine presents. Rides the BODY, not a header.
@@ -244,4 +259,11 @@ def _enroll_errors_as_http() -> Iterator[None]:
         raise HTTPException(status_code=409, detail={"code": "SYNC_ENROLL", "message": str(exc)}) from exc
 
 
-__all__ = ["EnrollCredentialModel", "EnrollResponse", "perform_enroll", "verify_credential"]
+__all__ = [
+    "ENROLL_BUSY_TIMEOUT_S",
+    "EnrollCredentialModel",
+    "EnrollResponse",
+    "perform_enroll",
+    "verify_credential",
+    "wait_longer_for_enroll_lock",
+]

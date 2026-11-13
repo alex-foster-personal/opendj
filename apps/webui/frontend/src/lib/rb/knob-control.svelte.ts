@@ -10,7 +10,8 @@
  * join the same selection as `deck:fader`. Esc or a
  * click on empty space clears the set. Plain click/drag does not select.
  * Alt/Option+click two knobs to link (turn one down => other up).
- * Digits 1-9 glide the selection to a commanded position over 4 beats;
+ * Digits 1-9 glide the selection to a commanded position over the move length
+ * (4 beats by default; = and - double and halve it, 1 to 16, #9455);
  * Cmd/Ctrl+digit jumps there now (#9453). Same commands appear in Cmd-K while
  * a dial or fader is selected, and via `window.__mdtKnobSelection.command`.
  *
@@ -26,6 +27,7 @@ import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { detectWheelInputKind, scaledWheelStep } from './wheel-adjust';
 import { gainedStraightDrag } from './drag-sensitivity.svelte';
 import {
+	DEFAULT_COMMANDED_BEATS,
 	handleCommandedKeydown,
 	type CommandedKeyDeps,
 	type CommandedMove
@@ -101,12 +103,15 @@ export const knobUi = $state<{
 	hoveredId: string | null;
 	/** R4: the refused control and why, shown briefly next to it. */
 	groupHint: { id: string; text: string } | null;
+	/** #9455: the commanded glide length in beats, shared by every dial and fader. */
+	commandedBeats: number;
 }>({
 	selectedIds: [],
 	linkPendingId: null,
 	link: null,
 	hoveredId: null,
-	groupHint: null
+	groupHint: null,
+	commandedBeats: DEFAULT_COMMANDED_BEATS
 });
 
 /**
@@ -827,7 +832,11 @@ export function commandedKeyHost(): CommandedKeyDeps {
 		setAbsolute: setKnobAbsolute,
 		startGlides: (moves) => _startGlides(moves),
 		isTyping: (t) => isTextEntryTarget(t ?? null),
-		settingsOpen: isSettingsOpen
+		settingsOpen: isSettingsOpen,
+		beats: () => knobUi.commandedBeats,
+		setBeats: (beats) => {
+			knobUi.commandedBeats = beats;
+		}
 	};
 }
 
@@ -889,8 +898,10 @@ export interface KnobSelectionBridge {
 	drag: (dx: number, dy: number) => void;
 	/** Current value of a dial, or null when it is not mounted. */
 	value: (id: string) => number | null;
-	/** Run a dial/fader command (`dial.position.N`, `dial.jump.N`) on the selection, as its key does. */
+	/** Run a dial/fader command (`dial.position.N`, `dial.jump.N`, `dial.duration.*`) on the selection, as its key does. */
 	command: (id: string) => void;
+	/** #9455: the commanded move length in beats that digit glides use. */
+	commandedBeats: () => number;
 }
 
 export function installKnobSelectionGlobal(): void {
@@ -937,7 +948,8 @@ export function installKnobSelectionGlobal(): void {
 				throw new Error('no dial or fader is selected');
 			}
 			runPerformanceCommand(def.id, { timeStamp: performance.now(), commanded: host });
-		}
+		},
+		commandedBeats: () => knobUi.commandedBeats
 	};
 	(window as Window & { __mdtKnobSelection?: KnobSelectionBridge }).__mdtKnobSelection = bridge;
 }

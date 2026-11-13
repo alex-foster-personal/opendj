@@ -4,3 +4,5 @@
 export * as runner from '$lib/rb/commanded-move-runner.svelte';
 export * as knobs from '$lib/rb/knob-control.svelte';
 export { dialAnimations } from '$lib/rb/dial-animations.svelte';
+export * as motion from '$lib/motion/reduced-motion';
+export * as presentation from '$lib/rb/commanded-move-presentation';

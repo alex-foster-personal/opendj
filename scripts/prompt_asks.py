@@ -412,11 +412,15 @@ def classify_prompt(text: str, *, llm: LlmClassifier | None = None) -> PromptAsk
     return PromptAskResult(classification=verdict, source="llm")
 
 
-def is_behaviour_bearing(text: str) -> bool:
-    """True when ``classify_prompt`` reports a behaviour-bearing ask."""
-    result = classify_prompt(text)
+def is_behaviour_bearing(text: str, *, llm: LlmClassifier | None = None) -> bool:
+    """True when ``classify_prompt`` reports a behaviour-bearing ask.
+
+    Raises ``PromptAskModelUnavailable`` when the model is UNAVAILABLE, so an
+    unclassified prompt is never reported as confirmed chatter (issue #12670).
+    """
+    result = classify_prompt(text, llm=llm)
     if result.classification is None:
-        return False
+        raise PromptAskModelUnavailable(result.unavailable or "classifier unavailable")
     return result.classification.behaviour_bearing
 
 

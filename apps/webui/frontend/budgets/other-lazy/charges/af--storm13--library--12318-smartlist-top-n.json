@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557761,
+  "measured_with_pr": 557919,
+  "sha": "1e4dc22860",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--12318-smartlist-top-n grows the other-lazy surface; measured +158 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

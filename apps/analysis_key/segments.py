@@ -493,6 +493,21 @@ def segment_audio(
     )
 
 
+def structure_windows_for_claims(segments_block: dict[str, Any], *, duration_s: float | None = None) -> list[dict[str, int]]:
+    """Own key-segment windows as millisecond bounds for enrichment claims."""
+    from apps.genre_infer import segment_claims
+
+    return [
+        {
+            "start_ms": window.start_ms,
+            "end_ms": window.end_ms,
+            "start_bar": window.start_bar,
+            "end_bar": window.end_bar,
+        }
+        for window in segment_claims.key_segment_windows(segments_block, duration_s=duration_s)
+    ]
+
+
 __all__ = [
     "EMISSION_GAIN",
     "MIN_SEGMENT_BARS",
@@ -508,4 +523,5 @@ __all__ = [
     "segment_audio",
     "segment_bars",
     "segment_from_log_emissions",
+    "structure_windows_for_claims",
 ]

@@ -6,10 +6,10 @@
  * budget after #4039). It draws nothing while closed and every Stage button
  * lives off the library page (the /performance top bar and the track page), so
  * keeping it off the library first paint changes nothing observable there.
- * /performance imports the component eagerly, so on that route the chunk
- * arrives with the page. Everywhere else it is warmed once the boot window
- * closes (prefetchStageOverlay, from the layout's onMount), so the first Stage
- * press draws without waiting on a fetch.
+ * /performance warms the chunk the same way as every other route:
+ * prefetchStageOverlay from the root layout and again from the performance page
+ * onMount, after the boot window closes, so the first Stage press does not wait
+ * on a fetch and the overlay stays off the route's static import closure.
  *
  * A chunk that cannot be fetched is handed to the caller's reporter (the layout
  * raises an error toast, the pin shell's way) and the stage is closed, so the

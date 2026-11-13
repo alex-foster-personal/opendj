@@ -12,6 +12,7 @@ export const COL_DEFAULTS = {
 	art: 54,
 	title: 220,
 	artist: 140,
+	album: 140,
 	key: 64,
 	bpm: 46,
 	// `← drift ±12% · grid?` at the browser font, one px smaller (issue #7879).
@@ -30,6 +31,16 @@ export const COL_DEFAULTS = {
 	tags: 140,
 	filename: 140,
 	location: 180,
+	// "2026-11-13" at the table's 10px tabular size, plus cell padding.
+	date_added: 76,
+	// "1411 kbps" at the table's 10px tabular size, plus cell padding.
+	bitrate: 60,
+	// "AIFF" plus cell padding.
+	kind: 40,
+	// Same "2026-11-13" width as Date Added.
+	last_played: 76,
+	// PLAYS-9745: "23:59" at the table's 10px tabular size, plus cell padding.
+	played_at: 48,
 	lyrics: 64,
 	// 12px robot icon with 8px breathing room on each side.
 	autoplay: 28,

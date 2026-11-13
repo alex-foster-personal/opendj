@@ -41,6 +41,9 @@ PLAYLIST_ID = "pl-cmdk-v2"
 #: Comments written through the production field path: a word that appears in no
 #: other searched field, so a comment-only match is testable (Codex P2 on #6089).
 COMMENTS = {"3" * 40: "warmup opener for saltmarsh nights"}
+#: Every row's import moment, pinned so the index's ``date_added`` (PR #13803: the earlier of
+#: ``tracks.created_at`` and rekordbox's own date) is the same on every run, not the capture day.
+CREATED_AT = "2026-10-13T00:00:00Z"
 
 
 def hydrate(data_dir: Path) -> None:
@@ -71,6 +74,8 @@ def hydrate(data_dir: Path) -> None:
         writer.insert_playlist(playlist_id=PLAYLIST_ID, name="Cmd K", vendor="djay", vendor_pl_id="djay-cmdk")
         writer.set_playlist_memberships(PLAYLIST_ID, [s[0] for s in SPECS])
         writer.close()
+        with conn:
+            conn.execute("UPDATE tracks SET created_at = ?", (CREATED_AT,))
     finally:
         conn.close()
 

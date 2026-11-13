@@ -55,6 +55,16 @@ def batch_since(previous_started: str | None, now: datetime, floor: timedelta) -
     return iso(min(parse_time(previous_started), floored))
 
 
+def catch_up_since(since: str, now: datetime, max_catch_up: timedelta) -> tuple[str, str | None]:
+    """The mark only moves on a pass that succeeds, so a mark older than a pass can read
+    inside its timeout never moves again. Such a mark is raised to `now - max_catch_up`;
+    the second item names the creation window left unread, None when nothing is."""
+    cap = now - max_catch_up
+    if parse_time(since) >= cap:
+        return since, None
+    return iso(cap), f"{since}..{iso(cap)}"
+
+
 def created_floor(since: str, lookback: timedelta) -> str:
     """The listing filters on created_at and the selection on updated_at; a run
     completes at most `lookback` after it was created."""

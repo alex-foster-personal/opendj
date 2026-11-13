@@ -1,5 +1,6 @@
 /**
  * Digits 1-9 command selected dial/fader positions; Cmd/Ctrl+digit jumps (#9453, D2).
+ * = and - double and halve the glide length, 1 to 16 beats (#9455, D4).
  *
  * the maintainer, Fri 6 Nov 2026: "pressing 5 resets it ... default is to GET to that value over
  * 4 beats - not jump to it. Maybe cmd 2 jumps to it". Position table: 1 = 0, 2 = 0.125,
@@ -28,10 +29,17 @@ export const COMMANDED_POSITIONS: Readonly<Record<CommandedDigit, number>> = {
 };
 export const DEFAULT_COMMANDED_BEATS = 4;
 
-export type CommandedCommandId = `dial.position.${CommandedDigit}` | `dial.jump.${CommandedDigit}`;
+/** #9455 (D4): = and - double and halve the glide length along this ladder, clamped at both ends. */
+export const COMMANDED_BEAT_STEPS: readonly number[] = [1, 2, 4, 8, 16];
+
+export type CommandedDigitCommandId =
+	`dial.position.${CommandedDigit}` | `dial.jump.${CommandedDigit}`;
+export type CommandedDurationDirection = 'longer' | 'shorter';
+export type CommandedDurationCommandId = `dial.duration.${CommandedDurationDirection}`;
+export type CommandedCommandId = CommandedDigitCommandId | CommandedDurationCommandId;
 
 export interface CommandedKeyCommand {
-	id: CommandedCommandId;
+	id: CommandedDigitCommandId;
 	label: string;
 	defaultKeys: readonly string[];
 	scopes: readonly CommandedScope[];
@@ -43,7 +51,7 @@ const SCOPES: readonly CommandedScope[] = ['dial', 'fader'];
 
 function _commandFor(digit: CommandedDigit, jump: boolean): CommandedKeyCommand {
 	const value = COMMANDED_POSITIONS[digit];
-	const id: CommandedCommandId = jump ? `dial.jump.${digit}` : `dial.position.${digit}`;
+	const id: CommandedDigitCommandId = jump ? `dial.jump.${digit}` : `dial.position.${digit}`;
 	const defaultKeys = jump ? [`Mod+${digit}`] : [`${digit}`];
 	const label = jump
 		? `Jump selected dial or fader to ${digit} (${value})`
@@ -58,6 +66,44 @@ export const COMMANDED_KEY_COMMANDS: readonly CommandedKeyCommand[] = _DIGITS.fl
 	_commandFor(digit, false),
 	_commandFor(digit, true)
 ]);
+
+export interface CommandedDurationCommand {
+	id: CommandedDurationCommandId;
+	label: string;
+	defaultKeys: readonly string[];
+	scopes: readonly CommandedScope[];
+	direction: CommandedDurationDirection;
+}
+
+/** dial.duration.longer (= or +) and dial.duration.shorter (- or _), in the command-registry shape. */
+export const COMMANDED_DURATION_COMMANDS: readonly CommandedDurationCommand[] = [
+	{
+		id: 'dial.duration.longer',
+		label: 'Double the commanded move length (1, 2, 4, 8, 16 beats)',
+		defaultKeys: ['=', '+'],
+		scopes: SCOPES,
+		direction: 'longer'
+	},
+	{
+		id: 'dial.duration.shorter',
+		label: 'Halve the commanded move length (1, 2, 4, 8, 16 beats)',
+		defaultKeys: ['-', '_'],
+		scopes: SCOPES,
+		direction: 'shorter'
+	}
+];
+
+/** The next length on COMMANDED_BEAT_STEPS, clamped at 1 and 16; throws RangeError for a length off the ladder. */
+export function stepCommandedBeats(beats: number, direction: CommandedDurationDirection): number {
+	const index = COMMANDED_BEAT_STEPS.indexOf(beats);
+	if (index < 0) {
+		throw new RangeError(
+			`commanded move length must be one of ${COMMANDED_BEAT_STEPS.join(', ')}, got ${beats}`
+		);
+	}
+	const next = direction === 'longer' ? index + 1 : index - 1;
+	return COMMANDED_BEAT_STEPS[Math.min(COMMANDED_BEAT_STEPS.length - 1, Math.max(0, next))];
+}
 
 export interface CommandedKeyEvent {
 	key: string;
@@ -97,6 +143,21 @@ export function resolveCommandedKey(e: CommandedKeyEvent): CommandedKeyCommand |
 	if (digit === null) return null;
 	const jump = e.metaKey || e.ctrlKey;
 	return _commandFor(digit, jump);
+}
+
+const _DURATION_KEYS: Readonly<Record<string, CommandedDurationDirection>> = {
+	'=': 'longer',
+	'+': 'longer',
+	'-': 'shorter',
+	_: 'shorter'
+};
+
+/** The length command a key names (=, +, -, _ with Shift allowed), or null when Mod or Alt is held. */
+export function resolveCommandedDurationKey(e: CommandedKeyEvent): CommandedDurationCommand | null {
+	if (e.metaKey || e.ctrlKey || e.altKey) return null;
+	const direction = _DURATION_KEYS[e.key];
+	if (direction === undefined) return null;
+	return COMMANDED_DURATION_COMMANDS.find((c) => c.direction === direction) ?? null;
 }
 
 export interface CommandedMove {
@@ -141,17 +202,24 @@ export interface CommandedKeyDeps {
 	isTyping: (target: EventTarget | null | undefined) => boolean;
 	settingsOpen: () => boolean;
 	beats?: () => number;
+	/** #9455: store the commanded move length; dial.duration.* throws without it. */
+	setBeats?: (beats: number) => void;
 }
 
+export type CommandedRegistryCommand = CommandedKeyCommand | CommandedDurationCommand;
+
 /**
- * Keydown handler body. Returns the planned moves when it CLAIMED the key, null otherwise.
+ * Keydown handler body. Returns the planned moves when it CLAIMED the key (an empty list for
+ * a length key), null otherwise.
  */
 export function handleCommandedKeydown(
 	e: CommandedKeyEvent,
 	deps: CommandedKeyDeps,
-	run?: (command: CommandedKeyCommand) => void
+	run?: (command: CommandedRegistryCommand) => void
 ): CommandedMove[] | null {
 	if (deps.isTyping(e.target ?? null) || deps.settingsOpen()) return null;
+	const duration = resolveCommandedDurationKey(e);
+	if (duration !== null) return _handleDurationKey(e, duration, deps, run);
 	const command = resolveCommandedKey(e);
 	if (command === null) return null;
 	const moves = _planFor(command, deps);
@@ -165,6 +233,37 @@ export function handleCommandedKeydown(
 		_applyMoves(command, moves, deps);
 	}
 	return moves;
+}
+
+function _handleDurationKey(
+	e: CommandedKeyEvent,
+	command: CommandedDurationCommand,
+	deps: CommandedKeyDeps,
+	run?: (command: CommandedRegistryCommand) => void
+): CommandedMove[] | null {
+	if (!deps.selectedIds().some((id) => deps.readValue(id) !== null)) return null;
+	e.preventDefault?.();
+	e.stopPropagation?.();
+	if (e.repeat) return [];
+	if (run !== undefined) {
+		run(command);
+	} else {
+		runCommandedDurationCommand(command, deps);
+	}
+	return [];
+}
+
+/** Step the stored commanded move length one rung along COMMANDED_BEAT_STEPS; returns the new length. */
+export function runCommandedDurationCommand(
+	command: CommandedDurationCommand,
+	deps: CommandedKeyDeps
+): number {
+	if (deps.setBeats === undefined) {
+		throw new Error(`${command.id}: the dial or fader host cannot store a move length`);
+	}
+	const next = stepCommandedBeats(deps.beats?.() ?? DEFAULT_COMMANDED_BEATS, command.direction);
+	deps.setBeats(next);
+	return next;
 }
 
 function _planFor(command: CommandedKeyCommand, deps: CommandedKeyDeps): CommandedMove[] {

@@ -167,9 +167,9 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.doesNotMatch(iconRail, /recordings - future apps\/sets/);
 	assert.match(iconRail, /action: 'record'/);
 	assert.match(iconRail, /disabled=\{isInert \|\| \(isRecord && \(recordingBusy \|\| \(recording && !recordingStoppable\)\)\)\}/);
-	assert.match(iconRail, /isRecord \? onrecord : isUsb \? onusb : undefined/);
+	assert.match(iconRail, /isRecord \? onrecord : isUsb \? onusb : isTagList \? ontaglist : isExplorer \? onexplorer : undefined/);
 	// Gig mounts the recording rail; Library mode passes recordable=false (no REC).
-	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} recordable=\{library === null\} \/>/);
+	assert.match(browserPanel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} \{historyOpen\} onhistory=\{selectHistorySource\} tagListCount=\{tagList\.tagListCount\.value\} tagListOpen=\{tagList\.isTagListId\(pane\.playlist_id\)\} ontaglist=\{openTagListUi\} \{explorerOpen\} onexplorer=\{selectExplorerSource\} recordable=\{library === null\} \/>/);
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);
 	assert.match(performanceRecorderRail, /usePerformanceRecorderChrome/);
 	assert.match(performanceRecorderRail, /chrome\.togglePerformanceRecording/);
@@ -374,4 +374,38 @@ test('if the REC tooltip does not say "Recording 12:34, 1.2 GB, clipped 3 times"
 	assert.equal(recorder.recordRailState({ ...base, elapsed_s: null }).tip, null);
 	assert.equal(recorder.formatRecordingElapsed(3754), '1:02:34');
 	assert.equal(recorder.formatRecordingBytes(45_600_000), '46 MB');
+});
+
+/** Pin the failure reason in the REC control's accessible text, not only in the transient toast. */
+test('if capture fails with a reason then the REC button title and aria-label both carry it (issue #13006)', () => {
+	// [if] capture fails with a reason [then] REC accessible text names it [⛔️ if toast-only]
+	// [if] capture stops without a reason [then] normal stopped guidance stays [⛔️ if failure copy]
+	// [if] capture is recording [then] failure text is absent [⛔️ if stale failure copy]
+	const recordTip = iconRail.match(/\{@const tip = isRecord\s*\?\s*\(recordingTip \?\?/);
+	assert.ok(recordTip, 'IconRail REC tip must prefer recordingTip');
+	assert.match(iconRail, /title=\{tip\}/);
+	assert.match(iconRail, /aria-label=\{tip\}/);
+	assert.match(performanceRecorderRail, /recordingTip=\{chrome\.rail\.tip\}/);
+	const chromeSource = readFileSync(
+		new URL('../../src/lib/sets/performance-recorder-chrome.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(chromeSource, /recordRailState\(recorder, retainedFailure\)/);
+
+	const base = { active: true, session_id: 'a11y-s', pid: 1, owned: true, recoverable: false };
+	const why = 'no master-mix audio';
+	const retained = { sessionId: 'a11y-s', reason: why };
+	const failed = recorder.recordRailState({ ...base, capture: 'failed', capture_error: why }, null);
+	assert.match(failed.tip, /Set recording failed: no master-mix audio/);
+
+	const stopped = recorder.recordRailState({ ...base, capture: 'stopped', capture_error: null }, null);
+	assert.match(stopped.tip, /stopped recording; click to stop and keep what was recorded/);
+	assert.doesNotMatch(stopped.tip, /failed/);
+
+	const recording = recorder.recordRailState(
+		{ ...base, capture: 'recording', capture_error: null, elapsed_s: 5 },
+		retained
+	);
+	assert.equal(recording.recording, true);
+	assert.doesNotMatch(recording.tip ?? '', /failed|no master-mix audio/);
 });

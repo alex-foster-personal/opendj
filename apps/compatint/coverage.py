@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from apps.compatint.schema import DiscoveryCoverageAxis, MixxxDiscoveryResult
+
+_CoverageStatus = Literal["partial", "complete"]
 
 
 def build_discovery_coverage(*, acquired: int, denominator: int) -> DiscoveryCoverageAxis:
@@ -10,8 +14,8 @@ def build_discovery_coverage(*, acquired: int, denominator: int) -> DiscoveryCov
         raise ValueError("coverage counts must be non-negative")
     if acquired > denominator:
         raise ValueError("acquired exceeds discovery denominator")
-    status: str = "complete" if acquired == denominator and denominator > 0 else "partial"
-    return DiscoveryCoverageAxis(acquired=acquired, denominator=denominator, status=status)  # type: ignore[arg-type]
+    status: _CoverageStatus = "complete" if acquired == denominator and denominator > 0 else "partial"
+    return DiscoveryCoverageAxis(acquired=acquired, denominator=denominator, status=status)
 
 
 def format_mixxx_discovery_coverage_line(result: MixxxDiscoveryResult) -> str:

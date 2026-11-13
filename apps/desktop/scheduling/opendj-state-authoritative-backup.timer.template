@@ -1,0 +1,12 @@
+# TEMPLATE: rendered with the matching .service by schedule-install.
+# Nightly local state-authoritative backup. Persistent=true runs a missed slot at next boot.
+[Unit]
+Description=Nightly Open DJ state-authoritative backup
+
+[Timer]
+OnCalendar=__ON_CALENDAR__
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

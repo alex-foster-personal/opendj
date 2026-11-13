@@ -168,8 +168,12 @@ function _isLoadTypeScriptModuleCall(expr) {
 }
 
 /** Loaders that take an entry module's SOURCE TEXT (named re-exports) rather
- * than a path: bundleSvelteEntry and loadSvelteSsrModule. */
-const ENTRY_SOURCE_LOADERS = new Set(['bundleSvelteEntry', 'loadSvelteSsrModule']);
+ * than a path: bundleSvelteEntry, loadSvelteSsrModule and loadRuneModule. */
+const ENTRY_SOURCE_LOADERS = new Set([
+	'bundleSvelteEntry',
+	'loadSvelteSsrModule',
+	'loadRuneModule'
+]);
 
 function _isBundleSvelteEntryCall(expr) {
 	if (!ts.isCallExpression(expr)) return false;

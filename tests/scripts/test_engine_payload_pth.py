@@ -125,3 +125,38 @@ def test_verify_python_startup_stderr_passes_when_clean(tmp_path: Path) -> None:
     """[if] a bare runtime starts with empty stderr [then] startup verify passes, [else stop]."""
     payload = _fake_payload_runtime(tmp_path)
     verify_python_startup_stderr(payload)
+
+
+@pytest.mark.requirement("INSTALL-22")
+def test_verify_python_startup_stderr_fails_on_non_pth_startup_noise(
+    tmp_path: Path,
+) -> None:
+    """[if] startup writes stderr with exit 0 and no .pth [then] verify quotes it, [else stop]."""
+    payload = _fake_payload_runtime(tmp_path)
+    (_site_packages(payload) / "sitecustomize.py").write_text(
+        "import sys\nsys.stderr.write('payload startup noise\\n')\n",
+        encoding="utf-8",
+    )
+    assert not list((payload / "runtime").rglob("*.pth"))
+    with pytest.raises(PayloadBuildError) as excinfo:
+        verify_python_startup_stderr(payload)
+    message = str(excinfo.value)
+    assert "exit 0" in message
+    assert "payload startup noise" in message
+
+
+@pytest.mark.requirement("INSTALL-22")
+def test_verify_pth_imports_passes_without_spawning_when_no_pth_staged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] no .pth files are staged [then] pth verify passes without running python, [else stop]."""
+    payload = _fake_payload_runtime(tmp_path)
+    assert not list((payload / "runtime").rglob("*.pth"))
+
+    def _no_spawn(*args: object, **kwargs: object) -> None:
+        """Fail the test if verify_pth_imports launches the interpreter."""
+        raise AssertionError(f"unexpected interpreter run: {args!r}")
+
+    monkeypatch.setattr("scripts.build_engine_payload.subprocess.run", _no_spawn)
+    verify_pth_imports(payload)

@@ -33,6 +33,7 @@ import { bundleSvelteHarness } from './support/svelte-harness-bundle';
 // onProgrammaticClose. __harness only exposes that same flag to the test.
 const HARNESS = `<script>
 	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
+	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	let prog = $state(false);
 	let closes = $state(0);
 	window.__harness = { setProg: (v) => (prog = v), closes: () => closes };
@@ -41,6 +42,7 @@ const HARNESS = `<script>
 	title="Audio I/O"
 	bullets={['Output device', 'Headphone device']}
 	placement="below"
+	tooltip={TOOLTIP_ISOLATED}
 	pinOnClick
 	programmaticOpen={prog}
 	onProgrammaticClose={() => {
@@ -64,7 +66,8 @@ async function mountHarness(page: Page): Promise<void> {
 	await expect(page.locator('#trigger')).toBeVisible();
 }
 
-const pop = (page: Page) => page.locator('.explainer .pop');
+/** ControlExplainer portals `.pop` to `document.body` (data-explainer-pop). */
+const pop = (page: Page) => page.locator('[data-explainer-pop]');
 const closes = (page: Page) =>
 	page.evaluate(() =>
 		(window as unknown as { __harness: { closes(): number } }).__harness.closes()
@@ -80,7 +83,6 @@ test.describe('ControlExplainer programmatic pin', () => {
 	test('the parent dropping programmaticOpen closes the pinned popover without a second close callback', async ({
 		page
 	}) => {
-		test.fixme(true, 'explainer popover never opens, see #13524');
 		await mountHarness(page);
 		await setProg(page, true);
 		await expect(pop(page)).toBeVisible();
@@ -92,7 +94,6 @@ test.describe('ControlExplainer programmatic pin', () => {
 	test('control: a user click-pin stays open while programmaticOpen stays false', async ({
 		page
 	}) => {
-		test.fixme(true, 'explainer popover never opens, see #13524');
 		await mountHarness(page);
 		await page.click('#trigger');
 		await expect(pop(page)).toBeVisible();
@@ -106,7 +107,6 @@ test.describe('ControlExplainer programmatic pin', () => {
 	test('control: an outside click dismisses a programmatic pin and reports it exactly once', async ({
 		page
 	}) => {
-		test.fixme(true, 'explainer popover never opens, see #13524');
 		await mountHarness(page);
 		await setProg(page, true);
 		await expect(pop(page)).toBeVisible();

@@ -21,6 +21,7 @@ from scripts.ci_cost_guard import (
 )
 from scripts.ci_run_batch import (
     batch_since,
+    catch_up_since,
     created_floor,
     fetch_attempt,
     fetch_completed_runs,
@@ -43,7 +44,13 @@ def _write_output(path: str, name: str, value: str) -> None:
 def run_sink_batch(args: argparse.Namespace) -> int:
     now = datetime.now(tz=UTC)
     floor = timedelta(minutes=args.overlap_minutes)
-    since = batch_since(args.previous_started or None, now, floor)
+    since, unread = catch_up_since(
+        batch_since(args.previous_started or None, now, floor), now, timedelta(hours=args.max_catch_up_hours)
+    )
+    if unread is not None:
+        print(
+            f"::warning::SINK-GAP the mark is older than {args.max_catch_up_hours} h; completions created {unread} are not read"
+        )
     created_since = created_floor(since, timedelta(hours=args.lookback_hours))
     listed = _names(args.listed)
     reconciled = (
@@ -95,6 +102,12 @@ def main() -> int:
     parser.add_argument("--previous-started", default="", help="run_started_at of the last pass")
     parser.add_argument("--overlap-minutes", type=int, default=120)
     parser.add_argument("--lookback-hours", type=int, default=3)
+    parser.add_argument(
+        "--max-catch-up-hours",
+        type=int,
+        required=True,
+        help="a mark older than this is raised to it, so a stalled sink can finish a pass again",
+    )
     parser.add_argument(
         "--reconcile-horizon-days",
         type=int,

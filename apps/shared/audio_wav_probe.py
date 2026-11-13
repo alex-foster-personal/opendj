@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,11 @@ def probe_wav(path: Path) -> tuple[int, int, int]:
     file_size = path.stat().st_size
     with path.open("rb") as handle:
         return _probe_open_wav(handle, file_size)
+
+
+def probe_wav_bytes(data: bytes) -> tuple[int, int, int]:
+    """Walk WAVE bytes held in memory (an upload). Return ``(rate, channels, frames)``."""
+    return _probe_open_wav(io.BytesIO(data), len(data))
 
 
 def _probe_open_wav(handle: BinaryIO, file_size: int) -> tuple[int, int, int]:

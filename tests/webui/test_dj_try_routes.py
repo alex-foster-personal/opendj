@@ -10,11 +10,12 @@ from __future__ import annotations
 import dataclasses
 import json
 import sqlite3
-import wave
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -22,117 +23,29 @@ from fastapi.testclient import TestClient
 from apps.autodj import try_picks
 from apps.autodj.http import build_service
 from apps.shared.engine_origin import EngineOrigin
-from apps.transition_score.contract import SCORER_VERSION, Candidate, Measured, TryResult, Veto
+from apps.transition_score.contract import SCORER_VERSION, Candidate, TryResult
 from apps.transition_score.tryer import TryError, odj_audio_binary
+from apps.webui.server.app_wiring import _install_problem_details_openapi
 from apps.webui.server.routes import dj_try
-
-
-def _wav(path: Path) -> Path:
-    with wave.open(str(path), "wb") as handle:
-        handle.setnchannels(2)
-        handle.setsampwidth(2)
-        handle.setframerate(48000)
-        handle.writeframes(b"\x00\x00" * 2 * 480)
-    return path
-
-
-def _candidate(
-    tmp: Path, cid: str, score: float | None, vetoes: tuple[Veto, ...] = (), unknown: dict[str, str] | None = None
-) -> Candidate:
-    tmp.mkdir(parents=True, exist_ok=True)
-    return Candidate(
-        id=cid,
-        plan_json=json.dumps({"style": "blend", "bars": 16}),
-        plan_sha256=f"sha-{cid}",
-        style="blend",
-        bars=16,
-        metrics_json=json.dumps({"vocal_overlap_s": 0.0}),
-        factors_json=json.dumps({"alignment": 0.9}),
-        vetoes=vetoes,
-        measured=Measured(k=5, n=7),
-        unknown_json=json.dumps({"seam_clicks": "no render"} if unknown is None else unknown),
-        score=score,
-        scorer_version=SCORER_VERSION,
-        render_path=str(_wav(tmp / f"{cid}.wav")),
-        render_ms=10.0,
-        score_ms=2.0,
-    )
-
-
-def _job_dir(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-#: A test may replace the candidates the double returns (default: the three below).
-OVERRIDE: dict[str, Any] = {}
+from tests.webui.dj_try_support import (
+    LANE_ENGINE,
+    LANE_IN,
+    LANE_OUT,
+    OVERRIDE,
+    _candidate,
+    _job_dir,
+    _lanes_engine,
+    _start,
+    _stored_jobs,
+    _wav,
+    dj_try_client,
+)
 
 
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[tuple[TestClient, list[dict[str, Any]]]]:
-    calls: list[dict[str, Any]] = []
-    OVERRIDE.clear()
-
-    def fake_try_pair(
-        out_id: str,
-        in_id: str,
-        *,
-        n: int,
-        context_bars: int,
-        data_dir: Path,
-        source: object,
-        keep_renders_in: Path,
-        autodj: object,
-    ) -> TryResult:
-        if "raise" in OVERRIDE:
-            if OVERRIDE.get("write_first"):
-                _wav(_job_dir(keep_renders_in) / "partial.wav")  # renders already kept when the failure hits
-            raise OVERRIDE["raise"]  # type: ignore[misc]
-        calls.append(
-            {
-                "out": out_id,
-                "in": in_id,
-                "n": n,
-                "context_bars": context_bars,
-                "data_dir": data_dir,
-                "source": source,
-                "keep_renders_in": keep_renders_in,
-            }
-        )
-        overridden = tuple(
-            # Like the real try_pair, a kept render lives in this job's folder: a pre-built one is copied there.
-            dataclasses.replace(c, render_path=str(_wav(_job_dir(keep_renders_in) / f"{c.id}.wav")))
-            if c.render_path is not None
-            else c
-            for c in OVERRIDE.get("candidates", ())
-        )
-        if OVERRIDE.get("stray"):
-            overridden = OVERRIDE["candidates"]  # a defective runner: renders kept outside the job folder
-        return TryResult(
-            out_id=out_id,
-            in_id=in_id,
-            candidates=overridden
-            or (
-                _candidate(keep_renders_in, "A", 0.8),
-                _candidate(keep_renders_in, "B", 0.0, (Veto("kick_flam_ms", 18.0, 10.0),)),
-                _candidate(keep_renders_in, "C", None),
-            ),
-        )
-
-    (tmp_path / "state").mkdir()
-    app = FastAPI()
-    app.state.state_db_path = str(tmp_path / "state" / "state.db")
-    app.include_router(dj_try.router, prefix="/api/v1")
-    app.dependency_overrides[dj_try.get_try_runner] = lambda: fake_try_pair
-    # Explicit, not the tests/conftest.py default, since the origin assertion below depends on it.
-    with TestClient(app, base_url="http://127.0.0.1") as test_client:
-        yield test_client, calls
-
-
-def _start(test_client: TestClient) -> dict[str, Any]:
-    response = test_client.post("/api/v1/dj/try", json={"out": "trk-out", "in": "trk-in", "n": 3, "context_bars": 4})
-    assert response.status_code == 200, response.text
-    return response.json()
+    with dj_try_client(tmp_path) as pair:
+        yield pair
 
 
 @pytest.mark.requirement("TRYER-10")
@@ -486,6 +399,63 @@ def test_an_unavailable_track_is_a_typed_422_not_a_500(client: tuple[TestClient,
     assert "trk-in" in gone.json()["message"] and "/" not in gone.json()["message"]
 
 
+def _engine_answers(response: Any, autodj: object | None = None) -> Any:
+    """Return a hook that points the route's ServingTrackSource at a mock engine and reads trk-in's profile."""
+    import httpx
+
+    from apps.transition_score.tryer import EngineProfiles
+
+    def read(source: Any) -> None:
+        """Swap the source's profile reader for one over the mock engine, then read a profile through it."""
+        source._service = EngineProfiles(
+            source.origin, autodj or build_service(), transport=httpx.MockTransport(lambda r: response)
+        )
+        source.profile("trk-in")
+
+    return read
+
+
+@pytest.mark.requirement("TRYER-9315")
+def test_an_engine_failure_reading_a_profile_is_try_failed_not_track_unavailable(
+    client: tuple[TestClient, list[dict[str, Any]]],
+) -> None:
+    """[if] the engine answers 500 to a profile read [then] the try answers 422 try_failed, not track_unavailable, [else stop]."""
+    import httpx
+
+    test_client, _ = client
+    OVERRIDE["read_profile"] = _engine_answers(httpx.Response(500, text="engine broke"))
+    response = test_client.post("/api/v1/dj/try", json={"out": "trk-out", "in": "trk-in", "n": 2, "context_bars": 4})
+    assert response.status_code == 422 and response.json()["error"] == "try_failed", response.text
+    assert "500" in response.json()["message"]
+
+
+@pytest.mark.requirement("TRYER-9315")
+def test_unusable_analysis_or_a_missing_track_still_reads_track_unavailable(
+    client: tuple[TestClient, list[dict[str, Any]]],
+) -> None:
+    """[if] the analysis payload raises ProfileError or the engine answers 404 [then] the try answers track_unavailable, [else stop]."""
+    import httpx
+
+    from apps.autodj.contract import ProfileError
+
+    class _Unusable:
+        """An AutoDjService stand-in whose analysis payloads never make a profile."""
+
+        def profile_from_payloads(self, anlz: object, track: object) -> object:
+            """Refuse every payload as unusable analysis."""
+            raise ProfileError("no beatgrid")
+
+    test_client, _ = client
+    body = {"out": "trk-out", "in": "trk-in", "n": 2, "context_bars": 4}
+    OVERRIDE["read_profile"] = _engine_answers(httpx.Response(200, json={}), _Unusable())
+    unusable = test_client.post("/api/v1/dj/try", json=body)
+    assert unusable.status_code == 422 and unusable.json()["error"] == "track_unavailable", unusable.text
+    assert "trk-in" in unusable.json()["message"]
+    OVERRIDE["read_profile"] = _engine_answers(httpx.Response(404, text="no such track"))
+    missing = test_client.post("/api/v1/dj/try", json=body)
+    assert missing.status_code == 422 and missing.json()["error"] == "track_unavailable", missing.text
+
+
 @pytest.mark.requirement("TRYER-10")
 def test_the_serving_source_turns_missing_audio_and_analysis_into_track_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -520,16 +490,22 @@ def test_every_pick_and_undo_error_status_is_declared_in_openapi() -> None:
     """[if] the OpenAPI document is generated [then] pick declares 404 409 412 428 and undo 404 409 412 428, each an ErrorBody, [else stop]."""
     app = FastAPI()
     app.include_router(dj_try.router, prefix="/api/v1")
+    _install_problem_details_openapi(app)
     paths = app.openapi()["paths"]["/api/v1/dj/try/{job_id}/pick"]
     for method in ("post", "delete"):
         declared = paths[method]["responses"]
         for code in ("404", "409", "412", "428"):
             assert code in declared, (method, code)
-            assert declared[code]["content"]["application/json"]["schema"]["$ref"].endswith("/ErrorBody")
+            assert declared[code]["content"]["application/problem+json"]["schema"]["$ref"].endswith("/ErrorBody")
     document = app.openapi()
     start = document["paths"]["/api/v1/dj/try"]["post"]["responses"]
-    shapes = start["422"]["content"]["application/json"]["schema"]["anyOf"]
-    names = {shape["$ref"].rsplit("/", 1)[1] for shape in shapes}
+    error_ref = start["422"]["content"]["application/problem+json"]["schema"]["$ref"]
+    validation_schema = start["422"]["content"]["application/json"]["schema"]
+    if "$ref" in validation_schema:
+        validation_names = {validation_schema["$ref"].rsplit("/", 1)[1]}
+    else:
+        validation_names = {shape["$ref"].rsplit("/", 1)[1] for shape in validation_schema["anyOf"]}
+    names = {error_ref.rsplit("/", 1)[1], *validation_names}
     assert names == {"ErrorBody", "HTTPValidationError"}
     assert names <= set(document["components"]["schemas"])  # both refs resolve
 
@@ -549,14 +525,6 @@ def test_an_out_of_range_score_fails_validation_never_clamped(
     del OVERRIDE["candidates"]
     _start(test_client)  # control: the same probe sees a valid job once stored
     assert _stored_jobs(tmp_path) == 1
-
-
-def _stored_jobs(tmp_path: Path) -> int:
-    with sqlite3.connect(tmp_path / "state" / "state.db") as state:
-        tables = {row[0] for row in state.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        if "transition_try_jobs" not in tables:
-            return 0
-        return int(state.execute("SELECT COUNT(*) FROM transition_try_jobs").fetchone()[0])
 
 
 @pytest.mark.requirement("TRYER-10")
@@ -729,3 +697,183 @@ def test_lanes_refuse_bad_columns_unknown_candidates_and_missing_renders(
     gone = test_client.get(f"{lanes}/A/lanes")
     assert gone.status_code == 404 and gone.json()["error"] == "render_missing"
     assert str(tmp_path) not in gone.text, "if the 404 names a server path then it leaks the library location"
+
+
+# ----- lanes against a real serving engine on loopback (#12514) --------------------------------
+@pytest.mark.requirement("PLATFORM-14524")
+def test_lanes_answer_a_retryable_engine_unavailable_when_a_profile_read_gets_a_500(tmp_path: Path) -> None:
+    """[if] the lanes route's profile read gets an engine 500 [then] it answers 503 engine_unavailable, never track_unavailable, [else stop]."""
+    with _lanes_engine(tmp_path) as lanes:
+        LANE_ENGINE["profile"] = "engine_500"
+        broken = httpx.get(lanes, timeout=30.0)
+    assert broken.status_code == 503, broken.text
+    assert broken.json()["error"] == "engine_unavailable" and "retry" in broken.json()["message"]
+    assert "state.db" not in broken.text, "if the 503 relays the upstream body then it can leak server detail"
+
+
+@pytest.mark.requirement("PLATFORM-14524")
+def test_the_serving_source_turns_an_unreachable_engine_into_engine_unavailable(tmp_path: Path) -> None:
+    """[if] the serving engine does not answer a profile read [then] ServingTrackSource raises EngineUnavailable, [else stop]."""
+    from apps.transition_score.tryer import EngineProfiles
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    (tmp_path / "state").mkdir()
+    db = tmp_path / "state" / "state.db"
+    origin = EngineOrigin(host="127.0.0.1", port=1, lock_path=tmp_path / "x.lock", pid=None, role=None, boot_id=None)
+    source = dj_try.ServingTrackSource(tmp_path, build_service(), origin=origin, state_db=db)
+    source._service = EngineProfiles(origin, build_service(), transport=httpx.MockTransport(refuse))
+    with pytest.raises(dj_try.EngineUnavailable, match="ab12") as down:
+        source.profile("ab12")
+    assert str(tmp_path) not in str(down.value), "if the error names the lock path then a response leaks it"
+
+
+@pytest.mark.requirement("PLATFORM-14524")
+def test_lanes_answer_track_unavailable_when_the_engine_has_no_analysis_for_a_track(tmp_path: Path) -> None:
+    """[if] the lanes route's analysis read for a track answers 404 [then] it answers 422 track_unavailable naming it, [else stop]."""
+    with _lanes_engine(tmp_path) as lanes:
+        LANE_ENGINE["profile"] = "no_analysis"
+        missing = httpx.get(lanes, timeout=30.0)
+    assert missing.status_code == 422, missing.text
+    assert missing.json()["error"] == "track_unavailable" and LANE_IN in missing.json()["message"]
+
+
+@pytest.mark.requirement("PLATFORM-14524")
+def test_lanes_draw_both_decks_when_the_engine_serves_both_profiles(tmp_path: Path) -> None:
+    """[if] the lanes route reads both profiles from the serving engine [then] it answers 200 with both decks' lanes, [else stop]."""
+    with _lanes_engine(tmp_path) as lanes:
+        drawn = httpx.get(lanes, timeout=30.0)
+    assert drawn.status_code == 200, drawn.text
+    body = drawn.json()
+    assert body["candidate"] == "A" and [deck["deck"] for deck in body["decks"]] == [1, 2]
+    assert all(len(deck["peaks"]) == 40 for deck in body["decks"]), "if peaks ignore columns then the bound is lost"
+
+
+@pytest.mark.requirement("PERFORMANCE-SCREEN-14653")
+def test_lanes_state_each_profiles_energy_provenance_without_a_relative_comparison(tmp_path: Path) -> None:
+    """[if] the engine serves both profiles with waveform energy but no MIK [then] lanes say relative, no step, [else stop]."""
+    with _lanes_engine(tmp_path) as lanes:
+        drawn = httpx.get(lanes, timeout=30.0)
+    assert drawn.status_code == 200, drawn.text
+    energy = drawn.json()["energy"]
+    assert energy["out"] == {"stable_id": LANE_OUT, "source": "relative", "mik_level": None}
+    assert energy["in"] == {"stable_id": LANE_IN, "source": "relative", "mik_level": None}
+    assert energy["cross_track_step"] is None, "if relative energy yields a step then the lanes overstate it"
+    assert energy["note"].startswith("cross-track energy not compared")
+
+
+@pytest.mark.requirement("PERFORMANCE-SCREEN-14653")
+def test_lanes_for_a_refused_candidate_claim_no_energy_provenance(
+    client: tuple[TestClient, list[dict[str, Any]]], tmp_path: Path
+) -> None:
+    """[if] lanes are requested for a refused candidate [then] a 404 render_missing with no energy block, [else stop]."""
+    test_client, _ = client
+    refused = dataclasses.replace(
+        _candidate(tmp_path / "built", "R", None), render_path=None, render_ms=None, refused="render failed: bad plan"
+    )
+    OVERRIDE["candidates"] = (_candidate(tmp_path / "built", "A", 0.7), refused)
+    job = _start(test_client)
+    missing = test_client.get(f"/api/v1/dj/try/{job['job_id']}/candidates/R/lanes")
+    assert missing.status_code == 404 and missing.json()["error"] == "render_missing"
+    assert "energy" not in missing.json(), "if a refused candidate gets energy provenance then a lane is implied"
+
+
+# ----- a prune that cannot delete an older job's renders (#12502) -------------------------------
+@contextmanager
+def _undeletable(job_folder: Path) -> Iterator[None]:
+    """Gives a stored job's render folder a read-only subfolder holding a file, so a real rmtree of it fails."""
+    locked = _job_dir(job_folder / "locked")
+    _wav(locked / "stuck.wav")
+    locked.chmod(0o500)
+    try:
+        yield
+    finally:
+        for moved in job_folder.parent.glob("*/locked"):  # the prune may have renamed the job folder
+            moved.chmod(0o700)
+
+
+def _try_folders(root: Path) -> list[str]:
+    return sorted(p.name for p in root.iterdir() if p.is_dir())
+
+
+@pytest.mark.requirement("PLATFORM-14542")
+def test_a_prune_that_cannot_delete_an_older_job_still_publishes_and_retires_it_whole(
+    client: tuple[TestClient, list[dict[str, Any]]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] pruning an older job's render folder fails [then] the new job answers 200 and the old job's renders all go, [else stop]."""
+    import os
+
+    test_client, calls = client
+    monkeypatch.setattr(dj_try, "TRY_JOB_RENDERS_KEPT", 1)
+    old = _start(test_client)
+    root = calls[0]["keep_renders_in"].parent
+    os.utime(root / old["job_id"] / dj_try.JOB_DONE_MARKER, (1_000_000, 1_000_000))
+    with _undeletable(root / old["job_id"]):
+        new = _start(test_client)  # before #12502 the rmtree error escaped as a 500 after the job was stored
+        assert _stored_jobs(tmp_path) == 2
+        assert test_client.get(new["candidates"][0]["render_url"]).status_code == 200
+        for candidate in old["candidates"]:
+            gone = test_client.get(candidate["render_url"])
+            assert gone.status_code == 404 and gone.json()["error"] == "render_missing", candidate["id"]
+        assert _try_folders(root) == sorted([new["job_id"], f"{dj_try.RETIRED_PREFIX}{old['job_id']}"])
+
+
+@pytest.mark.requirement("PLATFORM-14542")
+def test_a_prune_that_succeeds_leaves_no_leftover_and_retries_an_earlier_failed_delete(
+    client: tuple[TestClient, list[dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] pruning succeeds after a new job is stored [then] only the newest folders stay, earlier leftovers too go, [else stop]."""
+    import os
+
+    test_client, calls = client
+    monkeypatch.setattr(dj_try, "TRY_JOB_RENDERS_KEPT", 1)
+    first = _start(test_client)["job_id"]
+    root = calls[0]["keep_renders_in"].parent
+    os.utime(root / first / dj_try.JOB_DONE_MARKER, (1_000_000, 1_000_000))
+    second = _start(test_client)["job_id"]
+    assert _try_folders(root) == [second], "if a clean prune leaves a retired folder then the cap leaks disk"
+    os.utime(root / second / dj_try.JOB_DONE_MARKER, (1_000_001, 1_000_001))
+    with _undeletable(root / second):
+        third = _start(test_client)["job_id"]
+    assert _try_folders(root) == sorted([third, f"{dj_try.RETIRED_PREFIX}{second}"])
+    os.utime(root / third / dj_try.JOB_DONE_MARKER, (1_000_002, 1_000_002))
+    fourth = _start(test_client)["job_id"]
+    assert _try_folders(root) == [fourth], (
+        "if the next prune skips the leftover then the failed delete is never retried"
+    )
+
+
+@pytest.mark.requirement("PLATFORM-14542")
+def test_recovery_runs_under_the_render_lock_and_hides_the_job_before_deleting(
+    client: tuple[TestClient, list[dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a concurrent request probes the render lock during recovery [then] it is held and the old job is already gone, [else stop]."""
+    import os
+
+    from apps.shared import file_lock
+
+    test_client, calls = client
+    monkeypatch.setattr(dj_try, "TRY_JOB_RENDERS_KEPT", 1)
+    old = _start(test_client)["job_id"]
+    root = calls[0]["keep_renders_in"].parent
+    os.utime(root / old / dj_try.JOB_DONE_MARKER, (1_000_000, 1_000_000))
+    seen: list[tuple[str, bool, bool]] = []
+    real_rmtree = dj_try.shutil.rmtree
+
+    def probing_rmtree(path: Path, *args: Any, **kwargs: Any) -> None:
+        probe = os.open(root / dj_try.PRUNE_LOCK, os.O_RDWR | os.O_CREAT)
+        try:
+            free = file_lock.try_lock(probe)
+            if free:
+                file_lock.unlock(probe)
+        finally:
+            os.close(probe)
+        seen.append((Path(path).name, not free, (root / old).exists()))
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(dj_try.shutil, "rmtree", probing_rmtree)
+    _start(test_client)
+    assert seen == [(f"{dj_try.RETIRED_PREFIX}{old}", True, False)], (
+        "if the delete runs outside the lock, or on the job's own path, then a concurrent request sees a half-pruned job"
+    )

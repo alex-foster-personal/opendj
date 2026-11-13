@@ -90,6 +90,7 @@ const deckWith = (stems: StemDeckState): DeckState =>
 		last_load_latency_ms: 850,
 		load_generation: 1,
 		last_load_stages: null,
+		last_load_stage_sources: null,
 		is_master: false
 	}) as DeckState;
 
@@ -262,5 +263,49 @@ export const NoStems: Story = {
 		const group = within(canvasElement).getByRole('group', { name: 'stem controls deck 1' });
 		await expect(group).toHaveAttribute('data-stems-status', 'unavailable');
 		for (const chip of canvasElement.querySelectorAll('.chip')) await expect(chip).toBeDisabled();
+	}
+};
+
+/** #10331: fetching 1/4, every chip carries a quarter fill and stays disabled. */
+export const FetchingFill: Story = {
+	args: {
+		deck: deckWith(
+			stemState({
+				status: 'loading',
+				source: null,
+				model: null,
+				layout: null,
+				available_controls: [],
+				alignment: null,
+				load: { phase: 'fetching', progress: { files_total: 4, files_done: 1, bytes_done: 1024 * 1024 }, reason: null }
+			})
+		)
+	},
+	play: async ({ canvasElement }) => {
+		const chip = canvasElement.querySelector('[data-testid="stem-vocal-deck-1"]');
+		await expect(chip).toHaveAttribute('data-fill', '0.25');
+		await expect(chip).toBeDisabled();
+	}
+};
+
+/** #10331: decoding, every chip sweeps indeterminately and stays disabled. */
+export const DecodingFill: Story = {
+	args: {
+		deck: deckWith(
+			stemState({
+				status: 'loading',
+				source: null,
+				model: null,
+				layout: null,
+				available_controls: [],
+				alignment: null,
+				load: { phase: 'decoding', progress: null, reason: null }
+			})
+		)
+	},
+	play: async ({ canvasElement }) => {
+		const chip = canvasElement.querySelector('[data-testid="stem-vocal-deck-1"]');
+		await expect(chip).toHaveAttribute('data-fill', 'indeterminate');
+		await expect(chip).toBeDisabled();
 	}
 };

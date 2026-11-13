@@ -9,40 +9,43 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, test } from 'node:test';
+import { afterEach, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 
-const STUB = fileURLToPath(new URL('./fixtures/set-replay-ipc-stub.ts', import.meta.url));
 const CONTROL_IDS = fileURLToPath(
 	new URL('../../../../../apps/sets/control_ids.py', import.meta.url)
 );
 
-const mod = await loadTypeScriptModule('tests/unit/fixtures/set-replay-test-harness.ts', {
-	alias: {
-		'$lib/rb/performance-ipc.svelte': STUB
-	}
-});
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
+
+// #12170: the REAL dispatcher, scheduler and engine in one bundle with the replay registry;
+// nothing on the dispatch path is doubled, so the tests observe applied mixer state.
+const mod = await loadTypeScriptModule('tests/unit/fixtures/set-replay-real-dispatch-entry.ts');
 
 const {
 	replayTakeover,
 	replayDispatchGate,
-	replayDispatchTakenOver,
 	v2EventSource,
-	endReplayTakeoverSession,
 	startReplay,
 	stopReplay,
 	dispatchReplayEvent,
 	replayTakeOver,
 	replayControlId,
 	REPLAY_CONTROL_IDS,
-	dispatchRecords,
-	dispatchPerformanceCommand
+	dispatchPerformanceCommand,
+	queryPerformanceState,
+	installPerformanceBrowserIpc,
+	runSyncScopedWork
 } = mod;
 
-function countReplay(control) {
-	return dispatchRecords.filter((r) => r.control === control && r.source === 'replay').length;
+let uninstallIpc = () => {};
+
+/** Applied crossfader position, read back from the real engine state. */
+function crossfader() {
+	return queryPerformanceState().mixer.crossfader;
 }
 
 function commandForId(id) {
@@ -61,45 +64,61 @@ function commandForId(id) {
 	if (tail === 'filter') return { type: 'filter', deck: n, value: 0.5 };
 	if (tail === 'fader') return { type: 'fader', deck: n, value: 0.5 };
 	if (tail === 'assign') return { type: 'assign', deck: n, assign: 'THRU' };
-	if (tail === 'tempo') return { type: 'tempo', deck: n, bpm: 120 };
+	if (tail === 'tempo') return { type: 'tempo', deck: n, ratio: 1.02 };
 	const stem = /^stem\.(.+)\.gain$/.exec(tail);
 	if (stem) return { type: 'stem_gain', deck: n, stem: stem[1], value: 0.5 };
 	throw new Error(`no command for ${id}`);
 }
 
 beforeEach(() => {
-	dispatchRecords.length = 0;
 	stopReplay();
+	globalThis.window = {};
+	uninstallIpc = installPerformanceBrowserIpc();
 });
 
-test('per-control take-over drops replay within one turn', async () => {
+afterEach(() => {
+	stopReplay();
+	uninstallIpc();
+	delete globalThis.window;
+});
+
+test('per-control take-over drops replay within one turn (real dispatcher)', async () => {
 	startReplay();
-	await dispatchReplayEvent({ type: 'eq', deck: 1, band: 'low', value: 0.4 });
 	await dispatchReplayEvent({ type: 'crossfader', value: 0.3 });
-	assert.equal(countReplay('deck.1.eq.low'), 1);
-	assert.equal(countReplay('mixer.crossfader'), 1);
-	await dispatchPerformanceCommand(
-		{ type: 'eq', deck: 1, band: 'low', value: 0.9 },
-		undefined,
-		'user-ui'
-	);
-	const beforeCross = countReplay('mixer.crossfader');
-	const outcome = await dispatchReplayEvent({ type: 'eq', deck: 1, band: 'low', value: 0.2 });
+	await dispatchReplayEvent({ type: 'master_volume', value: 0.7 });
+	assert.equal(crossfader(), 0.3);
+	assert.equal(queryPerformanceState().mixer.master, 0.7);
+	await dispatchPerformanceCommand({ type: 'crossfader', value: 0.9 }, undefined, 'user-ui');
+	assert.equal(crossfader(), 0.9);
+	const outcome = await dispatchReplayEvent({ type: 'crossfader', value: 0.2 });
 	assert.equal(outcome, 'taken_over');
-	assert.equal(countReplay('deck.1.eq.low'), 1);
-	await dispatchReplayEvent({ type: 'crossfader', value: 0.6 });
-	assert.equal(countReplay('mixer.crossfader'), beforeCross + 1);
+	// A replay that skips the helper and calls the dispatcher directly is dropped by its gate too.
+	await dispatchPerformanceCommand({ type: 'crossfader', value: 0.1 }, undefined, 'replay');
+	assert.equal(crossfader(), 0.9);
+	assert.equal(await dispatchReplayEvent({ type: 'master_volume', value: 0.4 }), 'dispatched');
+	assert.equal(queryPerformanceState().mixer.master, 0.4);
 });
 
-test('take over all leaves no replay dispatch', async () => {
+test('take over all leaves no replay dispatch (real dispatcher)', async () => {
 	startReplay();
+	await dispatchPerformanceCommand({ type: 'crossfader', value: 0.6 }, undefined, 'app-command');
 	replayTakeOver('all', 'user');
 	assert.equal(replayTakeover.taken_over_all, true);
 	for (const id of REPLAY_CONTROL_IDS) {
-		const outcome = await dispatchReplayEvent(commandForId(id));
-		assert.equal(outcome, 'taken_over');
+		assert.equal(await dispatchReplayEvent(commandForId(id)), 'taken_over');
 	}
-	assert.equal(dispatchRecords.filter((r) => r.source === 'replay').length, 0);
+	const before = replayTakeover.dropped;
+	await dispatchPerformanceCommand({ type: 'crossfader', value: 0.1 }, undefined, 'replay');
+	assert.equal(replayTakeover.dropped, before + 1);
+	assert.equal(crossfader(), 0.6);
+});
+
+test('a browser IPC bridge move takes the control over as agent', async () => {
+	startReplay();
+	await globalThis.window.musicDjToolsPerformance.dispatch({ type: 'crossfader', value: 0.8 });
+	assert.equal(replayTakeover.live['mixer.crossfader']?.source, 'agent');
+	assert.equal(await dispatchReplayEvent({ type: 'crossfader', value: 0.2 }), 'taken_over');
+	assert.equal(crossfader(), 0.8);
 });
 
 test('live moves keep their real source after take-over', async () => {
@@ -116,16 +135,39 @@ test('live moves keep their real source after take-over', async () => {
 	assert.equal(v2EventSource('agent-command'), 'agent');
 	assert.equal(v2EventSource('replay'), 'replay');
 	assert.equal(v2EventSource('app-command'), 'user');
-	const live = dispatchRecords.filter((r) => r.source !== 'replay');
-	assert.ok(live.every((r) => r.source === 'user-ui' || r.source === 'agent-command'));
 });
 
-test('execute-time re-check drops queued replay after touch', () => {
+test('a replay command queued in the scheduler is dropped when taken over before it runs', async () => {
 	startReplay();
-	const cmd = { type: 'crossfader', value: 0.5 };
-	assert.equal(replayDispatchTakenOver(cmd, 'replay'), false);
-	replayDispatchGate({ type: 'crossfader', value: 0.2 }, 'user-ui');
-	assert.equal(replayDispatchTakenOver(cmd, 'replay'), true);
+	let release;
+	const held = new Promise((resolve) => {
+		release = resolve;
+	});
+	// Hold every deck and sync scope so the replay tempo waits in the real scheduler.
+	const hold = runSyncScopedWork(() => held);
+	const queued = dispatchReplayEvent({ type: 'tempo', deck: 1, ratio: 1.05 });
+	await Promise.resolve();
+	assert.ok(queryPerformanceState().command_queued >= 1);
+	replayTakeOver('deck.1.tempo', 'user');
+	release();
+	await hold;
+	// Executed, the tempo would reject (no track on deck 1); the execute-time re-check drops it.
+	assert.equal(await queued, 'dispatched');
+	assert.equal(queryPerformanceState().command_queued, 0);
+});
+
+test('a queued replay command still runs when nobody took it over', async () => {
+	startReplay();
+	let release;
+	const held = new Promise((resolve) => {
+		release = resolve;
+	});
+	const hold = runSyncScopedWork(() => held);
+	const queued = dispatchReplayEvent({ type: 'tempo', deck: 1, ratio: 1.05 });
+	await Promise.resolve();
+	release();
+	await hold;
+	await assert.rejects(queued, /no track loaded on deck 1/);
 });
 
 test('errors when replay inactive or control unknown', () => {
@@ -168,27 +210,6 @@ test('control ids match ENGINE_MIXER_CONTROL_IDS', () => {
 	fromTs.add(replayControlId({ type: 'master_mute', muted: false }));
 	fromTs.delete(null);
 	assert.deepEqual([...fromTs].sort(), [...fromPy].sort());
-});
-
-test('performance-ipc wires replay gate before dispatch', () => {
-	const src = readFileSync(
-		fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
-		'utf8'
-	);
-	const dispatchBody = src
-		.split('export async function dispatchPerformanceCommand')[1]
-		.split('export async function')[0];
-	assert.match(dispatchBody, /replayDispatchGate\(/);
-	assert.ok(
-		dispatchBody.indexOf('replayDispatchGate(') < dispatchBody.indexOf('_dispatchUnknown(')
-	);
-	const executeBody = src
-		.split('function _executeAs')[1]
-		.split('function _autoPlayOffNeedsUser')[0];
-	assert.match(executeBody, /replayDispatchTakenOver\(/);
-	assert.ok(
-		executeBody.indexOf('replayDispatchTakenOver(') < executeBody.indexOf('withDeckCommandSource(')
-	);
 });
 
 test('ReplayTakeoverBar SSR markup', async () => {

@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from apps.shared.events import publish
 
 from .connection import open_set_notes
+from .models import SetNote
 from .revision import StaleRevision, stale_rev_detail
 from .store import load_set_note, save_set_note, validate_scope
 from .wire import geometry_from_optional, note_to_wire
@@ -57,6 +58,10 @@ def _checked_scope(scope: str) -> str:
         ) from exc
 
 
+def _note_out(note: SetNote) -> SetNoteOut:
+    return SetNoteOut(**note_to_wire(note))
+
+
 def _open_conn(request: Request) -> sqlite3.Connection:
     db_path = Path(request.app.state.state_db_path)
     try:
@@ -76,7 +81,7 @@ def create_router(write_guard: Callable[..., object]) -> APIRouter:
         scope = _checked_scope(scope)
         conn = _open_conn(request)
         try:
-            return SetNoteOut(**note_to_wire(load_set_note(conn, scope)))
+            return _note_out(load_set_note(conn, scope))
         except LookupError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -117,7 +122,7 @@ def create_router(write_guard: Callable[..., object]) -> APIRouter:
                     detail=stale_rev_detail(exc.current_rev),
                 ) from None
             publish("library.changed", {"kind": "set_notes", "ids": [scope]})
-            return SetNoteOut(**note_to_wire(note))
+            return _note_out(note)
         finally:
             conn.close()
 

@@ -326,7 +326,7 @@
 		window.addEventListener('scroll', relayout, { capture: true, passive: true });
 
 		const onOptionDown = (e: KeyboardEvent): void => {
-			if (e.key === 'Alt') optionKeyHeld = true;
+			if (e.key === 'Alt' && e.code !== 'AltRight') optionKeyHeld = true;
 		};
 		const onOptionUp = (e: KeyboardEvent): void => {
 			if (e.key === 'Alt') optionKeyHeld = false;

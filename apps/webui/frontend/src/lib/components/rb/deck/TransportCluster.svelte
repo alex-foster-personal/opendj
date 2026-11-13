@@ -9,6 +9,8 @@
 	import { unsyncedPlayWarning } from '$lib/rb/beat-sync-math';
 	import ControlExplainer from './ControlExplainer.svelte';
 	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { transportSelId } from './deck-transport-jog-selector-ids';
 
 	let {
 		deck,
@@ -83,7 +85,10 @@
 	);
 </script>
 
+<!-- #14331: each button sits in its own selector leaf under deck.<n>.transport, so
+     Enter on a leaf presses that button. A leaf leaves the tree while its button is disabled. -->
 <div class="transport">
+	<div class="sel-leaf" use:selectorNode={{ id: transportSelId(deck.deck_id, 'cue'), kind: 'leaf', enabled: hasTrack }}>
 	<ControlExplainer title={cueTitle} bullets={cueBullets} demo="cue" tooltip={TOOLTIP_ISOLATED}>
 		<button
 			class="round cue"
@@ -97,8 +102,10 @@
 			CUE
 		</button>
 	</ControlExplainer>
+	</div>
 	<div class="call" role="group" aria-label={`memory cue call deck ${deck.deck_id}`}>
 		{#each [['prev', '<', 'CALL < - previous memory cue'], ['next', '>', 'CALL > - next memory cue']] as const as [direction, glyph, title] (direction)}
+			<div class="sel-leaf" use:selectorNode={{ id: transportSelId(deck.deck_id, direction === 'prev' ? 'call-prev' : 'call-next'), kind: 'leaf', enabled: hasTrack }}>
 			<button
 				class="call-btn"
 				disabled={!hasTrack}
@@ -108,8 +115,10 @@
 				data-performance-control="memory_cue_call"
 				onclick={async (event) => await onMemoryCueCall(direction, event.timeStamp)}
 			>{glyph}</button>
+			</div>
 		{/each}
 	</div>
+	<div class="sel-leaf" use:selectorNode={{ id: transportSelId(deck.deck_id, 'play'), kind: 'leaf', enabled: hasTrack }}>
 	<button
 		class="round play"
 		class:playing={deck.playing}
@@ -144,6 +153,7 @@
 			<span class="sync-warning-tip" role="tooltip">{syncWarning}</span>
 		{/if}
 	</button>
+	</div>
 </div>
 
 <style>
@@ -154,6 +164,11 @@
 		justify-content: center;
 		gap: 6px;
 		flex: 0 0 auto;
+	}
+	/* A column flex box sizes to its one button and keeps it stretched as before. */
+	.sel-leaf {
+		display: flex;
+		flex-direction: column;
 	}
 	.round {
 		width: 38px;

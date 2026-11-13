@@ -350,3 +350,22 @@ def test_engine_origin_falls_back_to_request_server_then_default() -> None:
     assert remote_routes.engine_url_for(app, with_server) == "http://127.0.0.1:9001"
     assert remote_routes.engine_url_for(app, without_server) == RemoteSession.engine_url
     assert remote_routes.engine_url_for(app) == RemoteSession.engine_url
+
+
+@pytest.mark.requirement("LIBM-13766")
+def test_device_table_a_newer_build_wrote_still_loads(state_dir: Path) -> None:
+    """[if] a newer build stored an extra per-device key [then] the device still loads with its known fields, [else stop]."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "device_id": "d1",
+        "device_name": "phone",
+        "token_sha256": "ab" * 32,
+        "paired_at": "2026-11-12T10:00:00+00:00",
+        "last_seen": "2026-11-12T10:00:00+00:00",
+        "key_added_by_a_newer_build": True,
+    }
+    (state_dir / REMOTE_DEVICES_FILE).write_text(
+        json.dumps({"schema": 1, "listening": None, "devices": {"d1": row}}), encoding="utf-8"
+    )
+    devices = RemoteSession(state_dir=state_dir, status="off")._load_devices()
+    assert devices["d1"].device_name == "phone"

@@ -198,6 +198,8 @@ class TrackProfile:
     key_segments: tuple[KeySegment, ...] = ()
     hot_cues: tuple[HotCue, ...] = ()
     stems_available: bool | None = None
+    #: The deck's stem-set parts (``vocals``, ``drums``, ``bass``, ``other``, ``instrumental``), None when unreported.
+    stem_layout: tuple[str, ...] | None = None
     notes: tuple[str, ...] = ()
     lufs: float | None = None
     lufs_reason: str | None = None
@@ -390,6 +392,8 @@ class TransitionPlan:
     events: tuple[PlanEvent, ...]
     tempo_mode: str = "sync_to_out"
     anchor: str = "window"
+    # #10148: a glide_to_in plan's glide length in bars (1..bars); None on every other mode.
+    tempo_over_bars: int | None = None
     intent: str | None = None
     rationale: str | None = None
     bass_entry: BassEntry | None = None
@@ -421,7 +425,11 @@ class TransitionPlan:
             },
             "anchor": self.anchor,
             "style": self.style,
-            "tempo": {"mode": self.tempo_mode},
+            "tempo": (
+                {"mode": self.tempo_mode}
+                if self.tempo_over_bars is None
+                else {"mode": self.tempo_mode, "over_bars": self.tempo_over_bars}
+            ),
             "events": [event.to_json() for event in self.events],
             "intent": self.intent,
             "rationale": self.rationale,

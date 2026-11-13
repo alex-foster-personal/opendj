@@ -1,5 +1,6 @@
 import { api } from './api/client';
 import { apiErrorFrom } from './api/errors';
+import { _resetPageGoingAwayForTests, msSincePageGoingAway } from './api/lifecycle-abort';
 import { type PerfEvent, setPerfEventEscalator } from './rb/perf-event-log';
 
 export const EXPECTED_RESOURCE_ERROR_ATTR = 'data-expected-resource-error';
@@ -13,6 +14,8 @@ const MAX_QUEUE = 20;
 const DEDUPE_MS = 10_000;
 const CONSOLE_ERROR_SAMPLE_CUTOFF = 0.25;
 const CONSOLE_WARN_SAMPLE_CUTOFF = 0.1;
+/** How long after an unload signal a failure still counts as the unload's own doing. */
+export const UNLOAD_NOISE_WINDOW_MS = 10_000;
 
 type ContextValue = string | number | boolean | null;
 export type ClientErrorContext = Record<string, ContextValue>;
@@ -114,6 +117,7 @@ function _notifyAck(ack: ClientErrorAck): void {
 }
 
 export function __resetClientErrorReportingForTests(): void {
+	_resetPageGoingAwayForTests();
 	installed = false;
 	flushing = false;
 	interceptingConsole = false;
@@ -236,10 +240,34 @@ function consolePassesSample(kind: 'console-error' | 'console-warn'): boolean {
 	return consoleSampleGate() < cutoff;
 }
 
+/**
+ * Is the document being torn down right now?
+ *
+ * A navigation, a reload or a window close makes the browser cancel every fetch
+ * and module import the page still has in flight. WebKit does it as the
+ * navigation starts, while the old page still runs, so each caller's catch
+ * fires with `TypeError: Load failed` or `Importing a module script failed.`
+ * and logs or toasts it. That is the unload's own doing, not a fault, and which
+ * callers are caught mid-request differs on every load, so it is answered here,
+ * at the one sink every caller's console line passes through, and not caller by
+ * caller. The discriminator is the unload signal's ordering (lifecycle-abort),
+ * never the message text. The window keeps a cancelled navigation from muting
+ * the page for good.
+ */
+function pageIsUnloading(): boolean {
+	const sinceSignalMs = msSincePageGoingAway();
+	return sinceSignalMs !== null && sinceSignalMs < UNLOAD_NOISE_WINDOW_MS;
+}
+
 function patchConsole(kind: 'console-error' | 'console-warn'): void {
 	const original =
 		kind === 'console-error' ? console.error.bind(console) : console.warn.bind(console);
 	const forward = (...args: unknown[]) => {
+		if (pageIsUnloading()) {
+			// Still readable in DevTools at the verbose level; not an error, not filed.
+			console.debug(...args);
+			return;
+		}
 		original(...args);
 		if (interceptingConsole) return;
 		const message = formatConsoleArgs(args);
@@ -332,6 +360,7 @@ function postResourceError(target: EventTarget, source: string): void {
 }
 
 function handleResourceError(event: Event): void {
+	if (pageIsUnloading()) return;
 	const target = resourceTarget(event);
 	if (target === null) return;
 	const source = resourceSource(target) ?? 'unknown';
@@ -438,6 +467,7 @@ export function installClientErrorReporting(): void {
 	window.addEventListener('error', handleResourceError, true);
 	window.addEventListener('securitypolicyviolation', handleCspViolation);
 	window.addEventListener('unhandledrejection', (event) => {
+		if (pageIsUnloading()) return;
 		reportClientError(event.reason, { source: 'unhandledrejection' }, 'unhandled-rejection');
 	});
 	patchConsole('console-error');

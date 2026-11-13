@@ -7,11 +7,13 @@ import type { MixerPlacement } from '$lib/rb/prefs.svelte';
 import type { MidiLearnSnapshot } from '$lib/rb/midi/learn-ipc';
 import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
+import type { TrackFilterState } from '$lib/components/rb/browser/track-filter-state';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import type { DeckTransportClock } from '$lib/rb/deck-runtime';
 import type { AnlzBeat, DeckAudioSnapshot } from '$lib/rb/deck-state-types';
 import type { Vocals } from '$lib/rb/api-rb';
 import type { DeckId } from '$lib/rb/deck-slots';
+import type { MixerDeckPairId } from '$lib/rb/midi/midi-types';
 import type { PadModeSnapshot } from './pad-mode-catalog';
 import type {
 	DeckState,
@@ -27,6 +29,7 @@ import type {
 	BoothSignalMode,
 	BoothState,
 	CrossfaderAssign,
+	CueCalibrationProbe,
 	EqBand,
 	HeadphoneAlignmentMode,
 	HeadphoneOutputMode,
@@ -36,6 +39,7 @@ import type {
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import type { StemSeparationSnapshot } from '$lib/rb/stem-separation-port';
 import type { TransitionIntent } from '$lib/rb/auto-play-next-plan';
+import type { TransitionPresetId } from '$lib/rb/transition-presets';
 import type { Verdict } from '$lib/rb/autoplay-why';
 import type { WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { WaveformBoolOverlay } from '$lib/rb/waveform-overlay-command';
@@ -64,6 +68,7 @@ import type {
 } from '$lib/player/key/camelot';
 import type { TransitionStatus } from '$lib/rb/transition-classifier';
 import type { BeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
+import type { SectionJumpDirection } from '$lib/rb/section-jump';
 import type { DeckAutoGain } from '$lib/rb/auto-gain';
 import type { DeckCloudDownload } from '$lib/offload/offload-ops.svelte';
 import type { PerformanceFeedbackSummary } from '$lib/rb/performance-feedback';
@@ -76,7 +81,13 @@ import type {
 	LibraryLayout,
 	PerformanceLayout
 } from '$lib/rb/skin-layout';
-import type { BeatFxBeats, BeatFxEffect, BeatFxTarget } from '$lib/rb/beat-fx';
+import type {
+	BeatFxBeats,
+	BeatFxEffect,
+	BeatFxReleaseKind,
+	BeatFxTarget,
+	BeatFxTripletBeats
+} from '$lib/rb/beat-fx';
 import type { BeatFxUnitView } from '$lib/rb/beat-fx-unit';
 import type { WindowLabel } from '$lib/shell/native-shell';
 import type { ColorFxDeckView } from '$lib/rb/color-fx.svelte';
@@ -89,6 +100,15 @@ import type {
 } from '$lib/rb/performance-command-scheduler';
 
 /** Shape of waveformStutterSnapshot() for PerformanceState (see audio-health.svelte.ts). */
+/** #14133: the running transition preset; start time and progress are null for a run the bus did not start. */
+export interface TransitionPresetRunSnapshot {
+	running: TransitionPresetId | null;
+	/** Epoch ms when the bus started the run. */
+	started_at_ms: number | null;
+	/** 0 to 1 across the preset's beats, read off its clock deck on the last frame. */
+	progress: number | null;
+}
+
 export interface WaveformStutterSnapshot {
 	active: boolean;
 	frames: number;
@@ -120,6 +140,7 @@ export type HeadphoneCommand =
 	| { type: 'headphone_input_select'; device_id: string }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
+	| { type: 'headphone_calibration_probe'; value: CueCalibrationProbe }
 	| { type: 'master_delay_ms'; value: number }
 	| { type: 'headphone_calibrate'; interactive?: boolean }
 	| { type: 'headphone_calibrate_abort' }
@@ -217,6 +238,8 @@ export type PerformanceCommand =
 	| { type: 'beat_jump_size'; deck: DeckId; beats: BeatJumpSize }
 	/** DECKUX-6794: snapped jump onto the fixed bar grid; the sign is the direction, |bars| the block (4, or 8 with Shift). */
 	| { type: 'grid_jump'; deck: DeckId; bars: number }
+	/** Issue #10263: seek to the next or previous analysed section start, on its downbeat; a deck with no phrases refuses with NO_SECTIONS. */
+	| { type: 'section_jump'; deck: DeckId; direction: SectionJumpDirection }
 	/** DECKMOVE-01: clone deck `from` (track, playhead on the audio clock, live loop, transport, key, strip, stems)
 	 * onto `to`; `move` then crossfades `crossfade_beats` (default 8, 0 cuts) and unloads `from`, `copy` leaves
 	 * it playing. A playing `to` is refused unless `force`. */
@@ -260,7 +283,14 @@ export type PerformanceCommand =
 	 * With `stable_id`, it is refused unless the deck still holds that track
 	 * when it runs, so a click on one track never pays for another. */
 	| { type: 'stem_separate'; deck: DeckId; stable_id?: string }
-	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
+	| {
+			type: 'stem_gain';
+			deck: DeckId;
+			stem: StemControl;
+			value: number;
+			at_context_sec?: number;
+			step_id?: string;
+	  }
 	/** STEMPERF-11663: per-stem send into the channel's colour FX input, 0..1 linear. */
 	| { type: 'stem_fx_send'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
@@ -326,8 +356,22 @@ export type PerformanceCommand =
 	  }
 	// LIBUX-10046: restore the #9753 default criteria (the cog's Reset).
 	| { type: 'browser_related_criteria_reset' }
+	// LIBM-87: filter the playlist tree by name (the tree's search box); _clear empties it.
+	| { type: 'browser_tree_search'; query: string }
+	| { type: 'browser_tree_search_clear' }
+	// Issue #9744: the pane tab's previous (-1) and next (1) buttons, one row up or down.
+	| { type: 'browser_step_selection'; delta: -1 | 1 }
+	// LIBM-82b (issue #12317): type-ahead jump to the next visible row whose title starts with prefix.
+	| { type: 'browser_type_ahead'; prefix: string }
+	// Issue #10028: Add to Tag List (POST /api/v1/taglist/items); the rail badge follows.
+	| { type: 'tag_list_add'; stable_ids: string[] }
+	// Issue #10043: read (get) or replace (set) the mounted pane's Track Filter bar state.
+	| { type: 'library_filter'; op: 'get' }
+	| { type: 'library_filter'; op: 'set'; state: TrackFilterState }
 	/** IOPIN-06: shared command/query parity for the confirmed pickup policy. */
 	| { type: 'midi_takeover_mode'; mode: MidiTakeoverMode }
+	/** PVPIN-12193: the MIDI panel's displaced-control warning switch. */
+	| { type: 'midi_displaced_warning'; enabled: boolean }
 	/** Agent parity for the learn status Retry / Cancel / Dismiss buttons (issue #10580). */
 	| { type: 'midi_learn_retry' }
 	| { type: 'midi_learn_cancel' }
@@ -341,6 +385,7 @@ export type PerformanceCommand =
 	| { type: 'preview_stop' }
 	| { type: 'output_mode'; mode: HeadphoneOutputMode }
 	| { type: 'headphone_alignment_mode'; value: HeadphoneAlignmentMode }
+	| { type: 'headphone_calibration_probe'; value: CueCalibrationProbe }
 	| { type: 'master_delay_ms'; value: number }
 	| { type: 'headphone_calibrate'; interactive?: boolean }
 	| { type: 'headphone_calibrate_abort' }
@@ -351,9 +396,14 @@ export type PerformanceCommand =
 	/** TOPVIEW-01..03: which view the /performance wavestack area shows (the
 	 * top bar's view icons; persists uiPrefs.perf_view). */
 	| { type: 'set_perf_view'; view: PerfView }
+	| { type: 'set_deck_layout'; layout: 'two-deck' | 'four-deck' }
+	/** Issue #9432: right Option's large-library toggle. */
+	| { type: 'toggle_large_library' }
 	/** TOPVIEW-04: whether the performance-pad rows are shown (the top bar's
 	 * PAD button; persists uiPrefs.show_pads). */
 	| { type: 'show_pads'; enabled: boolean }
+	/** Issue #13057: the TopBar LYR master switch (persists uiPrefs.lyrics_global only). */
+	| { type: 'set_lyrics_global'; enabled: boolean }
 	/** DECKGAP-7691: which mixer values reset when a track loads (one choice, every deck). */
 	| {
 			type: 'track_load_reset';
@@ -391,11 +441,20 @@ export type PerformanceCommand =
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
 	| { type: 'library_panels_toggle'; collapsed?: boolean }
+	// LIBUX-9743: the browser toolbar's single-column button; omit enabled to flip it.
+	| { type: 'library_single_column'; enabled?: boolean }
+	// LIBUX-9754: the browser toolbar's split-column button; omit enabled to flip it.
+	| { type: 'library_split_column'; enabled?: boolean }
+	// Issue #10026: the browser toolbar's My Tag pane toggle; omit enabled to flip it.
+	| { type: 'library_mytag_pane'; enabled?: boolean }
 	| { type: 'show_stems'; enabled: boolean }
 	/** WAVE-EQ-5230: deck waveforms follow the engine-reported EQ/filter gains. */
 	| { type: 'wave_eq_reflect'; enabled: boolean }
 	/** The mixer's S button: stem dials beside the EQ on every channel with stems. */
 	| { type: 'mixer_stems'; enabled: boolean }
+	/** #5586: the mixer's R|M level calibration, reachable while LESS hides it.
+	 *  Arming is refused while the deck is not playing; disarming always works. */
+	| { type: 'level_calibration'; deck: DeckId; kind: 'red' | 'ceiling'; enabled: boolean }
 	/** Issue #9434: where the mixer sits; `center` or `sides` (#9371). */
 	| { type: 'mixer_placement'; placement: MixerPlacement }
 	// DECKCTL-6235: the AU preference (park a fresh load at its first memory cue).
@@ -416,12 +475,16 @@ export type PerformanceCommand =
 			type: 'beat_fx';
 			target?: BeatFxTarget;
 			effect?: BeatFxEffect;
-			beats?: BeatFxBeats;
+			beats?: BeatFxBeats | BeatFxTripletBeats;
+			triplet?: boolean;
+			time_ms?: number;
 			level?: number;
 			enabled?: boolean;
 			quantize?: boolean;
 			xpad?: number | null;
 	  }
+	/** BEATFX-12: hold or let go of Release FX (issue #9783). */
+	| { type: 'beat_fx_release'; held: boolean; beats?: BeatFxBeats; kind?: BeatFxReleaseKind }
 	/** AGENT-20: the AutoPlay switch, the TopBar button's command twin. PLAY-18:
 	 * only a user turns it off, so `enabled: false` needs `by_user: true`. */
 	| { type: 'autoplay'; enabled: boolean; by_user?: boolean }
@@ -468,8 +531,15 @@ export type PerformanceCommand =
 	// Deck Quick Draw menu Track info; deck-targeted so an agent can open any deck (#9448, PRRT_kwDOSEvNd860v-hu).
 	| { type: 'track_info_open'; deck: DeckId }
 	| { type: 'track_info_close' }
+	// #13228: FLX10-style deck pair select (pin a675881be6c8); MIDI and agents
+	// share it. `deck` picks one deck of the pair, absent toggles between them.
+	| { type: 'mixer_deck_pair_select'; pair: MixerDeckPairId; deck?: DeckId }
 	// OJ-9477: the top bar's OJ button; toggles the agent sidebar, UI state only.
 	| { type: 'oj_toggle' }
+	// OJ-13717: run (or abort, while it runs) a transition preset, as its `preset.run.<id>` hotkey does.
+	| { type: 'transition_preset'; preset: TransitionPresetId }
+	// #12272: open or close the hotkeys overlay (the one "?" toggles), UI state only.
+	| { type: 'hotkeys_overlay'; open: boolean }
 	/** Issue #9451: open the overlay for a library row (context menu Track info). */
 	| { type: 'track_info_open'; stable_id: string }
 	| { type: 'pairing_snapshot_open' }
@@ -482,6 +552,9 @@ export type PerformanceCommand =
 	| { type: 'playlist_history_jump'; command_id: string }
 	| { type: 'cmdk_open'; query?: string }
 	| { type: 'cmdk_close' }
+	// PERFDRAWER-12580: the top bar's JOBS drawer, UI state only, shared by the button and agents.
+	| { type: 'drawer_open'; drawer: 'jobs' }
+	| { type: 'drawer_close'; drawer: 'jobs' }
 	| {
 			type: 'cmdk_pick';
 			index: number;
@@ -563,6 +636,9 @@ export interface PerformanceDeckSnapshot {
 	load_generation: number;
 	/** Last load stage map (ms); null until a load. CLI/IPC feedback. */
 	last_load_stages: Record<string, number> | null;
+	/** Blocking KPI stages for the last load (subset aligned with telemetry). */
+	last_load_blocking_stage_ms: Record<string, number> | null;
+	last_load_stage_sources: Record<string, string> | null;
 	stems: StemDeckState;
 	/** STEM-77: the loaded track's separation job, pending start and refusal,
 	 * the same inputs the deck's SEPARATE button renders; null with no track,
@@ -604,6 +680,8 @@ export interface PerformanceDeckSnapshot {
 	/** Whether this deck's loop is engaged: an engaged loop wraps the playhead, so a plan can never reach its window. */
 	loop_engaged: boolean;
 	command_error: string | null;
+	/** #12280: stable code for `command_error` (performance-refusal-code.ts); null with no error. */
+	command_error_code: string | null;
 	command_pending: boolean;
 	/** Last command observed for this deck, including MIDI and UI sources. */
 	last_command_id: string | null;
@@ -639,8 +717,12 @@ export interface PerformanceState {
 		selected_row: string | null;
 		load: PerformanceBrowserPaneSnapshot['load'];
 		related_active: boolean;
+		/** LIBM-87: the playlist tree's name search; '' when it shows every row. */
+		tree_query: string;
+		/** Issue #10043: the mounted pane's Track Filter bar state; null when no track table is mounted. */
+		filter: TrackFilterState | null;
 	};
-	midi_takeover: { mode: MidiTakeoverMode };
+	midi_takeover: { mode: MidiTakeoverMode; displaced_warning: boolean };
 	midi_learn: MidiLearnSnapshot;
 	history: Array<{ id: string; type: PerformanceCommand['type'] }>;
 	preset: PerformancePresetLifecycleSnapshot;
@@ -659,6 +741,12 @@ export interface PerformanceState {
 		/** Legacy per-panel prefs; the UI uses the combined `collapsed` field. */
 		next_collapsed: boolean;
 		recommended_collapsed: boolean;
+		/** LIBUX-9743: the playlist tree is hidden and the track table has the full browser width. */
+		single_column: boolean;
+		/** LIBUX-9754: two track tables side by side, each bound to its own pane. */
+		split_column: boolean;
+		/** Issue #10026: the My Tag pane is docked right of the track table. */
+		mytag_pane: boolean;
 	};
 	/** PARITY-02: the effective rbx-vs-own selection per feature, keyed the
 	 * same way the `analysis_source` command names it. An agent driving this
@@ -709,9 +797,13 @@ export interface PerformanceState {
 		cache_budget_bytes: number;
 	};
 	last_error: string | null;
+	/** #12280: stable code for `last_error` (performance-refusal-code.ts); null with no error. */
+	last_error_code: string | null;
 	pairing_snapshot: PairingSnapshot | null;
 	/** CMDK-15: the Cmd K bar as an agent sees it; null while no v2 bar is mounted. */
 	cmdk: CmdkSnapshot | null;
+	/** #12272: whether the hotkeys overlay ("?", "/" hold, hotkeys_overlay command) is open. */
+	hotkeys_overlay_open: boolean;
 	/** Open extra desktop-shell windows, by label (currently second-screen). */
 	windows: WindowLabel[];
 	technically_working: {
@@ -723,6 +815,14 @@ export interface PerformanceState {
 	};
 	/** TOPVIEW-05: whether the (i) overlay is open, and on which deck and track. */
 	track_info: { open: boolean; deck: DeckId | null; stable_id: string | null };
+	/** #12029: whether the OJ (agent) sidebar is open, so an `oj_toggle` result can be read back. */
+	oj: { open: boolean };
+	/** #13228: mixer click/pair selection, the read back for mixer_deck_pair_select. */
+	mixer_selection: { selected: DeckId[]; clicked_deck: DeckId | null };
+	/** #14133: the transition preset running now, so a `transition_preset` caller can read it back. */
+	transition_preset: TransitionPresetRunSnapshot;
+	/** PERFDRAWER-12580: which top-bar drawers are open (drawer_open / drawer_close read back). */
+	drawers: { jobs: { open: boolean } };
 	/** COLORFX-04: per deck, the color knob's effect, echo division and timing. */
 	color_fx: Record<DeckId, ColorFxDeckView>;
 	/** BEATFX-12: the beat FX unit mirror (effect, division, tempo). */
@@ -747,6 +847,12 @@ export interface PerformanceState {
 		perf_view: PerfView;
 		/** TOPVIEW-04: the performance-pad rows are shown. */
 		show_pads: boolean;
+		/** Issue #12204: the top bar's deck layout. */
+		deck_layout: 'two-deck' | 'four-deck';
+		/** Issue #9432: the large-library toggle is on. */
+		large_library: boolean;
+		/** Issue #13057: what set_lyrics_global reads back. */
+		lyrics_global: boolean;
 		/** DECKGAP-7691: which mixer values reset when a track loads. */
 		track_load_reset: TrackLoadResetPrefs;
 		/** DECKGAP-7691b: the key nudge arrows' step size. */
@@ -814,6 +920,8 @@ export interface PerformanceBrowserAdapter {
 	readSnapshot(): PerformanceBrowserPaneSnapshot;
 	/** LIBUX-10046: the one path that shows or leaves the Related tab. */
 	setRelatedActive(active: boolean): void;
+	/** Issue #9744: move the active pane's selection one row (clamped) and scroll it into view. */
+	stepSelection(delta: -1 | 1): void;
 }
 
 /** Pin fc60002b81a8: same decoupling shape as PerformanceBrowserAdapter above

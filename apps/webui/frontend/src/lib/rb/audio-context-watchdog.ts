@@ -51,7 +51,8 @@
 import {
 	AUDIO_CONTEXT_IO_TIMEOUT_MS,
 	AudioContextIoTimeoutError,
-	withAudioContextIoTimeout
+	withAudioContextIoTimeout,
+	type AudioContextIoTimeoutScheduler
 } from '$lib/rb/audio-context-io-timeout';
 
 /** Delays before each resume attempt, in order. The first is immediate. */
@@ -226,7 +227,8 @@ export function installAudioContextWatchdog(
 	ctx: WatchableAudioContext,
 	effects: ContextWatchdogEffects,
 	isAnyDeckPlaying: () => boolean,
-	ioTimeoutMs: number = AUDIO_CONTEXT_IO_TIMEOUT_MS
+	ioTimeoutMs: number = AUDIO_CONTEXT_IO_TIMEOUT_MS,
+	ioScheduler?: AudioContextIoTimeoutScheduler
 ): () => void {
 	let recovering = false;
 	let heldOpportunity = false;
@@ -260,7 +262,11 @@ export function installAudioContextWatchdog(
 				await effects.sleep(delayMs);
 				if (ctx.state === 'running') return;
 				try {
-					await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs);
+					if (ioScheduler) {
+						await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs, ioScheduler);
+					} else {
+						await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs);
+					}
 				} catch (error: unknown) {
 					// Expected on a closed context, a device that is still gone, or a
 					// hung resume on a clockless output. The loop is the retry.

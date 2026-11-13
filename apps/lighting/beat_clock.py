@@ -8,6 +8,7 @@ heard. Standard library only; no I/O.
 
 from __future__ import annotations
 
+import math
 from bisect import bisect_left
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -46,6 +47,35 @@ class BeatEvent:
 # helpers
 
 
+def _require_finite_number(value: float | int, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{field} must be a number, got {value!r}")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be finite, got {value!r}")
+    return number
+
+
+def _validate_sample(sample: DeckSample) -> None:
+    _require_finite_number(sample.position_ms, "sample position_ms")
+    _require_finite_number(sample.rate, "sample rate")
+    _require_finite_number(sample.host_time_ns, "sample host_time_ns")
+
+
+def _validate_grid(grid: Sequence[GridBeat]) -> None:
+    last_time = float("-inf")
+    for index, beat in enumerate(grid):
+        time_ms = _require_finite_number(beat["time_ms"], f"grid beat {index} time_ms")
+        bpm = _require_finite_number(beat["bpm"], f"grid beat {index} bpm")
+        if bpm <= 0:
+            raise ValueError(f"grid beat {index} bpm must be positive, got {bpm}")
+        if time_ms <= last_time:
+            if time_ms == last_time:
+                raise ValueError(f"duplicate grid beat time at {time_ms} ms")
+            raise ValueError("grid beat times must strictly increase")
+        last_time = time_ms
+
+
 def _host_ns_for(sample: DeckSample, beat_ms: float) -> int:
     return sample.host_time_ns + round((beat_ms - sample.position_ms) / sample.rate * NS_PER_MS)
 
@@ -73,10 +103,19 @@ def predict_beats(grid: Sequence[GridBeat], sample: DeckSample, lookahead_ms: fl
     the last grid entry continue at the last BPM and carry ``extrapolated=True``. A stopped deck,
     a non-positive rate or an empty grid yields nothing.
     """
-    if not sample.playing or sample.rate <= 0 or not grid or lookahead_ms <= 0:
+    if not grid:
+        return []
+    _validate_grid(grid)
+    if not sample.playing:
+        return []
+    _validate_sample(sample)
+    if sample.rate <= 0:
+        return []
+    lookahead = _require_finite_number(lookahead_ms, "lookahead_ms")
+    if lookahead <= 0:
         return []
     start_ms = sample.position_ms
-    end_ms = start_ms + lookahead_ms * sample.rate
+    end_ms = start_ms + lookahead * sample.rate
     times = [float(beat["time_ms"]) for beat in grid]
     events: list[BeatEvent] = []
     first = bisect_left(times, start_ms)

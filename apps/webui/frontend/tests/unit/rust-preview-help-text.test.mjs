@@ -38,6 +38,7 @@ const CLAIMABLE = {
 		'headphone_calibrate',
 		'headphone_calibrate_abort',
 		'headphone_alignment_mode',
+		'headphone_calibration_probe',
 		'output_mode',
 		'headphone_output_select',
 		'headphone_master_select',
@@ -56,6 +57,8 @@ const UNNAMED = new Set([
 	'rescue_stop_all',
 	// DECKUX-6794: behind a default-off flag, so the preview's help text has no feature to name yet.
 	'grid_jump',
+	// Issue #10263: a keyboard and CLI jump with no deck control to point the text at.
+	'section_jump',
 	// BEATFX-13: beat FX kernels play in Web Audio only; the preview help text has no feature for them yet.
 	'beat_fx',
 	'beat_fx_release',

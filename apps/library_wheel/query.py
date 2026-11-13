@@ -13,7 +13,7 @@ Requirements:
 
 Acceptance tests:
 [if] a folder-imported file carries a GENRE tag and no rekordbox is present [then
-     ⛔️] it stays unclassified instead of joining a genre family
+     ⛔️] it joins a genre family from state ``track_fields``, not unclassified
 [if] a disabled axis is requested [then ⛔️] any track carries a non-null axis_value
 [if] state.db is missing [then ⛔️] query raises LibraryWheelError instead of returning
 """

@@ -118,6 +118,7 @@ export {
 	normalizeTrackColorId,
 	REKORDBOX_TRACK_COLOR_IDS,
 	toggleColourSelection,
+	trackColourName,
 	trackColourSwatch,
 	TRACK_COLOUR_NONE,
 	type ColourColumnFilter,
@@ -125,3 +126,14 @@ export {
 } from './track-table-column-filters';
 export { TrackTableFunnelStore, trackTableFunnelStore } from './track-table-funnel-store.svelte';
 export { default as ColourColumnFunnelPopover } from './ColourColumnFunnelPopover.svelte';
+export { default as BpmColumnFunnelPopover } from './BpmColumnFunnelPopover.svelte';
+export { default as KeyColumnFunnelPopover } from './KeyColumnFunnelPopover.svelte';
+export { default as GenreColumnFunnelPopover } from './GenreColumnFunnelPopover.svelte';
+export { default as RatingColumnFunnelPopover } from './RatingColumnFunnelPopover.svelte';
+export { default as MyTagColumnFunnelPopover } from './MyTagColumnFunnelPopover.svelte';
+export { default as TrackFilterBar } from './TrackFilterBar.svelte';
+export {
+	effectiveColumnFilters,
+	TRACK_FILTER_FUNNEL_TRIGGERS,
+	type TrackFilterColumn
+} from './track-filter-state';

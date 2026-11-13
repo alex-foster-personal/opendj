@@ -190,7 +190,10 @@ export function refreshSuggestionFlags(stableIds: readonly string[]): void {
 			.then((flags) => {
 				worksView.suggestionIds = new Set(flags.member_ids);
 			})
-			.catch((exc: unknown) => pushToast(`version suggestions failed: ${String(exc)}`, 'error'));
+			.catch((exc: unknown) => {
+				if (isPageGoingAway()) return;
+				pushToast(`version suggestions failed: ${String(exc)}`, 'error');
+			});
 	}, FLAGS_DEBOUNCE_MS);
 }
 

@@ -23,26 +23,38 @@ export class AudioContextIoTimeoutError extends Error {
 	}
 }
 
+export interface AudioContextIoTimeoutScheduler {
+	setTimeout(fn: () => void, ms: number): unknown;
+	clearTimeout(handle: unknown): void;
+}
+
+const defaultIoTimeoutScheduler: AudioContextIoTimeoutScheduler = {
+	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+	clearTimeout: (handle) =>
+		globalThis.clearTimeout(handle as unknown as ReturnType<typeof globalThis.setTimeout>)
+};
+
 export async function withAudioContextIoTimeout<T>(
 	operation: string,
 	promise: Promise<T>,
-	timeoutMs: number = AUDIO_CONTEXT_IO_TIMEOUT_MS
+	timeoutMs: number = AUDIO_CONTEXT_IO_TIMEOUT_MS,
+	scheduler: AudioContextIoTimeoutScheduler = defaultIoTimeoutScheduler
 ): Promise<T> {
 	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
 		throw new RangeError(`timeoutMs must be a finite positive number, got ${timeoutMs}`);
 	}
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timer: unknown;
 	try {
 		return await Promise.race([
 			promise,
 			new Promise<never>((_resolve, reject) => {
-				timer = setTimeout(
+				timer = scheduler.setTimeout(
 					() => reject(new AudioContextIoTimeoutError(operation, timeoutMs)),
 					timeoutMs
 				);
 			})
 		]);
 	} finally {
-		if (timer !== undefined) clearTimeout(timer);
+		if (timer !== undefined) scheduler.clearTimeout(timer);
 	}
 }

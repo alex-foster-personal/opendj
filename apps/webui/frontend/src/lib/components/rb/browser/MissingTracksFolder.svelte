@@ -1,6 +1,10 @@
 <script lang="ts">
 	// Presentational Missing Tracks tree row. Count is GET /reconcile/summary
 	// total_broken (passed in); click selects the reserved 'missing' node.
+	// LIBM-104: a system node, so its own icon and refused Rename / Delete.
+	import SystemNodeActions from './SystemNodeActions.svelte';
+	import { MISSING_TRACKS_ICON_PATH } from './system-tree-nodes';
+
 	let {
 		brokenCount,
 		error,
@@ -35,15 +39,17 @@
 	class="row"
 	class:selected
 	data-testid="playlist-missing-tracks"
+	data-system-node="missing"
 	role="button"
 	tabindex="0"
 	onclick={onselect}
 	onkeydown={_onKeydown}
 >
-	<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-		<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
+	<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" data-testid="system-node-icon">
+		<path d={MISSING_TRACKS_ICON_PATH} fill="currentColor" fill-rule="evenodd" />
 	</svg>
 	<span class="name">Missing Tracks</span>
+	<SystemNodeActions name="Missing Tracks" nodeId="missing" />
 	<span class="count" title={_countTitle()}>{_countText()}</span>
 </div>
 

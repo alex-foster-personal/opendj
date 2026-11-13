@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import FastAPI
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictInt
 
 from apps.lighting.artnet import MAX_NET, MAX_SUBNET, MAX_UNIVERSE, port_address
 
@@ -17,13 +17,13 @@ ARTNET_ADDRESS_STATE_ATTR = "lighting_artnet_address"
 
 
 class ArtNetAddressRequest(BaseModel):
-    """Required integer address fields; ranges are checked with domain error codes."""
+    """Required integer address fields; JSON booleans are refused before range checks."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
-    net: int
-    subnet: int
-    universe: int
+    net: StrictInt
+    subnet: StrictInt
+    universe: StrictInt
 
 
 class ArtNetAddress(ArtNetAddressRequest):

@@ -697,3 +697,22 @@ test('applyDecodedStripAcrossPanes leaves rows for a different stable_id alone',
 
 	assert.equal(p.rows[0].strip, null);
 });
+
+// requirement: RESCUE-13701
+
+test('applyDecodedStripAcrossPanes is a no-op when the strip already matches', () => {
+	const bands = new Uint8Array(360);
+	bands[0] = 7;
+	bands[10] = 9;
+	const strip = { cols: 120, bands, max: 42 };
+	const existingStrip = { cols: 120, bands: new Uint8Array(bands), max: 42 };
+	const p = contract.createPaneStore();
+	p.rows = [_row({ stable_id: 'track-a', strip: existingStrip })];
+	const rowsBefore = p.rows;
+	contract.applyDecodedStripAcrossPanes([p], 'track-a', strip);
+	assert.equal(
+		p.rows,
+		rowsBefore,
+		'[if] the adoption call repeats the same strip [then] pane rows stay unchanged [else stop]'
+	);
+});

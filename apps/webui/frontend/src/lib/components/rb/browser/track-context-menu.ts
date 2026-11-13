@@ -17,6 +17,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { announcePairingsChanged } from '$lib/rb/pairings-changed';
 import { normalizeRating } from '$lib/rating';
 import { invalidateLibraryIndex } from '$lib/rb/library-index';
+import { trackColourName } from './track-table-column-filters';
 import { fetchOpenDjPlayCounts } from '$lib/plays/play-counter';
 import {
 	reorderItemIdsViaMove,
@@ -148,7 +149,10 @@ export async function runRevealTracks(
 		}
 	}
 	if (revealed > 0) {
-		deps.pushToast(`Revealed ${revealed} track${revealed === 1 ? '' : 's'}`, 'info');
+		// Partial success names the total so the toast never reads as full success.
+		const total = revealed < targetIds.length ? ` of ${targetIds.length}` : '';
+		const noun = `track${(total ? targetIds.length : revealed) === 1 ? '' : 's'}`;
+		deps.pushToast(`Revealed ${revealed}${total} ${noun}`, 'info');
 	}
 	if (firstError !== null) {
 		deps.pushToast(firstError, 'error');
@@ -207,7 +211,15 @@ export async function runReanalyze(
 			});
 		}
 	} catch (error) {
-		deps.pushToast(error instanceof Error ? error.message : String(error), 'error');
+		// #12578: same group key so a startup failure replaces any "Waiting for the queue" toast.
+		deps.pushToast(
+			error instanceof Error ? error.message : String(error),
+			'error',
+			undefined,
+			error,
+			{},
+			REANALYZE_TOAST_GROUP
+		);
 	}
 }
 
@@ -253,6 +265,50 @@ export async function runSetRating(
 			`Rating set (${normalizeRating(rating) ?? rating}) on ${ok} track${ok === 1 ? '' : 's'}`,
 			'info'
 		);
+	}
+	if (firstError !== null) {
+		deps.pushToast(firstError, 'error');
+	}
+}
+
+/** Issue #9737: set (1..8) or clear (null) the rekordbox colour label on every selected row. */
+export async function runSetColour(
+	targetIds: readonly string[],
+	colorId: number | null,
+	deps: {
+		getTrack: typeof getTrack;
+		patchTrack: typeof patchTrack;
+		pushToast: ToastFn;
+	} = { getTrack, patchTrack, pushToast }
+): Promise<void> {
+	let ok = 0;
+	let firstError: string | null = null;
+	for (const id of targetIds) {
+		if (isUsbTrackId(id)) {
+			firstError = firstError ?? 'stick tracks are read only: the colour was not saved';
+			continue;
+		}
+		try {
+			const first = await deps.getTrack(id);
+			await deps.patchTrack(id, first.etag, { color_id: colorId });
+			ok += 1;
+		} catch (error) {
+			if (error instanceof ConflictError) {
+				try {
+					await deps.patchTrack(id, error.etag, { color_id: colorId });
+					ok += 1;
+				} catch (e2) {
+					if (firstError === null) firstError = e2 instanceof Error ? e2.message : String(e2);
+				}
+			} else if (firstError === null) {
+				firstError = error instanceof Error ? error.message : String(error);
+			}
+		}
+	}
+	if (ok > 0) {
+		invalidateLibraryIndex();
+		const what = colorId === null ? 'Colour cleared' : `Colour set (${trackColourName(colorId)})`;
+		deps.pushToast(`${what} on ${ok} track${ok === 1 ? '' : 's'}`, 'info');
 	}
 	if (firstError !== null) {
 		deps.pushToast(firstError, 'error');

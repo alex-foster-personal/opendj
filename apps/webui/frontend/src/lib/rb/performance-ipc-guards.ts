@@ -10,6 +10,7 @@ import {
 } from '$lib/player/constants';
 import { assertBoothSignalMode } from '$lib/player/booth-output';
 import { assertHeadphoneOutputMode } from '$lib/player/headphones';
+import { assertCalibrationProbe } from '$lib/player/cue-latency';
 import {
 	COMPATIBLE_KEY_SHIFT_MAX,
 	isKeyNudgeStep,
@@ -24,16 +25,21 @@ import {
 	ANALYSIS_SOURCE_FEATURES,
 	type AnalysisSourceFeature
 } from '$lib/rb/analysis-source-state.svelte';
-import { parseBeatFxCommand } from '$lib/rb/beat-fx';
+import { parseBeatFxCommand, parseBeatFxReleaseCommand } from '$lib/rb/beat-fx';
 import { parseColorFxCommand } from '$lib/rb/color-fx';
+import { parseTrackFilterState } from '$lib/components/rb/browser/track-filter-state';
+import { parseTypeAheadPrefix } from '$lib/components/rb/browser/track-table-type-ahead';
 import { type DeckId } from '$lib/rb/deck-slots';
 import type { HotCueSlot } from '$lib/rb/deck-state-types';
 import { DECK_MOVE_MAX_CROSSFADE_BEATS } from '$lib/rb/deck-move';
 import { parseGridEditIntent } from '$lib/rb/grid-edit-command';
 import { parseLayoutPx, parseLayoutRegion } from '$lib/rb/layout-regions';
+import { parseDeckLayoutChoice } from '$lib/rb/deck-layout-prefs';
+import { MIXER_DECK_PAIR_DECKS } from '$lib/rb/mixer-selection.svelte';
 import { parseLayoutPreset, parseLayoutSurface } from '$lib/rb/skin-layout';
 import { assertBeatJumpSize } from '$lib/rb/beat-jump-size.svelte';
 import { isPadModeId, PAD_MODE_IDS } from '$lib/rb/pad-mode-catalog';
+import { parseTransitionPresetId } from '$lib/rb/performance-ipc-presets';
 import { assertLoopGridBase } from '$lib/rb/loop-interval-view.svelte';
 import { PERF_VIEW_IDS, isPerfViewId } from '$lib/rb/view-registry';
 import {
@@ -320,7 +326,44 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		if (!any) throw new TypeError('browser_related_criteria needs at least one criterion');
 		return out;
 	}
+	if (type === 'library_filter') {
+		_exactKeys(record, ['type', 'op', 'state']);
+		if (record.op === 'get') {
+			if (record.state !== undefined) throw new TypeError('library_filter get takes no state');
+			return { type, op: 'get' };
+		}
+		if (record.op !== 'set') throw new TypeError('op must be get or set');
+		return { type, op: 'set', state: parseTrackFilterState(record.state) };
+	}
+	if (type === 'browser_type_ahead') {
+		_exactKeys(record, ['type', 'prefix']);
+		return { type, prefix: parseTypeAheadPrefix(record.prefix) };
+	}
+	if (type === 'tag_list_add') {
+		_exactKeys(record, ['type', 'stable_ids']);
+		const ids = record.stable_ids;
+		if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string' && id !== '')) {
+			throw new TypeError('stable_ids must be a non-empty array of non-empty strings');
+		}
+		return { type, stable_ids: [...ids] as string[] };
+	}
+	if (type === 'browser_step_selection') {
+		_exactKeys(record, ['type', 'delta']);
+		if (record.delta !== -1 && record.delta !== 1) throw new TypeError('delta must be -1 or 1');
+		return { type, delta: record.delta };
+	}
 	if (type === 'browser_related_criteria_reset') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'browser_tree_search') {
+		_exactKeys(record, ['type', 'query']);
+		if (typeof record.query !== 'string' || record.query.trim() === '') {
+			throw new TypeError('query must be a non-empty string; browser_tree_search_clear empties it');
+		}
+		return { type, query: record.query };
+	}
+	if (type === 'browser_tree_search_clear') {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -341,6 +384,15 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`midi takeover mode must be pickup or jump; got ${String(record.mode)}`);
 		}
 		return { type, mode: record.mode };
+	}
+	if (type === 'midi_displaced_warning') {
+		_exactKeys(record, ['type', 'enabled']);
+		if (typeof record.enabled !== 'boolean') {
+			throw new TypeError(
+				`midi_displaced_warning enabled must be a boolean; got ${String(record.enabled)}`
+			);
+		}
+		return { type, enabled: record.enabled };
 	}
 	if (type === 'midi_learn_retry' || type === 'midi_learn_cancel') {
 		_exactKeys(record, ['type']);
@@ -405,6 +457,11 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		assertHeadphoneAlignmentMode(record.value);
 		return { type, value: record.value };
 	}
+	if (type === 'headphone_calibration_probe') {
+		_exactKeys(record, ['type', 'value']);
+		assertCalibrationProbe(record.value);
+		return { type, value: record.value };
+	}
 	if (type === 'master_delay_ms') {
 		_exactKeys(record, ['type', 'value']);
 		assertMasterDelayMs(record.value);
@@ -444,6 +501,14 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
+	if (type === 'toggle_large_library') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'set_deck_layout') {
+		_exactKeys(record, ['type', 'layout']);
+		return { type, layout: parseDeckLayoutChoice(record.layout) };
+	}
 	if (type === 'set_perf_view') {
 		_exactKeys(record, ['type', 'view']);
 		if (!isPerfViewId(record.view)) {
@@ -453,7 +518,7 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, view: record.view };
 	}
-	if (type === 'show_pads') {
+	if (type === 'show_pads' || type === 'set_lyrics_global') {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
@@ -565,6 +630,26 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
+	if (type === 'mixer_deck_pair_select') {
+		const pair = record.pair;
+		if (pair !== '1-3' && pair !== '2-4') {
+			throw new TypeError(`mixer_deck_pair_select pair must be 1-3 or 2-4, got ${String(pair)}`);
+		}
+		if (record.deck === undefined) {
+			_exactKeys(record, ['type', 'pair']);
+			return { type, pair };
+		}
+		_exactKeys(record, ['type', 'pair', 'deck']);
+		const deck = _deck(record.deck);
+		if (!MIXER_DECK_PAIR_DECKS[pair].includes(deck)) {
+			throw new TypeError(`mixer_deck_pair_select deck ${deck} is not in pair ${pair}`);
+		}
+		return { type, pair, deck };
+	}
+	if (type === 'transition_preset') {
+		_exactKeys(record, ['type', 'preset']);
+		return { type, preset: parseTransitionPresetId(record.preset) };
+	}
 	if (type === 'track_info_open') {
 		if (record.stable_id !== undefined) {
 			_exactKeys(record, ['type', 'stable_id']);
@@ -592,6 +677,10 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'edge', 'hovered']);
 		return { type, edge: _edge(record.edge), hovered: _boolean('hovered', record.hovered) };
 	}
+	if (type === 'hotkeys_overlay') {
+		_exactKeys(record, ['type', 'open']);
+		return { type, open: _boolean('open', record.open) };
+	}
 	if (type === 'cmdk_open') {
 		_exactKeys(record, record.query === undefined ? ['type'] : ['type', 'query']);
 		if (record.query === undefined) return { type };
@@ -601,6 +690,13 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 	if (type === 'cmdk_close') {
 		_exactKeys(record, ['type']);
 		return { type };
+	}
+	if (type === 'drawer_open' || type === 'drawer_close') {
+		_exactKeys(record, ['type', 'drawer']);
+		if (record.drawer !== 'jobs') {
+			throw new RangeError(`drawer must be one of jobs; got ${String(record.drawer)}`);
+		}
+		return { type, drawer: record.drawer };
 	}
 	if (type === 'cmdk_pick') {
 		_exactKeys(record, [
@@ -745,6 +841,27 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 				: { collapsed: _boolean('collapsed', record.collapsed) })
 		};
 	}
+	if (type === 'library_mytag_pane') {
+		_exactKeys(record, ['type', 'enabled']);
+		return {
+			type,
+			...(record.enabled === undefined ? {} : { enabled: _boolean('enabled', record.enabled) })
+		};
+	}
+	if (type === 'library_split_column') {
+		_exactKeys(record, ['type', 'enabled']);
+		return {
+			type,
+			...(record.enabled === undefined ? {} : { enabled: _boolean('enabled', record.enabled) })
+		};
+	}
+	if (type === 'library_single_column') {
+		_exactKeys(record, ['type', 'enabled']);
+		return {
+			type,
+			...(record.enabled === undefined ? {} : { enabled: _boolean('enabled', record.enabled) })
+		};
+	}
 	if (type === 'mixer_placement') {
 		_exactKeys(record, ['type', 'placement']);
 		if (!isMixerPlacement(record.placement)) {
@@ -754,6 +871,7 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	if (type === 'color_fx') return parseColorFxCommand(record);
 	if (type === 'beat_fx') return parseBeatFxCommand(record);
+	if (type === 'beat_fx_release') return parseBeatFxReleaseCommand(record);
 	if (
 		type === 'show_stems' ||
 		type === 'wave_eq_reflect' ||
@@ -1079,6 +1197,12 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`bars must be a non-zero integer; got ${bars}`);
 		}
 		return { type, deck, bars };
+	} else if (type === 'section_jump') {
+		_exactKeys(record, ['type', 'deck', 'direction']);
+		if (record.direction !== 'next' && record.direction !== 'previous') {
+			throw new RangeError(`direction must be next or previous; got ${String(record.direction)}`);
+		}
+		return { type, deck, direction: record.direction };
 	} else if (type === 'loop_interval_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -1132,6 +1256,12 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 	) {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) } as PerformanceCommand;
+	} else if (type === 'level_calibration') {
+		_exactKeys(record, ['type', 'deck', 'kind', 'enabled']);
+		if (record.kind !== 'red' && record.kind !== 'ceiling') {
+			throw new TypeError(`level_calibration kind must be red|ceiling, got ${String(record.kind)}`);
+		}
+		return { type, deck, kind: record.kind, enabled: _boolean('enabled', record.enabled) };
 	} else if (type === 'roll') {
 		_exactKeys(record, ['type', 'deck', 'beats']);
 		if (!('beats' in record)) {
@@ -1175,8 +1305,8 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, deck, stable_id: record.stable_id };
 	} else if (type === 'stem_gain') {
-		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
-		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
+		_exactKeys(record, ['type', 'deck', 'stem', 'value', 'at_context_sec', 'step_id']);
+		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value), ..._atContextSec(record) };
 	} else if (type === 'stem_fx_send') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };

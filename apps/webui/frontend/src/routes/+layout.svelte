@@ -51,6 +51,7 @@
 	import { settingsOverlay } from '$lib/settings/overlay.svelte';
 	import { finalSetupRefusal } from '$lib/setup/setup-api';
 	import { SETUP_HOST_ROUTE, SETUP_ROUTE } from '$lib/setup/run-setup';
+	import { preserveUrlSearchOnRedirect } from '$lib/setup/wizard-rules';
 	import { installBootLandingRedirect } from '$lib/rb/boot-landing';
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import {
@@ -313,7 +314,7 @@
 		openSetupOverlay();
 		// Already on a performance route (the packaged shell's landing
 		// route) means no navigation at all; the overlay is simply raised.
-		if (!isPerformance) void goto(SETUP_HOST_ROUTE);
+		if (!isPerformance) void goto(preserveUrlSearchOnRedirect(SETUP_HOST_ROUTE, $page.url.search));
 	}
 
 	function raiseSetupOnFirstRun(): void {
@@ -354,6 +355,7 @@
 		installBootLandingRedirect({
 			goto,
 			getPathname: () => $page.url.pathname,
+			getSearch: () => $page.url.search,
 			readBootStamp: readBootStampMirror
 		});
 	});

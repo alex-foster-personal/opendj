@@ -1,0 +1,9 @@
+{
+  "bytes": 256,
+  "measured_main": 520303,
+  "measured_with_pr": 520526,
+  "sha": "dd131df45a",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--idd-17ad6095-issue-13097-resolve-github-issue-13097-https-github grows the other-lazy surface; measured +223 B gzip over main at the PR merge base; ceiled to KiB. Production change is a setup wizard comment only; the delta is emitted-chunk measurement drift on the merge ref (same pattern as af--idd-50fe2feb-issue-13156).",
+  "payback": "none planned; the growth is commit-stamped build output, not new production modules on this surface"
+}

@@ -1,0 +1,64 @@
+{
+  "id": "bad-family-skin",
+  "family": "vendor",
+  "display_name": "Practice: 2-deck entry controller",
+  "inspired_by_note": "works with DDJ-FLX4 MIDI; schematic replica, no vendor marks",
+  "tokens": {
+    "color": {
+      "panel": "#1a1c20",
+      "control": "#2b2f36",
+      "control_edge": "#7a8291",
+      "label": "#e8ebf0",
+      "accent": "#4da3ff",
+      "inert_label": "#a9b0bc"
+    }
+  },
+  "contrast_pairs": [
+    [
+      "label",
+      "control",
+      "text"
+    ],
+    [
+      "label",
+      "panel",
+      "text"
+    ],
+    [
+      "inert_label",
+      "control",
+      "text"
+    ],
+    [
+      "control_edge",
+      "panel",
+      "ui"
+    ],
+    [
+      "accent",
+      "panel",
+      "ui"
+    ],
+    [
+      "accent",
+      "control",
+      "ui"
+    ]
+  ],
+  "controls": {
+    "device_layout": "tools/deck-diagrams/devices/ddj-flx4/panel.json",
+    "device_map": "FLX4_MAP"
+  },
+  "practice": {
+    "route": "/practice/ddj-flx4",
+    "cli": "opendj practice ddj-flx4"
+  },
+  "evidence": {
+    "references": [],
+    "control_error_px_p95": null,
+    "contrast_min_ratio": null
+  },
+  "legal": {
+    "checklist_signed": false
+  }
+}

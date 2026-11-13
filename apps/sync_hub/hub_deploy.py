@@ -18,8 +18,10 @@ hello probe either registers a phantom machine that every spoke then learns,
 or (sent as the hub's own id) writes the very ``is_hub`` it claims to check.
 ``status`` re-registers the hub from the SERVING process's env before
 answering, so ``is_hub`` there reflects the process, not the probe. Verdicts
-follow the monitoring-plugin convention: 0 OK, 2 CRITICAL, 3 UNKNOWN, and a
-probe that cannot measure says UNKNOWN, never a verdict.
+follow the monitoring-plugin convention: 0 OK, 1 DEGRADED, 2 CRITICAL,
+3 UNKNOWN, and a probe that cannot measure says UNKNOWN, never a verdict.
+DEGRADED is the right hub, syncing, that cannot presign the R2 assets it
+indexes (``apps/sync_hub/r2_capability.py``).
 
 CLI::
 
@@ -29,9 +31,10 @@ CLI::
         --uv UV --data-dir D --port P --backup-dest B --keep N [--upload-r2 --doppler DOPPLER] \\
         [--serve-r2 --doppler DOPPLER --serve-doppler-config CONFIG] \\
         [--allowed-hosts HOST[,HOST]]
+    python -m apps.sync_hub.hub_deploy installed-serve-options --kind systemd|launchd --unit-dir U
     python -m apps.sync_hub.hub_deploy init   --data-dir D
     python -m apps.sync_hub.hub_deploy status --data-dir D --url http://127.0.0.1:P \\
-        [--allowed-hosts HOST[,HOST]]
+        [--allowed-hosts HOST[,HOST]] [--identity-only]
     python -m apps.sync_hub.hub_deploy provision-user --user U ...   (apps/sync_hub/hub_user.py)
     python -m apps.sync_hub.hub_deploy remove-user    --user U ...   (one hub per test user, #3870)
 """
@@ -41,6 +44,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import re
 import shlex
 import sys
@@ -57,10 +61,10 @@ from apps.shared.allowed_hosts import ALLOWED_HOSTS_ENV, parse_allowed_hosts
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import hub_user
+from apps.sync_hub import hub_user, r2_capability
 
 Kind = Literal["systemd", "launchd"]
-Verdict = Literal["OK", "CRITICAL", "UNKNOWN"]
+Verdict = Literal["OK", "DEGRADED", "CRITICAL", "UNKNOWN"]
 
 
 class CFG:
@@ -128,7 +132,9 @@ TEMPLATE_FILES: dict[Kind, dict[str, str]] = {
     },
 }
 
-EXIT_BY_VERDICT: dict[Verdict, int] = {"OK": 0, "CRITICAL": 2, "UNKNOWN": 3}
+#: The monitoring-plugin convention, WARNING included: DEGRADED is a hub that
+#: is the right hub and syncs rows but cannot presign the assets it indexes.
+EXIT_BY_VERDICT: dict[Verdict, int] = {"OK": 0, "DEGRADED": 1, "CRITICAL": 2, "UNKNOWN": 3}
 _PLACEHOLDER = re.compile(r"__[A-Z][A-Z0-9_]*__")
 
 
@@ -364,6 +370,73 @@ def render_units(kind: Kind, inputs: RenderInputs) -> dict[str, str]:
     }
 
 
+# ----- reading installed units back -------------------------------------------
+#
+# ``scripts/cloudsync_hub.sh`` saves the options below to ``serve.env`` and
+# reuses them on every later start (CLOUDSYNC-4686). A hub installed before that
+# file existed has them only in its rendered units, so the first start with no
+# saved file adopts them from there instead of re-rendering them away.
+
+SERVE_R2_OPTION: str = "OPENDJ_HUB_SERVE_R2"
+SERVE_DOPPLER_CONFIG_OPTION: str = "OPENDJ_HUB_SERVE_DOPPLER_CONFIG"
+BACKUP_R2_OPTION: str = "OPENDJ_HUB_BACKUP_R2"
+ALLOWED_HOSTS_OPTION: str = "OPENDJ_HUB_ALLOWED_HOSTS"
+_SYSTEMD_ENVIRONMENT = re.compile(r'^Environment="([^=]+)=(.*)"$')
+
+
+@dataclass(frozen=True)
+class InstalledUnit:
+    argv: list[str]
+    env: dict[str, str]
+
+
+def _read_installed_unit(kind: Kind, path: Path) -> InstalledUnit | None:
+    if not path.is_file():
+        return None
+    if kind == "launchd":
+        plist = plistlib.loads(path.read_bytes())
+        return InstalledUnit(
+            [str(arg) for arg in plist["ProgramArguments"]],
+            {str(k): str(v) for k, v in plist.get("EnvironmentVariables", {}).items()},
+        )
+    if kind == "systemd":
+        lines = path.read_text(encoding="utf-8").splitlines()
+        exec_lines = [line for line in lines if line.startswith("ExecStart=")]
+        if len(exec_lines) != 1:
+            raise HubDeployError(f"{path} has {len(exec_lines)} ExecStart lines, expected 1")
+        env_matches = [_SYSTEMD_ENVIRONMENT.match(line) for line in lines]
+        return InstalledUnit(
+            shlex.split(exec_lines[0].removeprefix("ExecStart=")),
+            {match.group(1): match.group(2) for match in env_matches if match is not None},
+        )
+    raise HubDeployError(f"unknown unit kind {kind!r}")
+
+
+def _doppler_config_of(argv: Sequence[str]) -> str | None:
+    """The config a ``_doppler_wrap`` argv names; None when it is not wrapped."""
+    wrapped = len(argv) > 6 and [*argv[1:5], argv[6]] == ["run", "-p", CFG.DOPPLER_PROJECT, "-c", "--"]
+    return str(argv[5]) if wrapped else None
+
+
+def installed_serve_options(kind: Kind, unit_dir: Path) -> dict[str, str]:
+    """The persisted options as the installed units express them; {} when none is installed."""
+    names = {
+        "systemd": ("opendj-hub.service", "opendj-hub-backup.service"),
+        "launchd": (f"{CFG.LAUNCHD_LABEL}.plist", f"{CFG.LAUNCHD_BACKUP_LABEL}.plist"),
+    }[kind]
+    serve = _read_installed_unit(kind, Path(unit_dir) / names[0])
+    backup = _read_installed_unit(kind, Path(unit_dir) / names[1])
+    options: dict[str, str] = {}
+    if serve is not None:
+        config = _doppler_config_of(serve.argv)
+        options[SERVE_R2_OPTION] = "0" if config is None else "1"
+        options[SERVE_DOPPLER_CONFIG_OPTION] = config or ""
+        options[ALLOWED_HOSTS_OPTION] = serve.env.get(ALLOWED_HOSTS_ENV, "")
+    if backup is not None:
+        options[BACKUP_R2_OPTION] = "1" if "--upload-r2" in backup.argv else "0"
+    return options
+
+
 # ----- init + status ---------------------------------------------------------
 
 
@@ -400,6 +473,11 @@ class HubProbe:
     schema_version: int | None = None
     seq: int | None = None
     machine_count: int | None = None
+    #: R2 presign capability as the hub measured it (apps/sync_hub/r2_capability.py).
+    r2_state: str | None = None
+    r2_reason: str | None = None
+    indexed_stem_bundles: int | None = None
+    indexed_lyric_assets: int | None = None
 
 
 def _fetch_status(url: str, machine_id: str) -> dict[str, object]:
@@ -410,8 +488,17 @@ def _fetch_status(url: str, machine_id: str) -> dict[str, object]:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def probe_hub(url: str, data_dir: Path) -> HubProbe:
-    """Ask the hub at ``url`` whether it is the hub that owns ``data_dir``."""
+def _optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def probe_hub(url: str, data_dir: Path, *, identity_only: bool = False) -> HubProbe:
+    """Ask the hub at ``url`` whether it is the hub that owns ``data_dir``.
+
+    OK also requires the hub's own R2 presign verdict to be OK, unless
+    ``identity_only``: the lifecycle script uses that to ask "is the right
+    hub answering" while starting and stopping, before it asks the full question.
+    """
     base = url.rstrip("/")
     id_file = machine_identity.machine_id_path(Path(data_dir))
     if not id_file.is_file():
@@ -432,6 +519,8 @@ def probe_hub(url: str, data_dir: Path) -> HubProbe:
     is_hub = None if row is None else bool(row.get("is_hub"))
     schema = body.get("schema_version")
     seq = body.get("seq")
+    r2 = body.get("r2")
+    r2_fields: dict[str, object] = r2 if isinstance(r2, dict) else {}
 
     def verdict(level: Verdict, reason: str) -> HubProbe:
         return HubProbe(
@@ -443,6 +532,10 @@ def probe_hub(url: str, data_dir: Path) -> HubProbe:
             schema_version=schema if isinstance(schema, int) else None,
             seq=seq if isinstance(seq, int) else None,
             machine_count=len(machines),
+            r2_state=None if r2_fields.get("state") is None else str(r2_fields["state"]),
+            r2_reason=None if r2_fields.get("reason") is None else str(r2_fields["reason"]),
+            indexed_stem_bundles=_optional_int(r2_fields.get("indexed_stem_bundles")),
+            indexed_lyric_assets=_optional_int(r2_fields.get("indexed_lyric_assets")),
         )
 
     if hub_id != own_id:
@@ -455,7 +548,14 @@ def probe_hub(url: str, data_dir: Path) -> HubProbe:
             f"hub schema {schema} != this checkout's {state_schema.SCHEMA_VERSION}; "
             "upgrade hub and spokes in lockstep (runbook, upgrade order)",
         )
-    return verdict("OK", "is_hub true, hub id matches the data dir, schema matches")
+    identity_ok = "is_hub true, hub id matches the data dir, schema matches"
+    level: Verdict
+    if identity_only:
+        level, reason = "OK", identity_ok
+    else:
+        level, r2_reason = r2_capability.verdict_from_status_body(body)
+        reason = f"{identity_ok}; {r2_reason}" if level == "OK" else r2_reason
+    return verdict(level, reason)
 
 
 @dataclass(frozen=True)
@@ -557,6 +657,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="comma-separated bare hostnames for MUSIC_DJ_ALLOWED_HOSTS on the serve unit "
         "(required for tailnet spokes via tailscale serve)",
     )
+    installed = sub.add_parser(
+        "installed-serve-options",
+        help="print the persisted options (KEY=VALUE) an installed unit set expresses",
+    )
+    installed.add_argument("--kind", required=True, choices=sorted(TEMPLATE_FILES))
+    installed.add_argument("--unit-dir", required=True, type=Path)
     init = sub.add_parser(
         "init", help="create the hub DB and register the hub (needs MDT_IS_HUB=1)"
     )
@@ -569,6 +675,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="if set, probe GET /api/v1/health on loopback with Host set to the first "
         "listed hostname",
+    )
+    status.add_argument(
+        "--identity-only",
+        action="store_true",
+        help="judge only that the right hub answers; skip the R2 presign verdict",
     )
     hub_user.add_parsers(sub)
     return parser
@@ -621,6 +732,12 @@ def _cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_installed_serve_options(args: argparse.Namespace) -> int:
+    for key, value in sorted(installed_serve_options(args.kind, args.unit_dir).items()):
+        print(f"{key}={value}")
+    return 0
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     identity = init_hub_data_dir(args.data_dir)
     print(json.dumps(asdict(identity), sort_keys=True))
@@ -628,7 +745,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
-    probe = probe_hub(args.url, args.data_dir)
+    probe = probe_hub(args.url, args.data_dir, identity_only=args.identity_only)
     print(json.dumps(asdict(probe), sort_keys=True))
     print(f"[{probe.verdict}] {probe.reason}")
     worst = EXIT_BY_VERDICT[probe.verdict]
@@ -645,6 +762,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "default-data-dir": _cmd_default_data_dir,
     "argv": _cmd_argv,
     "render": _cmd_render,
+    "installed-serve-options": _cmd_installed_serve_options,
     "init": _cmd_init,
     "status": _cmd_status,
 }

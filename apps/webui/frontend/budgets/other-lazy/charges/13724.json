@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557442,
+  "measured_with_pr": 557625,
+  "sha": "e78826fbc0",
+  "date": "Fri 13 Nov 2026",
+  "reason": "Same split PR shifts shared helper strings between lazy chunks; CI gzip on other-lazy grew +183 B (build hash and rollup attribution noise above the 128 B floor).",
+  "payback": "delete at the next rebaseline if the split does not keep growing this surface"
+}

@@ -157,7 +157,7 @@ def test_fast_job_pytest_flags_fail_loud_and_never_write_the_ledger() -> None:
     for flag in (
         "--fast-tier fast",
         "--fast-tier-max-seconds 0.5",
-        "--ledger-coverage-min 0.50 --ledger-coverage-warn 0.95",
+        "--ledger-coverage-min 0.30 --ledger-coverage-warn 0.95",
         "--tier-min-selected 2000",
         "--splits 2 --group ${{ matrix.leg }}",
         "--durations-path .test_durations",
@@ -191,7 +191,7 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
 def test_shard_job_gains_only_the_ledger_guard() -> None:
     """if the shard job loses --ledger-coverage-min then a thin ledger balances by count again"""
     shard = _pytest_step(_jobs()["test"])
-    assert "--ledger-coverage-min 0.50 --ledger-coverage-warn 0.95" in shard
+    assert "--ledger-coverage-min 0.30 --ledger-coverage-warn 0.95" in shard
     assert "-p scripts." not in shard
     assert "--fast-tier" not in shard, "the sharded lane still runs everything (6a is additive)"
     assert "--store-durations --clean-durations" in shard

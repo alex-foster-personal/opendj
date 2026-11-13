@@ -7,8 +7,9 @@
  * writes the same store the Settings overlay does: nothing here copies a
  * label or keeps a second value. Only rows Enter can act on are offered: a
  * boolean flips, an enum moves to the option the query names (else the next
- * one), and a link opens its page. Number sliders, path lists and the
- * unbuilt todo rows stay in the Settings overlay.
+ * one), a link opens its page, and an action row runs its safe API call.
+ * Number sliders, path lists and the unbuilt todo rows stay in the Settings
+ * overlay.
  *
  * Commands are built from live deck state: one "Eject deck N" per loaded
  * deck, plus runnable rows from the palette registry (CMDK-9600). A playing
@@ -87,7 +88,12 @@ export function tracksAllowed(query: string): boolean {
 export function actionableSetting(def: SettingDef): boolean {
 	if (!def.implemented) return false;
 	const kind = def.control.kind;
-	return kind === 'boolean' || kind === 'enum' || kind === 'link';
+	return kind === 'boolean' || kind === 'enum' || kind === 'link' || kind === 'action';
+}
+
+/** A row that holds no stored value: Enter opens a page or runs a safe action. */
+export function statelessSetting(def: SettingDef): boolean {
+	return def.control.kind === 'link' || def.control.kind === 'action';
 }
 
 function lower(text: string): string {
@@ -169,6 +175,7 @@ export function settingVerb(def: SettingDef, value: SettingValue, tokens: readon
 		const next = enumTarget(def, value, tokens);
 		return `Enter for ${settingValueLabel(def, next)}`;
 	}
+	if (def.control.kind === 'action') return 'Enter to run';
 	return 'Enter to open';
 }
 

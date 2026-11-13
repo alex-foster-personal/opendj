@@ -8,6 +8,7 @@
 	import { onMount } from 'svelte';
 	import { probeVoiceCommand } from '$lib/rb/api-rb';
 	import type { VoiceProbeResult } from '$lib/rb/api-rb';
+	import { topbarSelectorNode } from './topbar-selector-node';
 	import {
 		requestBrowserSearch,
 		subscribeBrowserSearchResult,
@@ -76,7 +77,7 @@
 	);
 </script>
 
-<div class="cmd-entry">
+<div class="cmd-entry" use:topbarSelectorNode={{ name: 'command', disabled: false }}>
 	<input
 		class="cmd-input"
 		type="text"

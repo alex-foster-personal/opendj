@@ -385,9 +385,12 @@ def _guard_data_classes(root: Path) -> tuple[str, str]:
 
 def read_create_table_paths(base: str, root: Path) -> frozenset[str]:
     """`create_table_paths` of the branch diff; `-G` keeps git from printing unrelated hunks."""
+    git = shutil.which("git")
+    if git is None:
+        raise PlanError("git executable not on PATH, so the branch diff cannot be read")
     code, out = _run(
         [
-            "git",
+            git,
             "diff",
             "-U0",
             "--no-color",

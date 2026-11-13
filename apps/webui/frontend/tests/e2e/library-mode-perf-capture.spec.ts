@@ -249,10 +249,14 @@ async function waitForFourDecksLoaded(
 			const decks = ipc.query().decks;
 			return expected.every((sid, index) => {
 				const deck = decks[(index + 1) as 1 | 2 | 3 | 4];
+				const blocking = deck.last_load_blocking_stage_ms ?? deck.last_load_stages;
 				return (
 					deck !== undefined &&
 					deck.stable_id === sid &&
 					deck.last_load_latency_ms !== null &&
+					blocking !== null &&
+					typeof blocking.total === 'number' &&
+					blocking.total === deck.last_load_latency_ms &&
 					(deck.duration_ms ?? 0) > 0
 				);
 			});

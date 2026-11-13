@@ -1,0 +1,1379 @@
+{
+  "source": "https://downloads.support.alphatheta.com/midi-mapping/dj-mixers/DJM-A9/DJM-A9_MIDI_Message_List_E_10.pdf",
+  "archived": "(private path)",
+  "fetched": "Fri 13 Nov 2026",
+  "sha256": "4bca4d93965d669e8a22bd58a9582ce2fdd23fc3cc29a576203f8e2df819c76f",
+  "device": "DJM-A9",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "channel_conventions": {
+    "all": "Every status is 9n (note) or Bn (CC) with n = the mixer's MY SETTINGS MIDI channel; rows use the factory default, channel 1. The mixer sends only; the list has no MIDI-OUT column."
+  },
+  "system_realtime": [
+    {
+      "name": "timing_clock",
+      "status": 248,
+      "notes": "MIDI Timing Clock F8, sent even with MIDI ON/OFF off (no fig). PDF p6."
+    }
+  ],
+  "controls": [
+    {
+      "name": "mic_eq_hi",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "layer": "base",
+      "notes": "[l1] L1 MIC EQ HI. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "mic_eq_low",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 31,
+      "layer": "base",
+      "notes": "[l2] L2 MIC EQ LOW. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "talkover",
+      "section": "mic",
+      "type": "note",
+      "ch": 1,
+      "code": 97,
+      "layer": "base",
+      "notes": "[l3] L3 TALK OVER. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "mic_fx_echo",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 97,
+      "layer": "base",
+      "notes": "[l4] L4 MIC FX ECHO. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "mic_fx_pitch",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 98,
+      "layer": "base",
+      "notes": "[l5] L5 MIC FX PITCH. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "mic_fx_megaphone",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 99,
+      "layer": "base",
+      "notes": "[l6] L6 MIC FX MEGAPHONE. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "mic_fx_parameter",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 100,
+      "layer": "base",
+      "notes": "[l7] L7 MIC FX PARAMETER. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "mic_reverb",
+      "section": "mic",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "layer": "base",
+      "notes": "[l8] L8 MIC REVERB. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "mic_reverb_parameter",
+      "section": "mic",
+      "type": "cc",
+      "ch": 1,
+      "code": 101,
+      "layer": "base",
+      "notes": "[l9] L9 MIC REVERB PARAMETER. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "mic_on",
+      "section": "mic",
+      "type": "note",
+      "ch": 1,
+      "code": 98,
+      "layer": "base",
+      "notes": "[l10] L10 MIC ON. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "bluetooth",
+      "section": "bluetooth",
+      "type": "note",
+      "ch": 1,
+      "code": 112,
+      "layer": "base",
+      "notes": "[l11] L11 BLUETOOTH. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_space",
+      "section": "sound_color_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 85,
+      "layer": "base",
+      "notes": "[l12] L12 SOUND COLOR FX SPACE. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_dub_echo",
+      "section": "sound_color_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "layer": "base",
+      "notes": "[l13] L13 SOUND COLOR FX DUB ECHO. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_crush",
+      "section": "sound_color_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 106,
+      "layer": "base",
+      "notes": "[l14] L14 SOUND COLOR FX CRUSH. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_sweep",
+      "section": "sound_color_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "layer": "base",
+      "notes": "[l15] L15 SOUND COLOR FX SWEEP. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_noise",
+      "section": "sound_color_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 86,
+      "layer": "base",
+      "notes": "[l16] L16 SOUND COLOR FX NOISE. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_filter",
+      "section": "sound_color_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 87,
+      "layer": "base",
+      "notes": "[l17] L17 SOUND COLOR FX FILTER. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "cfx_parameter",
+      "section": "sound_color_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 108,
+      "layer": "base",
+      "notes": "[l18] L18 SOUND COLOR FX PARAMETER. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "phones_a_link_cue",
+      "section": "headphones_a",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "layer": "base",
+      "notes": "[l19] L19 HEADPHONES A LINK CUE A. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "phones_a_mono_split",
+      "section": "headphones_a",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "layer": "base",
+      "notes": "[l20] L20 HEADPHONES A MONO/SPLIT. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "phones_a_mixing",
+      "section": "headphones_a",
+      "type": "cc",
+      "ch": 1,
+      "code": 27,
+      "layer": "base",
+      "notes": "[l21] L21 HEADPHONES A MIXING. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "phones_a_level",
+      "section": "headphones_a",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "layer": "base",
+      "notes": "[l22] L22 HEADPHONES A LEVEL. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_input_bluetooth",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR BLUETOOTH. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_a",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR A. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_b",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR B. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_digital",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR DIGITAL. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_line",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR LINE. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_phono",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR PHONO. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_return",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR RETURN. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_input_usb",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 74,
+      "layer": "base",
+      "notes": "[c1_1] C1 CH1 INPUT SELECTOR USB. PDF p2; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch1_trim",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "layer": "base",
+      "notes": "[c2_1] C2 CH1 TRIM. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_hi",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "layer": "base",
+      "notes": "[c3_1] C3 CH1 HI. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_mid",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "layer": "base",
+      "notes": "[c4_1] C4 CH1 MID. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_low",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "layer": "base",
+      "notes": "[c5_1] C5 CH1 LOW. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_color",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "layer": "base",
+      "notes": "[c6_1] C6 CH1 COLOR. PDF p2; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_cue_a",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "layer": "base",
+      "notes": "[c7_1] C7 CH1 CUE A. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch1_cue_b",
+      "section": "ch1",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "layer": "base",
+      "notes": "[c7_1] C7 CH1 CUE B. PDF p2; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch1_fader",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "layer": "base",
+      "notes": "[c8_1] C8 CH1 CH FADER. PDF p2; slide; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch1_crossfader_assign",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 1,
+      "code": 65,
+      "layer": "base",
+      "notes": "[c9_1] C9 CH1 CROSSFADER ASSIGN. PDF p2; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "name": "ch2_input_bluetooth",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR BLUETOOTH. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_a",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR A. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_b",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR B. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_digital",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR DIGITAL. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_line",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR LINE. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_phono",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 56,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR PHONO. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_return",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR RETURN. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_input_usb",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 75,
+      "layer": "base",
+      "notes": "[c1_2] C1 CH2 INPUT SELECTOR USB. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch2_trim",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "layer": "base",
+      "notes": "[c2_2] C2 CH2 TRIM. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch2_hi",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "layer": "base",
+      "notes": "[c3_2] C3 CH2 HI. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch2_mid",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "layer": "base",
+      "notes": "[c4_2] C4 CH2 MID. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch2_low",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "layer": "base",
+      "notes": "[c5_2] C5 CH2 LOW. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch2_color",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "layer": "base",
+      "notes": "[c6_2] C6 CH2 COLOR. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch2_cue_a",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "layer": "base",
+      "notes": "[c7_2] C7 CH2 CUE A. PDF p3; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch2_cue_b",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "layer": "base",
+      "notes": "[c7_2] C7 CH2 CUE B. PDF p3; 00 OFF / 7F ON; sheet anomaly: CH2 prints this row differently from CH1, CH3 and CH4; transcribed as printed, see footnotes."
+    },
+    {
+      "name": "ch2_fader",
+      "section": "ch2",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "layer": "base",
+      "notes": "[c8_2] C8 CH2 CH FADER. PDF p3; slide; printed as 00 OFF / 7F ON Trigger/Toggle; sheet anomaly: CH2 prints this row differently from CH1, CH3 and CH4; transcribed as printed, see footnotes."
+    },
+    {
+      "name": "ch2_crossfader_assign",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 1,
+      "code": 66,
+      "layer": "base",
+      "notes": "[c9_2] C9 CH2 CROSSFADER ASSIGN. PDF p3; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "name": "ch3_input_bluetooth",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR BLUETOOTH. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_a",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 61,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR A. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_b",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR B. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_digital",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 58,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR DIGITAL. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_line",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR LINE. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_phono",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR PHONO. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_return",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR RETURN. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_input_usb",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "layer": "base",
+      "notes": "[c1_3] C1 CH3 INPUT SELECTOR USB. PDF p3; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch3_trim",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "layer": "base",
+      "notes": "[c2_3] C2 CH3 TRIM. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch3_hi",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "layer": "base",
+      "notes": "[c3_3] C3 CH3 HI. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch3_mid",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "layer": "base",
+      "notes": "[c4_3] C4 CH3 MID. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch3_low",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "layer": "base",
+      "notes": "[c5_3] C5 CH3 LOW. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch3_color",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "layer": "base",
+      "notes": "[c6_3] C6 CH3 COLOR. PDF p3; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch3_cue_a",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "layer": "base",
+      "notes": "[c7_3] C7 CH3 CUE A. PDF p3; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch3_cue_b",
+      "section": "ch3",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "layer": "base",
+      "notes": "[c7_3] C7 CH3 CUE B. PDF p3; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch3_fader",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "layer": "base",
+      "notes": "[c8_3] C8 CH3 CH FADER. PDF p3; slide; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch3_crossfader_assign",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 1,
+      "code": 67,
+      "layer": "base",
+      "notes": "[c9_3] C9 CH3 CROSSFADER ASSIGN. PDF p3; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "name": "ch4_input_bluetooth",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 84,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR BLUETOOTH. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_a",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR A. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_b",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR B. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_digital",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 62,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR DIGITAL. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_line",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR LINE. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_phono",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR PHONO. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_return",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 73,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR RETURN. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_input_usb",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "layer": "base",
+      "notes": "[c1_4] C1 CH4 INPUT SELECTOR USB. PDF p4; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "ch4_trim",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 80,
+      "layer": "base",
+      "notes": "[c2_4] C2 CH4 TRIM. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch4_hi",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 81,
+      "layer": "base",
+      "notes": "[c3_4] C3 CH4 HI. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch4_mid",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 92,
+      "layer": "base",
+      "notes": "[c4_4] C4 CH4 MID. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch4_low",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 82,
+      "layer": "base",
+      "notes": "[c5_4] C5 CH4 LOW. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch4_color",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 83,
+      "layer": "base",
+      "notes": "[c6_4] C6 CH4 COLOR. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch4_cue_a",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "layer": "base",
+      "notes": "[c7_4] C7 CH4 CUE A. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch4_cue_b",
+      "section": "ch4",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "layer": "base",
+      "notes": "[c7_4] C7 CH4 CUE B. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "name": "ch4_fader",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "layer": "base",
+      "notes": "[c8_4] C8 CH4 CH FADER. PDF p4; slide; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "ch4_crossfader_assign",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "layer": "base",
+      "notes": "[c9_4] C9 CH4 CROSSFADER ASSIGN. PDF p4; slide A 00, THRU 40, B 7F."
+    },
+    {
+      "name": "crossfader",
+      "section": "crossfader",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "layer": "base",
+      "notes": "[c10] C10 CROSSFADER. PDF p4; slide 00 (min) to 7F (max)."
+    },
+    {
+      "name": "master_level",
+      "section": "master",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "layer": "base",
+      "notes": "[r1] R1 MASTER LEVEL. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "booth_eq_hi",
+      "section": "booth",
+      "type": "cc",
+      "ch": 1,
+      "code": 109,
+      "layer": "base",
+      "notes": "[r2] R2 BOOTH MONITOR EQ HI. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "booth_eq_low",
+      "section": "booth",
+      "type": "cc",
+      "ch": 1,
+      "code": 110,
+      "layer": "base",
+      "notes": "[r3] R3 BOOTH MONITOR EQ LOW. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "booth_level",
+      "section": "booth",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "layer": "base",
+      "notes": "[r4] R4 BOOTH LEVEL. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "master_cue_a",
+      "section": "master_cue",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "layer": "base",
+      "notes": "[r5] R5 MASTER CUE A. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "name": "master_cue_b",
+      "section": "master_cue",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "layer": "base",
+      "notes": "[r6] R6 MASTER CUE B. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "name": "phones_b_link_cue",
+      "section": "headphones_b",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "layer": "base",
+      "notes": "[r7] R7 HEADPHONES B LINK CUE. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "name": "phones_b_mono_split",
+      "section": "headphones_b",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "layer": "base",
+      "notes": "[r8] R8 HEADPHONES B MONO/SPLIT. PDF p4; 00 OFF / 7F ON."
+    },
+    {
+      "name": "phones_b_mixing",
+      "section": "headphones_b",
+      "type": "cc",
+      "ch": 1,
+      "code": 85,
+      "layer": "base",
+      "notes": "[r9] R9 HEADPHONES B MIXING. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "phones_b_level",
+      "section": "headphones_b",
+      "type": "cc",
+      "ch": 1,
+      "code": 86,
+      "layer": "base",
+      "notes": "[r10] R10 HEADPHONES B LEVEL. PDF p4; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "eq_curve",
+      "section": "curves",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "layer": "base",
+      "notes": "[r11] R11 EQ CURVE. PDF p4; slide ISOLATOR 00, EQ 7F."
+    },
+    {
+      "name": "ch_fader_curve",
+      "section": "curves",
+      "type": "cc",
+      "ch": 1,
+      "code": 94,
+      "layer": "base",
+      "notes": "[r12] R12 CH FADER CURVE. PDF p4; slide LEFT 00, CENTER 40, RIGHT 7F."
+    },
+    {
+      "name": "crossfader_curve",
+      "section": "curves",
+      "type": "cc",
+      "ch": 1,
+      "code": 95,
+      "layer": "base",
+      "notes": "[r13] R13 CROSSFADER CURVE. PDF p4; slide LEFT 00, CENTER 40, RIGHT 7F."
+    },
+    {
+      "name": "send_ch_ch1",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH CH1. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_ch2",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH CH2. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_ch3",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH CH3. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_ch4",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH CH4. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_mic",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH MIC. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_cf_a",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH CF.A. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_cf_b",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH CF.B. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "send_ch_master",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "layer": "base",
+      "notes": "[r14] R14 MULTI I/O SEND CH MASTER. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "insert_source",
+      "section": "multi_io",
+      "type": "note",
+      "ch": 1,
+      "code": 111,
+      "layer": "base",
+      "notes": "[r15] R15 MULTI I/O INSERT SOURCE. PDF p5; slide RETURN 00, USB 7F."
+    },
+    {
+      "name": "send_level",
+      "section": "multi_io",
+      "type": "cc",
+      "ch": 1,
+      "code": 113,
+      "layer": "base",
+      "notes": "[r16] R16 MULTI I/O SEND LEVEL. PDF p5; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "insert",
+      "section": "multi_io",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "layer": "base",
+      "notes": "[r17] R17 MULTI I/O INSERT. PDF p5; 00 OFF / 7F ON Toggle."
+    },
+    {
+      "name": "x_pad_slide",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 116,
+      "layer": "base",
+      "notes": "[r18] R18 X-PAD slide. PDF p5; 00 (min) to 7F (max)."
+    },
+    {
+      "name": "x_pad_touch",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 114,
+      "layer": "base",
+      "notes": "[r18] R18 X-PAD touch. PDF p5; 00 OFF / 7F ON; same CC as R29 ON/OFF as printed, see footnotes."
+    },
+    {
+      "name": "beat_left",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 76,
+      "layer": "base",
+      "notes": "[r19] R19 BEAT (LEFT). PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "beat_right",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 77,
+      "layer": "base",
+      "notes": "[r20] R20 BEAT (RIGHT). PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "auto_tap",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 69,
+      "layer": "base",
+      "notes": "[r21] R21 AUTO/TAP. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "tap",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 78,
+      "layer": "base",
+      "notes": "[r22] R22 TAP. PDF p5; 00 OFF / 7F ON Trigger."
+    },
+    {
+      "name": "quantize",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 118,
+      "layer": "base",
+      "notes": "[r23] R23 QUANTIZE. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "fx_frequency_low",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 104,
+      "layer": "base",
+      "notes": "[r24] R24 EFFECT FREQUENCY LOW. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "fx_frequency_mid",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 103,
+      "layer": "base",
+      "notes": "[r24] R24 EFFECT FREQUENCY MID. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "fx_frequency_hi",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 102,
+      "layer": "base",
+      "notes": "[r24] R24 EFFECT FREQUENCY HI. PDF p5; 00 OFF / 7F ON."
+    },
+    {
+      "name": "fx_select_delay",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT DELAY. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_echo",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT ECHO. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_ping_pong",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT PING PONG. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_spiral",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT SPIRAL. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_helix",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 62,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT HELIX. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_reverb",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT REVERB. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_flanger",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT FLANGER. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_phaser",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT PHASER. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_filter",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT FILTER. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_triplet_filter",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT TRIPLET FILTER. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_trans",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT TRANS. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_roll",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 46,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT ROLL. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_triplet_roll",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT TRIPLET ROLL. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_select_mobius",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 61,
+      "layer": "base",
+      "notes": "[r25] R25 EFFECT SELECT MOBIUS. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_1",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT 1. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_2",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT 2. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_3",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT 3. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_4",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT 4. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_mic",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT MIC. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_cf_a",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT CF.A. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_cf_b",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT CF.B. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_ch_select_mst",
+      "section": "beat_fx",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "layer": "base",
+      "notes": "[r26] R26 CH SELECT MST. PDF p5; *2 alternate selection: previously selected position sends 00 OFF, newly selected sends 7F ON."
+    },
+    {
+      "name": "fx_time_msb",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "layer": "base",
+      "notes": "[r27] R27 TIME MSB. PDF p6; 00 to 7F; halved for FLANGER, PHASER or FILTER; a negative value is sent as positive."
+    },
+    {
+      "name": "fx_time_lsb",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "layer": "base",
+      "notes": "[r27] R27 TIME LSB. PDF p6; 00 to 7F; LSB of the 14-bit TIME value."
+    },
+    {
+      "name": "fx_level_depth",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 91,
+      "layer": "base",
+      "notes": "[r28] R28 LEVEL/DEPTH. PDF p6; rotate 00 (min) to 7F (max)."
+    },
+    {
+      "name": "fx_on_off",
+      "section": "beat_fx",
+      "type": "cc",
+      "ch": 1,
+      "code": 114,
+      "layer": "base",
+      "notes": "[r29] R29 BEAT FX ON/OFF. PDF p6; 00 OFF / 7F ON Toggle; same CC as R18 X-PAD touch as printed, see footnotes."
+    }
+  ]
+}

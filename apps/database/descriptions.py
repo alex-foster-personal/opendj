@@ -370,6 +370,19 @@ TABLES: dict[str, str] = {
         "One v2 control change on a recorded set, timed to the master output "
         "sample clock (transport, tempo, and siblings in controls.jsonl)."
     ),
+    # ----- labelling (migration 32) -------------------------------------
+    "label_task": (
+        "One subjective labelling micro-task (for example a stems A/B/C rank) "
+        "with its payload, karma reward and batch size. Machine-local."
+    ),
+    "label_response": (
+        "One answer to a label_task, at most one per (task_id, anon_session); "
+        "user_id is optional so labels work without an account."
+    ),
+    "contribution_ledger": (
+        "One karma grant per label_response, written by an insert trigger from "
+        "the task's reward_karma. Derived from label_response."
+    ),
     # ----- settings ------------------------------------------------------
     "settings": (
         "One key/value setting for this daemon. Machine-local by nature, and "

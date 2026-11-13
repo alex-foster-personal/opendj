@@ -76,6 +76,8 @@ from apps.stream.service import StreamConflict, StreamSinkUnknown
 
 from . import paths as sets_paths
 from . import portable
+from .api_controls import router as controls_router
+from .api_deps import _session_or_not_found, _sets_root, _share_visible_session
 from .audio import (
     PathTraversalError,
     list_segments,
@@ -95,7 +97,7 @@ from .recorder_service import (
     RecordSource,
     RememberedInputUnreadable,
 )
-from .sessions import Session, get_session, list_sessions, summary_to_dict
+from .sessions import Session, list_sessions, summary_to_dict
 from .share import (
     SetShareConfig,
     SetShareError,
@@ -213,6 +215,8 @@ router = APIRouter(
     tags=["sets"],
     lifespan=_router_lifespan,
 )
+# Read-only recorded-controls routes (SETREC, PR #14729) live in api_controls.
+router.include_router(controls_router)
 
 
 _LOCALHOST_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
@@ -573,13 +577,6 @@ def _validated_recorder_session_id(service: RecorderService, session_id: str) ->
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _sets_root(request: Request) -> Path | None:
-    root = getattr(request.app.state, "sets_root", None)
-    if root is None or isinstance(root, Path):
-        return root
-    raise TypeError("app.state.sets_root must be pathlib.Path or None")
-
-
 def _soundcloud_export_or_error(request: Request, session_id: str) -> SoundcloudExport:
     try:
         return build_soundcloud_export(
@@ -648,25 +645,6 @@ async def _tracklist_or_error(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail="session not found") from exc
-
-
-def _session_or_not_found(request: Request, session_id: str) -> Session:
-    try:
-        session = get_session(session_id, sets_root=_sets_root(request))
-    except sets_paths.SessionPathError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    return session
-
-
-def _share_visible_session(request: Request, session_id: str) -> Session:
-    """Keep private set metadata invisible to a configured share host."""
-    session = _session_or_not_found(request, session_id)
-    audience = getattr(request.state, "share_audience", "local")
-    if audience == "share" and session.summary.share_state != "shared_cloud":
-        raise HTTPException(status_code=404, detail="session not found")
-    return session
 
 
 # ---------------------------------------------------------------------------
@@ -1009,7 +987,7 @@ async def api_recorder_recover(
 
 
 # ---------------------------------------------------------------------------
-# Control-event v2 ingest (SETREC-08 stems; shared with sibling SETREC slices)
+# Control-event v2 ingest (SETREC-11827 FX, SETREC-08 stems; shared SETREC slices)
 # ---------------------------------------------------------------------------
 
 

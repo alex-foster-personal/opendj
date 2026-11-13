@@ -41,13 +41,15 @@ export interface SearchableTrack {
 	 * only sees the one string it should search. */
 	genre: string | null;
 	album: string | null;
+	/** Issue #10029: the file's record label, so plain search finds a label's tracks. */
+	label?: string | null;
 	bpm: number | null;
 	rating: number | null;
 }
 
 /** Fallback fields for a plain (unprefixed) substring term - identical set
  * pre-pin filterRows always searched. */
-const _PLAIN_FIELDS = ['title', 'artist', 'album', 'comments', 'genre'] as const;
+const _PLAIN_FIELDS = ['title', 'artist', 'album', 'label', 'comments', 'genre'] as const;
 
 type NumericField = 'bpm' | 'rating';
 type NumericOp = 'eq' | 'gte' | 'lte' | 'gt' | 'lt' | 'range';
@@ -176,7 +178,7 @@ function _matchesPlain(track: SearchableTrack, text: string): boolean {
 	if (q === '') return true;
 	const fieldHit = _PLAIN_FIELDS.some((f) => {
 		const value = track[f];
-		return value !== null && value.toLowerCase().includes(q);
+		return value !== null && value !== undefined && value.toLowerCase().includes(q);
 	});
 	return fieldHit || track.key_forms.some((form) => form.toLowerCase().includes(q));
 }

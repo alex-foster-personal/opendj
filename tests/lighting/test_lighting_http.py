@@ -17,9 +17,16 @@ from starlette.websockets import WebSocketDisconnect
 
 from apps.feature_flags import load_flags
 from apps.lighting.beat_clock import DeckSample
-from apps.lighting.contract import LIGHTING_FLAG_ID
+from apps.lighting.contract import LIGHTING_FLAG_ID, ClockSnapshot
 from apps.lighting.http import bind_lighting_runtime, router
-from apps.lighting.runtime import DeckFeed, FeedFrame, LightingRuntime, ReplayFeed
+from apps.lighting.runtime import (
+    QUEUE_SIZE,
+    SLOW_CONSUMER_CODE,
+    DeckFeed,
+    FeedFrame,
+    LightingRuntime,
+    ReplayFeed,
+)
 from apps.lighting.sections import LightSection, SectionSpan, TrackMood
 from apps.lighting.show_map import list_scene_catalog, load_look_ids
 from apps.lighting.show_runtime import DeckPlan, ShowCue
@@ -47,12 +54,12 @@ def _sample(deck: str, position_ms: float, *, host_ns: int | None = None) -> Dec
 def _bar_frames() -> list[FeedFrame]:
     frames: list[FeedFrame] = []
     for position in range(0, 2000, 100):
-        sample = _sample("A", float(position))
+        sample = _sample("1", float(position))
         frames.append(
             FeedFrame(
                 host_time_ns=sample.host_time_ns,
                 decks=(DeckFeed(sample=sample, grid=GRID, sections=SECTIONS),),
-                weights={"A": 1.0},
+                weights={"1": 1.0},
             )
         )
     return frames
@@ -69,7 +76,7 @@ def _app(
     if flag_on:
         (flag_dir / "feature-flags.json").write_text(json.dumps({LIGHTING_FLAG_ID: True}))
     if runtime is None:
-        runtime = LightingRuntime()
+        runtime = LightingRuntime(clock_provider=lambda: ClockSnapshot("master", "1", frozenset({"1"})))
     app = FastAPI()
     app.state.feature_flags = load_flags(flag_dir)
     bind_lighting_runtime(app, runtime)
@@ -88,6 +95,27 @@ def _drain(ws: Any) -> tuple[list[dict[str, Any]], int | None]:
     return messages, code
 
 
+@pytest.mark.requirement("LIGHT-13355")
+@pytest.mark.timeout(20)
+def test_slow_consumer_socket_is_closed_with_1013(tmp_path: Path) -> None:
+    """[if] a subscriber's bounded queue overflows [then] the events socket closes with 1013."""
+    app, runtime = _app(tmp_path, flag_on=True)
+
+    @app.post("/burst")
+    async def burst() -> dict[str, int]:
+        """Publish past the queue bound in one loop turn so the pump cannot drain in between."""
+        await runtime.hub.wait_for_subscribers(1)
+        for index in range(QUEUE_SIZE + 8):
+            runtime.hub.publish({"type": "burst", "index": index})
+        return {"published": QUEUE_SIZE + 8}
+
+    with TestClient(app) as client, client.websocket_connect("/api/v1/lighting/events") as ws:
+        assert client.post("/burst").status_code == 200
+        messages, code = _drain(ws)
+    assert code == SLOW_CONSUMER_CODE
+    assert len(messages) <= QUEUE_SIZE
+
+
 def test_status_is_409_naming_the_flag_when_off(tmp_path: Path) -> None:
     """[if] the flag is off [then] GET status is 409 naming lighting.output."""
     app, runtime = _app(tmp_path, flag_on=False)
@@ -102,15 +130,41 @@ def test_status_is_409_naming_the_flag_when_off(tmp_path: Path) -> None:
 
 @pytest.mark.timeout(20)
 def test_events_socket_refuses_when_off(tmp_path: Path) -> None:
-    """[if] the flag is off [then] the events socket sends refused and closes 1008."""
+    """[if] the flag is off [then] one refused JSON names the flag and closes 1008, [else stop]."""
     app, _runtime = _app(tmp_path, flag_on=False)
     with TestClient(app) as client, client.websocket_connect("/api/v1/lighting/events") as ws:
         first = ws.receive_json()
         assert first["type"] == "refused"
         assert first["status"] == 409
-        assert first["detail"]["flag"] == "lighting.output"
-        _messages, code = _drain(ws)
-    assert code == 1008
+        detail = first["detail"]
+        assert detail["error"] == "flag_disabled"
+        assert detail["flag"] == "lighting.output"
+        assert "lighting.output" in detail["message"]
+        assert "GET /api/v1/flags" in detail["message"]
+        with pytest.raises(WebSocketDisconnect) as raised:
+            ws.receive_json()
+        assert raised.value.code == 1008
+        assert raised.value.reason == "lighting.output is off"
+
+
+@pytest.mark.timeout(20)
+def test_events_socket_refuses_when_flag_store_missing() -> None:
+    """[if] feature_flags is missing [then] events refuse naming lighting.output, [else stop]."""
+    app = FastAPI()
+    bind_lighting_runtime(app, LightingRuntime())
+    app.include_router(router, prefix="/api/v1")
+    with TestClient(app) as client, client.websocket_connect("/api/v1/lighting/events") as ws:
+        first = ws.receive_json()
+        assert first["type"] == "refused"
+        assert first["status"] == 409
+        detail = first["detail"]
+        assert detail["error"] == "flag_disabled"
+        assert detail["flag"] == "lighting.output"
+        assert "lighting.output" in detail["message"]
+        with pytest.raises(WebSocketDisconnect) as raised:
+            ws.receive_json()
+        assert raised.value.code == 1008
+        assert raised.value.reason == "lighting.output is off"
 
 
 def test_status_when_on_without_feed(tmp_path: Path) -> None:
@@ -130,7 +184,7 @@ def test_status_when_on_without_feed(tmp_path: Path) -> None:
 def test_one_bar_at_120_bpm_gives_four_ordered_beats(tmp_path: Path) -> None:
     """[if] replay plays one bar at 120 BPM [then] four beats arrive in order."""
     frames = _bar_frames()
-    runtime = LightingRuntime()
+    runtime = LightingRuntime(clock_provider=lambda: ClockSnapshot("master", "1", frozenset({"1"})))
     runtime.feed = ReplayFeed(frames, start_when=lambda: runtime.hub.wait_for_subscribers(1))
     app, _runtime = _app(tmp_path, flag_on=True, runtime=runtime)
     with TestClient(app) as client, client.websocket_connect("/api/v1/lighting/events") as ws:
@@ -148,7 +202,7 @@ def test_one_bar_at_120_bpm_gives_four_ordered_beats(tmp_path: Path) -> None:
 def test_crossing_a_section_boundary_gives_one_section_change(tmp_path: Path) -> None:
     """[if] replay crosses a section boundary [then] one section_change and deck_weights."""
     frames = _bar_frames()
-    runtime = LightingRuntime()
+    runtime = LightingRuntime(clock_provider=lambda: ClockSnapshot("master", "1", frozenset({"1"})))
     runtime.feed = ReplayFeed(frames, start_when=lambda: runtime.hub.wait_for_subscribers(1))
     app, _ = _app(tmp_path, flag_on=True, runtime=runtime)
     with TestClient(app) as client, client.websocket_connect("/api/v1/lighting/events") as ws:
@@ -160,14 +214,14 @@ def test_crossing_a_section_boundary_gives_one_section_change(tmp_path: Path) ->
     assert changes[0]["at_host_ns"] == HOST_NS + 1_000_000_000
     weights = [m for m in messages if m["type"] == "deck_weights"]
     assert len(weights) == 1
-    assert weights[0]["weights"] == {"A": 1.0}
+    assert weights[0]["weights"] == {"1": 1.0}
 
 
 @pytest.mark.timeout(20)
 def test_two_clients_receive_the_same_sequence(tmp_path: Path) -> None:
     """[if] two clients connect [then] both get the same beat sequence."""
     frames = _bar_frames()
-    runtime = LightingRuntime()
+    runtime = LightingRuntime(clock_provider=lambda: ClockSnapshot("master", "1", frozenset({"1"})))
     runtime.feed = ReplayFeed(frames, start_when=lambda: runtime.hub.wait_for_subscribers(2))
     app, _ = _app(tmp_path, flag_on=True, runtime=runtime)
     with (
@@ -184,33 +238,25 @@ def test_two_clients_receive_the_same_sequence(tmp_path: Path) -> None:
 
 def test_status_reports_bpm_section_and_weights_after_replay() -> None:
     """[if] frames are ingested [then] status shows bpm, section and weights."""
-    runtime = LightingRuntime()
+    runtime = LightingRuntime(clock_provider=lambda: ClockSnapshot("master", "1", frozenset({"1"})))
     for frame in _bar_frames():
         runtime.ingest(frame)
     status = runtime.status()
-    deck_a = next(row for row in status["decks"] if row["deck"] == "A")
+    deck_a = next(row for row in status["decks"] if row["deck"] == "1")
     assert deck_a["bpm"] == 120.0
     assert deck_a["section"] == "drop"
-    assert status["weights"] == {"A": 1.0}
+    assert status["weights"] == {"1": 1.0}
 
 
 def test_a_seek_back_does_not_double_beats() -> None:
     """[if] position jumps backward [then] beats do not duplicate within a pass."""
-    runtime = LightingRuntime()
+    runtime = LightingRuntime(clock_provider=lambda: ClockSnapshot("master", "1", frozenset({"1"})))
     first_pass: list[int] = []
     for frame in _bar_frames()[:10]:
-        first_pass.extend(
-            message["beat_index"]
-            for message in runtime.ingest(frame)
-            if message["type"] == "beat"
-        )
+        first_pass.extend(message["beat_index"] for message in runtime.ingest(frame) if message["type"] == "beat")
     second_pass: list[int] = []
     for frame in _bar_frames()[:10]:
-        second_pass.extend(
-            message["beat_index"]
-            for message in runtime.ingest(frame)
-            if message["type"] == "beat"
-        )
+        second_pass.extend(message["beat_index"] for message in runtime.ingest(frame) if message["type"] == "beat")
     assert first_pass == second_pass
     assert len(first_pass) == len(set(first_pass))
 

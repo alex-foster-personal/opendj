@@ -8,6 +8,8 @@ beatgrid cascade.
 
 from __future__ import annotations
 
+from apps.shared.state.analysis_queue_ids import USER_BATCH_IDS
+
 from .lane_enums import FIRST_IMPORT_DEFERRED_LANES
 
 USER_JOB_LANES: tuple[str, ...] = ("stems", "lyrics", "genre")
@@ -15,11 +17,6 @@ FIRST_IMPORT_FORBIDDEN_LANES: tuple[str, ...] = (
     *USER_JOB_LANES,
     *FIRST_IMPORT_DEFERRED_LANES,
 )
-USER_BATCH_IDS: dict[str, str] = {
-    "stems": "ub_stems",
-    "lyrics": "ub_lyrics",
-    "genre": "ub_genre",
-}
 USER_BACKENDS: dict[str, str] = {
     "stems": "user.stems",
     "lyrics": "user.lyrics",

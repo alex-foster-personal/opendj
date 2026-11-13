@@ -6,7 +6,20 @@ import sqlite3
 from pathlib import Path
 
 from apps.lyrics.fuzzy_match import fuzzy_search_indexed, fuzzy_search_indexed_count
-from apps.lyrics.search_index import index_path, search
+from apps.lyrics.search_index import MAX_SEARCH_LIMIT, index_path, search
+
+
+def _search_batched(conn: sqlite3.Connection, query: str, *, cap: int) -> tuple[list[str], int]:
+    """Collect up to ``cap`` FTS hits in pages no larger than ``MAX_SEARCH_LIMIT``."""
+    ids: list[str] = []
+    total = 0
+    while len(ids) < cap:
+        page_limit = min(MAX_SEARCH_LIMIT, cap - len(ids))
+        page, total = search(conn, query, limit=page_limit, offset=len(ids))
+        ids.extend(page)
+        if len(page) < page_limit:
+            break
+    return ids, total
 
 
 def collect_lyric_hit_ids(
@@ -23,7 +36,7 @@ def collect_lyric_hit_ids(
         return frozenset(), frozenset(), 0
     conn = sqlite3.connect(str(db_path))
     try:
-        fts_ids, fts_total = search(conn, query, limit=cap, offset=0)
+        fts_ids, fts_total = _search_batched(conn, query, cap=cap)
         fts_set = set(fts_ids)
         remaining = max(0, cap - len(fts_ids))
         fuzzy_extra = fuzzy_search_indexed(conn, query, exclude=fts_set, limit=remaining)

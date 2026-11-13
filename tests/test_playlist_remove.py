@@ -116,6 +116,19 @@ def _live_item_ids(client: TestClient, pid: str) -> list[str]:
     return [t["item_id"] for t in detail.json()["tracks"]]
 
 
+def _add_tracks(client: TestClient, pid: str, stable_ids: list[str]) -> dict:
+    r = client.post(
+        f"/api/v1/playlists/{pid}/items:add",
+        json={"stable_ids": stable_ids},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _rows_for_stable(db_path: Path, playlist_id: str, stable_id: str) -> list[tuple]:
+    return [row for row in dump_members(db_path, playlist_id).values() if row[1] == stable_id]
+
+
 def test_remove_one_member_neighbors_untouched(
     client: TestClient,
     db_path: Path,
@@ -259,6 +272,85 @@ def test_no_if_match_required(client: TestClient) -> None:
     item_id = _live_item_ids(client, pid)[0]
     r = client.delete(f"/api/v1/playlists/{pid}/items/{item_id}")
     assert r.status_code == 200, r.text
+
+
+@pytest.mark.requirement("LIBM-21")
+def test_live_membership_remove_leaves_tombstone_row(
+    client: TestClient,
+    db_path: Path,
+) -> None:
+    """[if] a live playlist membership is removed [then] the row is tombstoned not deleted, [else stop]."""
+    body, etag = _create(client)
+    pid = body["playlist_id"]
+    etag = _put_tracks(client, pid, etag, ["t-001"])
+    item_id = _live_item_ids(client, pid)[0]
+    before = dump_members(db_path, pid)
+    r = client.delete(f"/api/v1/playlists/{pid}/items/{item_id}")
+    assert r.status_code == 200, r.text
+    after = dump_members(db_path, pid)
+    assert set(after.keys()) == set(before.keys())
+    assert after[item_id][6] is not None
+    assert _ordered_live_count(db_path, pid) == 0
+
+
+def _ordered_live_count(db_path: Path, playlist_id: str) -> int:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) FROM playlist_memberships WHERE playlist_id=? AND deleted_at IS NULL",
+            (playlist_id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+
+@pytest.mark.requirement("LIBM-08")
+def test_same_stable_id_readded_after_remove(
+    client: TestClient,
+    db_path: Path,
+) -> None:
+    """[if] the same stable id is re-added after removal [then] a new live item_id is issued, [else stop]."""
+    body, etag = _create(client)
+    pid = body["playlist_id"]
+    etag = _put_tracks(client, pid, etag, ["t-002"])
+    old_item_id = _live_item_ids(client, pid)[0]
+    r_rm = client.delete(f"/api/v1/playlists/{pid}/items/{old_item_id}")
+    assert r_rm.status_code == 200, r_rm.text
+    tombstone = dump_members(db_path, pid)[old_item_id]
+    assert tombstone[6] is not None
+    added = _add_tracks(client, pid, ["t-002"])["added"]
+    assert len(added) == 1
+    new_item_id = added[0]["item_id"]
+    assert new_item_id != old_item_id
+    live_rows = [row for row in _rows_for_stable(db_path, pid, "t-002") if row[6] is None]
+    assert len(live_rows) == 1
+    assert live_rows[0][0] == new_item_id
+    assert dump_members(db_path, pid)[old_item_id] == tombstone
+
+
+@pytest.mark.requirement("LIBM-08")
+def test_playlist_read_after_readd_shows_one_live_membership(
+    client: TestClient,
+    db_path: Path,
+) -> None:
+    """[if] the playlist is read after the re-add [then] exactly one live membership is listed, [else stop]."""
+    body, etag = _create(client)
+    pid = body["playlist_id"]
+    etag = _put_tracks(client, pid, etag, ["t-003"])
+    old_item_id = _live_item_ids(client, pid)[0]
+    client.delete(f"/api/v1/playlists/{pid}/items/{old_item_id}")
+    new_item_id = _add_tracks(client, pid, ["t-003"])["added"][0]["item_id"]
+    detail = client.get(f"/api/v1/playlists/{pid}")
+    assert detail.status_code == 200, detail.text
+    payload = detail.json()
+    assert payload["items"] == ["t-003"]
+    wire_tracks = [t for t in payload["tracks"] if t["stable_id"] == "t-003"]
+    assert len(wire_tracks) == 1
+    assert wire_tracks[0]["item_id"] == new_item_id
+    stable_rows = _rows_for_stable(db_path, pid, "t-003")
+    assert len(stable_rows) == 2
+    assert sum(1 for row in stable_rows if row[6] is None) == 1
+    assert sum(1 for row in stable_rows if row[6] is not None) == 1
 
 
 def test_get_detail_carries_item_id(client: TestClient, db_path: Path) -> None:

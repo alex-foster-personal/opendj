@@ -75,6 +75,8 @@ PRESSURE_CHURN_WINDOW_S = 1
 PRESSURE_SAMPLE_IDLE_MS = 1000
 PRESSURE_SAMPLE_ELEVATED_MS = 5000
 PRESSURE_SAMPLE_P95_WALL_MS = 5
+# Sample walls the p95 is taken over; a budget verdict needs a full window.
+PRESSURE_SAMPLE_WALL_WINDOW = 20
 
 # Back-compat alias for tests that pin the old constant name.
 CACHE_TTL_SECONDS = PRESSURE_SAMPLE_IDLE_MS / 1000.0
@@ -99,6 +101,20 @@ def sample_wall_p95_ms(walls: Sequence[float]) -> float | None:
     ordered = sorted(walls)
     rank = max(0, math.ceil(0.95 * len(ordered)) - 1)
     return round(ordered[rank], 3)
+
+
+def sample_wall_within_budget(
+    walls: Sequence[float],
+    *,
+    budget_ms: float = PRESSURE_SAMPLE_P95_WALL_MS,
+    window: int = PRESSURE_SAMPLE_WALL_WINDOW,
+) -> bool | None:
+    """Whether the last `window` walls keep p95 <= budget; None until a full window exists."""
+
+    if len(walls) < window:
+        return None
+    p95 = sample_wall_p95_ms(list(walls)[-window:])
+    return p95 is not None and p95 <= budget_ms
 
 
 def pressure_band_for_level(level: int) -> str:
@@ -844,7 +860,7 @@ class MachinePressureCache:
         self._sample: PressureSample | None = None
         self._prior_vm_stat: dict[str, int] | None = None
         self._prior_vm_stat_at: float | None = None
-        self._wall_ms: deque[float] = deque(maxlen=20)
+        self._wall_ms: deque[float] = deque(maxlen=PRESSURE_SAMPLE_WALL_WINDOW)
 
     def read(
         self,
@@ -884,6 +900,13 @@ class MachinePressureCache:
         if p95 is not None:
             body["sample_wall_p95_ms"] = p95
         return body
+
+    def sample_wall_within_budget(self, budget_ms: float = PRESSURE_SAMPLE_P95_WALL_MS) -> bool | None:
+        """The p95 budget verdict over this cache's recorded sample walls."""
+
+        with self._lock:
+            walls = list(self._wall_ms)
+        return sample_wall_within_budget(walls, budget_ms=budget_ms)
 
 
 _CACHE = MachinePressureCache()

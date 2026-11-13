@@ -16,7 +16,9 @@
  * hardware_confirmed: false (no hardware capture yet; export HERCULES_DJCONTROL_JOGVISION_HARDWARE_CONFIRMED).
  *
  * Scope notes:
- *   - SHIFT is encoded in firmware (SH_ rows send their own ids); no shift_modifier binding.
+ *   - SHIFT is encoded in firmware (SH_ rows send their own ids), so no `shift: true` bindings;
+ *     the SHIFT button itself binds shift_modifier only so midiState.shiftHeld stays truthful
+ *     and the practice replica can hold SHIFT (same ruling as ddj-400.ts, issue #13558).
  *   - Aftertouch (0xA0/0xA1 pad pressure) has no MidiSourceKind; rows are omitted.
  *   - Per-deck VU is note 0x44 velocity 0..6; MidiMeterOutput is CC-only, so no meter binding.
  *   - FX / loop / sampler / AIR rows are hints only: P0 MidiAction has no beat-FX action (same
@@ -60,6 +62,8 @@ function _deckBindings(ch: number, deck: 1 | 2): MidiBinding[] {
 		{ source: { ch, kind: 'note', id: 0x33 }, action: { type: 'channel_cue', deck } },
 		// [HC p.1-10] LOAD 0x51.
 		{ source: { ch, kind: 'note', id: 0x51 }, action: { type: 'browse_load', deck } },
+		// [HC p.1-10] SHIFT 0x56 (modifier state only; shifted rows send their own ids).
+		{ source: { ch, kind: 'note', id: 0x56 }, action: { type: 'shift_modifier' } },
 		...hot,
 		// [HC p.11-18] VOL 0x01 channel fader.
 		{
@@ -160,9 +164,8 @@ function _deckHints(ch: number, deck: 1 | 2): ControlHint[] {
 		note(0x52, 'SHIFT MULTI FX'),
 		note(0x53, 'SHIFT LOAD'),
 		note(0x54, 'FX'),
-		// [HC p.1-10] JOG_TOUCH 0x55, SHIFT 0x56, MODE 0x57.
+		// [HC p.1-10] JOG_TOUCH 0x55, MODE 0x57 (SHIFT 0x56 is bound).
 		note(0x55, 'JOG touch'),
-		note(0x56, 'SHIFT'),
 		note(0x57, 'MODE'),
 		// [HC p.11-18] AIR_CONTROL 0x0f (IR sensor).
 		cc(0x0f, 'Air control'),

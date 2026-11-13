@@ -14,7 +14,8 @@
   "positions": "measured trace of the official top-panel drawing, normalised for the renderer; reference: devices/hercules-djcontrol-jogvision/panel.reference.json (ADR-0137)"
  },
  "out_of_scope": [
-  "Firmware SHIFT rows are hints only: no shift_midi pairing on this map",
+  "Firmware SHIFT rows are hints only: shifted controls pair a shift_midi wire the map leaves inert",
+  "Hot cues E-H (0x14-0x17): the unit has four pads per deck, so only slots A-D get a pad",
   "LOOP, FX, SAMPLER, AIR and global utility buttons remain map hints, not panel controls",
   "Front and rear panel jacks, AIR IR sensor, and in-jog LCD bitmaps",
   "VU meters and pad MODE selectors send no bound MIDI in the P0 map"
@@ -39,22 +40,44 @@
    "shift_midi": null
   },
   {
+   "id": "d1-shift",
+   "fig": "4",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Hold for each control's second function (deck 1)",
+   "x": 67.5,
+   "y": 210.5,
+   "w": 17.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 86
+   },
+   "shift_midi": null
+  },
+  {
    "id": "d1-sync-toggle",
    "fig": "5",
    "type": "button",
    "label": "SYNC",
    "does": "Beat sync on (deck 1)",
-   "x": 76.0,
-   "y": 194.0,
-   "w": 23.0,
-   "h": 33.0,
+   "x": 90.0,
+   "y": 212.0,
+   "w": 16.0,
+   "h": 12.0,
    "section": "deck",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 48
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 53
+   }
   },
   {
    "id": "d1-cue",
@@ -62,17 +85,21 @@
    "type": "button",
    "label": "CUE",
    "does": "Return to the cue point (deck 1)",
-   "x": 100.0,
-   "y": 194.0,
-   "w": 23.0,
-   "h": 33.0,
+   "x": 112.5,
+   "y": 210.0,
+   "w": 21.0,
+   "h": 16.0,
    "section": "deck",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 49
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 54
+   }
   },
   {
    "id": "d1-play-toggle",
@@ -80,17 +107,21 @@
    "type": "button",
    "label": "PLAY/PAUSE",
    "does": "Start or pause (deck 1)",
-   "x": 123.5,
-   "y": 194.0,
-   "w": 23.0,
-   "h": 33.0,
+   "x": 140.0,
+   "y": 210.0,
+   "w": 22.0,
+   "h": 16.0,
    "section": "deck",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 50
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 55
+   }
   },
   {
    "id": "d1-jog-c1-cc64",
@@ -108,7 +139,11 @@
     "kind": "cc",
     "id": 64
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 66
+   }
   },
   {
    "id": "d1-jog-c1-cc65",
@@ -126,7 +161,11 @@
     "kind": "cc",
     "id": 65
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 67
+   }
   },
   {
    "id": "d1-hot-cue-a",
@@ -134,17 +173,21 @@
    "type": "pad",
    "label": "HOT CUE A",
    "does": "Hot cue pad A (deck 1)",
-   "x": 9.0,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 8.0,
+   "y": 191.5,
+   "w": 25.0,
+   "h": 24.0,
    "section": "performance",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 16
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 24
+   }
   },
   {
    "id": "d1-hot-cue-b",
@@ -152,17 +195,21 @@
    "type": "pad",
    "label": "HOT CUE B",
    "does": "Hot cue pad B (deck 1)",
-   "x": 40.0,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 36.5,
+   "y": 191.5,
+   "w": 25.0,
+   "h": 24.0,
    "section": "performance",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 17
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 25
+   }
   },
   {
    "id": "d1-hot-cue-c",
@@ -170,17 +217,21 @@
    "type": "pad",
    "label": "HOT CUE C",
    "does": "Hot cue pad C (deck 1)",
-   "x": 72.0,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 8.0,
+   "y": 220.0,
+   "w": 25.0,
+   "h": 25.0,
    "section": "performance",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 18
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 26
+   }
   },
   {
    "id": "d1-hot-cue-d",
@@ -188,89 +239,21 @@
    "type": "pad",
    "label": "HOT CUE D",
    "does": "Hot cue pad D (deck 1)",
-   "x": 102.5,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 36.5,
+   "y": 220.0,
+   "w": 25.0,
+   "h": 25.0,
    "section": "performance",
    "midi": {
     "ch": 1,
     "kind": "note",
     "id": 19
    },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-hot-cue-e",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE E",
-   "does": "Hot cue pad E (deck 1)",
-   "x": 9.0,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
+   "shift_midi": {
     "ch": 1,
     "kind": "note",
-    "id": 20
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-hot-cue-f",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE F",
-   "does": "Hot cue pad F (deck 1)",
-   "x": 40.0,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 21
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-hot-cue-g",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE G",
-   "does": "Hot cue pad G (deck 1)",
-   "x": 72.0,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 22
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-hot-cue-h",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE H",
-   "does": "Hot cue pad H (deck 1)",
-   "x": 102.5,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "note",
-    "id": 23
-   },
-   "shift_midi": null
+    "id": 27
+   }
   },
   {
    "id": "d1-load-1",
@@ -288,7 +271,11 @@
     "kind": "note",
     "id": 81
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 83
+   }
   },
   {
    "id": "d2-pitch",
@@ -296,7 +283,7 @@
    "type": "fader",
    "label": "PITCH",
    "does": "Tempo range slider (deck 2)",
-   "x": 430.0,
+   "x": 431.0,
    "y": 4.0,
    "w": 16.0,
    "h": 121.0,
@@ -309,22 +296,44 @@
    "shift_midi": null
   },
   {
+   "id": "d2-shift",
+   "fig": "4",
+   "type": "button",
+   "label": "SHIFT",
+   "does": "Hold for each control's second function (deck 2)",
+   "x": 295.5,
+   "y": 210.5,
+   "w": 18.0,
+   "h": 15.0,
+   "section": "deck",
+   "midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 86
+   },
+   "shift_midi": null
+  },
+  {
    "id": "d2-sync-toggle",
    "fig": "5",
    "type": "button",
    "label": "SYNC",
    "does": "Beat sync on (deck 2)",
-   "x": 356.0,
-   "y": 194.0,
-   "w": 23.0,
-   "h": 33.0,
+   "x": 318.5,
+   "y": 212.0,
+   "w": 15.0,
+   "h": 12.0,
    "section": "deck",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 48
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 53
+   }
   },
   {
    "id": "d2-cue",
@@ -332,17 +341,21 @@
    "type": "button",
    "label": "CUE",
    "does": "Return to the cue point (deck 2)",
-   "x": 332.0,
-   "y": 194.0,
-   "w": 23.0,
-   "h": 33.0,
+   "x": 340.5,
+   "y": 210.0,
+   "w": 22.0,
+   "h": 16.0,
    "section": "deck",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 49
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 54
+   }
   },
   {
    "id": "d2-play-toggle",
@@ -350,17 +363,21 @@
    "type": "button",
    "label": "PLAY/PAUSE",
    "does": "Start or pause (deck 2)",
-   "x": 308.5,
-   "y": 194.0,
-   "w": 23.0,
-   "h": 33.0,
+   "x": 370.0,
+   "y": 210.0,
+   "w": 22.0,
+   "h": 16.0,
    "section": "deck",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 50
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 55
+   }
   },
   {
    "id": "d2-jog-c2-cc64",
@@ -368,7 +385,7 @@
    "type": "jog",
    "label": "JOG",
    "does": "Scratch wheel (relative CC) (deck 2)",
-   "x": 320.0,
+   "x": 319.5,
    "y": 35.5,
    "w": 123.0,
    "h": 139.0,
@@ -378,7 +395,11 @@
     "kind": "cc",
     "id": 64
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 66
+   }
   },
   {
    "id": "d2-jog-c2-cc65",
@@ -386,7 +407,7 @@
    "type": "jog",
    "label": "JOG SCRATCH",
    "does": "Scratch wheel alternate CC (deck 2)",
-   "x": 320.0,
+   "x": 319.5,
    "y": 35.5,
    "w": 123.0,
    "h": 139.0,
@@ -396,7 +417,11 @@
     "kind": "cc",
     "id": 65
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "cc",
+    "id": 67
+   }
   },
   {
    "id": "d2-hot-cue-a",
@@ -404,17 +429,21 @@
    "type": "pad",
    "label": "HOT CUE A",
    "does": "Hot cue pad A (deck 2)",
-   "x": 415.0,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 398.0,
+   "y": 191.5,
+   "w": 24.0,
+   "h": 24.0,
    "section": "performance",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 16
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 24
+   }
   },
   {
    "id": "d2-hot-cue-b",
@@ -422,17 +451,21 @@
    "type": "pad",
    "label": "HOT CUE B",
    "does": "Hot cue pad B (deck 2)",
-   "x": 383.5,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 427.0,
+   "y": 191.5,
+   "w": 24.0,
+   "h": 24.0,
    "section": "performance",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 17
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 25
+   }
   },
   {
    "id": "d2-hot-cue-c",
@@ -440,17 +473,21 @@
    "type": "pad",
    "label": "HOT CUE C",
    "does": "Hot cue pad C (deck 2)",
-   "x": 352.0,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 398.0,
+   "y": 220.0,
+   "w": 24.0,
+   "h": 25.0,
    "section": "performance",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 18
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 26
+   }
   },
   {
    "id": "d2-hot-cue-d",
@@ -458,89 +495,21 @@
    "type": "pad",
    "label": "HOT CUE D",
    "does": "Hot cue pad D (deck 2)",
-   "x": 321.5,
-   "y": 178.0,
-   "w": 31.0,
-   "h": 35.0,
+   "x": 427.0,
+   "y": 220.0,
+   "w": 24.0,
+   "h": 25.0,
    "section": "performance",
    "midi": {
     "ch": 2,
     "kind": "note",
     "id": 19
    },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-e",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE E",
-   "does": "Hot cue pad E (deck 2)",
-   "x": 415.0,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
+   "shift_midi": {
     "ch": 2,
     "kind": "note",
-    "id": 20
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-f",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE F",
-   "does": "Hot cue pad F (deck 2)",
-   "x": 383.5,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
-    "ch": 2,
-    "kind": "note",
-    "id": 21
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-g",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE G",
-   "does": "Hot cue pad G (deck 2)",
-   "x": 352.0,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
-    "ch": 2,
-    "kind": "note",
-    "id": 22
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-h",
-   "fig": "3",
-   "type": "pad",
-   "label": "HOT CUE H",
-   "does": "Hot cue pad H (deck 2)",
-   "x": 321.5,
-   "y": 213.0,
-   "w": 31.0,
-   "h": 35.0,
-   "section": "performance",
-   "midi": {
-    "ch": 2,
-    "kind": "note",
-    "id": 23
-   },
-   "shift_midi": null
+    "id": 27
+   }
   },
   {
    "id": "d2-load-2",
@@ -558,7 +527,11 @@
     "kind": "note",
     "id": 81
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 83
+   }
   },
   {
    "id": "ch1-eq-high",
@@ -630,7 +603,11 @@
     "kind": "note",
     "id": 51
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "note",
+    "id": 56
+   }
   },
   {
    "id": "ch1-fader",
@@ -720,7 +697,11 @@
     "kind": "note",
     "id": 51
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 2,
+    "kind": "note",
+    "id": 56
+   }
   },
   {
    "id": "ch2-fader",
@@ -746,10 +727,10 @@
    "type": "crossfader",
    "label": "CROSSFADER",
    "does": "Blend deck 1 and deck 2",
-   "x": 168.0,
-   "y": 202.5,
-   "w": 143.0,
-   "h": 29.0,
+   "x": 208.5,
+   "y": 206.5,
+   "w": 43.0,
+   "h": 23.0,
    "section": "mixer",
    "midi": {
     "ch": 1,
@@ -764,7 +745,7 @@
    "type": "encoder",
    "label": "BROWSE",
    "does": "Scroll the library",
-   "x": 200.5,
+   "x": 201.5,
    "y": 76.5,
    "w": 57.0,
    "h": 57.0,
@@ -774,7 +755,11 @@
     "kind": "cc",
     "id": 78
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 79
+   }
   }
  ]
 }

@@ -30,6 +30,7 @@ const TRANSPORT_COMMANDS = new Set<PerformanceCommand['type']>([
 	'seek',
 	'beat_jump',
 	'grid_jump',
+	'section_jump',
 	'beat_loop',
 	'loop',
 	'loop_out',

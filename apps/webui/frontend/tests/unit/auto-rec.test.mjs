@@ -82,3 +82,34 @@ test('a second play in the same session does not start a second recording', asyn
 	await tick();
 	assert.equal(startPosts, 1, 'if a second play starts REC again then auto-REC is broken');
 });
+
+test('the auto-REC build switch reads on or off; unset keeps the default on; junk throws', () => {
+	assert.equal(autoRec.setAutoRecFlag('on'), 'on');
+	assert.equal(
+		autoRec.setAutoRecFlag('off'),
+		'off',
+		'if off reads on then a harness cannot keep REC idle'
+	);
+	assert.equal(
+		autoRec.setAutoRecFlag(undefined),
+		'on',
+		'if unset reads off then SETREC-11802b default on is lost'
+	);
+	for (const bad of ['true', '1', 'OFF', false, null]) {
+		assert.throws(() => autoRec.setAutoRecFlag(bad), /VITE_SET_AUTO_REC must be on or off/);
+	}
+});
+
+test('a build with auto-REC switched off starts nothing on first play', async () => {
+	autoRec.resetSetAutoRecSession();
+	autoRec.setSetAutoRecEnabledForTest(autoRec.setAutoRecFlag('off') === 'on');
+	installFetch({ active: false });
+	autoRec.maybeStartAutoRecOnFirstPlay();
+	await tick();
+	await tick();
+	assert.equal(
+		startPosts,
+		0,
+		'if a switched-off build starts REC then shared e2e engines collect stalled recordings'
+	);
+});

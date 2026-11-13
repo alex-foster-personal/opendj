@@ -53,7 +53,9 @@ test('superseding commands bump re-anchor operation generation', () => {
 	const masterBody = engineBlockAfter(
 		'async setDeckMaster(deck: DeckId, options?: { lock?: boolean }): Promise<void> {'
 	);
-	assert.match(masterBody, /if \(previousMaster !== deck\) _bumpReanchorOperation\(deck\)/);
+	assert.match(masterBody, /if \(previousMaster !== deck\)/);
+	assert.match(masterBody, /_bumpReanchorOperation\(deck\)/);
+	assert.match(masterBody, /_settleInterruptedOwnedTempoRamp\(deck\)/);
 });
 
 test('the ramp tail checks generation before and after each schedule await', () => {

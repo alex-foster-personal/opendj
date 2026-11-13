@@ -59,7 +59,7 @@
     { "query": "solo", "expected": "solo-vocals" },
     { "query": "drums", "expected": "mute-drums" },
     { "query": "echo", "expected": "fx-echo" },
-    { "query": "xfade", "expected": "crossfader-center" },
+    { "query": "xfade", "expected": "crossfader-center", "keywordOnly": true },
     { "query": "shortcuts", "expected": "keyboard-shortcuts" },
     { "query": "lib view", "expected": "library-view" },
     { "query": "exit lp", "expected": "loop-exit" }

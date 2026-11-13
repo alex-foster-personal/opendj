@@ -5,29 +5,46 @@
 
 export const REST_W = 3;
 export const AWAKE_W = 32;
-/** Top tab width when the edge is awake (S7 fills the shell). */
-export const HEAD_OPEN_W = 200;
+/** Top tab width when the edge is awake (mock `HEAD_OPEN_W`). */
+export const HEAD_OPEN_W = 476;
+/** Top tab band height; tabs start 4 px below it (mock `HEAD_H`). */
+export const HEAD_H = 132;
+/** Empty slots grow along the same Gaussian, capped here (mock `tabTarget`). */
+export const EMPTY_POP_W = 300;
+/** A tab click counts only from this width (EDGESAMP-11872g). */
+export const CLICK_MIN_W = 150;
+/** ...and only this long after the edge woke (EDGESAMP-11872g). */
+export const CLICK_SETTLE_MS = 150;
+/** Flip stagger: each tab starts this much after the one above it (mock `d._i * 18`). */
+export const FLIP_STAGGER_MS = 18;
+/** Flip stagger: each tab ramps to its width over this long (mock `/ 140`). */
+export const FLIP_RAMP_MS = 140;
 export const ZONE_PX = 14;
 /** Extra px beyond a tab's popped width that keeps the wave open. */
 export const STAY_PAD_PX = 16;
 export const LEAVE_MS = 250;
 export const OPEN_DELAY_MS = 60;
+/** The wheel over an awake edge flips at most one set per this long (mock `260`). */
+export const WHEEL_FLIP_MS = 260;
 export const EASE_MS = 90;
-/** Tabs per visible page (hotkeys 1 through 0 map here). */
-export const TABS_PER_PAGE = 10;
 
 export interface WaveParams {
+	/** tabs: Gaussian width in tab heights (the maintainer's calibrated 2.2) */
 	spread: number;
+	/** px: fully popped tab width, wide enough to read the whole tab */
 	pop: number;
 	speed: number;
 	delay: number;
+	/** tabs per set on each edge (the maintainer's calibrated 20) */
+	perSet: number;
 }
 
 export const DEFAULT_WAVE: WaveParams = {
 	spread: 2.2,
-	pop: 120,
+	pop: 476,
 	speed: EASE_MS,
-	delay: OPEN_DELAY_MS
+	delay: OPEN_DELAY_MS,
+	perSet: 20
 };
 
 export interface TabWidthInput {
@@ -39,16 +56,57 @@ export interface TabWidthInput {
 	held: boolean;
 	/** slot has a sample (empty slots rest hidden until awake) */
 	filled: boolean;
+	/** 0..1 flip stagger progress (1 = settled), see flipRamp */
+	ramp: number;
+	/** this edge's search box has focus: every tab pops (issue #11102); omitted = false */
+	searchOpen?: boolean;
+	/** false when a query or filter hides this slot: it keeps its numbered strip; omitted = true */
+	matches?: boolean;
+	/** another tab of this edge is in the edit modal: this one settles to the strip; omitted = false */
+	editingOther?: boolean;
 }
 
 export function tabTargetWidth(t: TabWidthInput, p: WaveParams): number {
 	if (!t.filled && !t.awake) return 0;
 	const base = t.awake ? AWAKE_W : REST_W;
+	if (t.matches === false) return base;
+	if (t.held && t.filled) return p.pop;
+	if (t.editingOther) return base;
+	if (t.searchOpen) return t.filled ? p.pop : EMPTY_POP_W;
 	if (!t.awake) return base;
-	if (t.held) return p.pop;
-	if (t.dy === 0) return p.pop;
+	const peak = t.filled ? p.pop : EMPTY_POP_W;
 	const k = t.dy / (p.spread * t.tabH);
-	return base + (p.pop - base) * Math.exp(-k * k);
+	return base + (peak - base) * Math.exp(-k * k) * t.ramp;
+}
+
+/** Flip stagger progress of tab `index`: new sets pop top to bottom (mock 18 ms per tab, 140 ms ramp). */
+export function flipRamp(t: number, flipT: number, index: number): number {
+	return clamp01((t - flipT - index * FLIP_STAGGER_MS) / FLIP_RAMP_MS);
+}
+
+/** Opacity of a tab's controls and empty label: visible from about 70 px (mock `--reveal`). */
+export const controlsReveal = (w: number): number => clamp01((w - 70) / 90);
+/** Opacity of title and pencil: only near full width, so no clipped title (mock `--treveal`). */
+export const titleReveal = (w: number): number => clamp01((w - 400) / 50);
+
+/** A click on a tab counts only once it is CLICK_MIN_W wide and CLICK_SETTLE_MS after wake. */
+export function clickAllowed(widthPx: number, msSinceWake: number): boolean {
+	return widthPx >= CLICK_MIN_W && msSinceWake >= CLICK_SETTLE_MS;
+}
+
+/** `S<set>-<nn>` reference of a slot, both 1-based (spec S1-05). */
+export function tabRef(setIndex: number, slotIndex: number): string {
+	return `S${setIndex + 1}-${String(slotIndex + 1).padStart(2, '0')}`;
+}
+
+/** Sets to flip for a wheel tick at `t` (+1 down, -1 up), or 0 when asleep or inside WHEEL_FLIP_MS of the last flip at `lastFlipT`. */
+export function wheelFlip(awake: boolean, deltaY: number, t: number, lastFlipT: number): number {
+	if (!awake || deltaY === 0 || t - lastFlipT < WHEEL_FLIP_MS) return 0;
+	return deltaY > 0 ? 1 : -1;
+}
+
+function clamp01(v: number): number {
+	return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 /** One frame of exponential easing toward target; snaps when within 0.3 px or when reduceMotion. */
@@ -144,6 +202,14 @@ export interface EdgeMotionInput {
 	appDrag: boolean;
 	held: readonly boolean[];
 	filled: readonly boolean[];
+	/** per tab: false when this edge's query or filters hide it; omitted = every tab matches */
+	matches?: readonly boolean[];
+	/** per tab: another tab of this edge is in the edit modal; omitted = none */
+	editingOther?: readonly boolean[];
+	/** this edge's search is open: every matching tab pops while the edge is awake */
+	searchOpen?: boolean;
+	/** keep an awake edge open wherever the pointer is (search box focused); omitted = false */
+	hold?: boolean;
 	params: WaveParams;
 	reduceMotion: boolean;
 	dtMs: number;
@@ -156,6 +222,8 @@ export interface EdgeMotionResult {
 	enterT: number;
 	leaveT: number;
 	activeSince: number;
+	/** frame time of the last set flip, drives flipRamp */
+	flipT: number;
 	headW: number;
 	widths: number[];
 	needsFrame: boolean;
@@ -167,6 +235,7 @@ export function createEdgeMotion(tabCount: number): EdgeMotionResult {
 		enterT: 0,
 		leaveT: 0,
 		activeSince: -1e9,
+		flipT: -1e9,
 		headW: REST_W,
 		widths: Array.from({ length: tabCount }, () => REST_W),
 		needsFrame: false
@@ -214,7 +283,9 @@ export function stepEdgeMotion(m: EdgeMotionResult, frame: EdgeMotionInput): voi
 			m.widths,
 			frame.tabCount
 		);
-		if (!frame.inWindow || fe > reach || !frame.enabled) {
+		if (frame.hold === true) {
+			m.leaveT = 0;
+		} else if (!frame.inWindow || fe > reach || !frame.enabled) {
 			if (m.leaveT === 0) m.leaveT = frame.t;
 			if (frame.t - m.leaveT > LEAVE_MS) {
 				m.awake = false;
@@ -236,13 +307,19 @@ export function stepEdgeMotion(m: EdgeMotionResult, frame: EdgeMotionInput): voi
 
 	for (let i = 0; i < frame.tabCount; i++) {
 		const cy = frame.pointerY - (frame.top + frame.headH + 4 + i * frame.tabH + frame.tabH / 2);
+		const ramp = frame.reduceMotion ? 1 : flipRamp(frame.t, m.flipT, i);
+		if (visualAwake && ramp < 1) busy = true;
 		const target = tabTargetWidth(
 			{
 				awake: visualAwake,
 				dy: cy,
 				tabH: frame.tabH,
 				held: frame.held[i] ?? false,
-				filled: frame.filled[i] ?? false
+				filled: frame.filled[i] ?? false,
+				ramp,
+				searchOpen: visualAwake && frame.searchOpen === true,
+				matches: frame.matches?.[i] ?? true,
+				editingOther: frame.editingOther?.[i] ?? false
 			},
 			frame.params
 		);

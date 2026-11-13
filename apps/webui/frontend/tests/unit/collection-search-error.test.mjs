@@ -113,9 +113,10 @@ test('TrackTable renders a gated Retry search button in the empty state', () => 
 	);
 	assert.match(
 		src,
-		/<button type="button" class="empty-retry" onclick=\{onemptyretry\}>Retry search<\/button>/,
+		/<button[\s\S]*class="empty-retry"[\s\S]*onclick=\{onemptyretry\}>Retry search<\/button>/,
 		'retry is a visible button, not icon-only'
 	);
+	assert.match(src, /data-testid="track-table-empty-retry"/, 'retry exposes a stable e2e hook');
 	assert.match(
 		src,
 		/\{#if onemptyretry !== undefined\}[\s\S]*Retry search[\s\S]*\{\/if\}/,

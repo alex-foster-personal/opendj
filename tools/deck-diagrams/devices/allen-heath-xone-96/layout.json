@@ -1,0 +1,606 @@
+{
+  "device": "Allen & Heath Xone:96",
+  "vendor": "Allen & Heath",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 698,
+    "height": 858
+  },
+  "layers": [
+    "base"
+  ],
+  "out_of_scope": [
+    "midi_in_led_feedback"
+  ],
+  "controls": [
+    {
+      "id": "x96-b1",
+      "fig": "B1",
+      "label": "CUE 1",
+      "kind": "button",
+      "x": 36.7,
+      "y": 58.6,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "cue_1",
+        "type": "note",
+        "ch": 16,
+        "code": 0
+      },
+      "notes": "CUE 1 switch, Note On 7F / Off 00 (hex 00)"
+    },
+    {
+      "id": "x96-b2",
+      "fig": "B2",
+      "label": "CUE 2",
+      "kind": "button",
+      "x": 47.0,
+      "y": 58.6,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "cue_2",
+        "type": "note",
+        "ch": 16,
+        "code": 1
+      },
+      "notes": "CUE 2 switch, Note On 7F / Off 00 (hex 01)"
+    },
+    {
+      "id": "x96-b3",
+      "fig": "B3",
+      "label": "CUE 3",
+      "kind": "button",
+      "x": 57.3,
+      "y": 58.6,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "cue_3",
+        "type": "note",
+        "ch": 16,
+        "code": 2
+      },
+      "notes": "CUE 3 switch, Note On 7F / Off 00 (hex 02)"
+    },
+    {
+      "id": "x96-b4",
+      "fig": "B4",
+      "label": "CUE 4",
+      "kind": "button",
+      "x": 67.7,
+      "y": 58.6,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "cue_4",
+        "type": "note",
+        "ch": 16,
+        "code": 3
+      },
+      "notes": "CUE 4 switch, Note On 7F / Off 00 (hex 03)"
+    },
+    {
+      "id": "x96-b5",
+      "fig": "B5",
+      "label": "CUE A",
+      "kind": "button",
+      "x": 5.9,
+      "y": 56.2,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "chA",
+      "midi": {
+        "name": "cue_a",
+        "type": "note",
+        "ch": 16,
+        "code": 4
+      },
+      "notes": "CUE A switch, Note On 7F / Off 00 (hex 04)"
+    },
+    {
+      "id": "x96-b6",
+      "fig": "B6",
+      "label": "CUE B",
+      "kind": "button",
+      "x": 16.2,
+      "y": 56.2,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "chB",
+      "midi": {
+        "name": "cue_b",
+        "type": "note",
+        "ch": 16,
+        "code": 5
+      },
+      "notes": "CUE B switch, Note On 7F / Off 00 (hex 05)"
+    },
+    {
+      "id": "x96-b7",
+      "fig": "B7",
+      "label": "CUE C",
+      "kind": "button",
+      "x": 26.4,
+      "y": 19.1,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "chC",
+      "midi": {
+        "name": "cue_c",
+        "type": "note",
+        "ch": 16,
+        "code": 6
+      },
+      "notes": "CUE C switch, Note On 7F / Off 00 (hex 06)"
+    },
+    {
+      "id": "x96-b8",
+      "fig": "B8",
+      "label": "CUE D",
+      "kind": "button",
+      "x": 26.4,
+      "y": 36.3,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "chD",
+      "midi": {
+        "name": "cue_d",
+        "type": "note",
+        "ch": 16,
+        "code": 7
+      },
+      "notes": "CUE D switch, Note On 7F / Off 00 (hex 07)"
+    },
+    {
+      "id": "x96-b9",
+      "fig": "B9",
+      "label": "C ON/OFF",
+      "kind": "button",
+      "x": 26.1,
+      "y": 7.9,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "chC",
+      "midi": {
+        "name": "on_off_c",
+        "type": "note",
+        "ch": 16,
+        "code": 8
+      },
+      "notes": "C ON/OFF switch, Note On 7F / Off 00 (hex 08)"
+    },
+    {
+      "id": "x96-b10",
+      "fig": "B10",
+      "label": "D ON/OFF",
+      "kind": "button",
+      "x": 26.1,
+      "y": 25.0,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "chD",
+      "midi": {
+        "name": "on_off_d",
+        "type": "note",
+        "ch": 16,
+        "code": 9
+      },
+      "notes": "D ON/OFF switch, Note On 7F / Off 00 (hex 09)"
+    },
+    {
+      "id": "x96-b11",
+      "fig": "B11",
+      "label": "F1 HPF",
+      "kind": "button",
+      "x": 26.5,
+      "y": 57.4,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter1",
+      "midi": {
+        "name": "vcf1_hpf",
+        "type": "note",
+        "ch": 16,
+        "code": 10
+      },
+      "notes": "F1 HPF switch, Note On 7F / Off 00 (hex 0A)"
+    },
+    {
+      "id": "x96-b12",
+      "fig": "B12",
+      "label": "F1 BPF",
+      "kind": "button",
+      "x": 26.5,
+      "y": 62.9,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter1",
+      "midi": {
+        "name": "vcf1_bpf",
+        "type": "note",
+        "ch": 16,
+        "code": 11
+      },
+      "notes": "F1 BPF switch, Note On 7F / Off 00 (hex 0B)"
+    },
+    {
+      "id": "x96-b13",
+      "fig": "B13",
+      "label": "F1 LPF",
+      "kind": "button",
+      "x": 26.5,
+      "y": 68.3,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter1",
+      "midi": {
+        "name": "vcf1_lpf",
+        "type": "note",
+        "ch": 16,
+        "code": 12
+      },
+      "notes": "F1 LPF switch, Note On 7F / Off 00 (hex 0C)"
+    },
+    {
+      "id": "x96-b14",
+      "fig": "B14",
+      "label": "FILTER 1",
+      "kind": "button",
+      "x": 26.5,
+      "y": 83.2,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter1",
+      "midi": {
+        "name": "vcf1_on_off",
+        "type": "note",
+        "ch": 16,
+        "code": 13
+      },
+      "notes": "FILTER 1 switch, Note On 7F / Off 00 (hex 0D)"
+    },
+    {
+      "id": "x96-b15",
+      "fig": "B15",
+      "label": "F2 HPF",
+      "kind": "button",
+      "x": 78.3,
+      "y": 57.4,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter2",
+      "midi": {
+        "name": "vcf2_hpf",
+        "type": "note",
+        "ch": 16,
+        "code": 14
+      },
+      "notes": "F2 HPF switch, Note On 7F / Off 00 (hex 0E)"
+    },
+    {
+      "id": "x96-b16",
+      "fig": "B16",
+      "label": "F2 BPF",
+      "kind": "button",
+      "x": 78.3,
+      "y": 62.9,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter2",
+      "midi": {
+        "name": "vcf2_bpf",
+        "type": "note",
+        "ch": 16,
+        "code": 15
+      },
+      "notes": "F2 BPF switch, Note On 7F / Off 00 (hex 0F)"
+    },
+    {
+      "id": "x96-b17",
+      "fig": "B17",
+      "label": "F2 LPF",
+      "kind": "button",
+      "x": 78.3,
+      "y": 68.3,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter2",
+      "midi": {
+        "name": "vcf2_lpf",
+        "type": "note",
+        "ch": 16,
+        "code": 16
+      },
+      "notes": "F2 LPF switch, Note On 7F / Off 00 (hex 10)"
+    },
+    {
+      "id": "x96-b18",
+      "fig": "B18",
+      "label": "FILTER 2",
+      "kind": "button",
+      "x": 78.3,
+      "y": 83.2,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "filter2",
+      "midi": {
+        "name": "vcf2_on_off",
+        "type": "note",
+        "ch": 16,
+        "code": 17
+      },
+      "notes": "FILTER 2 switch, Note On 7F / Off 00 (hex 11)"
+    },
+    {
+      "id": "x96-b19",
+      "fig": "B19",
+      "label": "MUTE",
+      "kind": "button",
+      "x": 88.3,
+      "y": 46.6,
+      "w": 5.7,
+      "h": 4.7,
+      "layer": "base",
+      "section": "master",
+      "midi": {
+        "name": "mute",
+        "type": "note",
+        "ch": 16,
+        "code": 18
+      },
+      "notes": "MUTE switch, Note On 7F / Off 00 (hex 12)"
+    },
+    {
+      "id": "x96-f1",
+      "fig": "F1",
+      "label": "FADER 1",
+      "kind": "fader",
+      "x": 38.3,
+      "y": 65.2,
+      "w": 4.3,
+      "h": 18.6,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "fader_1",
+        "type": "cc",
+        "ch": 16,
+        "code": 0
+      },
+      "notes": "FADER 1, CC hex 00, out only"
+    },
+    {
+      "id": "x96-f2",
+      "fig": "F2",
+      "label": "FADER 2",
+      "kind": "fader",
+      "x": 48.6,
+      "y": 65.2,
+      "w": 4.3,
+      "h": 18.6,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "fader_2",
+        "type": "cc",
+        "ch": 16,
+        "code": 1
+      },
+      "notes": "FADER 2, CC hex 01, out only"
+    },
+    {
+      "id": "x96-f3",
+      "fig": "F3",
+      "label": "FADER 3",
+      "kind": "fader",
+      "x": 58.8,
+      "y": 65.2,
+      "w": 4.3,
+      "h": 18.6,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "fader_3",
+        "type": "cc",
+        "ch": 16,
+        "code": 2
+      },
+      "notes": "FADER 3, CC hex 02, out only"
+    },
+    {
+      "id": "x96-f4",
+      "fig": "F4",
+      "label": "FADER 4",
+      "kind": "fader",
+      "x": 69.1,
+      "y": 65.2,
+      "w": 4.3,
+      "h": 18.6,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "fader_4",
+        "type": "cc",
+        "ch": 16,
+        "code": 3
+      },
+      "notes": "FADER 4, CC hex 03, out only"
+    },
+    {
+      "id": "x96-f5",
+      "fig": "F5",
+      "label": "XFADER",
+      "kind": "fader",
+      "x": 45.1,
+      "y": 88.4,
+      "w": 21.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "master",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 16,
+        "code": 5
+      },
+      "notes": "XFADER, CC hex 05, out only"
+    },
+    {
+      "id": "x96-p1",
+      "fig": "P1",
+      "label": "SRC 1",
+      "kind": "rotary",
+      "x": 36.7,
+      "y": 17.6,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "ch1",
+      "midi": {
+        "name": "source_1_usb1",
+        "type": "note",
+        "ch": 16,
+        "code": 19
+      },
+      "notes": "input source rotary; one Note per position: USB1=13, PHONO=14, LINE=15, USB2=16 (hex), out only"
+    },
+    {
+      "id": "x96-p2",
+      "fig": "P2",
+      "label": "SRC 2",
+      "kind": "rotary",
+      "x": 46.9,
+      "y": 17.6,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "ch2",
+      "midi": {
+        "name": "source_2_usb1",
+        "type": "note",
+        "ch": 16,
+        "code": 23
+      },
+      "notes": "input source rotary; one Note per position: USB1=17, PHONO=18, LINE=19, USB2=1A (hex), out only"
+    },
+    {
+      "id": "x96-p3",
+      "fig": "P3",
+      "label": "SRC 3",
+      "kind": "rotary",
+      "x": 57.2,
+      "y": 17.6,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "ch3",
+      "midi": {
+        "name": "source_3_usb1",
+        "type": "note",
+        "ch": 16,
+        "code": 27
+      },
+      "notes": "input source rotary; one Note per position: USB1=1B, PHONO=1C, LINE=1D, USB2=1E (hex), out only"
+    },
+    {
+      "id": "x96-p4",
+      "fig": "P4",
+      "label": "SRC 4",
+      "kind": "rotary",
+      "x": 67.6,
+      "y": 17.6,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "ch4",
+      "midi": {
+        "name": "source_4_usb1",
+        "type": "note",
+        "ch": 16,
+        "code": 31
+      },
+      "notes": "input source rotary; one Note per position: USB1=1F, PHONO=20, LINE=21, USB2=22 (hex), out only"
+    },
+    {
+      "id": "x96-p5",
+      "fig": "P5",
+      "label": "SRC A",
+      "kind": "rotary",
+      "x": 5.6,
+      "y": 17.6,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "chA",
+      "midi": {
+        "name": "source_a_usb1",
+        "type": "note",
+        "ch": 16,
+        "code": 35
+      },
+      "notes": "input source rotary; one Note per position: USB1=23, MIC_A=24, RTN_A=25, USB2=26 (hex), out only"
+    },
+    {
+      "id": "x96-p6",
+      "fig": "P6",
+      "label": "SRC B",
+      "kind": "rotary",
+      "x": 15.8,
+      "y": 17.6,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "chB",
+      "midi": {
+        "name": "source_b_usb1",
+        "type": "note",
+        "ch": 16,
+        "code": 39
+      },
+      "notes": "input source rotary; one Note per position: USB1=27, MIC_B=28, RTN_B=29, USB2=2A (hex), out only"
+    },
+    {
+      "id": "x96-p7",
+      "fig": "P7",
+      "label": "PH2 SRC",
+      "kind": "rotary",
+      "x": 4.7,
+      "y": 88.5,
+      "w": 6.4,
+      "h": 5.2,
+      "layer": "base",
+      "section": "phones2",
+      "midi": {
+        "name": "phones2_source_1",
+        "type": "note",
+        "ch": 16,
+        "code": 43
+      },
+      "notes": "PHONES 2 cue source rotary; one Note per position: 1=2B, 2=2C, 3=2D, 4=2E, A=2F, B=30, C=31, D=32, MST=33 (hex), out only"
+    }
+  ]
+}

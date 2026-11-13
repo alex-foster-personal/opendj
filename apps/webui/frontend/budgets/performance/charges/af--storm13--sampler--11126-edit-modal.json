@@ -1,0 +1,9 @@
+{
+  "bytes": 11264,
+  "measured_main": 483140,
+  "measured_with_pr": 494054,
+  "sha": "38acff8ab6",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--11126-edit-modal grows the performance surface; measured +10914 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

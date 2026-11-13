@@ -3,8 +3,10 @@
 Every tool reaches the engine through its public ``/api/v1`` routes at
 ``ToolContext.base_url`` and nothing else, so the assistant can do exactly
 what an HTTP client (curl, ``opendj``, the MCP server) can do and no more.
-One helper, :func:`_engine`, makes every call and is the only place an HTTP
-failure becomes a :class:`ToolFailure` code:
+One public helper, :func:`engine_call`, makes every call (the typed OJ tools
+reuse it, and :func:`engine_json` when they project rows before the model sees
+them) and is the only place an HTTP failure becomes a :class:`ToolFailure`
+code:
 
 - ``engine_unreachable``: the request never got an answer.
 - ``no_performance_page``: the documented ``409 {"client_open": false}``.
@@ -12,7 +14,14 @@ failure becomes a :class:`ToolFailure` code:
 
 The library tools apply the MCP server's rails (``validate_api_path``,
 ``guard_library_request``), which judge the canonical path the engine routes,
-while the request carries the path as given. The ``command`` tool does NOT apply
+while the request carries the path as given. ``library_read`` hands back the
+engine's ``ETag`` when the answer carries one, and ``library_write`` sends it as
+``If-Match`` (the only header a tool may set), so the model can read a playlist
+and then rename or reorder it. Every write also carries ``X-Undo-Session:
+OJ_UNDO_SESSION``, as each web UI window does, so the library-organization
+routes that require it (My Tags, tag types, sections, ``POST /api/v1/undo``)
+answer OJ and its edits share one undo history; routes that do not read the
+header ignore it. The ``command`` tool does NOT apply
 ``guard_order``: its only effect is to prepend a master mute to an audible
 play, which is right for an unattended MCP agent and wrong here, where the
 user approves every command and a hidden mute would make "play deck 2"
@@ -22,12 +31,20 @@ silent. Order shape is validated by ``POST /api/v1/commands`` itself (422).
 from __future__ import annotations
 
 import shlex
+import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
-from apps.engine_core.assistant.agent_contract import ToolContext, ToolFailure, ToolSpec
+from apps.engine_core.assistant.agent_contract import (
+    ProviderCatalogHit,
+    ProviderCatalogHitLabel,
+    ToolContext,
+    ToolFailure,
+    ToolSpec,
+)
 from apps.opendj_cli.catalog import VERBS
 from apps.opendj_cli.mcp_safety import SafetyRefusal, guard_library_request, validate_api_path
 from apps.opendj_cli.orders import ramp_deadline_s, single
@@ -47,12 +64,26 @@ _READ_S: float = 90.0
 MIRROR_PATH: str = "/api/v1/state/ui-mirror"
 COMMANDS_PATH: str = "/api/v1/commands"
 _WRITE_METHODS: tuple[str, ...] = ("POST", "PUT", "PATCH", "DELETE")
+#: The undo stack OJ's writes land on: one per engine process, as the web UI
+#: takes one per window (``works-overlay.svelte.ts``), so undo never crosses a
+#: relaunch and ``POST /api/v1/undo`` from OJ steps back only OJ's own edits.
+OJ_UNDO_SESSION: str = f"oj-{uuid.uuid4()}"
 #: The assistant must not drive itself: a library call into its own routes
 #: would spend a second model turn per tool call.
 _SELF_PREFIX: str = "/api/v1/assistant"
 
 
 # ----- helpers ------------------------------------------------------------
+@dataclass(frozen=True)
+class EngineAnswer:
+    """One engine answer as a tool sees it: the bounded body and the ETag header, if any."""
+
+    #: The answer for the model, as :func:`_bounded` cuts it.
+    body: Any
+    #: The engine's ``ETag`` header verbatim (quotes kept), or None when it sent none.
+    etag: str | None
+
+
 def _parsed(response: httpx.Response) -> Any:
     """The whole answer as JSON (or text): for this module to judge, never for the model."""
     if not response.text:
@@ -72,13 +103,22 @@ def _bounded(response: httpx.Response) -> Any:
 
 
 async def _request(
-    ctx: ToolContext, method: str, path: str, body: Any = None, *, read_s: float = _READ_S
+    ctx: ToolContext,
+    method: str,
+    path: str,
+    body: Any = None,
+    *,
+    if_match: str | None = None,
+    read_s: float = _READ_S,
 ) -> httpx.Response:
     """One engine call; every failure is a ToolFailure with one of three codes."""
     timeout = httpx.Timeout(connect=5.0, read=read_s, write=10.0, pool=5.0)
+    headers = {"X-Undo-Session": OJ_UNDO_SESSION} if method.upper() in _WRITE_METHODS else {}
+    if if_match is not None:
+        headers["If-Match"] = if_match
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.request(method, f"{ctx.base_url}{path}", json=body)
+            response = await client.request(method, f"{ctx.base_url}{path}", json=body, headers=headers)
     except httpx.HTTPError as exc:
         raise ToolFailure("engine_unreachable", f"{method} {path} got no answer: {exc!r}") from exc
     if response.status_code == 409 and _parsed(response) == {"client_open": False}:
@@ -91,8 +131,32 @@ async def _request(
     return response
 
 
+async def engine_call(
+    ctx: ToolContext, method: str, path: str, body: Any = None, *, if_match: str | None = None
+) -> EngineAnswer:
+    """Call one engine route (``If-Match`` optional) and return its bounded body and ETag.
+
+    A write also sends ``X-Undo-Session: OJ_UNDO_SESSION`` (see the module docstring).
+
+    Fails with a :class:`ToolFailure` (``engine_unreachable``,
+    ``no_performance_page`` or ``engine_error``) exactly as every core tool does.
+    """
+    response = await _request(ctx, method, path, body, if_match=if_match)
+    return EngineAnswer(body=_bounded(response), etag=response.headers.get("ETag"))
+
+
+async def engine_json(ctx: ToolContext, method: str, path: str, body: Any = None) -> Any:
+    """Call one engine route and return its WHOLE parsed answer, for a typed tool to project.
+
+    Same failures as :func:`engine_call`, but nothing is cut: the caller owns the
+    size of what it hands the model (a typed tool keeps a few fields per row).
+    A write carries OJ's undo session as :func:`engine_call` does.
+    """
+    return _parsed(await _request(ctx, method, path, body))
+
+
 async def _engine(ctx: ToolContext, method: str, path: str, body: Any = None) -> Any:
-    return _bounded(await _request(ctx, method, path, body))
+    return (await engine_call(ctx, method, path, body)).body
 
 
 def _arg(args: dict[str, Any], name: str, kind: type, *, required: bool = True) -> Any:
@@ -164,7 +228,10 @@ async def _app_state(ctx: ToolContext, _args: dict[str, Any]) -> Any:
 
 
 async def _library_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
-    return await _engine(ctx, "GET", _library_path(args, "GET"))
+    answer = await engine_call(ctx, "GET", _library_path(args, "GET"))
+    if answer.etag is None:
+        return answer.body
+    return {"etag": answer.etag, "body": answer.body}
 
 
 async def _library_write(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -172,7 +239,9 @@ async def _library_write(ctx: ToolContext, args: dict[str, Any]) -> Any:
     if method not in _WRITE_METHODS:
         raise ToolFailure("invalid_arguments", f"method must be one of {_WRITE_METHODS}, got {method}")
     path = _library_path(args, method)
-    return await _engine(ctx, method, path, _arg(args, "body", dict, required=False))
+    body = _arg(args, "body", dict, required=False)
+    if_match = _arg(args, "if_match", str, required=False)
+    return (await engine_call(ctx, method, path, body, if_match=if_match)).body
 
 
 def require_steps_succeeded(result: Any) -> Any:
@@ -213,7 +282,86 @@ async def _command(ctx: ToolContext, args: dict[str, Any]) -> Any:
 
 _PATH = {"type": "string", "description": "An /api/v1/... path, query string allowed."}
 
-CORE_TOOLS: tuple[ToolSpec, ...] = (
+#: Fixture transcripts for catalog-constrained assistant replies (issue #11256).
+ASSISTANT_PROVIDER_FIXTURE_TRANSCRIPTS: tuple[dict[str, str], ...] = (
+    {
+        "provider": "epidemic-sound",
+        "provider_label": "Epidemic Sound",
+        "catalog_constraint": "partner API catalog",
+        "transcript": (
+            "Epidemic Sound catalog (partner API catalog): Midnight Drive -- "
+            "not in your owned library; license through Epidemic before importing."
+        ),
+    },
+    {
+        "provider": "soundstripe",
+        "provider_label": "Soundstripe",
+        "catalog_constraint": "Supe free-account browse",
+        "transcript": (
+            "Soundstripe catalog (Supe free-account browse): Warm Analog Pad -- "
+            "not in your owned library; browse only until you add it locally."
+        ),
+    },
+)
+
+
+def label_catalog_constrained_hit(raw: dict[str, Any]) -> ProviderCatalogHitLabel:
+    """Label a provider catalog hit for the assistant; owned-library hints are refused."""
+    hit = ProviderCatalogHit.model_validate(raw)
+    if hit.in_owned_library:
+        raise ToolFailure(
+            "production_library_mislabeled",
+            "production-library hits must not be presented as tracks in the owned library",
+        )
+    if not hit.provider.strip() or not hit.catalog_constraint.strip():
+        raise ToolFailure(
+            "provider_label_missing",
+            "provider name and catalog constraint are required on intelligence hits",
+        )
+    assistant_label = (
+        f"{hit.provider_label} catalog ({hit.catalog_constraint}): {hit.title} -- not in your owned library"
+    )
+    return ProviderCatalogHitLabel(
+        provider=hit.provider,
+        provider_label=hit.provider_label,
+        catalog_constraint=hit.catalog_constraint,
+        title=hit.title,
+        in_owned_library=False,
+        assistant_label=assistant_label,
+    )
+
+
+def transcript_labels_catalog_hit(
+    transcript: str,
+    *,
+    provider: str,
+    catalog_constraint: str,
+    provider_label: str | None = None,
+) -> None:
+    """Refuse transcripts that omit provider or catalog constraint labeling."""
+    lowered = transcript.lower()
+    provider_names = {provider.lower()}
+    if provider_label:
+        provider_names.add(provider_label.lower())
+    if not any(name in lowered for name in provider_names):
+        raise ToolFailure("provider_label_missing", f"transcript omits provider {provider!r}")
+    if catalog_constraint.lower() not in lowered:
+        raise ToolFailure(
+            "catalog_constraint_missing",
+            f"transcript omits catalog constraint {catalog_constraint!r}",
+        )
+    if "owned library" in lowered and "not in" not in lowered:
+        raise ToolFailure(
+            "production_library_mislabeled",
+            "transcript must not imply the production-library hit is already owned",
+        )
+
+
+async def _label_provider_hit(_ctx: ToolContext, args: dict[str, Any]) -> Any:
+    return label_catalog_constrained_hit(args).model_dump()
+
+
+_CORE_TOOLS_WITHOUT_LABEL: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="status",
         description="Engine health (state.db counts, version) and build identity.",
@@ -236,7 +384,8 @@ CORE_TOOLS: tuple[ToolSpec, ...] = (
         description=(
             "GET any engine /api/v1 route, e.g. /api/v1/tracks?limit=20&fields=stable_id,"
             "title,artist,bpm,key or /api/v1/playlists. Large answers are truncated; page "
-            "with limit/cursor."
+            "with limit/cursor. When the engine sends an ETag the answer is "
+            "{etag, body}: pass etag as library_write's if_match."
         ),
         parameters={"type": "object", "properties": {"path": _PATH}, "required": ["path"]},
         gate="read",
@@ -246,7 +395,11 @@ CORE_TOOLS: tuple[ToolSpec, ...] = (
         name="library_write",
         description=(
             "POST/PUT/PATCH/DELETE an engine /api/v1 route with a JSON body. Rekordbox "
-            "writeback and destructive calls are refused. The user approves each call."
+            "writeback and destructive calls are refused. Routes that need If-Match "
+            "(playlist rename, reorder, membership) take if_match: the etag from "
+            "library_read of that resource. Every write carries OJ's own undo session, so "
+            "POST /api/v1/undo steps back OJ's last library-organization edit. The user "
+            "approves each call."
         ),
         parameters={
             "type": "object",
@@ -254,6 +407,10 @@ CORE_TOOLS: tuple[ToolSpec, ...] = (
                 "method": {"type": "string", "enum": list(_WRITE_METHODS)},
                 "path": _PATH,
                 "body": {"type": "object"},
+                "if_match": {
+                    "type": "string",
+                    "description": "Sent as the If-Match header: the etag library_read returned.",
+                },
             },
             "required": ["method", "path"],
         },
@@ -280,4 +437,40 @@ CORE_TOOLS: tuple[ToolSpec, ...] = (
     ),
 )
 
-__all__ = ["CORE_TOOLS", "MAX_TOOL_RESULT_CHARS", "read_audible"]
+_CORE_TOOLS: tuple[ToolSpec, ...] = _CORE_TOOLS_WITHOUT_LABEL + (
+    ToolSpec(
+        name="label_provider_hit",
+        description=(
+            "Label a music-intelligence or production-library catalog hit with "
+            "provider name, catalog constraint, and an explicit not-owned-library note."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string"},
+                "provider_label": {"type": "string"},
+                "catalog_constraint": {"type": "string"},
+                "title": {"type": "string"},
+                "in_owned_library": {"type": "boolean"},
+            },
+            "required": ["provider", "provider_label", "catalog_constraint", "title"],
+        },
+        gate="read",
+        run=_label_provider_hit,
+    ),
+)
+
+CORE_TOOLS = _CORE_TOOLS
+
+__all__ = [
+    "ASSISTANT_PROVIDER_FIXTURE_TRANSCRIPTS",
+    "CORE_TOOLS",
+    "MAX_TOOL_RESULT_CHARS",
+    "OJ_UNDO_SESSION",
+    "EngineAnswer",
+    "engine_call",
+    "engine_json",
+    "label_catalog_constrained_hit",
+    "read_audible",
+    "transcript_labels_catalog_hit",
+]

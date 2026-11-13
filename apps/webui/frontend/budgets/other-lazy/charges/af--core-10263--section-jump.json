@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 479017,
+  "measured_with_pr": 479222,
+  "sha": "e1a5242c26",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--core-10263--section-jump grows the other-lazy surface; measured +205 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

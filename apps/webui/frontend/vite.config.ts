@@ -5,6 +5,7 @@ import { defineConfig, loadEnv } from 'vite';
 
 import { appVersionFromAppPackage } from './vite-app-version';
 import { claimAndCheckWebuiDevConfig, resolveAllowedHosts } from './webui-port-config';
+import { BUNDLE_REPORT_FILE, bundleReportPlugin } from './vite-bundle-report';
 import { codecParserTrimPlugin } from './vite-codec-parser-trim';
 import { e2eFootprintsPlugin } from './vite-e2e-footprints';
 import { holdFullReloadPlugin } from './vite-hold-full-reload';
@@ -45,11 +46,18 @@ export default defineConfig(({ command, mode }) => {
 			: devConfig === null
 				? 'off'
 				: 'on';
+	// SETREC-11802b auto-REC on first play: on unless MUSIC_DJ_SET_AUTO_REC=off.
+	// Read by `setAutoRecFlag`.
+	const setAutoRec = rootEnv.MUSIC_DJ_SET_AUTO_REC ?? 'on';
+	if (setAutoRec !== 'on' && setAutoRec !== 'off') {
+		throw new Error(`MUSIC_DJ_SET_AUTO_REC must be on or off, got ${setAutoRec}`);
+	}
 	return {
 		envDir: REPOSITORY_ROOT,
 		define: {
 			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen),
 			'import.meta.env.VITE_REMOTE_SPEAKER': JSON.stringify(remoteSpeaker),
+			'import.meta.env.VITE_SET_AUTO_REC': JSON.stringify(setAutoRec),
 			'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersionFromAppPackage(REPOSITORY_ROOT))
 		},
 		// e2eFootprintsPlugin is empty unless E2E_FOOTPRINTS_DIR is set (the e2e
@@ -58,7 +66,8 @@ export default defineConfig(({ command, mode }) => {
 			sveltekit(),
 			holdFullReloadPlugin(),
 			codecParserTrimPlugin(),
-			...e2eFootprintsPlugin()
+			...e2eFootprintsPlugin(),
+			bundleReportPlugin(REPOSITORY_ROOT, BUNDLE_REPORT_FILE, process.env.BUNDLE_REPORT === '1')
 		],
 		build: {
 			// Terser instead of Vite's default esbuild minifier. Measured on

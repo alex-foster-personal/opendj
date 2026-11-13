@@ -15,6 +15,11 @@ export * from '$lib/api/capabilities.svelte';
 export * from '$lib/setup/setup-api';
 export * from '$lib/setup/folder-rows';
 export * from '$lib/setup/wizard.svelte';
+export {
+	appendTempoSearchToRoute,
+	filterValidTempoSearchParams,
+	preserveUrlSearchOnRedirect
+} from '$lib/setup/wizard-rules';
 // finish() re-reads preflight; the tests must see the SAME preflight store the
 // wizard writes, so it comes through this one bundle too.
 export {
@@ -23,3 +28,7 @@ export {
 	preflightGate
 } from '$lib/preflight/preflight.svelte';
 export { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
+
+/** Issue #13097: compile-time probes for the node:test $derived harness shim. */
+export const derivedHarnessIdentityProbe = $derived(41 + 1);
+export const derivedHarnessByProbe = $derived.by(() => 'by');

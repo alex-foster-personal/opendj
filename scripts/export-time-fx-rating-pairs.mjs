@@ -240,7 +240,7 @@ export function resolveRealRenderer(repoRoot = REPO_ROOT) {
 }
 
 //----------------------------------------------------------------------------- helpers
-function _rng(seed) {
+export function _rng(seed) {
   let state = seed >>> 0 || 1;
   return () => {
     state ^= state << 13;
@@ -352,7 +352,7 @@ function _assertVariantSupported(kernel, variant, renderer) {
 }
 
 //----------------------------------------------------------------------------- fixture (#9815 house-124 loop)
-function _house124(n, sr, bpm, seed) {
+export function _house124(n, sr, bpm, seed) {
   const beat = (60 / bpm) * sr;
   const chord = [130.81, 164.81, 196];
   const out = [new Float64Array(n), new Float64Array(n)];

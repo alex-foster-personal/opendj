@@ -291,3 +291,54 @@ describe('draggedDeckRows', () => {
 		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'A', key_shift: 2 }]);
 	});
 });
+
+// Issue #13402: drag-to-deck guard parity with click-to-load (spec
+// e1fba0b3_deck-drop-guards, acceptance). Drop must refuse with exactly the
+// sentence the click path's `libraryAudioLoadRefusal` gives for the same row.
+describe('deck drop guard parity with click-to-load (issue #13402)', () => {
+	let libraryAudioLoadRefusal;
+	before(async () => {
+		({ libraryAudioLoadRefusal } = await loadTypeScriptModule(
+			'src/lib/components/rb/browser/browser-row-wire.ts'
+		));
+	});
+
+	const LOCAL = { file_exists: true, is_streaming: false };
+	const MISSING = { file_exists: false, is_streaming: false };
+	const STREAMING = { file_exists: false, is_streaming: true };
+
+	// [if] a local existing file is dropped on an empty deck [then] it loads with no toast, as click-to-load does
+	it('loads a local existing file on an empty deck exactly when click-to-load would', async () => {
+		assert.equal(libraryAudioLoadRefusal(LOCAL), null);
+		const { dispatches, toasts } = await runDrop({ row: LOCAL, occupied: false });
+		assert.deepEqual(toasts, []);
+		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'SID-1' }]);
+	});
+
+	// [if] a missing local file is dropped on a deck [then] the toast is the click-to-load refusal and nothing dispatches
+	it('refuses a missing local file with the click-to-load sentence', async () => {
+		const expected = libraryAudioLoadRefusal(MISSING);
+		assert.equal(expected, 'cannot load: audio file missing on disk (broken link)');
+		const { dispatches, toasts } = await runDrop({ row: MISSING });
+		assert.deepEqual(toasts, [{ message: expected, kind: 'error' }]);
+		assert.deepEqual(dispatches, []);
+	});
+
+	// [if] a streaming row is dropped on a deck [then] the toast is the click-to-load streaming refusal and nothing dispatches
+	it('refuses a streaming row with the click-to-load sentence', async () => {
+		const expected = libraryAudioLoadRefusal(STREAMING);
+		assert.match(expected, /can't play streaming services/);
+		const { dispatches, toasts } = await runDrop({ row: STREAMING });
+		assert.deepEqual(toasts, [{ message: expected, kind: 'error' }]);
+		assert.deepEqual(dispatches, []);
+	});
+
+	// [if] an occupied deck receives a refused row [then] it is not unloaded and keeps its track
+	it('never unloads an occupied deck for a refused row', async () => {
+		for (const row of [MISSING, STREAMING]) {
+			const { dispatches, toasts } = await runDrop({ row, occupied: true });
+			assert.deepEqual(dispatches, [], 'no unload and no load for a refused row');
+			assert.deepEqual(toasts, [{ message: libraryAudioLoadRefusal(row), kind: 'error' }]);
+		}
+	});
+});

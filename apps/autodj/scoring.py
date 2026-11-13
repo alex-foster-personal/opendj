@@ -46,7 +46,9 @@ class PairScore:
     key_in: str | None
     bpm_gap_pct: float | None
     beatmatchable: bool | None
-    vocal_clash_bars: int | None
+    vocal_clash_bars: (
+        int | None
+    )  # bars where both maps are >= VOCAL_BAR_THRESHOLD; 0 is measured, None is a missing map
     bass_clash_bars: int | None
     energy_delta: float | None
     overlap_bars: int
@@ -303,3 +305,29 @@ def score_pair(
     ins = [in_window] if in_window is not None else mix_windows(in_profile, "in", limit=5)
     scored = [score_windows(out_profile, in_profile, o, i, overlap_bars=overlap_bars) for o in outs for i in ins]
     return max(scored, key=rank_key)
+
+
+def segment_overlay_notes(pair: PairScore, overlay: Mapping[str, Any] | None) -> PairScore:
+    """Attach phrase voice/instrument overlay reasons without a whole-track compatibility score."""
+    if overlay is None:
+        return pair
+    extra = tuple(str(reason) for reason in overlay.get("reasons", ()))
+    if not extra:
+        return pair
+    return PairScore(
+        score=pair.score,
+        key_distance=pair.key_distance,
+        key_relation=pair.key_relation,
+        key_out=pair.key_out,
+        key_in=pair.key_in,
+        bpm_gap_pct=pair.bpm_gap_pct,
+        beatmatchable=pair.beatmatchable,
+        vocal_clash_bars=pair.vocal_clash_bars,
+        bass_clash_bars=pair.bass_clash_bars,
+        energy_delta=pair.energy_delta,
+        overlap_bars=pair.overlap_bars,
+        out_window=pair.out_window,
+        in_window=pair.in_window,
+        reasons=pair.reasons + extra,
+        unscored=pair.unscored,
+    )

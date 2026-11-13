@@ -17,7 +17,26 @@ from typing import Any
 
 from apps.plugins.manifest import CAPABILITY_KINDS, PluginManifest, ProviderEntry
 
+CYANITE_PLUGIN_ID = "opendj.cyanite"
+CYANITE_PROVENANCE_FIELDS: tuple[str, ...] = ("provider", "model_version", "observed_at")
+EPIDEMIC_PLUGIN_ID = "opendj.epidemic-sound"
+EPIDEMIC_PROVENANCE_FIELDS: tuple[str, ...] = (
+    "provider",
+    "model_version",
+    "observed_at",
+    "catalog_track_id",
+)
+
 STABLE_API_KINDS: frozenset[str] = frozenset({"API", "MCP"})
+
+# Parent issue #2493: Artlist Song Match and Musicbed Search by Song stay off until
+# allowed-use review is recorded on the parent tracker.
+PARENT_REVIEW_REQUIRED_IDS: frozenset[str] = frozenset(
+    {
+        "opendj.artlist",
+        "opendj.musicbed",
+    }
+)
 
 _REDACTED = "<redacted>"
 
@@ -79,6 +98,20 @@ def store_surface(capability_kind: str) -> str:
     if capability_kind == "unavailable":
         return "unavailable"
     raise ProviderError(f"unknown capability kind {capability_kind!r}")
+
+
+def refuse_advertised_stable_api(*, actual_kind: str, advertised_kind: str) -> None:
+    """Refuse labeling browser-only or public browse providers as API/MCP/stable-api."""
+    if actual_kind not in ("browser-only", "public browse"):
+        return
+    if advertised_kind in STABLE_API_KINDS or advertised_kind == "stable-api":
+        raise ProviderError(f"refusing to advertise {actual_kind!r} as {advertised_kind!r}; use store_surface instead")
+
+
+def require_parent_allowed_use_review(plugin_id: str, *, allowed_use_reviewed: bool) -> None:
+    """Artlist and Musicbed stay disabled until parent #2493 records allowed-use review."""
+    if plugin_id in PARENT_REVIEW_REQUIRED_IDS and not allowed_use_reviewed:
+        raise ProviderError(f"refusing to enable {plugin_id!r} without parent allowed-use review (#2493)")
 
 
 def _parse_int_header(value: str | None) -> int | None:
@@ -197,13 +230,20 @@ class ProviderRegistry:
 
 __all__ = [
     "CAPABILITY_KINDS",
+    "CYANITE_PLUGIN_ID",
+    "CYANITE_PROVENANCE_FIELDS",
+    "EPIDEMIC_PLUGIN_ID",
+    "EPIDEMIC_PROVENANCE_FIELDS",
+    "PARENT_REVIEW_REQUIRED_IDS",
     "ProviderError",
     "ProviderQuota",
     "ProviderRegistry",
     "ProviderSurface",
     "quota_from_headers",
     "redact_secrets",
+    "refuse_advertised_stable_api",
     "refuse_secret_in_metadata",
+    "require_parent_allowed_use_review",
     "safe_log_line",
     "store_surface",
 ]

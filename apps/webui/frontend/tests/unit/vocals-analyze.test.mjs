@@ -46,7 +46,7 @@ test('VocalAnalyzeButton reads vocal status before POST when stems may have land
 	const source = readFileSync(`${SRC}/lib/components/rb/browser/VocalAnalyzeButton.svelte`, 'utf8');
 	assert.match(source, /import \{\s*analyzeVocalsFromStems,\s*getVocalStatus,/);
 	assert.match(source, /getVocalStatus\(stableId\)/);
-	assert.match(source, /vocalsStatusHasRegions\(live\)/);
+	assert.match(source, /vocalsAnalyzeResultFromVocalStatus\(stableId, live\)/);
 	assert.match(source, /analyzeVocalsFromStems\(stableId\)/);
 	assert.doesNotMatch(source, /fetch\(/);
 });

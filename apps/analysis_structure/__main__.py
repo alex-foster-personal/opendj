@@ -24,6 +24,7 @@ from apps.analysis import store as analysis_store
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
+from .notify import notify_sidecars_changed
 from .pipeline import analyze, cache_dir, load_sidecar
 
 
@@ -53,6 +54,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         docs = analyze(conn, ids, paths, data_dir, device=args.device)
     finally:
         conn.close()
+    # Every doc was written as a sidecar (ok or failed): a deck holding one refetches.
+    notify_sidecars_changed([d["stable_id"] for d in docs])
     ok = sum(d["status"] == "ok" for d in docs)
     for d in docs:
         print(

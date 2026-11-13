@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 
-from apps.shared.state.sync_stamp import canonical_from
+from apps.shared.state.sync_stamp import canonical_from, parse_canonical
 
 PLAY_KIND = "track_played"
 OPENDJ_SOURCE = "opendj"
@@ -221,8 +221,11 @@ class PlayRow:
     source: str
 
 
-def plays_since(conn: sqlite3.Connection, since_ts: str) -> list[PlayRow]:
-    """Every play with ``ts >= since_ts``, oldest first (ties in insert order)."""
+def plays_since(
+    conn: sqlite3.Connection, since_ts: str, until_ts: str | None = None
+) -> list[PlayRow]:
+    """Every play with ``since_ts <= ts`` (and ``ts < until_ts`` when given), oldest first (ties in insert order)."""
+    until_sql, until_args = ("", ()) if until_ts is None else (" AND ts < ?", (until_ts,))
     return [
         PlayRow(
             stable_id=str(sid),
@@ -235,10 +238,19 @@ def plays_since(conn: sqlite3.Connection, since_ts: str) -> list[PlayRow]:
             "SELECT ts, stable_id, json_extract(payload_json, '$.play_id'), "
             "json_extract(payload_json, '$.deck'), "
             "COALESCE(json_extract(payload_json, '$.source'), ?) "
-            "FROM events WHERE kind = ? AND ts >= ? ORDER BY ts, rowid",
-            (OPENDJ_SOURCE, PLAY_KIND, since_ts),
+            f"FROM events WHERE kind = ? AND ts >= ?{until_sql} ORDER BY ts, rowid",
+            (OPENDJ_SOURCE, PLAY_KIND, since_ts, *until_args),
         )
     ]
+
+
+def history_days(conn: sqlite3.Connection, tz: tzinfo | None = None) -> list[tuple[date, int]]:
+    """Play count per history day (rollover-hour boundaries in ``tz``), newest day first."""
+    counts: dict[date, int] = {}
+    for (ts,) in conn.execute("SELECT ts FROM events WHERE kind = ?", (PLAY_KIND,)):
+        day = night_of(parse_canonical(str(ts)), tz)
+        counts[day] = counts.get(day, 0) + 1
+    return sorted(counts.items(), reverse=True)
 
 
 def delete_play(conn: sqlite3.Connection, stable_id: str, play_id: str) -> bool:
@@ -341,6 +353,7 @@ __all__ = [
     "delete_play",
     "delete_plays_between",
     "history_day_bounds",
+    "history_days",
     "import_plays",
     "imported_play_ids",
     "night_of",

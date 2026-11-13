@@ -128,6 +128,11 @@ export function setupProbePending(): boolean {
 	return capabilities.flavor === 'unknown';
 }
 
+/** Wizard/tests call this instead of importing the rune module directly. */
+export async function probeSetupCapabilities(): Promise<void> {
+	await capabilities.probe();
+}
+
 /** `signal` lets the wizard abort a read that has stalled (see wizard.svelte.ts). */
 export async function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
 	return unwrap(api.GET('/api/v1/setup/status', { signal: signal ?? null }));

@@ -212,3 +212,25 @@ class TierChoice:
 
 
 ChooseTier = Callable[[list[AgentMessage]], TierChoice]
+
+
+# ----- provider catalog suggestions (issue #11256) -------------------------
+class ProviderCatalogHit(BaseModel):
+    """A production-library or intelligence plugin hit shown in the assistant."""
+
+    provider: str = Field(min_length=1)
+    provider_label: str = Field(min_length=1)
+    catalog_constraint: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    in_owned_library: bool = False
+
+
+class ProviderCatalogHitLabel(BaseModel):
+    """Wire shape returned to the model and sidebar after labeling."""
+
+    provider: str
+    provider_label: str
+    catalog_constraint: str
+    title: str
+    in_owned_library: bool
+    assistant_label: str

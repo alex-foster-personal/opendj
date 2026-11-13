@@ -57,6 +57,16 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from apps.shared.state.analysis_queue_ids import (
+    ITEM_CANCELLED,
+    ITEM_DEFERRED,
+    ITEM_DONE,
+    ITEM_FAILED,
+    ITEM_PENDING,
+    ITEM_REFUSED,
+    ITEM_RUNNING,
+    ITEM_SKIPPED,
+)
 from apps.shared.state.analysis_stale import (
     STALE_DEPENDENCY_MOVED,
     STALE_TABLES_SQL,
@@ -67,15 +77,7 @@ from apps.shared.state.analysis_stale import (
 
 from .time_iso import utc_now_iso
 
-#: Item states. Terminal states are the ones a resume never revisits.
-ITEM_PENDING: str = "pending"
-ITEM_RUNNING: str = "running"
-ITEM_DONE: str = "done"
-ITEM_SKIPPED: str = "skipped"
-ITEM_FAILED: str = "failed"
-ITEM_REFUSED: str = "refused"
-ITEM_CANCELLED: str = "cancelled"
-ITEM_DEFERRED: str = "deferred"
+#: Item states (literals in apps.shared.state.analysis_queue_ids); terminal ones a resume never revisits.
 ITEM_STATES: tuple[str, ...] = (
     ITEM_PENDING,
     ITEM_RUNNING,

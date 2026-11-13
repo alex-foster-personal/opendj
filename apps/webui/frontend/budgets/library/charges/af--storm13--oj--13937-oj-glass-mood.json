@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373188,
+  "measured_with_pr": 373653,
+  "sha": "d43304cf23",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--13937-oj-glass-mood grows the library surface; measured +465 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

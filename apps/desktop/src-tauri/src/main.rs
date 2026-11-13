@@ -365,8 +365,9 @@ fn webkit_data_store_identifier(data_dir: &Path) -> [u8; 16] {
 ///
 /// The installed-app acceptance redirects HOME to a per-run root; a build that
 /// resolved its data dir some other way would boot against the real library
-/// before the harness could read `data_dir` (issue #6068). macOS/LaunchServices
-/// only: Linux may place XDG data outside HOME and Windows does not promise HOME.
+/// before the harness could read `data_dir` (issues #6068 and #13367).
+/// macOS/LaunchServices only: Linux may place XDG data outside HOME and Windows
+/// does not promise HOME.
 fn validate_data_dir_contained_in_home(
     data_dir: &Path,
     home: Option<&Path>,
@@ -1075,7 +1076,7 @@ mod tests {
 
     // - if a data dir outside the redirected HOME is accepted then the
     //   acceptance boots against the real library before HTTP exists -> broken
-    //   (issue #6068)
+    //   (issues #6068, #13368 containment matrix)
 
     fn isolated_acceptance_home() -> PathBuf {
         std::env::temp_dir().join("opendj-6068-isolated-home")
@@ -1094,10 +1095,19 @@ mod tests {
         let outside = std::env::temp_dir().join("opendj-6068-outside-real-store");
         let err = validate_data_dir_contained_in_home(&outside, Some(&home)).unwrap_err();
         assert!(err.detail.contains("not inside HOME"), "{}", err.detail);
+        // Prefix-confusable sibling (home2 beside HOME); issue #13368.
         let sibling = home
             .with_file_name("opendj-6068-isolated-home2")
             .join("Library");
         assert!(validate_data_dir_contained_in_home(&sibling, Some(&home)).is_err());
+    }
+
+    #[test]
+    fn home_with_parent_component_fails_closed() {
+        let base = std::env::temp_dir().join("opendj-13368-home-base");
+        let home = base.join("segment").join("..");
+        let data = base.join("Library/Application Support/com.opendj.app");
+        assert!(validate_data_dir_contained_in_home(&data, Some(&home)).is_err());
     }
 
     #[test]

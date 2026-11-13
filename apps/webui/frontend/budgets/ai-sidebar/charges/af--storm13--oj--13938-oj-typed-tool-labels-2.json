@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 33897,
+  "measured_with_pr": 38648,
+  "sha": "f665776195",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--13938-oj-typed-tool-labels-2 grows the ai-sidebar surface; measured +4751 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -1,0 +1,9 @@
+{
+  "bytes": 11264,
+  "measured_main": 497908,
+  "measured_with_pr": 508165,
+  "sha": "06512cde61",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 4 (PR 14841, branch rc-main-direct--r3-b4) grows the performance surface by its 131 members' code and the bundle's own fixes: measured +10257 B gzip at 06512cde61 over bundle 3's measurement at 51bb6fddb2 (this branch's base once PR 14801, 14806 and 14808 merge), ceiled to KiB. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

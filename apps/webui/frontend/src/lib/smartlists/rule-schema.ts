@@ -27,7 +27,11 @@ export type FieldName =
 	| 'play_count'
 	| 'duration_s'
 	| 'playlist_count'
-	| 'paired_with';
+	| 'paired_with'
+	| 'title'
+	| 'artist'
+	| 'album'
+	| 'comments';
 
 export type Op = '=' | '!=' | '<' | '<=' | '>' | '>=' | 'between' | 'in' | 'contains' | 'missing';
 
@@ -46,7 +50,11 @@ export const FIELD_TYPES: Record<FieldName, FieldType> = {
 	play_count: 'number',
 	duration_s: 'number',
 	playlist_count: 'number',
-	paired_with: 'string'
+	paired_with: 'string',
+	title: 'string',
+	artist: 'string',
+	album: 'string',
+	comments: 'string'
 };
 
 export const ALLOWED_FIELDS: FieldName[] = Object.keys(FIELD_TYPES) as FieldName[];
@@ -70,10 +78,22 @@ export const ALLOWED_OPS_BY_FIELD: Record<FieldName, Op[]> = {
 	play_count: NUMERIC_OPS,
 	duration_s: NUMERIC_OPS,
 	playlist_count: NUMERIC_OPS,
-	paired_with: PAIRED_WITH_OPS
+	paired_with: PAIRED_WITH_OPS,
+	title: STRING_OPS,
+	artist: STRING_OPS,
+	album: STRING_OPS,
+	comments: STRING_OPS
 };
 
 export const LOGICAL_OPS: LogicalOp[] = ['and', 'or', 'not'];
+
+/**
+ * LIBM-85 (issue #12318): the top-N selection node
+ * `{op: 'top_n', n, sort_field, children?: [rule]}` and its sort fields
+ * (apps/shared/smartlists/schema.py TOP_N_OP / TOP_N_SORT_FIELDS).
+ */
+export const TOP_N_OP = 'top_n';
+export const TOP_N_SORT_FIELDS: FieldName[] = ['added_date', 'rating'];
 
 export const ORDER_BY_OPTIONS: string[] = [
 	'added_date desc',

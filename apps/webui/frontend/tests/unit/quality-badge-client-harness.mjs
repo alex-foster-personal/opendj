@@ -227,7 +227,9 @@ class NodeShim {
 	/** @param {...NodeShim} nodes */
 	before(...nodes) {
 		const p = this.parentNode;
-		if (!p) throw new Error('before: no parent');
+		// Svelte keyed-each reconciliation can call `before` on a node that
+		// `removeChild` already detached in the same tick.
+		if (!p) return;
 		let ref = this;
 		for (const n of nodes) {
 			p.insertBefore(n, ref);
@@ -453,6 +455,15 @@ class CommentShim extends NodeShim {
 	constructor(data, ownerDocument) {
 		super(NODE_COMMENT, '#comment', ownerDocument);
 		this.nodeValue = String(data);
+	}
+
+	/** CharacterData.data: Svelte's first_child reads it to skip a fragment's empty `<!>` anchor. */
+	get data() {
+		return this.nodeValue;
+	}
+
+	set data(value) {
+		this.nodeValue = String(value);
 	}
 }
 

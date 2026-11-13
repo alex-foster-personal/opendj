@@ -2,8 +2,9 @@
  * Window keydown/keyup wiring for the LIBUX-04 hotkeys overlay.
  *
  * "/" is hold-to-show (createHoldOrPress, hold-only, threshold 0).
- * "?" toggles the same overlay. Esc always hides, from either view and
- * any filter. Installed from root layout so it works on /performance
+ * "?" toggles the same overlay. Esc clears a non-empty filter first and
+ * leaves the overlay open (#12278); Esc on an empty filter hides it, from
+ * either view. Installed from root layout so it works on /performance
  * and the shell.
  *
  * Ignored while the settings overlay is open, and while focus is in an
@@ -92,18 +93,26 @@ function _isToggleKey(e: KeyboardEvent): boolean {
 	return !e.metaKey && !e.ctrlKey && !e.altKey && e.key === HOTKEYS_OVERLAY_TOGGLE_KEY;
 }
 
+// An IME composition (keyCode 229 is the legacy marker some engines still send
+// instead of isComposing) owns its keys until it ends: a "/" or "?" picked while
+// composing is text, not a gesture, and Esc cancels the candidate (#12283).
+function _isComposing(e: KeyboardEvent): boolean {
+	return e.isComposing || e.keyCode === 229;
+}
+
 function _isPrintable(e: KeyboardEvent): boolean {
 	return e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey;
 }
 
 export function installHotkeysOverlayHotkeys(): () => void {
 	const onKeyDown = (e: KeyboardEvent): void => {
-		if (isSettingsOpen()) return;
+		if (isSettingsOpen() || _isComposing(e)) return;
 
 		if (e.key === 'Escape' && isHotkeysOverlayOpen()) {
 			e.preventDefault();
 			e.stopPropagation();
-			hideHotkeysOverlay();
+			if (getHotkeysOverlayQuery() !== '') setHotkeysOverlayQuery('');
+			else hideHotkeysOverlay();
 			return;
 		}
 
@@ -127,7 +136,10 @@ export function installHotkeysOverlayHotkeys(): () => void {
 			return;
 		}
 
-		if (!isHotkeysOverlayOpen() || overlaySearch) return;
+		// A focused text field keeps its own keys even with the overlay open (a
+		// command or IPC can open it without moving focus, #12273): type-to-filter
+		// only captures keys typed outside text entry.
+		if (!isHotkeysOverlayOpen() || overlaySearch || typing) return;
 
 		if (e.key === 'Backspace') {
 			e.preventDefault();

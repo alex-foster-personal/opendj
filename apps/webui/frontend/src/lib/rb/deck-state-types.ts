@@ -185,8 +185,10 @@ export interface DeckState {
 	 * monotonic across a destructive replace, which ejects before it loads.
 	 * Only a full engine dispose resets it. */
 	load_generation: number;
-	/** Last load stage timings (ms) for IPC/CLI KPI; null until a load. */
+	/** Canonical blocking-load stage durations (ms); null until a load. */
 	last_load_stages: Record<string, number> | null;
+	/** Internal `time()` names behind each canonical `last_load_stages` entry. */
+	last_load_stage_sources: Record<string, string> | null;
 	/** Globally exclusive MASTER deck state. */
 	is_master: boolean;
 }

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 34117,
+  "measured_with_pr": 34595,
+  "sha": "e78826fbc0",
+  "date": "Fri 13 Nov 2026",
+  "reason": "Issue #10982 splits AgentSidebarView into AgentSidebarComposer and AgentSidebarConversationLog lazy chunks on the ai-sidebar surface (+478 B gzip on CI).",
+  "payback": "none planned until a rebaseline; the split is the intended modularization"
+}

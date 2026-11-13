@@ -122,6 +122,7 @@ export type DiskPrefsPatch = {
 	technically_working_animate?: boolean;
 	show_agent_pins?: boolean;
 	show_stems?: boolean;
+	wave_stem_follow?: boolean;
 	/** A11Y-11811: Appearance > Reduce motion; OR'd with the OS media query. */
 	reduce_motion?: boolean;
 	deck_hover_link?: boolean;
@@ -250,6 +251,7 @@ export interface PrefsHydrateTarget {
 	technically_working_animate: boolean;
 	show_agent_pins: boolean;
 	show_stems: boolean;
+	wave_stem_follow: boolean;
 	reduce_motion: boolean;
 	deck_hover_link: boolean;
 	compact_decks: boolean;
@@ -571,6 +573,9 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 		}
 		if (typeof body.show_stems === 'boolean') {
 			uiPrefs.show_stems = body.show_stems;
+		}
+		if (typeof body.wave_stem_follow === 'boolean') {
+			uiPrefs.wave_stem_follow = body.wave_stem_follow;
 		}
 		if (typeof body.reduce_motion === 'boolean') {
 			uiPrefs.reduce_motion = body.reduce_motion;

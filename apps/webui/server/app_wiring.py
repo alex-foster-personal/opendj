@@ -6,6 +6,7 @@ factory stays under the complexity and file-size ratchets.
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 import os
@@ -19,7 +20,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
@@ -29,7 +31,8 @@ from starlette.types import Scope
 
 from apps.feature_flags import FlagStore, load_flags
 from apps.feature_flags.http import flags_router
-from apps.lighting.http import router as lighting_router
+from apps.lighting.contract import ClockController
+from apps.lighting.http import create_clock_router, router as lighting_router
 from apps.play_analytics.http import router as play_analytics_router
 from apps.set_notes.http import create_router as create_set_notes_router
 from apps.sets.api import SETS_API_PREFIX, SETS_V1_API_PREFIX, router as sets_router
@@ -38,7 +41,7 @@ from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.shared.shutdown_bound import StopStep, run_stop_steps, stop_window_deadline
 from apps.shared.state.db import StateStoreBusyError
 from apps.sync_hub import hosted_config as sync_hub_hosted_config
-from apps.sync_hub import hub_wal_keeper
+from apps.sync_hub import hub_wal_keeper, r2_capability
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
@@ -66,12 +69,14 @@ from .backend import (
 from .cloudsync_scheduler import CloudSyncScheduler
 from .deps import get_write_state
 from .errors import (
+    PROBLEM_DETAILS_MEDIA_TYPE,
     handle_already_exists,
     handle_backend_error,
     handle_bulk_limit,
     handle_conflict,
     handle_not_found,
     handle_rekordbox_writeback_disabled,
+    handle_request_validation,
     handle_slice_not_contiguous,
     handle_smartlist_immutable,
     handle_sqlite_busy_operational_error,
@@ -94,6 +99,7 @@ from .routes import telemetry as telemetry_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
+from .routes.ui_prefs import lighting_clock_for_app
 from .server_timing import ServerTimingMiddleware
 from .sets_master_tap import OrderBusMasterTap
 from .share_gate import ShareConfig
@@ -322,6 +328,10 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         state_maintenance.start_for_state_db(Path(app.state.state_db_path))
         # REMOTE-CTL restart: reopen the phone-remote listener when it was on at quit.
         await performance_remote_control_routes.restore_remote_control(app)
+        # CLOUDSYNC-4686b: a hub says at boot whether it can presign R2 assets.
+        # A no-op on every non-hub process; off the event loop because the
+        # measurement fetches one presigned URL.
+        await asyncio.to_thread(r2_capability.log_startup_capability, app.state)
         yield
     finally:
         # A step still running would outlive the engine with its pool
@@ -535,6 +545,93 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     _install_armed_stem_hydration(app, data_dir=data_dir, source=armed.source)
 
 
+_ERROR_BODY_REF_SUFFIX = "/ErrorBody"
+
+
+def _schema_ref_name(schema: object) -> str | None:
+    if not isinstance(schema, dict):
+        return None
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.endswith(_ERROR_BODY_REF_SUFFIX):
+        return ref
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        for shape in any_of:
+            if isinstance(shape, dict):
+                ref = shape.get("$ref")
+                if isinstance(ref, str) and ref.endswith(_ERROR_BODY_REF_SUFFIX):
+                    return ref
+    return None
+
+
+def _rewrite_response_content(content: dict[str, Any]) -> None:
+    json_body = content.get("application/json")
+    if not isinstance(json_body, dict):
+        return
+    schema = json_body.get("schema")
+    if not isinstance(schema, dict):
+        return
+    error_ref = _schema_ref_name(schema)
+    if error_ref is None:
+        return
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        error_shapes = [
+            shape
+            for shape in any_of
+            if isinstance(shape, dict)
+            and isinstance(shape.get("$ref"), str)
+            and shape["$ref"].endswith(_ERROR_BODY_REF_SUFFIX)
+        ]
+        other_shapes = [
+            shape
+            for shape in any_of
+            if shape not in error_shapes
+        ]
+        content[PROBLEM_DETAILS_MEDIA_TYPE] = {"schema": {"$ref": error_ref}}
+        del content["application/json"]
+        if other_shapes:
+            content["application/json"] = {"schema": {"anyOf": other_shapes}}
+        return
+    content[PROBLEM_DETAILS_MEDIA_TYPE] = json_body
+    del content["application/json"]
+
+
+def _patch_openapi_problem_details(schema: dict[str, Any]) -> None:
+    for path_item in schema.get("paths", {}).values():
+        if not isinstance(path_item, dict):
+            continue
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses")
+            if not isinstance(responses, dict):
+                continue
+            for response in responses.values():
+                if not isinstance(response, dict):
+                    continue
+                content = response.get("content")
+                if isinstance(content, dict):
+                    _rewrite_response_content(content)
+
+
+def _install_problem_details_openapi(app: FastAPI) -> None:
+    if getattr(app, "_problem_details_openapi_installed", False):
+        return
+    app._problem_details_openapi_installed = True
+    original_openapi = app.openapi
+
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = original_openapi()
+        _patch_openapi_problem_details(schema)
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
+
+
 def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(
@@ -547,10 +644,12 @@ def _install_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(TargetInsideSliceError, handle_target_inside_slice)
     app.add_exception_handler(BulkLimitError, handle_bulk_limit)
     app.add_exception_handler(BackendError, handle_backend_error)
+    app.add_exception_handler(RequestValidationError, handle_request_validation)
     app.add_exception_handler(StateStoreBusyError, handle_state_store_busy)
     app.add_exception_handler(
         sqlite3.OperationalError, handle_sqlite_busy_operational_error,
     )
+    _install_problem_details_openapi(app)
 
 
 def _configure_cors(app: FastAPI) -> None:
@@ -614,6 +713,10 @@ def _routers_under(package: ModuleType) -> list[APIRouter]:
     return routers
 
 
+def _lighting_clock_controller(request: Request) -> ClockController:
+    return lighting_clock_for_app(request.app)
+
+
 def _mount_api_routers(app: FastAPI) -> None:
     # ``label_tasks`` (issue #11193) mounts via ``MOUNT_UNDER_API_PREFIX`` in
     # ``_routers_under`` below, next to the stems track routes its clips use.
@@ -621,6 +724,8 @@ def _mount_api_routers(app: FastAPI) -> None:
     app.include_router(sets_router, prefix=SETS_API_PREFIX)
     app.include_router(sets_router, prefix=SETS_V1_API_PREFIX)
     api_prefix = "/api/v1"
+    lighting_clock_for_app(app)
+    app.include_router(create_clock_router(_lighting_clock_controller), prefix=api_prefix)
     # routes.sample_helper (POST /sample-helper/download) mounts via _routers_under.
     for router in (
         *_routers_under(routes_package),

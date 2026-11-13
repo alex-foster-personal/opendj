@@ -29,6 +29,9 @@ class PlaylistSummaryStatsData:
     keys_distinct: int
     keys_missing: int
     unanalysed: int
+    #: LIBM-105b: members whose local audio is not on this machine (missing file, unmounted volume, no track row).
+    #: Streaming and pathless members have no local file to lose and are not counted; nor is an unchecked row.
+    unavailable: int
 
 
 def _median(values: list[float]) -> float | None:
@@ -49,6 +52,13 @@ def _file_present_for_duration(
     if not path or is_streaming_path(path):
         return False
     return Path(path).is_file()
+
+
+def _has_local_audio(track: Track | None) -> bool:
+    """True when the member should have a local file: a dangling membership or a non-streaming path."""
+    if track is None:
+        return True
+    return bool(track.file_path) and not is_streaming_path(track.file_path)
 
 
 def stats_from_distinct_members(
@@ -73,6 +83,7 @@ def stats_from_distinct_members(
             keys_distinct=0,
             keys_missing=0,
             unanalysed=0,
+            unavailable=0,
         )
 
     duration_s = 0.0
@@ -83,11 +94,14 @@ def stats_from_distinct_members(
     keys: set[str] = set()
     keys_missing = 0
     unanalysed = 0
+    unavailable = 0
     avail = availability or {}
 
     for sid in distinct:
         track = tracks_by_id.get(sid)
         present = _file_present_for_duration(track, avail.get(sid))
+        if not present and _has_local_audio(track):
+            unavailable += 1
 
         if track is not None and track.duration_ms is not None:
             duration_s += track.duration_ms / 1000.0
@@ -125,6 +139,7 @@ def stats_from_distinct_members(
         keys_distinct=len(keys),
         keys_missing=keys_missing,
         unanalysed=unanalysed,
+        unavailable=unavailable,
     )
 
 
@@ -145,6 +160,10 @@ def stats_from_in_memory(
     return stats_from_distinct_members(member_ids, tracks_by_id, avail_names)
 
 
+#: track_availability states that mean the audio is expected here but not readable (schema AVAILABILITY_STATES).
+_UNAVAILABLE_STATES: frozenset[str] = frozenset({"absent", "awaiting_volume"})
+
+
 def _stats_from_sqlite_member_rows(
     rows: list[sqlite3.Row],
 ) -> PlaylistSummaryStatsData:
@@ -162,6 +181,7 @@ def _stats_from_sqlite_member_rows(
             keys_distinct=0,
             keys_missing=0,
             unanalysed=0,
+            unavailable=0,
         )
 
     duration_s = 0.0
@@ -172,6 +192,7 @@ def _stats_from_sqlite_member_rows(
     keys: set[str] = set()
     keys_missing = 0
     unanalysed = 0
+    unavailable = 0
 
     for row in rows:
         has_track = bool(row["has_track"])
@@ -203,6 +224,8 @@ def _stats_from_sqlite_member_rows(
             keys.add(key)
         if bpm_missing_row or key_missing_row:
             unanalysed += 1
+        if not has_track or avail_state in _UNAVAILABLE_STATES:
+            unavailable += 1
 
     return PlaylistSummaryStatsData(
         tracks=len(rows),
@@ -217,6 +240,7 @@ def _stats_from_sqlite_member_rows(
         keys_distinct=len(keys),
         keys_missing=keys_missing,
         unanalysed=unanalysed,
+        unavailable=unavailable,
     )
 
 

@@ -11,7 +11,7 @@ row through the existing StateBackend.update_track chokepoint.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from apps.shared.events import publish
@@ -19,6 +19,7 @@ from apps.shared.events import publish
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_write_state
 from ..etag import compute_etag
+from ..mytag_comment_sync import sync_mytag_comments
 
 router = APIRouter(prefix="/bulk-edit", tags=["bulk-edit"])
 MOUNT_UNDER_API_PREFIX = True
@@ -69,6 +70,7 @@ class BulkEditOut(BaseModel):
 @router.patch("", response_model=BulkEditOut)
 def bulk_edit(
     body: BulkEditIn,
+    request: Request,
     backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> BulkEditOut:
     missing_etags = [sid for sid in body.stable_ids if sid not in body.expected_etags]
@@ -95,6 +97,7 @@ def bulk_edit(
     updates = [TrackUpdate(stable_id, patch_dict, body.expected_etags[stable_id]) for stable_id in body.stable_ids]
     try:
         tracks = backend.update_tracks(updates, source="webui")
+        tracks = sync_mytag_comments(request.app, backend, tracks, source="webui")
     except BatchConflictError as exc:
         raise HTTPException(
             status_code=409,

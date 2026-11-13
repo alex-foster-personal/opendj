@@ -43,6 +43,10 @@ const BEATS_PER_BAR = 4;
 const MAX_WINDOW_BARS = 64;
 const FALLBACK_BARS = 32;
 const MIN_BLEND_BARS = 4;
+/** Bittner 2017 A position prior: last fraction of A for mix-out. */
+const OUT_POSITION_PRIOR = 0.25;
+/** Bittner 2017 B position prior: first fraction of B for mix-in. */
+const IN_POSITION_PRIOR = 0.2;
 const VOCAL_BAR_THRESHOLD = 0.25;
 
 const OUTRO = 'outro';
@@ -214,6 +218,21 @@ function _tooShortOut(label: string, maxBars: number): boolean {
 	return label === OUTRO && maxBars < MIN_BLEND_BARS;
 }
 
+function _outPositionPrior(bars: number, startBar: number): number {
+	if (bars <= 0) return 1;
+	const barsEff = Math.max(1, bars);
+	const bandStart = (1 - OUT_POSITION_PRIOR) * barsEff;
+	return Math.min(1, startBar / Math.max(1, bandStart));
+}
+
+function _inPositionPrior(bars: number, startBar: number): number {
+	if (bars <= 0) return 1;
+	const barsEff = Math.max(1, bars);
+	const bandEnd = IN_POSITION_PRIOR * barsEff;
+	if (startBar <= bandEnd) return 1;
+	return Math.max(0, (barsEff - startBar) / (barsEff - bandEnd));
+}
+
 function _outWindow(
 	input: AutoPlayMixTrackInput,
 	sections: readonly SectionRow[],
@@ -231,7 +250,8 @@ function _outWindow(
 	const position = startBar / Math.max(1, lastBar);
 	const vocalTerm = vocalFree === null ? 1 : vocalFree / maxBars;
 	const lengthTerm = Math.min(1, maxBars / 32);
-	const score = 0.45 * labelWeight + 0.2 * vocalTerm + 0.2 * position + 0.15 * lengthTerm;
+	let score = 0.45 * labelWeight + 0.2 * vocalTerm + 0.2 * position + 0.15 * lengthTerm;
+	score *= _outPositionPrior(lastBar, startBar);
 	const reasons = [why, `${maxBars} bars to the last downbeat`];
 	if (vocalFree !== null) reasons.push(`${vocalFree} vocal-free bars`);
 	return {
@@ -268,8 +288,9 @@ function _inWindow(
 	const vocalTerm = vocalFree === null ? 1 : vocalFree / maxBars;
 	const lengthTerm = Math.min(1, maxBars / 16);
 	const landing = peak !== null ? 1 : 0;
-	const score =
+	let score =
 		0.4 * labelWeight + 0.15 * vocalTerm + 0.15 * position + 0.15 * lengthTerm + 0.15 * landing;
+	score *= _inPositionPrior(downbeats.length, startBar);
 	const reasons = [why, `${maxBars} usable bars`];
 	if (peak !== null) reasons.push(`lands on a peak at bar ${peak}`);
 	if (firstVocal !== null && firstVocal >= startBar)

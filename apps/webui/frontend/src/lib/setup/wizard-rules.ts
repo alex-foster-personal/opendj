@@ -106,6 +106,19 @@ export function wizardAnnouncement(
 	return null;
 }
 
+/**
+ * Whether a source change within one step must move focus to the new panel's heading.
+ * Only when the swap removed the focused control (Choose a folder instead), so focus
+ * fell out of the dialog; a source radio keeps its focus.
+ */
+export function panelSwapNeedsHeadingFocus(
+	previousSource: ImportSourceSelection,
+	currentSource: ImportSourceSelection,
+	focusInsidePanel: boolean
+): boolean {
+	return previousSource !== currentSource && !focusInsidePanel;
+}
+
 export function nextStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
 	const route = visibleSteps(source);
 	const index = route.indexOf(step);
@@ -224,3 +237,14 @@ export function importPct(job: Job | null): number {
 	if (job === null) return 0;
 	return Math.max(0, Math.min(100, Math.round(job.progress * 100)));
 }
+
+// --------------------------------------------------------- boot redirect tempo URL
+
+// The rules live in the leaf module `redirect-search.ts`, so `rb/boot-landing.ts`
+// can import them without pulling the setup API client behind this module.
+export {
+	ONBOARDING_TEMPO_SEARCH_KEYS,
+	appendTempoSearchToRoute,
+	filterValidTempoSearchParams,
+	preserveUrlSearchOnRedirect
+} from './redirect-search';

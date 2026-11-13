@@ -139,3 +139,43 @@ test('wiring: the real hotkey handler sends grid_jump through the dispatcher', a
 	assert.match(source, /gridJump: \(bars\) => \{\s*void _gridJump\(bars\);/);
 	assert.match(source, /runPerformanceCommandFromUi\(\{ type: 'grid_jump', deck, bars \}\)/);
 });
+
+// --- DECKUX-6794 (issue #12534): the keys, the typed command and the Rust refusal share one contract ---
+
+let ipc;
+let rust;
+
+before(async () => {
+	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts', {
+		viteApiBase: 'http://127.0.0.1:9'
+	});
+	rust = await loadTypeScriptModule('src/lib/audio-engine/rust-mode.svelte.ts', {
+		viteApiBase: 'http://127.0.0.1:9'
+	});
+});
+
+/** The typed command a resolved key action becomes on the bus. */
+const commandFor = (action) => ({ type: 'grid_jump', deck: 1, bars: action.bars });
+
+test('contract: each key step (4, Shift 8, both ways) passes the IPC validator unchanged', () => {
+	for (const [k, shiftKey] of [
+		['ArrowRight', false],
+		['ArrowLeft', false],
+		['ArrowRight', true],
+		['ArrowLeft', true]
+	]) {
+		const command = commandFor(resolve(key(k, { shiftKey })));
+		assert.deepEqual(ipc.parsePerformanceCommandForTest(command), command);
+	}
+});
+
+test('contract: the IPC validator refuses a zero or fractional step and extra fields', () => {
+	const parse = (c) => ipc.parsePerformanceCommandForTest(c);
+	assert.throws(() => parse({ type: 'grid_jump', deck: 1, bars: 0 }), /non-zero integer/);
+	assert.throws(() => parse({ type: 'grid_jump', deck: 1, bars: 2.5 }), /non-zero integer/);
+	assert.throws(() => parse({ type: 'grid_jump', deck: 1, bars: 4, beats: 16 }));
+});
+
+test('contract: Rust engine mode refuses grid_jump by name', () => {
+	assert.ok(rust.WEB_AUDIO_ONLY.has('grid_jump'));
+});

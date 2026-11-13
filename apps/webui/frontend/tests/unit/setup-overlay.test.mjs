@@ -629,15 +629,19 @@ test('the folder picker guards on a desktop shell and opens a directory dialog',
 	// Either shell (Tauri or Electron) through the one bridge; a tab has none.
 	assert.match(overlay, /return nativeShellKind\(\) !== null/);
 	assert.match(overlay, /canUseNativeFolderPicker/);
-	assert.match(overlay, /await pickFolder\('Choose a folder'\)/);
+	assert.match(overlay, /await pickFolderIntoRow\(rowId,/);
+	const picker = read('src/lib/setup/folder-picker.ts');
+	assert.match(picker, /if \(nativeShellKind\(scope\) === null\) return 'unavailable'/);
+	assert.match(picker, /await pickFolder\('Choose a folder', scope\)/);
 	const bridge = read('src/lib/shell/native-shell.ts');
 	assert.match(bridge, /__TAURI_INTERNALS__/);
 	assert.match(bridge, /await import\('@tauri-apps\/plugin-dialog'\)/);
 	assert.match(bridge, /directory: true, multiple: false/);
 	assert.match(bridge, /electron\.pickFolder\(\{ title \}\)/);
+	assert.match(overlay, /\(id, path\) => setupWizard\.chooseFolderForRow\(id, path\)/);
 	assert.match(
-		overlay,
-		/if \(typeof selected === 'string'\) \{\s*\n\s*setupWizard\.chooseFolderForRow\(rowId, selected\);/
+		picker,
+		/if \(typeof selected !== 'string'\) return 'cancelled';\s*\n\s*choose\(rowId, selected\);/
 	);
 });
 
@@ -659,7 +663,7 @@ test('a chosen folder is checked without pressing Check this folder', () => {
 	assert.match(rows, /onCheck\(id\)/);
 	assert.doesNotMatch(input, /oninput|onkeyup|onkeypress/);
 	assert.match(overlay, /onCommit=\{\(id\) => setupWizard\.commitFolderRow\(id\)\}/);
-	assert.match(overlay, /setupWizard\.chooseFolderForRow\(rowId, selected\)/);
+	assert.match(overlay, /\(id, path\) => setupWizard\.chooseFolderForRow\(id, path\)/);
 	assert.match(rows, /onclick=\{\(\) => onCheck\(row\.id\)\}[\s\S]{0,200}?Check this folder/);
 });
 

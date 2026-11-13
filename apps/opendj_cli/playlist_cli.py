@@ -1,7 +1,7 @@
 """``opendj playlist thumbnail``, ``export``, ``summary``, ``import`` and ``save-order`` (ARTTHUMB-8728b, LIBORG-10314, DJIMPORT-10225, LIBUX-8678).
 
     opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]
-    opendj playlist export <playlist-id> --format txt [--out FILE]
+    opendj playlist export <playlist-id> --format txt|csv|m3u8|rekordbox-xml [--out FILE]
     opendj playlist summary <playlist-id>
     opendj playlist import <file.m3u|file.m3u8> [--name NAME]
     opendj playlist save-order <playlist_id> (--by FIELD [--desc] | --ids ITEM_ID...)
@@ -12,6 +12,11 @@ printed. A file with no match creates nothing and exits non-zero.
 
 ``export`` (LIBORG-10314) fetches ``GET /api/v1/playlists/{id}/export.txt``, the tab-separated
 track list the tree's Export as text menu item downloads, and prints it or writes it to FILE.
+``--format csv`` (LIBM-114) fetches ``GET /api/v1/playlists/{id}/export.csv`` the same way: the
+UTF-8 (with BOM) CSV set list, written byte for byte. ``--format m3u8`` (LIBORG-9748) fetches
+``GET /api/v1/playlists/{id}/export.m3u8``, the extended M3U8 playlist file; ``--json`` adds
+``skipped``, the tracks left out for having no local file. ``--format rekordbox-xml``
+(LIBORG-9751) fetches ``GET /api/v1/playlists/{id}/export.xml``, the playlist as rekordbox XML.
 
 Same image as ``GET /api/v1/playlists/{id}/thumbnail``, the one the sidebar
 rows and the playlists card grid show. Prints the kind (cover or
@@ -22,6 +27,8 @@ image to FILE.
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -38,12 +45,14 @@ from apps.opendj_cli.refusal import fail as _fail
 REQUEST_TIMEOUT_S = 60.0
 USAGE = (
     "usage: opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]\n"
-    "       opendj playlist export <playlist-id> --format txt [--out FILE]\n"
+    "       opendj playlist export <playlist-id> --format txt|csv|m3u8|rekordbox-xml [--out FILE]\n"
     "       opendj playlist summary <playlist-id>"
 )
 IMPORT_USAGE = "usage: opendj playlist import <file.m3u|file.m3u8> [--name NAME]"
 IMPORT_PATH = "/api/v1/playlists/import"
 PLAYLISTS_PATH = "/api/v1/playlists"
+EXPORT_FORMATS = ("txt", "csv", "m3u8", "rekordbox-xml")
+_EXPORT_SUFFIX = {"txt": "txt", "csv": "csv", "m3u8": "m3u8", "rekordbox-xml": "xml"}
 SORT_FIELDS = ("bpm", "key", "title", "artist", "duration", "rating", "genre")
 SAVE_ORDER_USAGE = "usage: opendj playlist save-order <playlist_id> (--by FIELD [--desc] | --ids ITEM_ID...)"
 
@@ -52,8 +61,8 @@ def thumbnail_path(playlist_id: str, size: int) -> str:
     return f"/api/v1/playlists/{quote(playlist_id, safe='')}/thumbnail?size={size}"
 
 
-def export_path(playlist_id: str) -> str:
-    return f"/api/v1/playlists/{quote(playlist_id, safe='')}/export.txt"
+def export_path(playlist_id: str, export_format: str) -> str:
+    return f"/api/v1/playlists/{quote(playlist_id, safe='')}/export.{_EXPORT_SUFFIX[export_format]}"
 
 
 def summary_path(playlist_id: str) -> str:
@@ -173,7 +182,7 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
     parser.add_argument("verb", choices=("thumbnail", "export"))
     parser.add_argument("playlist_id")
     parser.add_argument("--size", type=int, choices=(64, 232))
-    parser.add_argument("--format", choices=("txt",))
+    parser.add_argument("--format", choices=EXPORT_FORMATS)
     parser.add_argument("--out", type=Path)
     try:
         args = parser.parse_args(list(rest))
@@ -182,7 +191,7 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
     if args.verb == "export":
         if args.format is None or args.size is not None:
             return _fail(as_json, "usage", USAGE, EXIT_FAILED)
-        return _run_export(args.playlist_id, args.out, as_json=as_json, lock=lock)
+        return _run_export(args.playlist_id, args.format, args.out, as_json=as_json, lock=lock)
     if args.verb == "thumbnail":
         if args.format is not None:
             return _fail(as_json, "usage", USAGE, EXIT_FAILED)
@@ -226,17 +235,34 @@ def _run_summary(playlist_id: str, *, as_json: bool, lock: Path | None) -> int:
     return EXIT_CONFIRMED
 
 
-def _run_export(playlist_id: str, out: Path | None, *, as_json: bool, lock: Path | None) -> int:
-    response = _get(export_path(playlist_id), as_json=as_json, lock=lock)
+def _export_rows(text: str, export_format: str) -> int:
+    """Track rows in an export body, header excluded (CSV fields may hold quoted newlines)."""
+    match export_format:
+        case "csv":
+            return len(list(csv.reader(io.StringIO(text.removeprefix("\ufeff"))))) - 1
+        case "txt":
+            return text.count("\n") - 1
+        case "m3u8":
+            return sum(1 for line in text.splitlines() if line and not line.startswith("#"))
+        case "rekordbox-xml":
+            return text.count('<TRACK Key="')
+        case _:
+            raise AssertionError(f"unhandled export format {export_format}")
+
+
+def _run_export(playlist_id: str, export_format: str, out: Path | None, *, as_json: bool, lock: Path | None) -> int:
+    response = _get(export_path(playlist_id, export_format), as_json=as_json, lock=lock)
     if isinstance(response, int):
         return response
     text = response.content.decode("utf-8")
     if out is not None:
         out.write_bytes(response.content)
     if as_json:
-        rows = text.count("\n") - 1
-        payload = {"playlist_id": playlist_id, "format": "txt", "rows": rows,
+        rows = _export_rows(text, export_format)
+        payload = {"playlist_id": playlist_id, "format": export_format, "rows": rows,
                    "out": str(out) if out is not None else None, "text": text}
+        if "x-skipped" in response.headers:
+            payload["skipped"] = int(response.headers["x-skipped"])
         print(json.dumps(payload, indent=2, sort_keys=True))
     elif out is None:
         print(text, end="")

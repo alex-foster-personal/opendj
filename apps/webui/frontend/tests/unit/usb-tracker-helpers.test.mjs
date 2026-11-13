@@ -237,4 +237,15 @@ describe('usb tracker helpers (#328)', () => {
 		assert.match(panel, /refreshDeckHealthForVolumes/);
 		assert.match(panel, /Read\/write speed benchmarking is still not measured/);
 	});
+
+	it('runs the deck health refresh untracked so the health map cannot re-trigger the scan (#12146)', () => {
+		// Intent: the health effect must depend only on panel visibility and volume ids.
+		const panel = readFileSync(
+			new URL('../../src/lib/components/rb/UsbPanel.svelte', import.meta.url),
+			'utf8'
+		);
+		assert.match(panel, /import \{ untrack, type Component \} from 'svelte';/);
+		assert.match(panel, /untrack\(\(\) => void refreshDeckHealthForVolumes\(ids\)\)/);
+		assert.doesNotMatch(panel, /^\s*void refreshDeckHealthForVolumes\(/m);
+	});
 });

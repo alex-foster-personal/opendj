@@ -27,13 +27,15 @@
  * (tests/unit/load-typescript.mjs) can load this module directly.
  */
 
+import { untrack } from 'svelte';
 import type { BpmAlternative, BpmAlternativeSource } from '$lib/rb/bpm-dispute';
-import type {
-	CloudTransferWire,
-	OffloadWire,
-	PreviewStripData,
-	StemSummary,
-	Vocals
+import {
+	type CloudTransferWire,
+	type OffloadWire,
+	previewStripsEqual,
+	type PreviewStripData,
+	type StemSummary,
+	type Vocals
 } from '$lib/rb/api-rb';
 import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
@@ -43,7 +45,12 @@ import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { searchableTrackFromBrowserRow } from './track-table-search';
 import { normalizeRating } from '$lib/rating';
 import { fileNameSortValue, locationSortValue } from '$lib/rb/file-path-cells';
+import { albumSortValue } from '$lib/rb/album-cell';
+import { dateAddedSortValue } from '$lib/rb/date-added-cell';
+import { bitrateSortValue, kindSortValue } from '$lib/rb/bitrate-kind-cells';
+import { lastPlayedSortValue } from '$lib/rb/last-played-day-cell';
 import { listingGenre } from '$lib/rb/genre-source';
+import { colourSortValue } from './track-table-column-filters';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
@@ -53,6 +60,7 @@ import type { PlayFacts } from './last-played';
 import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
 import type { SortDir, SortKey } from './browser-sort-ipc';
+import { firstSortDir } from './browser-sort-ipc';
 export { installBrowserSortIpc } from './browser-sort-ipc';
 export { reorderBlockedReason } from './playlist-reorder-hint';
 export type { SortDir, SortKey } from './browser-sort-ipc';
@@ -100,6 +108,15 @@ export interface BrowserRow extends Pick<
 	artist: string | null;
 	/** Album title when the listing carries it (LIBUX-9732); null when absent. */
 	album?: string | null;
+	/** Date Added as YYYY-MM-DD (LIBUX-13803); null when no added day is known. */
+	date_added?: string | null;
+	/** Issue #10029: the file's own year and record label; null when the tags carry none. */
+	year?: number | null;
+	label?: string | null;
+	/** PLAYS-9745: when this row is one play of a History night, the canonical UTC time it was played. */
+	played_at?: string | null;
+	/** Last play timestamp (LIBUX-13845), play-log aware; null when never played. */
+	last_played_at?: string | null;
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
@@ -201,6 +218,8 @@ export interface BrowserRow extends Pick<
 	 * Err column draws it. Absent or null on synthetic rows and older
 	 * payloads, which then show no beatgrid flag state at all. */
 	grid_quality?: GridQualityRow | null;
+	/** PLAY-5884: usable beat grid from the playlist-tracks page; absent when unknown. */
+	has_beatgrid?: boolean;
 	/** Title-marker remix heuristic (backend is_remix); null on synthetic rows. */
 	is_remix: boolean | null;
 	/** Radio edits are length trims, not remixes - separate tag. */
@@ -432,11 +451,12 @@ export class PaneStore {
 			}
 			return;
 		}
+		const first = firstSortDir(key);
 		if (this.sort_key !== key) {
 			this.sort_key = key;
-			this.sort_dir = 1;
-		} else if (this.sort_dir === 1) {
-			this.sort_dir = -1;
+			this.sort_dir = first;
+		} else if (this.sort_dir === first) {
+			this.sort_dir = first === 1 ? -1 : 1;
 		} else {
 			this.sort_key = null;
 			this.sort_dir = 1;
@@ -634,16 +654,24 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'plays') return row.play_count;
 	else if (key === 'title') return row.title;
 	else if (key === 'artist') return row.artist;
+	else if (key === 'album') return albumSortValue(row);
 	// KEY-GUESS-01: an ambiguous key sorts with its best guess, not with the blanks.
 	else if (key === 'key') return row.key ?? row.key_guess ?? null;
 	else if (key === 'bpm') return row.bpm;
 	else if (key === 'rating') return normalizeRating(row.rating);
+	else if (key === 'colour') return colourSortValue(row);
 	else if (key === 'comments') return row.comments;
 	else if (key === 'time') return row.duration_ms;
 	else if (key === 'energy') return row.energy;
 	else if (key === 'genre') return listingGenre(row);
 	else if (key === 'filename') return fileNameSortValue(row);
 	else if (key === 'location') return locationSortValue(row);
+	else if (key === 'date_added') return dateAddedSortValue(row);
+	else if (key === 'bitrate') return bitrateSortValue(row);
+	else if (key === 'kind') return kindSortValue(row);
+	else if (key === 'last_played') return lastPlayedSortValue(row);
+	// PLAYS-9745: canonical UTC ISO strings, so text order is play order.
+	else if (key === 'played_at') return row.played_at ?? null;
 	else if (key === 'lyrics') return lyricsSortValue(row.lyrics);
 	else if (key === 'grid') return gridFlagSortValue(row);
 	throw new Error('AutoPlay ranks are not cell values');
@@ -670,7 +698,10 @@ export function sortRows(
 			typeof av === 'string' && typeof bv === 'string'
 				? av.localeCompare(bv)
 				: (av as number) - (bv as number);
-		return base * dir;
+		const ordered = base * dir;
+		if (ordered !== 0 || key !== 'date_added') return ordered;
+		// LIBUX-13803: one day's tracks read title A to Z, then membership order (stable sort).
+		return (a.title ?? '').localeCompare(b.title ?? '');
 	});
 }
 
@@ -688,37 +719,41 @@ export function visibleRowsOf(
 	);
 }
 
-/** Replace one row in a pane's rows and search_results (raw $state arrays). */
-export function replacePaneRow(pane: PaneStore, stable_id: string, next: BrowserRow): void {
-	let rowsChanged = false;
-	const rows = pane.rows.map((row) => {
+/** `rows` with `map` applied to each row of `stable_id`, or null when no row changed. */
+function _mapTrackRows(
+	rows: readonly BrowserRow[],
+	stable_id: string,
+	map: (row: BrowserRow) => BrowserRow
+): BrowserRow[] | null {
+	let changed = false;
+	const next = rows.map((row) => {
 		if (row.stable_id !== stable_id) return row;
-		rowsChanged = true;
-		return next;
+		const mapped = map(row);
+		if (mapped !== row) changed = true;
+		return mapped;
 	});
-	if (rowsChanged) pane.rows = rows;
-
-	let searchChanged = false;
-	const search = pane.search_results.map((row) => {
-		if (row.stable_id !== stable_id) return row;
-		searchChanged = true;
-		return next;
-	});
-	if (searchChanged) pane.search_results = search;
+	return changed ? next : null;
 }
 
-/** Map one row everywhere it appears in a pane (membership and FTS results). */
+/** Map one track everywhere it appears in a pane (membership and FTS results).
+ * Each occurrence is mapped on its own: a playlist can hold the track several
+ * times, and every membership keeps its own item_id and order (one copied over
+ * the rest gave TrackTable duplicate row keys).
+ * A write, so it reads the rows untracked: an $effect that patches a row must
+ * not subscribe to the array it replaces, or every patch re-runs it (the
+ * selected-row strip effect looped to effect_update_depth_exceeded). A map that
+ * returns the row it was given publishes nothing. */
 export function updatePaneRow(
 	pane: PaneStore,
 	stable_id: string,
 	map: (row: BrowserRow) => BrowserRow
 ): void {
-	const fromRows = pane.rows.find((row) => row.stable_id === stable_id);
-	const fromSearch = pane.search_results.find((row) => row.stable_id === stable_id);
-	const seed = fromRows ?? fromSearch;
-	if (seed === undefined) return;
-	const next = map(seed);
-	replacePaneRow(pane, stable_id, next);
+	untrack(() => {
+		const rows = _mapTrackRows(pane.rows, stable_id, map);
+		if (rows !== null) pane.rows = rows;
+		const search = _mapTrackRows(pane.search_results, stable_id, map);
+		if (search !== null) pane.search_results = search;
+	});
 }
 
 /** The same row update across every open pane (strip adoption, shared cache). */
@@ -730,13 +765,17 @@ export function updateRowAcrossPanes(
 	for (const pane of panes) updatePaneRow(pane, stable_id, map);
 }
 
-/** Writes a decoded strip into every matching row in every pane, ALWAYS overwriting - the audience-ambiguous sidecar (TECH-DEBT.md) never outranks /anlz's own audience-scoped decode. */
+/** Writes a decoded strip into every matching row in every pane. A fresher decode
+ * overwrites a stale sidecar strip (TECH-DEBT.md); an identical decode is a no-op
+ * so BrowserPanel's adoption $effect does not spin on repeated decodes (RESCUE-13701). */
 export function applyDecodedStripAcrossPanes(
 	panes: readonly PaneStore[],
 	stable_id: string,
 	strip: PreviewStripData | null
 ): void {
-	updateRowAcrossPanes(panes, stable_id, (row) => ({ ...row, strip }));
+	updateRowAcrossPanes(panes, stable_id, (row) =>
+		previewStripsEqual(row.strip, strip) ? row : { ...row, strip }
+	);
 }
 
 // ---------------------------------------------------------------- pane tabs

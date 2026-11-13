@@ -81,3 +81,21 @@ test('wizardAnnouncement speaks step changes and new refusals once', () => {
 		'Welcome, step 1 of 5'
 	);
 });
+
+test('a panel swap that removed the focused control sends focus to the new heading, never steals it', () => {
+	assert.equal(
+		mod.panelSwapNeedsHeadingFocus(null, 'folder', false),
+		true,
+		'if Choose a folder instead drops focus to the page then Tab restarts at Minimise'
+	);
+	assert.equal(
+		mod.panelSwapNeedsHeadingFocus(null, 'folder', true),
+		false,
+		'if a source radio change moves focus off the radio then arrow keys through the group break'
+	);
+	assert.equal(
+		mod.panelSwapNeedsHeadingFocus('folder', 'folder', false),
+		false,
+		'if a re-render with the same source moves focus then the wizard steals it'
+	);
+});

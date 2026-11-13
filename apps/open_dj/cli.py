@@ -29,12 +29,12 @@ import os
 import subprocess
 import sys
 import tempfile
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
 from apps.open_dj.canon import to_canonical_bytes
 from apps.open_dj.diff import diff_documents, format_report
+from apps.open_dj.provenance import unwrap_provenance_scalar
 from apps.open_dj.registry import (
     AdapterNotFoundError,
     available_adapters,
@@ -396,34 +396,6 @@ def _atomic_write(target: Path, data: bytes) -> None:
         raise
 
 
-def _library_to_dict(library: Any) -> dict[str, Any]:
-    """Convert a typed ``OpenDjLibrary`` dataclass to the JSON doc shape.
-
-    We call ``asdict`` + strip tuple-ness; the dataclass layer already
-    handles ``to_dict`` on ``OpenDjLibrary`` -- prefer that when present.
-    """
-    if hasattr(library, "to_dict"):
-        return library.to_dict()  # type: ignore[no-any-return]
-    if is_dataclass(library):
-        return asdict(library)
-    raise TypeError(f"cannot serialise adapter output: {type(library)!r}")
-
-
-def _unwrap_prov(value: Any) -> Any:
-    """Unwrap an open-dj ``ProvenanceValue`` envelope if present.
-
-    The wire format wraps authored fields (``bpm``, ``rating``, ``key``,
-    etc.) in ``{"value": X, "source": ..., "modified_at": ...}``. The typed
-    dataclass layer stores the scalar; strip the envelope on ingest so
-    adapter ``write()`` paths see the scalar they expect.
-    """
-    if isinstance(value, dict) and "value" in value and (
-        "source" in value or "modified_at" in value
-    ):
-        return value["value"]
-    return value
-
-
 def _cue_color_rgb_from_wire(c: dict[str, Any]) -> int | None:
     if "color" in c:
         return color_hex_to_int(c["color"])
@@ -445,13 +417,6 @@ def _cues_from_doc(raw: list[dict[str, Any]], CuePoint) -> tuple:
     """
     out: list = []
     skip_next_loop_out_key: set[tuple[int, str]] = set()
-    # First pass: collect loop_in -> matching loop_out by (position+length, name)
-    # so we can emit a single collapsed loop cue.
-    loop_ins: dict[tuple[int, str], dict[str, Any]] = {}
-    for c in raw or []:
-        if c.get("type") == "loop_in":
-            loop_ins[(int(c.get("position_ms", 0)), c.get("name", ""))] = c
-
     next_index = 0
     for c in raw or []:
         ctype = c.get("type")
@@ -532,13 +497,12 @@ def _beats_from_doc(raw: Any, BeatGridPoint) -> tuple:
 
 
 def _dict_to_library(doc: dict[str, Any]):
-    """Inverse of :func:`_library_to_dict` -- JSON doc -> ``OpenDjLibrary``.
+    """Load a wire or in-memory JSON doc into :class:`OpenDjLibrary`.
 
-    Minimal loader; mirrors the private helper in
-    ``tests/test_conformance.py`` so we do not introduce a hard test
-    dependency from the CLI. Provenance-wrapped scalars (``bpm``,
-    ``rating``, ``key``) are unwrapped here because the typed layer
-    stores raw scalars.
+    Mirrors the private helper in ``tests/test_conformance.py`` so the CLI
+    does not depend on the conformance harness. Provenance-wrapped scalars
+    (``bpm``, ``rating``, ``key``) are unwrapped via
+    :func:`unwrap_provenance_scalar` because the typed layer stores scalars.
 
     This loader is the inverse of :mod:`apps.open_dj.wire`, so it
     accepts both v0.1-style docs (``cues``, plain ``track_ids``) and the
@@ -558,9 +522,9 @@ def _dict_to_library(doc: dict[str, Any]):
             title=t.get("title", ""),
             artists=tuple(t.get("artists", ())),
             album=t.get("album", ""),
-            bpm=_unwrap_prov(t.get("bpm")),
-            key_camelot=_unwrap_prov(t.get("key") or t.get("key_camelot")),
-            rating=_unwrap_prov(t.get("rating")),
+            bpm=unwrap_provenance_scalar(t.get("bpm")),
+            key_camelot=unwrap_provenance_scalar(t.get("key") or t.get("key_camelot")),
+            rating=unwrap_provenance_scalar(t.get("rating")),
             duration_ms=t.get("duration_ms"),
             # ``x_play_count`` / ``x_color_rgb`` are the wire-side
             # passthroughs for typed-only scalars; accept either form so

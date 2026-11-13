@@ -21,6 +21,46 @@ GLOSSARY_REL = Path("docs/glossary.md")
 SCALAR_REL = Path("(private path)")
 CURSOR_SKILLS_REL = Path("(private path)")
 
+# Normalized term -> canonical explainer markdown (issue #11197 wave 1).
+EXPLAINER_PATHS: dict[str, str] = {
+    "pssi": "(private path)",
+    "tsaf": "(private path)",
+    "stable_id tier": "(private path)",
+    "provenance envelope": "(private path)",
+}
+
+DEFERRED_EXPLAINER_NOTE = "Deferred: issue #11197 follow-on (wave-1 PR capped at four load-bearing explainers)."
+
+# Sample paths cited in docs/ must not name OSS-withheld trees (scripts/oss_private_refs.py).
+_REPORT_SAMPLE_PATH_DENY: tuple[str, ...] = (
+    "specs/",
+    "app_docs/",
+    "docs/threads/",
+    ".planning/MAINTAINER-QUEUE.md",
+    ".planning/MERGE-QUEUE.md",
+    ".planning/roformer-spike-plan.md",
+    ".planning/bifrost2-handoff",
+    ".planning/cloudsync-levels-map-2026-09-11.md",
+    ".planning/b2b-shared-booth/",
+    ".planning/todos/",
+    ".planning/strategy-brain/",
+    ".planning/seeds/",
+    "(private path)/",
+)
+
+
+def _report_visible_paths(paths: list[str]) -> list[str]:
+    prefix_deny = _REPORT_SAMPLE_PATH_DENY[:3]
+    item_deny = _REPORT_SAMPLE_PATH_DENY[3:]
+
+    def ok(rel: str) -> bool:
+        if rel.startswith(prefix_deny):
+            return False
+        return not any(rel == item.rstrip("/") or rel.startswith(item) for item in item_deny)
+
+    return [p for p in paths if ok(p)]
+
+
 SEED_TERMS: tuple[str, ...] = (
     "Camelot",
     "phrase",
@@ -274,13 +314,28 @@ def parse_scalar_definitions() -> dict[str, str]:
     return dict(SCALAR_DEFINED)
 
 
-def _definition_map(glossary: dict[str, list[tuple[str, str]]], scalar: dict[str, str]) -> dict[str, list[str]]:
+def parse_explainer_definitions(repo_root: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, rel in EXPLAINER_PATHS.items():
+        if (repo_root / rel).is_file():
+            out[key] = rel
+    return out
+
+
+def _definition_map(
+    glossary: dict[str, list[tuple[str, str]]],
+    scalar: dict[str, str],
+    explainers: dict[str, str],
+) -> dict[str, list[str]]:
     out: dict[str, list[str]] = defaultdict(list)
     for key, entries in glossary.items():
         for path, _ in entries:
             if path not in out[key]:
                 out[key].append(path)
     for key, path in scalar.items():
+        if path not in out[key]:
+            out[key].append(path)
+    for key, path in explainers.items():
         if path not in out[key]:
             out[key].append(path)
     return out
@@ -470,7 +525,8 @@ def build_records(repo_root: Path) -> tuple[list[TermRecord], dict[str, object]]
     corpus = _load_corpus(repo_root, files)
     glossary = parse_glossary_definitions(repo_root)
     scalar = parse_scalar_definitions()
-    definitions = _definition_map(glossary, scalar)
+    explainers = parse_explainer_definitions(repo_root)
+    definitions = _definition_map(glossary, scalar, explainers)
     discovered = discover_terms(repo_root, corpus, glossary)
     seed_keys = {_normalize_term(t) for t in SEED_TERMS}
 
@@ -501,6 +557,8 @@ def build_records(repo_root: Path) -> tuple[list[TermRecord], dict[str, object]]
         notes = ""
         if key == _normalize_term("lane") and clash:
             notes = "Spotify editor lane vs fan-out file lane."
+        elif bucket == BUCKET_UNDEFINED and key in seed_keys and key not in explainers and not clash:
+            notes = DEFERRED_EXPLAINER_NOTE
         records.append(
             TermRecord(
                 term=term,
@@ -575,9 +633,10 @@ def render_report(records: list[TermRecord], meta: dict[str, object], generated_
             if bucket == BUCKET_DEFINED:
                 path_cell = ", ".join(p.split(":")[0] for p in r.definition_paths)
             elif bucket == BUCKET_INCONSISTENT:
-                path_cell = " vs ".join(r.clash_paths) if r.clash_paths else ", ".join(r.sample_paths[:2])
+                visible = _report_visible_paths(r.clash_paths or r.sample_paths)
+                path_cell = " vs ".join(visible[:2]) if r.clash_paths else ", ".join(visible[:2])
             else:
-                path_cell = ", ".join(r.sample_paths[:4])
+                path_cell = ", ".join(_report_visible_paths(r.sample_paths)[:4])
             lines.append(
                 f"| {r.rank} | {r.term} | {r.frequency} | {r.ambiguity} | {r.blast} | {path_cell} | {r.notes} |"
             )

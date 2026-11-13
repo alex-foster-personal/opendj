@@ -75,6 +75,9 @@ jobs:
       # tests/quality/test_bookkeeping_workflows_skip_cancelled.py against the cron above.
       OVERLAP_MINUTES: "120"
       LOOKBACK_HOURS: "3"
+      # A pass reads back at most this far. The mark moves only on a pass that succeeds,
+      # and a mark of Wed 7 Oct had every pass time out at 10 minutes for five weeks.
+      MAX_CATCH_UP_HOURS: "24"
       # A reconcile pass: the daily cron, or a dispatch with reconcile ticked.
       RECONCILE: ${{ github.event.schedule == '23 3 * * *' || inputs.reconcile == true }}
       # GitHub re-runs a run up to 30 days after it was created, plus one day for the
@@ -202,6 +205,7 @@ jobs:
             "${reconcile[@]}" \
             --overlap-minutes "$OVERLAP_MINUTES" \
             --lookback-hours "$LOOKBACK_HOURS" \
+            --max-catch-up-hours "$MAX_CATCH_UP_HOURS" \
             --report-dir ci-sink-reports
 
       - name: Post failed completions to the error sink

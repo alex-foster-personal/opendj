@@ -152,6 +152,9 @@ def summarize_rule(rule: dict[str, Any]) -> str:
             f"{json.dumps(rule['value'], sort_keys=True)}"
         )
     op = rule["op"]
+    if op == "top_n":
+        scope = f" OF {summarize_rule(rule['children'][0])}" if "children" in rule else ""
+        return f"TOP {rule['n']} BY {rule['sort_field']}{scope}"
     if op == "not":
         return "NOT " + summarize_rule(rule["children"][0])
     joined = f" {op.upper()} ".join(

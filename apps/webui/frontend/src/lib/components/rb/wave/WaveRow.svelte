@@ -69,6 +69,7 @@
 		snapWaveTargetMs,
 		waveClickSeekMs,
 		waveDragTargetMs,
+		waveGestureZoomView,
 		waveSeekCommand,
 		waveSnapModeFromModifiers
 	} from './wave-scrub';
@@ -83,7 +84,9 @@
 	import { effectiveWaveformDesign, waveSplitActive } from '$lib/rb/ui-skin';
 	import { paintSplitRow, splitPartnerDeck } from './split-row';
 	import { sectionsApiFor } from './sections-lazy.svelte';
-	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
+	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX, soleAudibleStem, stemWaveformApiPart, stemWaveRowColorFromElement } from './stem-waveform-ui';
+	import { paintMainWaveWithStemFollow } from './wave-stem-follow';
+	import { ensureStemWaveform, getStemWaveformEntry } from './stem-waveform-cache.svelte';
 	import { deckWaveZoom, type WaveZoom } from '$lib/rb/wave-zoom';
 	import {
 		setWaveZoomGlideRunning,
@@ -325,9 +328,7 @@
 		// rows share it. Unlinked rows keep their own zoom. The playhead fraction
 		// stays live: it is the shared column.
 		const linkedRef = uiPrefs.wave_zoom_linked && zoomRefDeck !== null ? zoomRefDeck : null;
-		const held = scrubFrozenWindowS ?? (linkedRef === null ? null : waveZoomScrubWindowS(linkedRef.id));
-		if (held === null) return view;
-		return { windowS: held, frac: view.frac };
+		return waveGestureZoomView(view, scrubFrozenWindowS ?? (linkedRef === null ? null : waveZoomScrubWindowS(linkedRef.id)));
 	}
 
 	/** The row's live zoom view: wall-clock window and playhead place 0..1. */
@@ -444,6 +445,30 @@
 	const vocalsTitle = $derived(waveRowVocalsTitle(anlzData));
 
 	const showStems = $derived(uiPrefs.show_stems);
+	// STEMPERF: wave_stem_follow paints the sole audible stem on the main row.
+	const followStem = $derived(
+		uiPrefs.wave_stem_follow && deck.stems.status === 'ready'
+			? soleAudibleStem(deck.stems.controls, deck.stems.playback, deck.stems.layout ?? 'demucs4')
+			: null
+	);
+	const followPart = $derived(followStem === null ? null : stemWaveformApiPart(followStem, deck.stems.layout));
+	$effect(() => {
+		const sid = deck.stable_id;
+		const part = followPart;
+		if (sid === null || part === null) return;
+		ensureStemWaveform(sid, part);
+	});
+	let followColor = $state('');
+	// Resolve the stem token once per stem or theme change, never per paint (PERF-PAINT-02).
+	$effect(() => {
+		void uiPrefs.theme;
+		void uiPrefs.wave_palette;
+		void uiPrefs.ui_skin;
+		followColor = followStem === null || !canvasEl ? '' : stemWaveRowColorFromElement(canvasEl, followStem);
+	});
+	const followEntry = $derived(
+		deck.stable_id === null || followPart === null ? undefined : getStemWaveformEntry(deck.stable_id, followPart)
+	);
 	const waveformSeekArmed = $derived(queryWaveformSeekArmed(deckId));
 	const masterDownbeatOverlay = $derived.by(() =>
 		masterDownbeatOverlayForDeck({
@@ -722,11 +747,12 @@
 			);
 			return;
 		}
-		drawWaveRow(ctx, {
+		const mixDurationMs = deck.duration_ms;
+		const paintMix = (body?: (rowCtx: CanvasRenderingContext2D) => void): void => drawWaveRow(ctx, {
 			widthCss: cssW,
 			heightCss: cssH,
 			positionMs: paintPositionMs,
-			durationMs: deck.duration_ms,
+			durationMs: mixDurationMs,
 			anlz: paintAnlz,
 			palette: paintPalette,
 			pitch: deck.pitch,
@@ -751,8 +777,26 @@
 			tempoScale,
 			hideTempo,
 			cueMarkers,
-			hideVocals
+			hideVocals,
+			body: body ?? null
 		});
+		paintMainWaveWithStemFollow(
+			ctx,
+			{
+				enabled: uiPrefs.wave_stem_follow,
+				stem: followStem,
+				entry: followEntry,
+				color: followColor,
+				scrollPx,
+				durationMs: deck.duration_ms,
+				pitch: deck.pitch,
+				width: cssW,
+				height: cssH,
+				windowS: view.windowS,
+				playheadFrac: view.frac
+			},
+			paintMix
+		);
 	}
 
 	// Is the painted position actually moving? deck.playing is desired INTENT
@@ -863,6 +907,8 @@
 		// WAVE-EQ-5230: a paused deck repaints when its EQ or filter moves.
 		void paintBandGains(deckId, uiPrefs.wave_eq_reflect);
 		if (splitPartner !== null) void paintBandGains(splitPartner.id, uiPrefs.wave_eq_reflect);
+		void uiPrefs.wave_stem_follow;
+		void followEntry;
 		draw(true);
 	});
 

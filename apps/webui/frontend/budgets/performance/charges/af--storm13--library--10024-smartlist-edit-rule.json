@@ -1,0 +1,9 @@
+{
+  "bytes": 12288,
+  "measured_main": 483140,
+  "measured_with_pr": 495160,
+  "sha": "45ed85dc76",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--10024-smartlist-edit-rule grows the performance surface; measured +12020 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

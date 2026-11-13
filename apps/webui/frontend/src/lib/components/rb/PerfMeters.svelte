@@ -68,6 +68,7 @@
 		nextPerfCardState,
 		PERF_CARD_CLOSED,
 		perfReadoutRows,
+		setPerfReadoutRowsSource,
 		type PerfCardEvent,
 		type PerfCardState
 	} from '$lib/rb/perf-readout-card';
@@ -151,6 +152,11 @@
 			memoryDetail: memoryHover
 		})
 	);
+
+	// PERFREADOUT-12579: the sampler reads these rows (lazily, only when it
+	// posts) so agents get the card's own rows. The body reads no state, so it
+	// registers once and unregisters on unmount.
+	$effect(() => setPerfReadoutRowsSource(() => readoutRows));
 
 	// PERF-UI-12: each row draws its own history beside its value. These are
 	// read only inside the open card, so a closed card computes none of them.

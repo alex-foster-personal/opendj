@@ -259,14 +259,16 @@ def _resolve_here(
     """This machine's file per id: its own locations first, then, for an id
     those leave unresolved, its rekordbox FolderPath when that is on disk here
     (LIBM-184). Also returns the FolderPaths read, for bucketing the rest."""
+    # One map for the whole pass: a resolve with no map reloads path-map.json per path.
+    path_map = platform_paths.load_path_map()
     resolved = state_locations.bulk_local_audio_paths(
-        conn, list(stable_ids), machine_id=owner or None
+        conn, list(stable_ids), machine_id=owner or None, path_map=path_map
     )
     unresolved = [sid for sid in stable_ids if resolved.get(sid) is None]
     rekordbox_folders = _rekordbox_folder_paths(conn, unresolved)
     for stable_id, folder in rekordbox_folders.items():
         if not _is_streaming(folder):
-            here = state_locations.mapped_audio_path_if_materialised(folder)
+            here = state_locations.mapped_audio_path_if_materialised(folder, path_map=path_map)
             if here is not None:
                 resolved[stable_id] = here
     return resolved, rekordbox_folders

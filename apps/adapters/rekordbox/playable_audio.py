@@ -211,9 +211,14 @@ def resolve_playable_audio(
         )
         # Issue #3934: believed state never tries rekordbox's FolderPath,
         # which the tree and rows count first, so a copy that is on disk here
-        # wins over "unavailable" and over hydrating a remote object.
+        # wins over "unavailable" and over hydrating a remote object. A
+        # configured ``excluded`` policy is the one refusal local bytes never
+        # bypass (issue #13229): absence of a policy is not a refusal.
+        explicitly_excluded = source.mode == "excluded" and source.policy_source != "unconfigured"
         local_copy = (
-            _local_copy_pick(state, stable_id, share_policy) if source.origin in ("unavailable", "presigned") else None
+            _local_copy_pick(state, stable_id, share_policy)
+            if source.origin in ("unavailable", "presigned") and not explicitly_excluded
+            else None
         )
     finally:
         state.close()

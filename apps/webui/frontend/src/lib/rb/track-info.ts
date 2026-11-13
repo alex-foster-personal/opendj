@@ -90,6 +90,13 @@ export const TRACK_INFO_FIELD_ROWS: { [K in keyof TrackInfoRecord]-?: RowBuilder
 	title: (t, _p, prov) => ({ label: 'Title', value: _text(t.title), provenance: prov('title') }),
 	artist: (t, _p, prov) => ({ label: 'Artist', value: _text(t.artist), provenance: prov('artist') }),
 	album: (t, _p, prov) => ({ label: 'Album', value: _text(t.album), provenance: prov('album') }),
+	// Issue #10029: the file's own year and record label tags.
+	year: (t, _p, prov) => ({
+		label: 'Year',
+		value: t.year === null || t.year === undefined ? NOT_SET : String(t.year),
+		provenance: prov('year')
+	}),
+	label: (t, _p, prov) => ({ label: 'Label', value: _text(t.label), provenance: prov('label') }),
 	bpm: (t, _p, prov) => ({
 		label: 'BPM',
 		value: t.bpm === null || t.bpm === undefined ? NOT_SET : t.bpm.toFixed(2),

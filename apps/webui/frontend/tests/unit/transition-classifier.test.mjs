@@ -263,7 +263,7 @@ test('dropping the incoming fader to 0 clears transitioning on the same snapshot
 
 test('the crossfade law here still matches the one the engine applies', () => {
 	const engineLaw = engineBlockAfter(
-		'function _xfGainFor(assign: CrossfaderAssign, x: number): number {'
+		'export function crossfaderGainFor(assign: CrossfaderAssign, x: number): number {'
 	);
 	for (const expression of [
 		"if (assign === 'THRU') return 1;",

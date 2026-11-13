@@ -9,10 +9,14 @@ as coupling debt.
 
 from __future__ import annotations
 
+import http
+import math
 import sqlite3
 from typing import Any
 
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -23,11 +27,18 @@ from .backend import BackendError, ConflictError, NotFoundError
 from .playlist_add import AlreadyExistsError, BulkLimitError, SmartlistImmutableError
 from .playlist_move import SliceNotContiguousError, TargetInsideSliceError
 
+PROBLEM_DETAILS_MEDIA_TYPE = "application/problem+json"
+_PROBLEM_TYPE_PREFIX = "https://opendj.dev/problems/"
+
 
 class ErrorBody(BaseModel):
     error: str
     message: str
     details: dict[str, Any] | None = None
+    type: str = ""
+    title: str = ""
+    status: int = 0
+    detail: str = ""
 
 
 class ConflictBody(BaseModel):
@@ -35,6 +46,58 @@ class ConflictBody(BaseModel):
     message: str
     current: dict[str, Any]
     etag: str
+    type: str = ""
+    title: str = ""
+    status: int = 0
+    detail: str = ""
+
+
+def _http_title(status_code: int) -> str:
+    try:
+        return http.HTTPStatus(status_code).phrase
+    except ValueError:
+        return "Error"
+
+
+def _problem_type(error_code: str) -> str:
+    slug = error_code.replace("_", "-")
+    return f"{_PROBLEM_TYPE_PREFIX}{slug}"
+
+
+def _enrich_error_body(
+    status_code: int,
+    *,
+    error: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return ErrorBody(
+        error=error,
+        message=message,
+        details=details,
+        type=_problem_type(error),
+        title=_http_title(status_code),
+        status=status_code,
+        detail=message,
+    ).model_dump()
+
+
+def _enrich_conflict_body(
+    status_code: int,
+    *,
+    message: str,
+    current: dict[str, Any],
+    etag: str,
+) -> dict[str, Any]:
+    return ConflictBody(
+        message=message,
+        current=current,
+        etag=etag,
+        type=_problem_type("conflict"),
+        title=_http_title(status_code),
+        status=status_code,
+        detail=message,
+    ).model_dump()
 
 
 def _error_response(
@@ -46,7 +109,8 @@ def _error_response(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content=ErrorBody(error=error, message=message, details=details).model_dump(),
+        media_type=PROBLEM_DETAILS_MEDIA_TYPE,
+        content=_enrich_error_body(status_code, error=error, message=message, details=details),
     )
 
 
@@ -59,14 +123,17 @@ async def handle_not_found(_request: Request, exc: NotFoundError) -> JSONRespons
 
 
 async def handle_conflict(_request: Request, exc: ConflictError) -> JSONResponse:
+    message = "If-Match does not match the current row etag"
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
+        media_type=PROBLEM_DETAILS_MEDIA_TYPE,
         headers={"ETag": exc.etag},
-        content=ConflictBody(
-            message="If-Match does not match the current row etag",
+        content=_enrich_conflict_body(
+            status.HTTP_409_CONFLICT,
+            message=message,
             current=exc.current,
             etag=exc.etag,
-        ).model_dump(),
+        ),
     )
 
 
@@ -119,6 +186,25 @@ async def handle_bulk_limit(_request: Request, exc: BulkLimitError) -> JSONRespo
         status.HTTP_422_UNPROCESSABLE_ENTITY,
         error="bulk_limit",
         message=str(exc),
+    )
+
+
+def _json_safe(value: Any) -> Any:
+    """Replace NaN and Infinity, which JSON cannot encode, with their string form."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+async def handle_request_validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's default 422, but still a 422 when the rejected input is non-finite (PREF-2163)."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": jsonable_encoder(_json_safe(list(exc.errors())))},
     )
 
 
@@ -195,6 +281,7 @@ def precondition_required(message: str) -> JSONResponse:
 __all__ = [
     "ConflictBody",
     "ErrorBody",
+    "PROBLEM_DETAILS_MEDIA_TYPE",
     "STATE_STORE_BUSY_CODE",
     "handle_already_exists",
     "handle_backend_error",

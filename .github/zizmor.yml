@@ -13,9 +13,6 @@ rules:
       # guard's pass and removed (RUN-COUNT round 3).
       - trunk-job-verdict.yml:24
       - trunk-red-alarm.yml:16
-      # ci-main-flake-rerun.yml (Thu 12 Nov 2026, #11377): same shape, no checkout, gh and jq
-      # only on the completed main run's id; it never runs the triggering run's code.
-      - ci-main-flake-rerun.yml:9
       # e2e.yml (Wed 4 Nov 2026, ADR-NEW-e2e-after-ci-gate): a pull request's E2E is a
       # workflow_run of CI so it starts only after `ci gate` is green. Unlike the two
       # above it DOES check out the triggering pull request's merge ref, as the old

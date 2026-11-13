@@ -14,6 +14,9 @@
 	 *     count, LED test per device).
 	 *   ✔︎ 🎯 Learn-log section: MidiLearnLog console (last 50, unmapped red).
 	 *   ✔︎ 🎯 MidiLearnStatus shows ambiguous learn with reason + Retry.
+	 *   ✔︎ 🎯 Learn (#9781): pick a command, press Learn, move a control; the
+	 *     binding is saved to the user map copy. Esc while armed cancels learn
+	 *     without saving and keeps the drawer open.
 	 *   ✔︎ 🎯 Esc / backdrop / close button all dismiss the drawer.
 	 *     [if] Esc while open doesn't close [then] broken
 	 */
@@ -23,6 +26,8 @@
 	import {
 		closeLogPopout,
 		floatMidiPanel,
+		handleMidiLearnKey,
+		learnMidiCommand,
 		midiUi,
 		applyMidiEnabledSetting,
 		setMidiPanelWidthMode,
@@ -30,6 +35,8 @@
 		toggleMidiPanelExpanded
 	} from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import { LEARNABLE_COMMANDS } from '$lib/rb/midi/learn-save';
+	import type { MidiBinding } from '$lib/rb/midi/midi-types';
 	import { midiTakeoverUi } from '$lib/rb/midi/takeover-ui.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
@@ -40,7 +47,21 @@
 		denied: 'denied - re-enable in browser site settings, then reload'
 	};
 
+	let learnCommandIndex = $state(0);
+
+	function confirmReplace(existing: MidiBinding): boolean {
+		return window.confirm(
+			`This control is already bound to ${existing.action.type}. Replace that binding?`
+		);
+	}
+
+	function startLearn(): void {
+		const command = LEARNABLE_COMMANDS[learnCommandIndex];
+		void learnMidiCommand({ action: command.action }, confirmReplace);
+	}
+
 	function handleKeydown(e: KeyboardEvent): void {
+		if (handleMidiLearnKey(e.key)) return;
 		if (e.key === 'Escape' && midiUi.panelOpen) {
 			toggleMidiPanel();
 		}
@@ -48,6 +69,10 @@
 
 	function setTakeoverMode(mode: 'pickup' | 'jump'): void {
 		void runPerformanceCommandFromUi({ type: 'midi_takeover_mode', mode });
+	}
+
+	function setDisplacedWarning(enabled: boolean): void {
+		void runPerformanceCommandFromUi({ type: 'midi_displaced_warning', enabled });
 	}
 
 	// This whole panel already only RENDERS while panelOpen (the {#if} below),
@@ -190,10 +215,27 @@
 				/>
 				Jump (immediate override)
 			</label>
+			<label class="takeover-choice">
+				<input
+					type="checkbox"
+					data-midi-displaced-warning
+					checked={midiTakeoverUi.displacedWarning}
+					onchange={(e) => setDisplacedWarning(e.currentTarget.checked)}
+				/>
+				Warn when a knob or slider stays displaced
+			</label>
 		</section>
 
 		<section class="drawer-section grow">
 			<h3 class="section-title">Learn log</h3>
+			<div class="learn-pick">
+				<select aria-label="command to learn" bind:value={learnCommandIndex}>
+					{#each LEARNABLE_COMMANDS as command, at (command.label)}
+						<option value={at}>{command.label}</option>
+					{/each}
+				</select>
+				<button type="button" class="drawer-action" onclick={startLearn}>Learn</button>
+			</div>
 			<MidiLearnStatus />
 			<MidiLearnLog />
 		</section>
@@ -314,6 +356,12 @@
 		flex: 1;
 		min-height: 0;
 	}
+	.learn-pick {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+
 	.section-title {
 		margin: 0;
 		color: var(--rb-text-dim);

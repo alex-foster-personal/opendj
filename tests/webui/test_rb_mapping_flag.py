@@ -22,6 +22,7 @@ Regression one-liners:
   - if a row reporting has_rb_mapping false does not serve vendor 'local' then broken
   - if a local rb-meta payload carries anything beyond quality/file_exists then the
     skip drops information and this whole approach is broken
+  - if a mapped track's rb-meta serves state-layer genre/comment over djmdContent then broken
   - if an unknown stable_id stops 404ing loudly then broken
 """
 
@@ -73,10 +74,11 @@ def _make_master_plain_db(path: Path) -> None:
             "ContentID VARCHAR(255), rb_local_deleted TINYINT(1) DEFAULT 0)"
         )
         conn.execute(
-            "INSERT INTO djmdContent (ID, FolderPath, Length, rb_local_deleted) "
-            "VALUES (?, '/music/mapped.mp3', 300, 0)",
+            "INSERT INTO djmdContent (ID, FolderPath, Length, Commnt, GenreID, rb_local_deleted) "
+            "VALUES (?, '/music/mapped.mp3', 300, 'Vendor comment', 'g-techno', 0)",
             (VENDOR_MAPPED,),
         )
+        conn.execute("INSERT INTO djmdGenre (ID, Name) VALUES ('g-techno', 'Techno')")
         # Soft-deleted in rekordbox: the mapping survives in state.db, the
         # content row does not. resolve_content treats this as unmapped.
         conn.execute(
@@ -148,6 +150,10 @@ def _make_state_db(path: Path) -> None:
             [
                 (LOCAL_ONLY, "genre", '"House"'),
                 (LOCAL_ONLY, "comments", '"Imported from file tags"'),
+                # Conflicting state-layer tags on a mapped track: rb-meta must
+                # keep serving the vendor values (issue #12586).
+                (MAPPED, "genre", '"Local Genre"'),
+                (MAPPED, "comments", '"Local comment"'),
             ],
         )
         conn.commit()
@@ -252,6 +258,14 @@ def test_unmapped_rows_and_meta_read_file_tag_metadata_from_state(
     assert listing_row["genre"] == "House"
     assert listing_row.get("genre_reason") is None
     assert "comments" not in listing_row
+
+
+def test_mapped_rb_meta_keeps_vendor_genre_and_comment(client: TestClient) -> None:
+    """A rekordbox-mapped track serves djmdContent genre/comment, not state-layer tags."""
+    body = client.get(f"/api/v1/tracks/{MAPPED}/rb-meta").json()
+    assert body["vendor"] == "rekordbox"
+    assert body["genre"] == "Techno"
+    assert body["comment"] == "Vendor comment"
 
 
 def test_unknown_stable_id_still_404s_loudly(client: TestClient) -> None:

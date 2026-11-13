@@ -11,6 +11,7 @@
  * Mixer deck-pair select is handled in action-glue via mixer-selection.
  */
 export {
+	getDeviceMap,
 	initMidi,
 	releaseMidiInputs,
 	registerLearnTap,
@@ -18,4 +19,4 @@ export {
 } from './webmidi.svelte';
 export { registerAllDeviceMaps } from './maps';
 export { attachMidiGlue } from './action-glue.svelte';
-export { loadInstalledDeviceMaps } from './installed-maps';
+export { installedMapIdFor, loadInstalledDeviceMaps } from './installed-maps';

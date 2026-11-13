@@ -26,6 +26,7 @@
 		reenqueueRefusal,
 		type Job
 	} from '$lib/rb/jobs-store.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const open = $derived(jobsStore.drawerOpen);
 
@@ -51,7 +52,7 @@
 	});
 
 	function close(): void {
-		jobsStore.closeDrawer();
+		void runPerformanceCommandFromUi({ type: 'drawer_close', drawer: 'jobs' });
 	}
 
 	function statusTitle(job: Job): string {

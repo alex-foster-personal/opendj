@@ -52,6 +52,7 @@
 	import { refreshSnapshotApplies } from '$lib/rb/refresh-status-order';
 	import { jobProgress } from '$lib/rb/job-progress.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	let status = $state<RefreshStatus | null>(null);
 	let coverage = $state<IngestCoverage | null>(null);
@@ -211,6 +212,7 @@
 <span
 	class="wrap"
 	role="presentation"
+	use:topbarSelectorNode={{ name: 'refresh', disabled: false }}
 	data-custom-tip=""
 	bind:this={wrapEl}
 	onmouseenter={onEnter}
@@ -226,7 +228,12 @@
 		data-testid="refresh-analysis"
 	>
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<path d="M9.8 6 a3.8 3.8 0 1 1 -1.1 -2.7" fill="none" stroke="currentColor" stroke-width="1.2" />
+			<path
+				d="M9.8 6 a3.8 3.8 0 1 1 -1.1 -2.7"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.2"
+			/>
 			<path d="M9.9 0.8 L9.9 3.6 L7.1 3.6 Z" fill="currentColor" />
 		</svg>
 	</button>
@@ -315,5 +322,4 @@
 		animation-iteration-count: 1;
 		transition-duration: 0.01ms;
 	}
-
 </style>

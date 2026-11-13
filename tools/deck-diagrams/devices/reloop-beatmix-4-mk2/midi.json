@@ -1,0 +1,2177 @@
+{
+  "source": "https://www.reloop.com/media/custom/upload/Reloop-bm2_4_midi_map.pdf",
+  "archived": "local only (not committed): Reloop-bm2_4_midi_map.pdf",
+  "fetched": "Fri 13 Nov 2026",
+  "device": "Beatmix 4 MK2",
+  "vendor": "Reloop",
+  "channel_conventions": {
+    "deck_a_b": "status 0x91 / 0x92 (and 0xB1/0xB2, 0xE1/0xE2) = MIDI ch 2 / 3",
+    "deck_c_d": "status 0x93 / 0x94 (0xB3/0xB4, 0xE3/0xE4) = MIDI ch 4 / 5, layer deck_cd (DECK3/DECK4 toggled)",
+    "mixer_strips": "strip n uses status 0x9n / 0xBn (ch1..4 = MIDI ch 2..5)",
+    "global": "status 0x95/0xB5 = MIDI ch 6",
+    "shift": "+SHIFT rows are separate codes on the same channel",
+    "pads": "Blue pad mode; Red and Violet in footnotes.md"
+  },
+  "controls": [
+    {
+      "name": "l_pad1",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "layer": "base",
+      "notes": "L-PAD1 (Blue) note [l_pad1]"
+    },
+    {
+      "name": "l_pad1_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD1 (Blue) note [l_pad1]"
+    },
+    {
+      "name": "l_pad1_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 0,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD1 (Blue) note [l_pad1]"
+    },
+    {
+      "name": "l_pad1_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 8,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD1 (Blue) note [l_pad1]"
+    },
+    {
+      "name": "l_pad2",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "layer": "base",
+      "notes": "L-PAD2 (Blue) note [l_pad2]"
+    },
+    {
+      "name": "l_pad2_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD2 (Blue) note [l_pad2]"
+    },
+    {
+      "name": "l_pad2_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 1,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD2 (Blue) note [l_pad2]"
+    },
+    {
+      "name": "l_pad2_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 9,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD2 (Blue) note [l_pad2]"
+    },
+    {
+      "name": "l_pad3",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "layer": "base",
+      "notes": "L-PAD3 (Blue) note [l_pad3]"
+    },
+    {
+      "name": "l_pad3_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 10,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD3 (Blue) note [l_pad3]"
+    },
+    {
+      "name": "l_pad3_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 2,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD3 (Blue) note [l_pad3]"
+    },
+    {
+      "name": "l_pad3_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 10,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD3 (Blue) note [l_pad3]"
+    },
+    {
+      "name": "l_pad4",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "layer": "base",
+      "notes": "L-PAD4 (Blue) note [l_pad4]"
+    },
+    {
+      "name": "l_pad4_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD4 (Blue) note [l_pad4]"
+    },
+    {
+      "name": "l_pad4_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 3,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD4 (Blue) note [l_pad4]"
+    },
+    {
+      "name": "l_pad4_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 11,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD4 (Blue) note [l_pad4]"
+    },
+    {
+      "name": "l_pad5",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "layer": "base",
+      "notes": "L-PAD5 (Blue) note [l_pad5]"
+    },
+    {
+      "name": "l_pad5_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD5 (Blue) note [l_pad5]"
+    },
+    {
+      "name": "l_pad5_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 4,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD5 (Blue) note [l_pad5]"
+    },
+    {
+      "name": "l_pad5_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD5 (Blue) note [l_pad5]"
+    },
+    {
+      "name": "l_pad6",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "layer": "base",
+      "notes": "L-PAD6 (Blue) note [l_pad6]"
+    },
+    {
+      "name": "l_pad6_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD6 (Blue) note [l_pad6]"
+    },
+    {
+      "name": "l_pad6_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 5,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD6 (Blue) note [l_pad6]"
+    },
+    {
+      "name": "l_pad6_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 13,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD6 (Blue) note [l_pad6]"
+    },
+    {
+      "name": "l_pad7",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "layer": "base",
+      "notes": "L-PAD7 (Blue) note [l_pad7]"
+    },
+    {
+      "name": "l_pad7_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 14,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD7 (Blue) note [l_pad7]"
+    },
+    {
+      "name": "l_pad7_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD7 (Blue) note [l_pad7]"
+    },
+    {
+      "name": "l_pad7_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 14,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD7 (Blue) note [l_pad7]"
+    },
+    {
+      "name": "l_pad8",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "layer": "base",
+      "notes": "L-PAD8 (Blue) note [l_pad8]"
+    },
+    {
+      "name": "l_pad8_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 15,
+      "layer": "shift",
+      "notes": "+SHIFT L-PAD8 (Blue) note [l_pad8]"
+    },
+    {
+      "name": "l_pad8_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 7,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PAD8 (Blue) note [l_pad8]"
+    },
+    {
+      "name": "l_pad8_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 15,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PAD8 (Blue) note [l_pad8]"
+    },
+    {
+      "name": "l_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "layer": "base",
+      "notes": "L-SHIFT note [l_shift]"
+    },
+    {
+      "name": "l_sync",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "layer": "base",
+      "notes": "L-SYNC note [l_sync]"
+    },
+    {
+      "name": "l_sync_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 97,
+      "layer": "shift",
+      "notes": "+SHIFT L-SYNC note [l_sync]"
+    },
+    {
+      "name": "l_sync_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 33,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-SYNC note [l_sync]"
+    },
+    {
+      "name": "l_sync_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 97,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-SYNC note [l_sync]"
+    },
+    {
+      "name": "l_cup",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 34,
+      "layer": "base",
+      "notes": "L-CUP note [l_cup]"
+    },
+    {
+      "name": "l_cup_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 98,
+      "layer": "shift",
+      "notes": "+SHIFT L-CUP note [l_cup]"
+    },
+    {
+      "name": "l_cup_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 34,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-CUP note [l_cup]"
+    },
+    {
+      "name": "l_cup_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 98,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-CUP note [l_cup]"
+    },
+    {
+      "name": "l_cue",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 35,
+      "layer": "base",
+      "notes": "L-CUE note [l_cue]"
+    },
+    {
+      "name": "l_cue_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 99,
+      "layer": "shift",
+      "notes": "+SHIFT L-CUE note [l_cue]"
+    },
+    {
+      "name": "l_cue_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 35,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-CUE note [l_cue]"
+    },
+    {
+      "name": "l_cue_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 99,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-CUE note [l_cue]"
+    },
+    {
+      "name": "l_play",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 36,
+      "layer": "base",
+      "notes": "L-PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_play_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 100,
+      "layer": "shift",
+      "notes": "+SHIFT L-PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_play_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 36,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_play_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 100,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PLAY/PAUSE note [l_play]"
+    },
+    {
+      "name": "l_deck3",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "layer": "base",
+      "notes": "L-DECK3 note (same code in DECK-C/D column) [l_deck3]"
+    },
+    {
+      "name": "l_deck3_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 40,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-DECK3 note (same code in DECK-C/D column) [l_deck3]"
+    },
+    {
+      "name": "l_beats",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 97,
+      "layer": "base",
+      "notes": "L-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [l_beats]"
+    },
+    {
+      "name": "l_beats_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 113,
+      "layer": "shift",
+      "notes": "+SHIFT L-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [l_beats]"
+    },
+    {
+      "name": "l_beats_cd",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 4,
+      "code": 97,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [l_beats]"
+    },
+    {
+      "name": "l_beats_cd_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 4,
+      "code": 113,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [l_beats]"
+    },
+    {
+      "name": "l_beats_push",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 37,
+      "layer": "base",
+      "notes": "L-BEATS Push note [l_beats]"
+    },
+    {
+      "name": "l_beats_push_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 101,
+      "layer": "shift",
+      "notes": "+SHIFT L-BEATS Push note [l_beats]"
+    },
+    {
+      "name": "l_beats_push_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 37,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-BEATS Push note [l_beats]"
+    },
+    {
+      "name": "l_beats_push_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 101,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-BEATS Push note [l_beats]"
+    },
+    {
+      "name": "l_pitch_bend_minus",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 38,
+      "layer": "base",
+      "notes": "L-PITCH BEND- note [l_bend_minus]"
+    },
+    {
+      "name": "l_pitch_bend_minus_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 102,
+      "layer": "shift",
+      "notes": "+SHIFT L-PITCH BEND- note [l_bend_minus]"
+    },
+    {
+      "name": "l_pitch_bend_minus_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 38,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PITCH BEND- note [l_bend_minus]"
+    },
+    {
+      "name": "l_pitch_bend_minus_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 102,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PITCH BEND- note [l_bend_minus]"
+    },
+    {
+      "name": "l_pitch_bend_plus",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 39,
+      "layer": "base",
+      "notes": "L-PITCH BEND+ note [l_bend_plus]"
+    },
+    {
+      "name": "l_pitch_bend_plus_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 103,
+      "layer": "shift",
+      "notes": "+SHIFT L-PITCH BEND+ note [l_bend_plus]"
+    },
+    {
+      "name": "l_pitch_bend_plus_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 39,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PITCH BEND+ note [l_bend_plus]"
+    },
+    {
+      "name": "l_pitch_bend_plus_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 103,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-PITCH BEND+ note [l_bend_plus]"
+    },
+    {
+      "name": "l_pad_mode1",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 41,
+      "layer": "base",
+      "notes": "L-PAD MODE1 note [l_padmode1]"
+    },
+    {
+      "name": "l_pad_mode2",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 42,
+      "layer": "base",
+      "notes": "L-PAD MODE2 note [l_padmode2]"
+    },
+    {
+      "name": "l_wheel",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 96,
+      "layer": "base",
+      "notes": "L-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [l_jog]"
+    },
+    {
+      "name": "l_wheel_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 112,
+      "layer": "shift",
+      "notes": "+SHIFT L-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [l_jog]"
+    },
+    {
+      "name": "l_wheel_cd",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 4,
+      "code": 96,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [l_jog]"
+    },
+    {
+      "name": "l_wheel_cd_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 4,
+      "code": 112,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [l_jog]"
+    },
+    {
+      "name": "l_touch",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 63,
+      "layer": "base",
+      "notes": "L-TOUCH note [l_jog]"
+    },
+    {
+      "name": "l_touch_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 2,
+      "code": 127,
+      "layer": "shift",
+      "notes": "+SHIFT L-TOUCH note [l_jog]"
+    },
+    {
+      "name": "l_touch_cd",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 63,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-TOUCH note [l_jog]"
+    },
+    {
+      "name": "l_touch_cd_shift",
+      "section": "deck_l",
+      "type": "note",
+      "ch": 4,
+      "code": 127,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT L-TOUCH note [l_jog]"
+    },
+    {
+      "name": "l_fx1",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "layer": "base",
+      "notes": "L-FX1 absolute CC [l_fx1]"
+    },
+    {
+      "name": "l_fx1_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 65,
+      "layer": "shift",
+      "notes": "+SHIFT L-FX1 absolute CC [l_fx1]"
+    },
+    {
+      "name": "l_fx2",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "layer": "base",
+      "notes": "L-FX2 absolute CC [l_fx2]"
+    },
+    {
+      "name": "l_fx2_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT L-FX2 absolute CC [l_fx2]"
+    },
+    {
+      "name": "l_fx3",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "layer": "base",
+      "notes": "L-FX3 absolute CC [l_fx3]"
+    },
+    {
+      "name": "l_fx3_shift",
+      "section": "deck_l",
+      "type": "cc",
+      "ch": 2,
+      "code": 67,
+      "layer": "shift",
+      "notes": "+SHIFT L-FX3 absolute CC [l_fx3]"
+    },
+    {
+      "name": "l_pitch",
+      "section": "deck_l",
+      "type": "pitchbend",
+      "ch": 2,
+      "code": null,
+      "layer": "base",
+      "notes": "L-PITCH 14-bit pitch bend (status 0xE1), no shift [l_pitch]"
+    },
+    {
+      "name": "l_pitch_cd",
+      "section": "deck_l",
+      "type": "pitchbend",
+      "ch": 4,
+      "code": null,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column L-PITCH 14-bit pitch bend (status 0xE3) [l_pitch]"
+    },
+    {
+      "name": "r_pad1",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 0,
+      "layer": "base",
+      "notes": "R-PAD1 (Blue) note [r_pad1]"
+    },
+    {
+      "name": "r_pad1_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD1 (Blue) note [r_pad1]"
+    },
+    {
+      "name": "r_pad1_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 0,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD1 (Blue) note [r_pad1]"
+    },
+    {
+      "name": "r_pad1_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 8,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD1 (Blue) note [r_pad1]"
+    },
+    {
+      "name": "r_pad2",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "layer": "base",
+      "notes": "R-PAD2 (Blue) note [r_pad2]"
+    },
+    {
+      "name": "r_pad2_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 9,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD2 (Blue) note [r_pad2]"
+    },
+    {
+      "name": "r_pad2_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 1,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD2 (Blue) note [r_pad2]"
+    },
+    {
+      "name": "r_pad2_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 9,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD2 (Blue) note [r_pad2]"
+    },
+    {
+      "name": "r_pad3",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "layer": "base",
+      "notes": "R-PAD3 (Blue) note [r_pad3]"
+    },
+    {
+      "name": "r_pad3_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 10,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD3 (Blue) note [r_pad3]"
+    },
+    {
+      "name": "r_pad3_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD3 (Blue) note [r_pad3]"
+    },
+    {
+      "name": "r_pad3_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 10,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD3 (Blue) note [r_pad3]"
+    },
+    {
+      "name": "r_pad4",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "layer": "base",
+      "notes": "R-PAD4 (Blue) note [r_pad4]"
+    },
+    {
+      "name": "r_pad4_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD4 (Blue) note [r_pad4]"
+    },
+    {
+      "name": "r_pad4_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD4 (Blue) note [r_pad4]"
+    },
+    {
+      "name": "r_pad4_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD4 (Blue) note [r_pad4]"
+    },
+    {
+      "name": "r_pad5",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "layer": "base",
+      "notes": "R-PAD5 (Blue) note [r_pad5]"
+    },
+    {
+      "name": "r_pad5_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD5 (Blue) note [r_pad5]"
+    },
+    {
+      "name": "r_pad5_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 4,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD5 (Blue) note [r_pad5]"
+    },
+    {
+      "name": "r_pad5_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 12,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD5 (Blue) note [r_pad5]"
+    },
+    {
+      "name": "r_pad6",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "layer": "base",
+      "notes": "R-PAD6 (Blue) note [r_pad6]"
+    },
+    {
+      "name": "r_pad6_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 13,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD6 (Blue) note [r_pad6]"
+    },
+    {
+      "name": "r_pad6_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 5,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD6 (Blue) note [r_pad6]"
+    },
+    {
+      "name": "r_pad6_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 13,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD6 (Blue) note [r_pad6]"
+    },
+    {
+      "name": "r_pad7",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "layer": "base",
+      "notes": "R-PAD7 (Blue) note [r_pad7]"
+    },
+    {
+      "name": "r_pad7_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 14,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD7 (Blue) note [r_pad7]"
+    },
+    {
+      "name": "r_pad7_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD7 (Blue) note [r_pad7]"
+    },
+    {
+      "name": "r_pad7_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 14,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD7 (Blue) note [r_pad7]"
+    },
+    {
+      "name": "r_pad8",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "layer": "base",
+      "notes": "R-PAD8 (Blue) note [r_pad8]"
+    },
+    {
+      "name": "r_pad8_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 15,
+      "layer": "shift",
+      "notes": "+SHIFT R-PAD8 (Blue) note [r_pad8]"
+    },
+    {
+      "name": "r_pad8_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PAD8 (Blue) note [r_pad8]"
+    },
+    {
+      "name": "r_pad8_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 15,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PAD8 (Blue) note [r_pad8]"
+    },
+    {
+      "name": "r_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 32,
+      "layer": "base",
+      "notes": "R-SHIFT note [r_shift]"
+    },
+    {
+      "name": "r_sync",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 33,
+      "layer": "base",
+      "notes": "R-SYNC note [r_sync]"
+    },
+    {
+      "name": "r_sync_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 97,
+      "layer": "shift",
+      "notes": "+SHIFT R-SYNC note [r_sync]"
+    },
+    {
+      "name": "r_sync_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 33,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-SYNC note [r_sync]"
+    },
+    {
+      "name": "r_sync_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 97,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-SYNC note [r_sync]"
+    },
+    {
+      "name": "r_cup",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 34,
+      "layer": "base",
+      "notes": "R-CUP note [r_cup]"
+    },
+    {
+      "name": "r_cup_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 98,
+      "layer": "shift",
+      "notes": "+SHIFT R-CUP note [r_cup]"
+    },
+    {
+      "name": "r_cup_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 34,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-CUP note [r_cup]"
+    },
+    {
+      "name": "r_cup_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 98,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-CUP note [r_cup]"
+    },
+    {
+      "name": "r_cue",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 35,
+      "layer": "base",
+      "notes": "R-CUE note [r_cue]"
+    },
+    {
+      "name": "r_cue_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 99,
+      "layer": "shift",
+      "notes": "+SHIFT R-CUE note [r_cue]"
+    },
+    {
+      "name": "r_cue_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 35,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-CUE note [r_cue]"
+    },
+    {
+      "name": "r_cue_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 99,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-CUE note [r_cue]"
+    },
+    {
+      "name": "r_play",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 36,
+      "layer": "base",
+      "notes": "R-PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_play_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 100,
+      "layer": "shift",
+      "notes": "+SHIFT R-PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_play_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 36,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_play_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 100,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PLAY/PAUSE note [r_play]"
+    },
+    {
+      "name": "r_deck4",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 40,
+      "layer": "base",
+      "notes": "R-DECK4 note (same code in DECK-C/D column) [r_deck4]"
+    },
+    {
+      "name": "r_deck4_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 40,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-DECK4 note (same code in DECK-C/D column) [r_deck4]"
+    },
+    {
+      "name": "r_beats",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 97,
+      "layer": "base",
+      "notes": "R-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [r_beats]"
+    },
+    {
+      "name": "r_beats_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 113,
+      "layer": "shift",
+      "notes": "+SHIFT R-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [r_beats]"
+    },
+    {
+      "name": "r_beats_cd",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 5,
+      "code": 97,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [r_beats]"
+    },
+    {
+      "name": "r_beats_cd_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 5,
+      "code": 113,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65) [r_beats]"
+    },
+    {
+      "name": "r_beats_push",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 37,
+      "layer": "base",
+      "notes": "R-BEATS Push note [r_beats]"
+    },
+    {
+      "name": "r_beats_push_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 101,
+      "layer": "shift",
+      "notes": "+SHIFT R-BEATS Push note [r_beats]"
+    },
+    {
+      "name": "r_beats_push_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 37,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-BEATS Push note [r_beats]"
+    },
+    {
+      "name": "r_beats_push_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 101,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-BEATS Push note [r_beats]"
+    },
+    {
+      "name": "r_pitch_bend_minus",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 38,
+      "layer": "base",
+      "notes": "R-PITCH BEND- note [r_bend_minus]"
+    },
+    {
+      "name": "r_pitch_bend_minus_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 102,
+      "layer": "shift",
+      "notes": "+SHIFT R-PITCH BEND- note [r_bend_minus]"
+    },
+    {
+      "name": "r_pitch_bend_minus_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 38,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PITCH BEND- note [r_bend_minus]"
+    },
+    {
+      "name": "r_pitch_bend_minus_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 102,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PITCH BEND- note [r_bend_minus]"
+    },
+    {
+      "name": "r_pitch_bend_plus",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 39,
+      "layer": "base",
+      "notes": "R-PITCH BEND+ note [r_bend_plus]"
+    },
+    {
+      "name": "r_pitch_bend_plus_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 103,
+      "layer": "shift",
+      "notes": "+SHIFT R-PITCH BEND+ note [r_bend_plus]"
+    },
+    {
+      "name": "r_pitch_bend_plus_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 39,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PITCH BEND+ note [r_bend_plus]"
+    },
+    {
+      "name": "r_pitch_bend_plus_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 103,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-PITCH BEND+ note [r_bend_plus]"
+    },
+    {
+      "name": "r_pad_mode1",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 41,
+      "layer": "base",
+      "notes": "R-PAD MODE1 note [r_padmode1]"
+    },
+    {
+      "name": "r_pad_mode2",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 42,
+      "layer": "base",
+      "notes": "R-PAD MODE2 note [r_padmode2]"
+    },
+    {
+      "name": "r_wheel",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 96,
+      "layer": "base",
+      "notes": "R-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [r_jog]"
+    },
+    {
+      "name": "r_wheel_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 112,
+      "layer": "shift",
+      "notes": "+SHIFT R-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [r_jog]"
+    },
+    {
+      "name": "r_wheel_cd",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 5,
+      "code": 96,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [r_jog]"
+    },
+    {
+      "name": "r_wheel_cd_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 5,
+      "code": 112,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F) [r_jog]"
+    },
+    {
+      "name": "r_touch",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 63,
+      "layer": "base",
+      "notes": "R-TOUCH note [r_jog]"
+    },
+    {
+      "name": "r_touch_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 3,
+      "code": 127,
+      "layer": "shift",
+      "notes": "+SHIFT R-TOUCH note [r_jog]"
+    },
+    {
+      "name": "r_touch_cd",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 63,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-TOUCH note [r_jog]"
+    },
+    {
+      "name": "r_touch_cd_shift",
+      "section": "deck_r",
+      "type": "note",
+      "ch": 5,
+      "code": 127,
+      "layer": "deck_cd_shift",
+      "notes": "DECK-C/D column +SHIFT R-TOUCH note [r_jog]"
+    },
+    {
+      "name": "r_fx1",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 1,
+      "layer": "base",
+      "notes": "R-FX1 absolute CC [r_fx1]"
+    },
+    {
+      "name": "r_fx1_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 65,
+      "layer": "shift",
+      "notes": "+SHIFT R-FX1 absolute CC [r_fx1]"
+    },
+    {
+      "name": "r_fx2",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 2,
+      "layer": "base",
+      "notes": "R-FX2 absolute CC [r_fx2]"
+    },
+    {
+      "name": "r_fx2_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT R-FX2 absolute CC [r_fx2]"
+    },
+    {
+      "name": "r_fx3",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 3,
+      "layer": "base",
+      "notes": "R-FX3 absolute CC [r_fx3]"
+    },
+    {
+      "name": "r_fx3_shift",
+      "section": "deck_r",
+      "type": "cc",
+      "ch": 3,
+      "code": 67,
+      "layer": "shift",
+      "notes": "+SHIFT R-FX3 absolute CC [r_fx3]"
+    },
+    {
+      "name": "r_pitch",
+      "section": "deck_r",
+      "type": "pitchbend",
+      "ch": 3,
+      "code": null,
+      "layer": "base",
+      "notes": "R-PITCH 14-bit pitch bend (status 0xE2), no shift [r_pitch]"
+    },
+    {
+      "name": "r_pitch_cd",
+      "section": "deck_r",
+      "type": "pitchbend",
+      "ch": 5,
+      "code": null,
+      "layer": "deck_cd",
+      "notes": "DECK-C/D column R-PITCH 14-bit pitch bend (status 0xE4) [r_pitch]"
+    },
+    {
+      "name": "ch3_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 16,
+      "layer": "base",
+      "notes": "GAIN3 absolute CC [ch3_gain]"
+    },
+    {
+      "name": "ch3_gain_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 48,
+      "layer": "shift",
+      "notes": "+SHIFT GAIN3 absolute CC [ch3_gain]"
+    },
+    {
+      "name": "ch3_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 17,
+      "layer": "base",
+      "notes": "HIGH3 absolute CC [ch3_high]"
+    },
+    {
+      "name": "ch3_high_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 49,
+      "layer": "shift",
+      "notes": "+SHIFT HIGH3 absolute CC [ch3_high]"
+    },
+    {
+      "name": "ch3_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 18,
+      "layer": "base",
+      "notes": "MID3 absolute CC [ch3_mid]"
+    },
+    {
+      "name": "ch3_mid_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 50,
+      "layer": "shift",
+      "notes": "+SHIFT MID3 absolute CC [ch3_mid]"
+    },
+    {
+      "name": "ch3_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 19,
+      "layer": "base",
+      "notes": "LOW3 absolute CC [ch3_low]"
+    },
+    {
+      "name": "ch3_low_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 51,
+      "layer": "shift",
+      "notes": "+SHIFT LOW3 absolute CC [ch3_low]"
+    },
+    {
+      "name": "ch3_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 20,
+      "layer": "base",
+      "notes": "CH3 line fader absolute CC [ch3_fader]"
+    },
+    {
+      "name": "ch3_fader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 52,
+      "layer": "shift",
+      "notes": "+SHIFT CH3 line fader absolute CC [ch3_fader]"
+    },
+    {
+      "name": "ch3_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 4,
+      "code": 80,
+      "layer": "base",
+      "notes": "M-LOAD3 note [ch3_load]"
+    },
+    {
+      "name": "ch3_load_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 4,
+      "code": 64,
+      "layer": "shift",
+      "notes": "+SHIFT M-LOAD3 note [ch3_load]"
+    },
+    {
+      "name": "ch3_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 4,
+      "code": 82,
+      "layer": "base",
+      "notes": "M-CUE3 (headphone cue) note [ch3_cue]"
+    },
+    {
+      "name": "ch3_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 4,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT M-CUE3 (headphone cue) note [ch3_cue]"
+    },
+    {
+      "name": "ch1_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 16,
+      "layer": "base",
+      "notes": "GAIN1 absolute CC [ch1_gain]"
+    },
+    {
+      "name": "ch1_gain_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 48,
+      "layer": "shift",
+      "notes": "+SHIFT GAIN1 absolute CC [ch1_gain]"
+    },
+    {
+      "name": "ch1_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 17,
+      "layer": "base",
+      "notes": "HIGH1 absolute CC [ch1_high]"
+    },
+    {
+      "name": "ch1_high_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 49,
+      "layer": "shift",
+      "notes": "+SHIFT HIGH1 absolute CC [ch1_high]"
+    },
+    {
+      "name": "ch1_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 18,
+      "layer": "base",
+      "notes": "MID1 absolute CC [ch1_mid]"
+    },
+    {
+      "name": "ch1_mid_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 50,
+      "layer": "shift",
+      "notes": "+SHIFT MID1 absolute CC [ch1_mid]"
+    },
+    {
+      "name": "ch1_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 19,
+      "layer": "base",
+      "notes": "LOW1 absolute CC [ch1_low]"
+    },
+    {
+      "name": "ch1_low_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 51,
+      "layer": "shift",
+      "notes": "+SHIFT LOW1 absolute CC [ch1_low]"
+    },
+    {
+      "name": "ch1_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 20,
+      "layer": "base",
+      "notes": "CH1 line fader absolute CC [ch1_fader]"
+    },
+    {
+      "name": "ch1_fader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 52,
+      "layer": "shift",
+      "notes": "+SHIFT CH1 line fader absolute CC [ch1_fader]"
+    },
+    {
+      "name": "ch1_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 80,
+      "layer": "base",
+      "notes": "M-LOAD1 note [ch1_load]"
+    },
+    {
+      "name": "ch1_load_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 64,
+      "layer": "shift",
+      "notes": "+SHIFT M-LOAD1 note [ch1_load]"
+    },
+    {
+      "name": "ch1_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 82,
+      "layer": "base",
+      "notes": "M-CUE1 (headphone cue) note [ch1_cue]"
+    },
+    {
+      "name": "ch1_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT M-CUE1 (headphone cue) note [ch1_cue]"
+    },
+    {
+      "name": "ch2_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 16,
+      "layer": "base",
+      "notes": "GAIN2 absolute CC [ch2_gain]"
+    },
+    {
+      "name": "ch2_gain_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 48,
+      "layer": "shift",
+      "notes": "+SHIFT GAIN2 absolute CC [ch2_gain]"
+    },
+    {
+      "name": "ch2_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 17,
+      "layer": "base",
+      "notes": "HIGH2 absolute CC [ch2_high]"
+    },
+    {
+      "name": "ch2_high_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 49,
+      "layer": "shift",
+      "notes": "+SHIFT HIGH2 absolute CC [ch2_high]"
+    },
+    {
+      "name": "ch2_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 18,
+      "layer": "base",
+      "notes": "MID2 absolute CC [ch2_mid]"
+    },
+    {
+      "name": "ch2_mid_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 50,
+      "layer": "shift",
+      "notes": "+SHIFT MID2 absolute CC [ch2_mid]"
+    },
+    {
+      "name": "ch2_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 19,
+      "layer": "base",
+      "notes": "LOW2 absolute CC [ch2_low]"
+    },
+    {
+      "name": "ch2_low_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 51,
+      "layer": "shift",
+      "notes": "+SHIFT LOW2 absolute CC [ch2_low]"
+    },
+    {
+      "name": "ch2_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 20,
+      "layer": "base",
+      "notes": "CH2 line fader absolute CC [ch2_fader]"
+    },
+    {
+      "name": "ch2_fader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 3,
+      "code": 52,
+      "layer": "shift",
+      "notes": "+SHIFT CH2 line fader absolute CC [ch2_fader]"
+    },
+    {
+      "name": "ch2_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 80,
+      "layer": "base",
+      "notes": "M-LOAD2 note [ch2_load]"
+    },
+    {
+      "name": "ch2_load_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 64,
+      "layer": "shift",
+      "notes": "+SHIFT M-LOAD2 note [ch2_load]"
+    },
+    {
+      "name": "ch2_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 82,
+      "layer": "base",
+      "notes": "M-CUE2 (headphone cue) note [ch2_cue]"
+    },
+    {
+      "name": "ch2_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT M-CUE2 (headphone cue) note [ch2_cue]"
+    },
+    {
+      "name": "ch4_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 16,
+      "layer": "base",
+      "notes": "GAIN4 absolute CC [ch4_gain]"
+    },
+    {
+      "name": "ch4_gain_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 48,
+      "layer": "shift",
+      "notes": "+SHIFT GAIN4 absolute CC [ch4_gain]"
+    },
+    {
+      "name": "ch4_high",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 17,
+      "layer": "base",
+      "notes": "HIGH4 absolute CC [ch4_high]"
+    },
+    {
+      "name": "ch4_high_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 49,
+      "layer": "shift",
+      "notes": "+SHIFT HIGH4 absolute CC [ch4_high]"
+    },
+    {
+      "name": "ch4_mid",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 18,
+      "layer": "base",
+      "notes": "MID4 absolute CC [ch4_mid]"
+    },
+    {
+      "name": "ch4_mid_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 50,
+      "layer": "shift",
+      "notes": "+SHIFT MID4 absolute CC [ch4_mid]"
+    },
+    {
+      "name": "ch4_low",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 19,
+      "layer": "base",
+      "notes": "LOW4 absolute CC [ch4_low]"
+    },
+    {
+      "name": "ch4_low_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 51,
+      "layer": "shift",
+      "notes": "+SHIFT LOW4 absolute CC [ch4_low]"
+    },
+    {
+      "name": "ch4_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 20,
+      "layer": "base",
+      "notes": "CH4 line fader absolute CC [ch4_fader]"
+    },
+    {
+      "name": "ch4_fader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 52,
+      "layer": "shift",
+      "notes": "+SHIFT CH4 line fader absolute CC [ch4_fader]"
+    },
+    {
+      "name": "ch4_load",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 80,
+      "layer": "base",
+      "notes": "M-LOAD4 note [ch4_load]"
+    },
+    {
+      "name": "ch4_load_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 64,
+      "layer": "shift",
+      "notes": "+SHIFT M-LOAD4 note [ch4_load]"
+    },
+    {
+      "name": "ch4_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 82,
+      "layer": "base",
+      "notes": "M-CUE4 (headphone cue) note [ch4_cue]"
+    },
+    {
+      "name": "ch4_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 66,
+      "layer": "shift",
+      "notes": "+SHIFT M-CUE4 (headphone cue) note [ch4_cue]"
+    },
+    {
+      "name": "master",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 0,
+      "layer": "base",
+      "notes": "M-MASTER absolute CC [master]"
+    },
+    {
+      "name": "phones",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 1,
+      "layer": "base",
+      "notes": "M-PHONES absolute CC [phones]"
+    },
+    {
+      "name": "cue_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 2,
+      "layer": "base",
+      "notes": "M-CUE MIX absolute CC [cue_mix]"
+    },
+    {
+      "name": "cue_mix_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 50,
+      "layer": "shift",
+      "notes": "+SHIFT M-CUE MIX absolute CC [cue_mix]"
+    },
+    {
+      "name": "sampler",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 3,
+      "layer": "base",
+      "notes": "M-SAMPLER absolute CC [sampler]"
+    },
+    {
+      "name": "sampler_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 51,
+      "layer": "shift",
+      "notes": "+SHIFT M-SAMPLER absolute CC [sampler]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 47,
+      "layer": "base",
+      "notes": "M-FADER absolute CC [xfader]"
+    },
+    {
+      "name": "crossfader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 95,
+      "layer": "shift",
+      "notes": "+SHIFT M-FADER absolute CC [xfader]"
+    },
+    {
+      "name": "browse",
+      "section": "browser",
+      "type": "cc",
+      "ch": 6,
+      "code": 96,
+      "layer": "base",
+      "notes": "M-Browser (TRAX) relative; push note 0x09 (shift 0x49) [browse]"
+    },
+    {
+      "name": "browse_shift",
+      "section": "browser",
+      "type": "cc",
+      "ch": 6,
+      "code": 112,
+      "layer": "shift",
+      "notes": "+SHIFT M-Browser (TRAX) relative; push note 0x09 (shift 0x49) [browse]"
+    },
+    {
+      "name": "browse_push",
+      "section": "browser",
+      "type": "note",
+      "ch": 6,
+      "code": 9,
+      "layer": "base",
+      "notes": "M-Browser Push (TRAX) note [browse]"
+    },
+    {
+      "name": "browse_push_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "layer": "shift",
+      "notes": "+SHIFT M-Browser Push (TRAX) note [browse]"
+    },
+    {
+      "name": "back",
+      "section": "browser",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "layer": "base",
+      "notes": "M-BACK note [back]"
+    },
+    {
+      "name": "back_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "layer": "shift",
+      "notes": "+SHIFT M-BACK note [back]"
+    }
+  ]
+}

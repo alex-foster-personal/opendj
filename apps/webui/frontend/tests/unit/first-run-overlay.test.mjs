@@ -413,7 +413,10 @@ test('the overlay can be minimised to a chip without closing', () => {
 test('/setup is a door into the overlay, never a 404 and never a second wizard', () => {
 	const route = read('src/routes/setup/+page.svelte');
 	assert.match(route, /openSetupOverlay\(\)/);
-	assert.match(route, /goto\(SETUP_HOST_ROUTE, \{ replaceState: true \}\)/);
+	assert.match(
+		route,
+		/goto\(preserveUrlSearchOnRedirect\(SETUP_HOST_ROUTE, \$page\.url\.search\),\s*\{\s*replaceState:\s*true\s*\}\)/
+	);
 	// The wizard markup lives in exactly one place now.
 	assert.doesNotMatch(route, /WIZARD_STEPS/);
 	assert.doesNotMatch(route, /beginImport/);

@@ -27,6 +27,11 @@ from apps.voice.settings import voice_data_dir
 log = logging.getLogger(__name__)
 
 
+def _tail_by_kind(events: list[dict], kind: str, limit: int) -> list[dict]:
+    matches = [event for event in events if event.get("kind") == kind]
+    return matches[-limit:]
+
+
 def _enrich_voice_event_meta(event: dict) -> dict:
     """Copy ``event`` and apply voice bus timestamp/source defaults."""
     enriched = dict(event)
@@ -66,8 +71,7 @@ class JsonlStubBus:
         return enriched["id"]
 
     def recent(self, kind: str, limit: int = 10) -> list[dict]:
-        matches = [e for e in self._cache if e.get("kind") == kind]
-        return matches[-limit:]
+        return _tail_by_kind(self._cache, kind, limit)
 
 
 @dataclass
@@ -85,8 +89,7 @@ class InMemoryBus:
         return enriched["id"]
 
     def recent(self, kind: str, limit: int = 10) -> list[dict]:
-        matches = [e for e in self.events if e.get("kind") == kind]
-        return matches[-limit:]
+        return _tail_by_kind(self.events, kind, limit)
 
 
 class StateBackedBus:

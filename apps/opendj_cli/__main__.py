@@ -13,6 +13,7 @@
     opendj install-cli [--target ~/.local/bin/opendj]
     opendj update check | opendj update apply [--timeout-s SECONDS]
     opendj [--state-db PATH] library export --format rekordbox-xml --out FILE
+    opendj [--json] sync ratings [--diff-csv FILE] [--live --i-understand-the-risks]
 
 Exit codes are documented in :mod:`apps.opendj_cli`; the load-bearing ones are
 2 (no engine, and the message names the lock file that was checked) and 4 (the
@@ -59,6 +60,7 @@ from apps.opendj_cli.client import (
     OrderRejected,
     OrderTimedOut,
 )
+from apps.opendj_cli.command_refusal import command_refusal_lines
 from apps.opendj_cli.confirm import (
     SETTLE_POLL_S,
     SETTLE_TIMEOUT_S,
@@ -108,6 +110,7 @@ _NOW_PLAYING_COMMAND = "now-playing"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
 _AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
 _AUDIO_RECONNECT_SPEAKER_COMMAND = "audio_reconnect_speaker"
+_PERF_READOUTS_COMMAND = "perf_readouts"
 _REC_COMMAND = "rec"
 _FEEDBACK_COMMAND = "feedback"
 _CLIENT_ERRORS_COMMAND = "client_errors"
@@ -115,6 +118,8 @@ _ENRICHMENT_COMMAND = "enrichment"
 _ARTWORK_COMMAND = "artwork"
 _LIGHTING_COMMAND = "lighting"
 _MIDI_COMMAND = "midi"
+_SYNC_COMMAND = "sync"
+_HOTKEYS_COMMAND = "hotkeys"
 _SESSION_COMMAND = "session"
 _REQUESTS_COMMAND = "requests"
 _INGEST_COMMAND = "ingest"
@@ -133,6 +138,7 @@ _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
 _UPDATE_COMMAND = "update"
 _LIBRARY_COMMAND = "library"
+_TAGLIST_COMMAND = "taglist"
 _NOW_PLAYING_COMMAND = "now-playing"
 _DJ_COMMAND = "dj"
 _WORK_COMMAND = "work"
@@ -708,6 +714,7 @@ def _state_text(mirror: dict[str, Any], prefs: dict[str, Any] | None = None) -> 
                 f"bpm={deck.get('bpm', 'absent')} position={ms}ms ({bars}) "
                 f"presented={settled}"
             )
+    lines.extend(command_refusal_lines(mirror))
     toasts = mirror.get("toasts")
     if isinstance(toasts, list):
         lines.append(f"toasts: {len(toasts)}")
@@ -759,6 +766,7 @@ _STANDALONE_COMMANDS = frozenset(
         _WINDOW_COMMAND,
         _REMOTE_COMMAND,
         _PLAYLIST_COMMAND,
+        _TAGLIST_COMMAND,
         _OFFLOAD_COMMAND,
         _SET_COMMAND,
         _REC_COMMAND,
@@ -766,6 +774,7 @@ _STANDALONE_COMMANDS = frozenset(
         _AUDIO_OUTPUT_HEALTH_COMMAND,
         _AUDIO_SWITCH_OUTPUT_COMMAND,
         _AUDIO_RECONNECT_SPEAKER_COMMAND,
+        _PERF_READOUTS_COMMAND,
         _REC_COMMAND,
     }
 )
@@ -776,17 +785,17 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
     if head == _REC_COMMAND:
         return rec_cli.run(rest, as_json=args.json, lock=args.lock)
     if head in {_TRACK_COMMAND, _HISTORY_COMMAND}:
-        from apps.opendj_cli import track_cli
+        from apps.opendj_cli import history_cli, track_cli
 
         runner = {
             _TRACK_COMMAND: track_cli.run,
-            _HISTORY_COMMAND: track_cli.run_history,
+            _HISTORY_COMMAND: history_cli.run,
         }[head]
         return runner(rest, as_json=args.json, state_db=args.state_db)
-    if head in {_WORK_COMMAND, _EDIT_COMMAND}:
-        from apps.opendj_cli import edit_cli, work_cli
+    if head in {_WORK_COMMAND, _EDIT_COMMAND, _TAGLIST_COMMAND}:
+        from apps.opendj_cli import edit_cli, taglist_cli, work_cli
 
-        runner = {_WORK_COMMAND: work_cli.run, _EDIT_COMMAND: edit_cli.run}[head]
+        runner = {_WORK_COMMAND: work_cli.run, _EDIT_COMMAND: edit_cli.run, _TAGLIST_COMMAND: taglist_cli.run}[head]
         return runner(rest, as_json=args.json, lock=args.lock)
     if head == _FEEDBACK_COMMAND:
         from apps.opendj_cli import feedback_cli
@@ -835,6 +844,10 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import playlist_cli
 
         return playlist_cli.run(rest, as_json=args.json, lock=args.lock)
+    if head == _PERF_READOUTS_COMMAND:
+        from apps.opendj_cli import perf_readouts_cli
+
+        return perf_readouts_cli.run(rest, as_json=args.json, lock=args.lock)
     from apps.opendj_cli import audio_output_health_cli
 
     if head == _AUDIO_OUTPUT_HEALTH_COMMAND:
@@ -883,10 +896,13 @@ def _run_early(tokens: Sequence[str]) -> int | None:
         _run_practice,
         _run_lighting,
         _run_midi,
+        _run_sync,
+        _run_hotkeys,
         _run_library,
         _run_requests,
         _run_ingest,
         _run_now_playing,
+        _run_rec,
     ):
         code = runner(tokens)
         if code is not None:
@@ -978,7 +994,7 @@ def _run_client_errors(tokens: Sequence[str]) -> int | None:
 
 
 def _run_lighting(tokens: Sequence[str]) -> int | None:
-    """``lighting`` runs without the engine and parses its own flags (LIGHT-70)."""
+    """``lighting`` parses its own flags; only clock requires the engine."""
     split = _split_subcommand(tokens, _LIGHTING_COMMAND)
     if split is None:
         return None
@@ -1001,6 +1017,30 @@ def _run_midi(tokens: Sequence[str]) -> int | None:
     return midi_cli.run(rest, as_json=args.json)
 
 
+def _run_sync(tokens: Sequence[str]) -> int | None:
+    """``sync ratings`` forwards to the module CLI's ratings flow and parses its own flags (PLATFORM-12976)."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _SYNC_COMMAND:
+        return None
+    global_tokens, rest = list(tokens[:position]), list(tokens[position + 1 :])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _SYNC_COMMAND])
+    from apps.opendj_cli import sync_cli
+
+    return sync_cli.run(rest, as_json=args.json)
+
+
+def _run_hotkeys(tokens: Sequence[str]) -> int | None:
+    """``hotkeys`` reads the overlay contract without the engine and parses its own flags (#12287)."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _HOTKEYS_COMMAND:
+        return None
+    global_tokens, rest = list(tokens[:position]), list(tokens[position + 1 :])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _HOTKEYS_COMMAND])
+    from apps.opendj_cli import hotkeys
+
+    return hotkeys.run(rest, as_json=args.json)
+
+
 def _run_now_playing(tokens: Sequence[str]) -> int | None:
     """``now-playing`` carries ``--watch``, so it is split off before the global parser."""
     split = _split_subcommand(tokens, _NOW_PLAYING_COMMAND)
@@ -1011,6 +1051,19 @@ def _run_now_playing(tokens: Sequence[str]) -> int | None:
     from apps.opendj_cli import now_playing_cli
 
     return now_playing_cli.run(rest, as_json=args.json, lock=args.lock)
+
+
+def _run_rec(tokens: Sequence[str]) -> int | None:
+    """``rec start`` carries ``--source``, so ``rec`` is split off before the global parser."""
+    position = _command_position(tokens)
+    if position is None or tokens[position] != _REC_COMMAND:
+        return None
+    global_tokens = list(tokens[:position])
+    args = _parser(as_json="--json" in global_tokens).parse_args([*global_tokens, _REC_COMMAND])
+    if args.list_verbs:
+        print_verbs(args.json)
+        return EXIT_CONFIRMED
+    return rec_cli.run(list(tokens[position + 1 :]), as_json=args.json, lock=args.lock)
 
 
 def _run_library(tokens: Sequence[str]) -> int | None:

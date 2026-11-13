@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 519240,
+  "measured_with_pr": 519394,
+  "sha": "3a0a095988",
+  "date": "Thu 12 Nov 2026",
+  "reason": "branch af--cloud-11216--test-default-config-autoplay-lifecycle-a--work grows the other-lazy surface; measured +154 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

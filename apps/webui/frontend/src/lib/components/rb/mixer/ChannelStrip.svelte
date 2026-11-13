@@ -8,18 +8,14 @@
 	 * Decks 3/4 render slightly lighter so 1/2 stay the visual focus.
 	 */
 	import AutoGainReadout from './AutoGainReadout.svelte';
-	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
+	import { getDeckState } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverLinkId, deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import { clickSelect, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
-	import { METER_FLOOR_DBFS, calibrationCaptureDb } from '$lib/rb/meter-math';
+	import { LEVEL_CALIBRATION_REFUSAL, applyLevelCalibration } from '$lib/rb/level-calibration-command';
 	import type { EqBand } from '$lib/rb/mixer-types';
 	import { knobId, stemKnobRole, type KnobRole } from '$lib/rb/knob-control.svelte';
-	import {
-		setLevelCalibrationCapture,
-		setLevelCalibrationDisabled,
-		uiPrefs
-	} from '$lib/rb/prefs.svelte';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import { STEM_DIAL_LABELS, channelShowsStemDials, stemDialLayout } from '$lib/rb/stem-dial-map';
@@ -56,6 +52,7 @@
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
 	import { selId, selectorNode } from '$lib/keyboard/selector-register';
+	import { channelButtonSelectorIds } from './channel-button-selector-ids';
 
 	interface Props {
 		/** The deck this strip controls (screen order is 3 1 2 4). */
@@ -145,6 +142,8 @@
 	const secondary = $derived(deckId === 3 || deckId === 4);
 	/** #9397: LESS collapses the deck 3/4 strip columns, so they leave the keyboard selector. */
 	const channelSelectable = $derived(!(less && secondary));
+	/** #13696: cue, colour FX and R/M calibration ids under this channel's selector group. */
+	const buttonSel = $derived(channelButtonSelectorIds(deckId));
 	const deck = $derived(getDeckState(deckId));
 	const playing = $derived(deck.playing);
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
@@ -280,32 +279,16 @@
 
 	/** Off -> click (re)captures this channel's current tap level and arms it.
 	 * On -> click disarms, keeping the captured number per prefs.svelte's
-	 * `setLevelCalibrationDisabled` contract. */
+	 * `setLevelCalibrationDisabled` contract. The `level_calibration`
+	 * performance command (#5586) runs the same `applyLevelCalibration`, so a
+	 * stopped or silent deck is refused the same way; here the refusal is
+	 * silent because the button title already explains it. */
 	function handleCalibrationClick(kind: 'red' | 'ceiling'): void {
 		const enabled =
 			kind === 'red'
 				? uiPrefs.level_calibration.red_enabled
 				: uiPrefs.level_calibration.ceiling_enabled;
-		if (enabled) {
-			setLevelCalibrationDisabled(kind);
-			return;
-		}
-		// A stopped deck is refused on TRANSPORT STATE, not just on level. The
-		// numeric floor alone was not enough: the meter's PPM ballistics decay
-		// at ~11.8 dB/s, so for several seconds after a pause the tap still
-		// reads a real-looking value on its way down. Capturing mid-decay arms a
-		// ceiling from a number that describes nothing, and a quiet tail arms a
-		// severe master attenuation. `playing` is the only signal that says the
-		// level means something right now.
-		if (!playing) return;
-		// R and M capture the post-channel-fader level the bar draws (`db`, pin
-		// 3dc62dbb909c); the clip pip alone uses post-crossfader heard peaks.
-		const db = calibrationCaptureDb(kind, peekDeckMeterReading(deckId));
-		// Belt and braces: a playing deck can still sit at the floor (silence in
-		// the track, or a graph not yet producing), and a -60 dBFS ceiling is a
-		// 0.001 master multiplier, i.e. one click silences the output.
-		if (db <= METER_FLOOR_DBFS) return;
-		setLevelCalibrationCapture(kind, db);
+		applyLevelCalibration(deckId, kind, !enabled);
 	}
 
 	/** Every numeric readout carries a title explaining the number (house rule). */
@@ -313,7 +296,7 @@
 		if (dbfs === null) {
 			return (
 				`${label}: not captured. Click while a loud passage plays on this channel. ` +
-				`A stopped or silent channel captures nothing: there is no level to calibrate against.`
+				LEVEL_CALIBRATION_REFUSAL
 			);
 		}
 		const action = enabled
@@ -401,10 +384,17 @@
 >
 	<div class="strip-head">
 		<span class="ch-num" title={chNumTitle}>{deckId}</span>
-		<div class="cal-controls" role="group" aria-label={`level calibration channel ${deckId}`}>
+		<!-- #13696: LESS hides R|M (LESSV-02), so the group leaves the selector there. -->
+		<div
+			class="cal-controls"
+			role="group"
+			aria-label={`level calibration channel ${deckId}`}
+			use:selectorNode={{ id: buttonSel.cal, kind: 'group', enabled: !less }}
+		>
 			<button
 				type="button"
 				class="cal-btn"
+				use:selectorNode={{ id: buttonSel.calRed, kind: 'leaf', enabled: true }}
 				class:active={uiPrefs.level_calibration.red_enabled}
 				aria-pressed={uiPrefs.level_calibration.red_enabled}
 				aria-label={`meter red anchor channel ${deckId}`}
@@ -414,6 +404,7 @@
 			<button
 				type="button"
 				class="cal-btn"
+				use:selectorNode={{ id: buttonSel.calCeiling, kind: 'leaf', enabled: true }}
 				class:active={uiPrefs.level_calibration.ceiling_enabled}
 				aria-pressed={uiPrefs.level_calibration.ceiling_enabled}
 				aria-label={`master ceiling channel ${deckId}`}
@@ -451,6 +442,7 @@
 			aria-label={`cue channel ${deckId}`}
 			title={cueTitle}
 			data-testid={`cue-channel-${deckId}`}
+			use:selectorNode={{ id: buttonSel.cue, kind: 'leaf', enabled: true }}
 			data-rust-command="channel_cue"
 			onclick={() => oncue(!cueEnabled)}
 		>
@@ -561,9 +553,12 @@
 	<!-- COLORFX-8341: Cmd-click (Ctrl-click off a Mac) on the color knob, caption
 	     included, cycles to the next effect (a plain tap still opens the COLORFX-10 menu); the same `color_fx {effect: next}`
 	     an agent sends. -->
+	<!-- #13696: the slot is the selector's colour FX group, so the FILTER leaf (whose
+	     tap opens the effect menu) and the S view's partner stem dial sit under it. -->
 	<div
 		class="filter-slot"
 		data-testid={`color-fx-slot-${deckId}`}
+		use:selectorNode={{ id: buttonSel.fx, kind: 'group', enabled: true }}
 		onpointerdowncapture={handleColorSlotPointerDown}
 		onmousedowncapture={handleColorSlotMouseDown}
 		onclickcapture={handleColorSlotClick}

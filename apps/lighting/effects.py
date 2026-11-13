@@ -42,9 +42,7 @@ def _check_fixture(fixture_index: int, fixture_count: int) -> None:
     if fixture_count < 1:
         raise ValueError(f"fixture_count must be >= 1, got {fixture_count}")
     if not 0 <= fixture_index < fixture_count:
-        raise ValueError(
-            f"fixture_index must be in 0..{fixture_count - 1}, got {fixture_index}"
-        )
+        raise ValueError(f"fixture_index must be in 0..{fixture_count - 1}, got {fixture_index}")
 
 
 @dataclass(frozen=True)
@@ -230,9 +228,7 @@ def sweep(
     del beat_phase
     _check_fixture(fixture_index, fixture_count)
     p = _SWEEP_DEFAULT if params is None else params
-    angle = p.centre_deg + p.amplitude_deg * math.sin(
-        2.0 * math.pi * (bar_phase / p.bars + fixture_index * p.offset)
-    )
+    angle = p.centre_deg + p.amplitude_deg * math.sin(2.0 * math.pi * (bar_phase / p.bars + fixture_index * p.offset))
     if p.axis == "pan":
         return EffectOutput(intensity=1.0, pan=angle)
     return EffectOutput(intensity=1.0, tilt=angle)
@@ -278,6 +274,8 @@ EFFECTS: Mapping[str, Effect] = MappingProxyType(
 
 __all__ = [
     "EFFECTS",
+    "MOVEMENT_AMPLITUDE",
+    "MOVEMENT_SWEEP_BARS",
     "RGB",
     "ChaseParams",
     "ColourStepParams",
@@ -290,7 +288,28 @@ __all__ = [
     "chase",
     "colour_step",
     "compose",
+    "movement_sweep",
     "pulse",
     "strobe",
     "sweep",
 ]
+
+
+# ----------------------------------------------------------------------------- movement variant (#10107)
+
+MOVEMENT_AMPLITUDE: Mapping[str, float] = MappingProxyType({"small": 0.20, "wide": 0.60})
+MOVEMENT_SWEEP_BARS: Mapping[str, float] = MappingProxyType({"small": 2.0, "wide": 1.0})
+
+
+def movement_sweep(
+    movement: str, *, range_deg: float, axis: Literal["pan", "tilt"] = "pan", centre_deg: float = 0.0
+) -> SweepParams:
+    """Sweep params for a ``lighting.movement`` value: amplitude as a share of ``range_deg`` and period."""
+    if movement not in MOVEMENT_AMPLITUDE:
+        raise ValueError(f"movement must be one of {', '.join(MOVEMENT_AMPLITUDE)}, got {movement!r}")
+    return SweepParams(
+        axis=axis,
+        bars=MOVEMENT_SWEEP_BARS[movement],
+        centre_deg=centre_deg,
+        amplitude_deg=MOVEMENT_AMPLITUDE[movement] * range_deg,
+    )

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557420,
+  "measured_with_pr": 557698,
+  "sha": "d547bcbd8e",
+  "date": "Fri 13 Nov 2026",
+  "reason": "PR #13571 ports Cmd-K e2e smokes to CommandBarV2 (#13521); CmdkPreviewStrip and shared cmdk e2e helpers add +278 B gzip to other-lazy vs CI merge-base measurement.",
+  "payback": "none planned; growth is e2e support imports and small cmdk preview markup on lazy routes"
+}

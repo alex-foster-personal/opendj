@@ -12,8 +12,9 @@
  * The single-click choice is per browser (localStorage), not a library pref.
  * The four view icons are live (TOPVIEW-01..03): they are one choice,
  * uiPrefs.perf_view, so this module only maps each icon to its view and the
- * top bar reads and sets the pref. FX has no panel yet, so its icon and menu
- * entry render inert with the planned-control tooltip and toggle nothing.
+ * top bar reads and sets the pref. FX opens the beat FX panel (BEATFX-14) once
+ * `fx.beat_rack` is on; with it off its icon and menu entry render inert with
+ * the planned-control tooltip and toggle nothing.
  */
 
 import { reportSettingSaveError } from '$lib/settings/setting-save-errors';

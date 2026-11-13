@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CDJ-2000NXS2 overlay (red recreation)</title>
+<style>
+:root {
+  --bg: #0e1114;
+  --ink: #e8eef2;
+  --muted: #8a9aa6;
+  --red: #ff2a2a;
+  --accent: #3dd6c6;
+  --panel: #1a2229;
+  --shift: #ffb020;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--ink);
+}
+header {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #2a3540;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+header .meta { color: var(--muted); font-size: 12px; }
+.toolbar button, .toolbar label {
+  background: #24303a; color: var(--ink); border: 1px solid #3a4a57;
+  border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.toolbar button.active, .toolbar button[aria-pressed="true"] {
+  background: var(--shift); color: #111; border-color: var(--shift); font-weight: 600;
+}
+.stage-wrap { padding: 12px; overflow: auto; }
+.stage {
+  position: relative; width: min(1200px, 100%);
+  margin: 0 auto; user-select: none;
+}
+.stage img.plate { width: 100%; height: auto; display: block; border-radius: 4px; }
+.stage img.plate[hidden] { display: none !important; }
+.control {
+  position: absolute; border: 2px solid var(--red); color: var(--red);
+  background: rgba(255, 40, 40, 0.12); font-size: 9px; line-height: 1.1;
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  padding: 1px 2px; overflow: hidden; cursor: pointer;
+}
+.control .tag { font-weight: 700; pointer-events: none; }
+.control.kind-jog { border-radius: 50%; }
+.control.kind-knob, .control.kind-encoder { border-radius: 50%; }
+.control.kind-fader { border-radius: 2px; }
+.control.kind-pad { border-radius: 3px; }
+.control.pressed, .control:active { background: rgba(255,40,40,0.45); }
+.control.shift-hot { border-color: var(--shift); color: var(--shift); background: rgba(255,176,32,0.18); }
+#readout {
+  position: sticky; bottom: 0; background: #12181e; border-top: 1px solid #2a3540;
+  padding: 10px 14px; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px; min-height: 52px;
+}
+#readout .k { color: var(--accent); }
+.legend { color: var(--muted); font-size: 11px; margin-left: auto; }
+.pad-modes { color: var(--ink); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+.pad-modes select {
+  background: #24303a; color: var(--ink); border: 1px solid #3a4a57;
+  border-radius: 4px; padding: 5px 8px; font-size: 12px;
+}
+.plate-missing {
+  margin: 0 auto 12px; max-width: 1200px; padding: 10px 14px;
+  background: #3a2410; border: 1px solid var(--shift); color: var(--shift);
+  border-radius: 4px; font-size: 13px;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>CDJ-2000NXS2 - red overlay</h1>
+  <span class="meta">Compare recreation vs official plate. Missing = no red box.</span>
+  <div class="toolbar">
+    <button type="button" id="shiftBtn" aria-pressed="false" title="Toggle SHIFT layer highlight">SHIFT</button>
+    
+  </div>
+  <span class="legend">Hold keyboard Shift or click SHIFT · hover for MIDI</span>
+</header>
+<div class="stage-wrap">
+  <div class="stage" id="stage" style="aspect-ratio:779/1001;">
+    <img class="plate" src="source/plate-top.png" alt="CDJ-2000NXS2 official plate"/>
+    <div class="control kind-jog" style="left:16.3%;top:40.5%;width:67.5%;height:52.5%;" data-fig="jog_ring" data-label="JOG RING" data-kind="jog" data-midi-name="jog_ring" data-midi-type="cc" data-midi-ch="1" data-midi-code="48" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="jog_ring JOG RING"><span class="tag">jog_ring</span></div><div class="control kind-jog" style="left:25.2%;top:47.5%;width:49.7%;height:38.7%;" data-fig="jog_top" data-label="JOG (TOUCH)" data-kind="jog" data-midi-name="jog_touch_turn" data-midi-type="cc" data-midi-ch="1" data-midi-code="16" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="jog_top JOG (TOUCH)"><span class="tag">jog_top</span></div><div class="control kind-button" style="left:2.4%;top:88.4%;width:11.3%;height:8.8%;" data-fig="play_pause" data-label="PLAY/PAUSE" data-kind="button" data-midi-name="play_pause" data-midi-type="note" data-midi-ch="1" data-midi-code="0" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="play_pause PLAY/PAUSE"><span class="tag">play_pause</span></div><div class="control kind-button" style="left:2.7%;top:78.3%;width:10.6%;height:8.3%;" data-fig="cue" data-label="CUE" data-kind="button" data-midi-name="cue" data-midi-type="note" data-midi-ch="1" data-midi-code="1" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="cue CUE"><span class="tag">cue</span></div><div class="control kind-button" style="left:2.9%;top:71.6%;width:4.8%;height:3.7%;" data-fig="search_rev" data-label="SEARCH REV" data-kind="button" data-midi-name="search_rev" data-midi-type="note" data-midi-ch="1" data-midi-code="3" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="search_rev SEARCH REV"><span class="tag">search_rev</span></div><div class="control kind-button" style="left:8.6%;top:71.6%;width:4.8%;height:3.7%;" data-fig="search_fwd" data-label="SEARCH FWD" data-kind="button" data-midi-name="search_fwd" data-midi-type="note" data-midi-ch="1" data-midi-code="2" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="search_fwd SEARCH FWD"><span class="tag">search_fwd</span></div><div class="control kind-button" style="left:2.9%;top:65.2%;width:4.8%;height:3.7%;" data-fig="track_search_prev" data-label="TRACK SEARCH PREV" data-kind="button" data-midi-name="track_search_prev" data-midi-type="note" data-midi-ch="1" data-midi-code="5" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="track_search_prev TRACK SEARCH PREV"><span class="tag">track_search_prev</span></div><div class="control kind-button" style="left:8.6%;top:65.2%;width:4.8%;height:3.7%;" data-fig="track_search_next" data-label="TRACK SEARCH NEXT" data-kind="button" data-midi-name="track_search_next" data-midi-type="note" data-midi-ch="1" data-midi-code="4" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="track_search_next TRACK SEARCH NEXT"><span class="tag">track_search_next</span></div><div class="control kind-button" style="left:3.8%;top:56.4%;width:5.5%;height:4.0%;" data-fig="direction_lever" data-label="DIRECTION FWD/REV/SLIP REV" data-kind="button" data-midi-name="reverse" data-midi-type="note" data-midi-ch="1" data-midi-code="33" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="direction_lever DIRECTION FWD/REV/SLIP REV"><span class="tag">direction_lever</span></div><div class="control kind-button" style="left:17.6%;top:47.6%;width:2.7%;height:2.1%;" data-fig="slip" data-label="SLIP" data-kind="button" data-midi-name="slip" data-midi-type="note" data-midi-ch="1" data-midi-code="58" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="slip SLIP"><span class="tag">slip</span></div><div class="control kind-button" style="left:17.5%;top:42.5%;width:3.1%;height:2.4%;" data-fig="beat_4_8" data-label="4/8BEAT (LOOP CUTTER)" data-kind="button" data-midi-name="beat_loop_4" data-midi-type="note" data-midi-ch="1" data-midi-code="42" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="beat_4_8 4/8BEAT (LOOP CUTTER)"><span class="tag">beat_4_8</span></div><div class="control kind-button" style="left:16.3%;top:36.1%;width:5.1%;height:4.0%;" data-fig="loop_in" data-label="IN/CUE (IN ADJUST)" data-kind="button" data-midi-name="loop_in" data-midi-type="note" data-midi-ch="1" data-midi-code="6" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="loop_in IN/CUE (IN ADJUST)"><span class="tag">loop_in</span></div><div class="control kind-button" style="left:24.0%;top:36.1%;width:5.1%;height:4.0%;" data-fig="loop_out" data-label="OUT (OUT ADJUST)" data-kind="button" data-midi-name="loop_out" data-midi-type="note" data-midi-ch="1" data-midi-code="7" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="loop_out OUT (OUT ADJUST)"><span class="tag">loop_out</span></div><div class="control kind-button" style="left:33.6%;top:36.4%;width:4.5%;height:3.5%;" data-fig="reloop_exit" data-label="RELOOP/EXIT" data-kind="button" data-midi-name="reloop" data-midi-type="note" data-midi-ch="1" data-midi-code="8" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="reloop_exit RELOOP/EXIT"><span class="tag">reloop_exit</span></div><div class="control kind-button" style="left:2.7%;top:49.9%;width:2.7%;height:2.1%;" data-fig="hot_cue_call_delete" data-label="HOT CUE CALL/DELETE" data-kind="button" data-midi-name="hot_cue_call_delete" data-midi-type="note" data-midi-ch="1" data-midi-code="19" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="hot_cue_call_delete HOT CUE CALL/DELETE"><span class="tag">hot_cue_call_delete</span></div><div class="control kind-pad" style="left:4.6%;top:25.3%;width:8.6%;height:3.7%;" data-fig="hot_cue_a" data-label="HOT CUE A / E" data-kind="pad" data-midi-name="hot_cue_a" data-midi-type="note" data-midi-ch="1" data-midi-code="24" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="hot_cue_a HOT CUE A / E"><span class="tag">hot_cue_a</span></div><div class="control kind-pad" style="left:4.6%;top:31.5%;width:8.6%;height:3.7%;" data-fig="hot_cue_b" data-label="HOT CUE B / F" data-kind="pad" data-midi-name="hot_cue_b" data-midi-type="note" data-midi-ch="1" data-midi-code="25" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="hot_cue_b HOT CUE B / F"><span class="tag">hot_cue_b</span></div><div class="control kind-pad" style="left:4.6%;top:37.6%;width:8.6%;height:3.7%;" data-fig="hot_cue_c" data-label="HOT CUE C / G" data-kind="pad" data-midi-name="hot_cue_c" data-midi-type="note" data-midi-ch="1" data-midi-code="26" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="hot_cue_c HOT CUE C / G"><span class="tag">hot_cue_c</span></div><div class="control kind-pad" style="left:4.6%;top:43.6%;width:8.6%;height:3.7%;" data-fig="hot_cue_d" data-label="HOT CUE D / H" data-kind="pad" data-midi-name="hot_cue_d" data-midi-type="note" data-midi-ch="1" data-midi-code="27" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="hot_cue_d HOT CUE D / H"><span class="tag">hot_cue_d</span></div><div class="control kind-button" style="left:18.7%;top:28.3%;width:2.7%;height:2.1%;" data-fig="quantize" data-label="QUANTIZE" data-kind="button" data-midi-name="quantize" data-midi-type="note" data-midi-ch="1" data-midi-code="9" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="quantize QUANTIZE"><span class="tag">quantize</span></div><div class="control kind-button" style="left:18.5%;top:24.1%;width:3.1%;height:2.4%;" data-fig="time_mode" data-label="TIME MODE/AUTO CUE" data-kind="button" data-midi-name="time_auto_cue" data-midi-type="note" data-midi-ch="1" data-midi-code="14" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="time_mode TIME MODE/AUTO CUE"><span class="tag">time_mode</span></div><div class="control kind-button" style="left:25.3%;top:8.9%;width:49.1%;height:23.2%;" data-fig="touch_display" data-label="Main unit display (touch GUI)" data-kind="button" data-midi-name="needle" data-midi-type="cc" data-midi-ch="1" data-midi-code="28" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="touch_display Main unit display (touch GUI)"><span class="tag">touch_display</span></div><div class="control kind-button" style="left:75.9%;top:8.0%;width:4.1%;height:2.7%;" data-fig="back" data-label="BACK" data-kind="button" data-midi-name="back" data-midi-type="note" data-midi-ch="1" data-midi-code="50" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="back BACK"><span class="tag">back</span></div><div class="control kind-button" style="left:80.8%;top:8.0%;width:4.1%;height:2.7%;" data-fig="tag_track" data-label="TAG TRACK/REMOVE" data-kind="button" data-midi-name="tag_track" data-midi-type="note" data-midi-ch="1" data-midi-code="48" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="tag_track TAG TRACK/REMOVE"><span class="tag">tag_track</span></div><div class="control kind-encoder" style="left:74.3%;top:13.1%;width:9.6%;height:7.5%;" data-fig="rotary_selector" data-label="Rotary selector" data-kind="encoder" data-midi-name="encoder" data-midi-type="cc" data-midi-ch="1" data-midi-code="79" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="rotary_selector Rotary selector"><span class="tag">rotary_selector</span></div><div class="control kind-button" style="left:89.2%;top:11.9%;width:5.5%;height:4.3%;" data-fig="disc_eject" data-label="DISC EJECT" data-kind="button" data-midi-name="eject" data-midi-type="note" data-midi-ch="1" data-midi-code="47" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="disc_eject DISC EJECT"><span class="tag">disc_eject</span></div><div class="control kind-knob" style="left:89.7%;top:28.0%;width:4.5%;height:3.5%;" data-fig="touch_brake" data-label="VINYL SPEED ADJUST TOUCH/BRAKE" data-kind="knob" data-midi-name="touch_brake" data-midi-type="cc" data-midi-ch="1" data-midi-code="30" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="touch_brake VINYL SPEED ADJUST TOUCH/BRAKE"><span class="tag">touch_brake</span></div><div class="control kind-knob" style="left:89.7%;top:35.1%;width:4.5%;height:3.5%;" data-fig="release_start" data-label="VINYL SPEED ADJUST RELEASE/START" data-kind="knob" data-midi-name="release_start" data-midi-type="cc" data-midi-ch="1" data-midi-code="31" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="release_start VINYL SPEED ADJUST RELEASE/START"><span class="tag">release_start</span></div><div class="control kind-button" style="left:62.7%;top:36.8%;width:3.1%;height:2.4%;" data-fig="call_prev" data-label="CUE/LOOP CALL (LOOP 1/2X)" data-kind="button" data-midi-name="call_prev" data-midi-type="note" data-midi-ch="1" data-midi-code="12" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="call_prev CUE/LOOP CALL (LOOP 1/2X)"><span class="tag">call_prev</span></div><div class="control kind-button" style="left:67.3%;top:36.8%;width:3.1%;height:2.4%;" data-fig="call_next" data-label="CUE/LOOP CALL (LOOP 2X)" data-kind="button" data-midi-name="call_next" data-midi-type="note" data-midi-ch="1" data-midi-code="11" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="call_next CUE/LOOP CALL (LOOP 2X)"><span class="tag">call_next</span></div><div class="control kind-button" style="left:75.2%;top:36.5%;width:3.8%;height:2.9%;" data-fig="delete" data-label="DELETE" data-kind="button" data-midi-name="delete" data-midi-type="note" data-midi-ch="1" data-midi-code="13" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="delete DELETE"><span class="tag">delete</span></div><div class="control kind-button" style="left:80.7%;top:36.8%;width:3.1%;height:2.4%;" data-fig="memory" data-label="MEMORY" data-kind="button" data-midi-name="memory" data-midi-type="note" data-midi-ch="1" data-midi-code="10" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="memory MEMORY"><span class="tag">memory</span></div><div class="control kind-button" style="left:92.1%;top:41.3%;width:4.8%;height:2.9%;" data-fig="jog_mode" data-label="JOG MODE" data-kind="button" data-midi-name="jog_mode" data-midi-type="note" data-midi-ch="1" data-midi-code="18" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="jog_mode JOG MODE"><span class="tag">jog_mode</span></div><div class="control kind-button" style="left:86.1%;top:48.3%;width:4.8%;height:3.7%;" data-fig="sync" data-label="BEAT SYNC/INST.DOUBLES" data-kind="button" data-midi-name="sync" data-midi-type="note" data-midi-ch="1" data-midi-code="31" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="sync BEAT SYNC/INST.DOUBLES"><span class="tag">sync</span></div><div class="control kind-button" style="left:92.6%;top:48.3%;width:4.8%;height:3.7%;" data-fig="master" data-label="MASTER" data-kind="button" data-midi-name="master" data-midi-type="note" data-midi-ch="1" data-midi-code="30" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="master MASTER"><span class="tag">master</span></div><div class="control kind-button" style="left:90.2%;top:54.7%;width:3.4%;height:2.7%;" data-fig="tempo_range" data-label="TEMPO range" data-kind="button" data-midi-name="tempo_range" data-midi-type="note" data-midi-ch="1" data-midi-code="16" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="tempo_range TEMPO range"><span class="tag">tempo_range</span></div><div class="control kind-button" style="left:90.2%;top:60.5%;width:3.4%;height:2.7%;" data-fig="master_tempo" data-label="MASTER TEMPO" data-kind="button" data-midi-name="master_tempo" data-midi-type="note" data-midi-ch="1" data-midi-code="17" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="master_tempo MASTER TEMPO"><span class="tag">master_tempo</span></div><div class="control kind-fader" style="left:88.5%;top:66.7%;width:6.2%;height:26.7%;" data-fig="tempo_slider" data-label="TEMPO slider" data-kind="fader" data-midi-name="tempo_slider" data-midi-type="cc" data-midi-ch="1" data-midi-code="29" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="tempo_slider TEMPO slider"><span class="tag">tempo_slider</span></div><div class="control kind-button" style="left:80.7%;top:78.3%;width:3.1%;height:2.4%;" data-fig="tempo_reset" data-label="TEMPO RESET" data-kind="button" data-midi-name="tempo_reset" data-midi-type="note" data-midi-ch="1" data-midi-code="15" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="tempo_reset TEMPO RESET"><span class="tag">tempo_reset</span></div>
+  </div>
+</div>
+<div id="readout">Hover a control…</div>
+<script>
+const stage = document.getElementById('stage');
+const readout = document.getElementById('readout');
+const shiftBtn = document.getElementById('shiftBtn');
+let shift = false;
+const dials = new Map();
+
+const padModeSel = document.getElementById('padMode');
+
+function padModeReadout(el) {
+  if (!padModeSel || !el.dataset.padModes) return '';
+  const mode = JSON.parse(el.dataset.padModes).find(m => m.mode === padModeSel.value);
+  if (!mode) return ' · pad mode <span class="k">' + padModeSel.value + '</span>: no wire in midi.json';
+  const note = (n, c) => n ? `<span class="k">${n}</span> Note ${c} ch${el.dataset.midiCh}` : 'none';
+  return ` · pad mode <span class="k">${mode.mode}</span>: ${note(mode.name, mode.code)}` +
+    ` · shift twin ${note(mode.shift_name, mode.shift_code)}`;
+}
+
+function setShift(on) {
+  shift = on;
+  shiftBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  shiftBtn.classList.toggle('active', on);
+  document.querySelectorAll('.control').forEach(el => {
+    const has = !!el.dataset.shiftName;
+    el.classList.toggle('shift-hot', on && has);
+    if (on && has) {
+      el.querySelector('.tag').innerHTML = el.dataset.fig + '<br>SHIFT: ' + el.dataset.shiftName;
+    } else if (el.dataset._baseHtml) {
+      el.querySelector('.tag').innerHTML = el.dataset._baseHtml;
+    }
+  });
+}
+
+document.querySelectorAll('.control').forEach(el => {
+  el.dataset._baseHtml = el.querySelector('.tag').innerHTML;
+  el.addEventListener('pointerenter', () => {
+    const sn = el.dataset.shiftName;
+    readout.innerHTML =
+      `<span class="k">${el.dataset.fig}</span> ${el.dataset.label} · ` +
+      `<span class="k">${el.dataset.midiType.toUpperCase()}</span> ch${el.dataset.midiCh} ` +
+      `code ${el.dataset.midiCode} · name <span class="k">${el.dataset.midiName}</span>` +
+      (sn ? ` · shift twin <span class="k">${sn}</span>` : ' · (no shift twin)') +
+      (el.dataset.modeName ? ` · mode twin <span class="k">${el.dataset.modeName}</span>` : '') +
+      (el.dataset.shiftModeName ? ` · shift+mode twin <span class="k">${el.dataset.shiftModeName}</span>` : '') +
+      (shift && sn ? ' · <span class="k">SHIFT LAYER ACTIVE</span>' : '') +
+      padModeReadout(el);
+  });
+  el.addEventListener('pointerdown', (ev) => {
+    el.classList.add('pressed');
+    if (el.dataset.kind === 'knob' || el.dataset.kind === 'encoder' || el.dataset.kind === 'fader') {
+      const id = el.dataset.fig;
+      let v = dials.get(id) ?? 64;
+      v = Math.max(0, Math.min(127, v + (ev.shiftKey ? -8 : 8)));
+      dials.set(id, v);
+      const dv = el.querySelector('.dial-value');
+      if (dv) { dv.hidden = false; dv.textContent = String(v); }
+      readout.innerHTML += ` · value <span class="k">${v}</span>`;
+    }
+  });
+  el.addEventListener('pointerup', () => el.classList.remove('pressed'));
+  el.addEventListener('pointerleave', () => el.classList.remove('pressed'));
+});
+
+shiftBtn?.addEventListener('click', () => setShift(!shift));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') setShift(true);
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Shift') setShift(false);
+});
+
+document.querySelectorAll('img.plate').forEach(img => {
+  const markMissing = () => {
+    if (img.dataset.missingShown === '1') return;
+    img.dataset.missingShown = '1';
+    img.hidden = true;
+    const note = document.createElement('div');
+    note.className = 'plate-missing';
+    note.setAttribute('role', 'alert');
+    note.textContent = 'Plate image missing: ' + (img.getAttribute('src') || '') +
+      ' is not in this checkout. Control boxes still work.';
+    const host = img.closest('.stage');
+    (host || img).insertAdjacentElement('beforebegin', note);
+  };
+  img.addEventListener('error', markMissing);
+  if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) markMissing();
+});
+</script>
+</body>
+</html>

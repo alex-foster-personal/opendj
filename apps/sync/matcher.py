@@ -24,6 +24,7 @@ import re
 import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -123,6 +124,9 @@ class UnifiedTrack:
     file_path: Path | None = None
     duration_s: float | None = None
     isrc: str | None = None
+    # Source-side last-modified stamp (RB ``updated_at`` / djay ``modified_at``)
+    # carried into rating conflict resolution (SYNC-12979).
+    modified_at: datetime | None = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, UnifiedTrack):
@@ -354,6 +358,7 @@ def _unified_from_rb(rb: Any) -> UnifiedTrack:
         file_path=getattr(rb, "file_path", None),
         duration_s=getattr(rb, "duration_s", None),
         isrc=getattr(rb, "isrc", None),
+        modified_at=getattr(rb, "modified_at", None) or getattr(rb, "updated_at", None),
     )
 
 
@@ -368,6 +373,7 @@ def _unified_from_dj(dj: DjayTrack) -> UnifiedTrack:
         file_path=dj.file_path,
         duration_s=dj.duration_s,
         isrc=dj.isrc or None,
+        modified_at=getattr(dj, "modified_at", None),
     )
 
 

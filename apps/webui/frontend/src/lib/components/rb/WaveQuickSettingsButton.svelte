@@ -6,6 +6,7 @@
 	 * Hidden unless the daemon declares the `waveform.quick_settings` flag on.
 	 */
 	import { waveQsEnabled } from '$lib/rb/waveform-quick-settings-flag';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	type PopoverModule = typeof import('./WaveQuickSettingsPopover.svelte');
 
@@ -46,6 +47,7 @@
 		aria-expanded={open}
 		aria-controls={open ? 'wave-quick-settings' : undefined}
 		data-testid="wave-quick-settings-button"
+		use:topbarSelectorNode={{ name: 'wave-settings', disabled: false }}
 		onclick={_toggle}
 	>
 		<svg width="16" height="8" viewBox="0 0 16 8" aria-hidden="true">

@@ -49,6 +49,15 @@ _OFF_BIND_INDEX = 211
 ARTPOLLREPLY_MIN_LENGTH = _OFF_BIND_INDEX + 1
 
 
+class ArtPollReplyPacketError(ValueError):
+    """An ArtPollReply that fails the output-port table or other packet layout rules."""
+
+    def __init__(self, field_name: str, offset: int, detail: str) -> None:
+        super().__init__(f"{field_name} at offset {offset}: {detail}")
+        self.field_name = field_name
+        self.offset = offset
+
+
 @dataclass(frozen=True)
 class NodeInfo:
     """What one ArtPollReply says about a node."""
@@ -73,6 +82,16 @@ def _require_poll_interval(poll_interval_s: float) -> None:
         raise ValueError(
             f"poll_interval_s {poll_interval_s} is outside {POLL_INTERVAL_MIN_S}..{POLL_INTERVAL_MAX_S} (Art-Net 4)"
         )
+
+
+def _output_port_table_end(port_count: int) -> int:
+    return max(_OFF_PORT_TYPES + port_count, _OFF_SW_OUT + port_count)
+
+
+def _read_output_port_address(data: bytes, index: int) -> int:
+    net = data[_OFF_NET_SWITCH] & 0x7F
+    subnet = data[_OFF_SUB_SWITCH] & 0x0F
+    return (net << 8) | (subnet << 4) | (data[_OFF_SW_OUT + index] & 0x0F)
 
 
 # ----------------------------------------------------------------------------- public api
@@ -100,20 +119,29 @@ def parse_artpollreply(data: bytes) -> NodeInfo:
     (SwOut[n], 4 bits) for each of the first NumPorts ports whose PortTypes byte says it outputs
     DMX from Art-Net.
     """
-    if len(data) < ARTPOLLREPLY_MIN_LENGTH:
+    if len(data) < _OFF_NUM_PORTS + 2:
         raise ValueError(f"ArtPollReply needs at least {ARTPOLLREPLY_MIN_LENGTH} bytes, received {len(data)}")
     if data[:8] != ARTNET_ID:
         raise ValueError(f"not an Art-Net packet: ID is {data[:8]!r}")
     opcode = int.from_bytes(data[_OFF_OPCODE : _OFF_OPCODE + 2], "little")
     if opcode != OPCODE_ARTPOLLREPLY:
         raise ValueError(f"not an ArtPollReply: OpCode is 0x{opcode:04X}, expected 0x{OPCODE_ARTPOLLREPLY:04X}")
-    net = data[_OFF_NET_SWITCH] & 0x7F
-    subnet = data[_OFF_SUB_SWITCH] & 0x0F
     port_count = min(int.from_bytes(data[_OFF_NUM_PORTS : _OFF_NUM_PORTS + 2], "big"), MAX_PORTS_PER_REPLY)
+    port_table_end = _output_port_table_end(port_count)
+    if len(data) < port_table_end:
+        raise ArtPollReplyPacketError(
+            "output-port table",
+            _OFF_SW_OUT,
+            f"truncated inside output-port fields: need {port_table_end} bytes, received {len(data)}",
+        )
+    if len(data) < ARTPOLLREPLY_MIN_LENGTH:
+        raise ValueError(f"ArtPollReply needs at least {ARTPOLLREPLY_MIN_LENGTH} bytes, received {len(data)}")
     outputs = tuple(
-        (net << 8) | (subnet << 4) | (data[_OFF_SW_OUT + index] & 0x0F)
+        address
         for index in range(port_count)
         if data[_OFF_PORT_TYPES + index] & PORT_TYPE_OUTPUT_FROM_ARTNET
+        for address in (_read_output_port_address(data, index),)
+        if address != 0
     )
     return NodeInfo(
         ip=".".join(str(octet) for octet in data[_OFF_IP : _OFF_IP + 4]),
@@ -146,9 +174,15 @@ class SubscriberTable:
 
     def record(self, node: NodeInfo, now: float) -> None:
         """Store or refresh a node from its reply at time ``now``."""
+        if not node.output_port_addresses:
+            return
         key = (node.ip, node.bind_index)
         self._nodes[key] = node
         self._last_reply_at[key] = now
+
+    def record_reply(self, data: bytes, now: float) -> None:
+        """Parse one ArtPollReply and record the node only when it has usable output Port-Addresses."""
+        self.record(parse_artpollreply(data), now)
 
     def expire(self, now: float) -> list[NodeInfo]:
         """Forget nodes silent for longer than ``expiry_s`` and return them."""

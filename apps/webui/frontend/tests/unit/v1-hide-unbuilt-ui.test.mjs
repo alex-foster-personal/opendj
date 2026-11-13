@@ -69,8 +69,17 @@ test('TopBar 2-deck button is live, pressed-state aware, and on the hotkey sette
 	assert.match(btn, /aria-pressed=\{twoDeck\.pressed\}/);
 	assert.match(btn, /aria-keyshortcuts="Meta\+2 Control\+2 Meta\+4 Control\+4"/);
 	assert.doesNotMatch(btn, /\btitle=/, '2-deck uses ControlExplainer only (issue #927)');
-	// PR #13576 stops the click reaching the strip's own handler before it toggles.
-	assert.match(btn, /onclick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*setDeckLayoutMode\(twoDeck\.next\);\s*\}\}/);
+	// PR #13576 stops the click reaching the strip's own handler before it toggles. PR #13760 routes
+	// the toggle through the set_deck_layout command (agent parity), which lands on the same setter.
+	assert.match(
+		btn,
+		/onclick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*void runPerformanceCommandFromUi\(\{\s*type: 'set_deck_layout',\s*layout: twoDeck\.next === 'less' \? 'two-deck' : 'four-deck'\s*\}\);\s*\}\}/
+	);
+	assert.match(
+		read('src/lib/rb/performance-ipc.svelte.ts'),
+		/command\.type === 'set_deck_layout'\) \{\s*setDeckLayoutMode\(deckLayoutModeFor\(command\.layout\)\);/
+	);
+	assert.match(read('src/lib/rb/deck-layout-prefs.ts'), /return choice === 'two-deck' \? 'less' : 'more';/);
 	assert.match(topbar, /describeTwoDeckToggle\(uiPrefs\.deck_layout\)/);
 	// Same setter the Cmd+2 / Cmd+4 handler calls.
 	assert.match(hotkeys, /setDeckLayoutMode\(mode\)/);
@@ -92,7 +101,7 @@ test('TrackContextMenu keeps real rows and drops the inert unbuilt ones', () => 
 	}
 	assert.match(src, /id: 'remove-playlist',[\s\S]*?when: \(ctx\) => ctx\.source === 'playlist'/);
 	const host = read('src/lib/components/rb/browser/TrackContextMenu.svelte');
-	assert.match(host, /source: isUsbTrackId\(row\.stable_id\)\s*\?\s*'usb'\s*:\s*readOnly\s*\?\s*'readonly-import'\s*:\s*removable\s*\?\s*'playlist'\s*:\s*'collection'/);
+	assert.match(host, /source: isUsbTrackId\(row\.stable_id\)\s*\?\s*'usb'\s*:\s*deleted\s*\?\s*'deleted'\s*:\s*readOnly\s*\?\s*'readonly-import'\s*:\s*removable\s*\?\s*'playlist'\s*:\s*'collection'/);
 });
 
 test('TreeContextMenu keeps real rows and drops the inert unbuilt ones', () => {

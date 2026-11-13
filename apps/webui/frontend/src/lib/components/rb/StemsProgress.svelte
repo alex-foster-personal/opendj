@@ -14,7 +14,8 @@
 -->
 <script lang="ts">
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
-	import { jobsStore, progressPct, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
+	import { jobsDrawerToggleCommand, jobsStore, progressPct } from '$lib/rb/jobs-store.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { stemsProgress, stemsProgressTitle } from '$lib/rb/stems-jobs.svelte';
 
 	/** Null when the daemon offers jobs; a sentence when it does not. */
@@ -33,7 +34,7 @@
 </script>
 
 {#if refusal === null && state.active}
-	<button class="stems-progress" title={title} onclick={toggleJobsDrawer} aria-label="Stems separation progress, opens the jobs drawer">
+	<button class="stems-progress" title={title} onclick={() => void runPerformanceCommandFromUi(jobsDrawerToggleCommand())} aria-label="Stems separation progress, opens the jobs drawer">
 		<span class="stems-label" title={title}>STEMS</span>
 		<span
 			class="stems-bar"

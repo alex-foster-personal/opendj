@@ -24,3 +24,8 @@ export function setOjSidebarOpen(next: boolean): void {
 export function toggleOjSidebar(): void {
 	setOjSidebarOpen(!ojSidebar.open);
 }
+
+/** Plain, cloneable copy of the open state for `queryPerformanceState().oj` (#12029). */
+export function ojSidebarSnapshot(): { open: boolean } {
+	return { open: ojSidebar.open };
+}

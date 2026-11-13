@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,27 @@ from apps.parity.phrase import score_phrase
 from apps.parity.remaining import classify_remaining
 from apps.parity.vocal import score_vocal
 from apps.parity.waveform import score_waveform
+
+_WAVEFORM_LANE_IDS = frozenset({"waveform_preview", "waveform_detail", "waveform_triband"})
+_ScoredLaneFn = Callable[[list[dict[str, Any]], str], LaneFigure]
+
+_DIRECT_LANE_SCORERS: dict[str, _ScoredLaneFn] = {
+    "bpm": score_bpm,
+    "key": score_key,
+    "phrase": score_phrase,
+    "cues_db": score_cues_db,
+    "cues_anlz": score_cues_anlz,
+    "vocal": score_vocal,
+}
+
+
+def _score_lane(lane: str, rows: list[dict[str, Any]], *, measured_at: str) -> LaneFigure:
+    if lane in _WAVEFORM_LANE_IDS:
+        return score_waveform(lane, rows, measured_at=measured_at)
+    scorer = _DIRECT_LANE_SCORERS.get(lane)
+    if scorer is not None:
+        return scorer(rows, measured_at=measured_at)
+    return classify_remaining(lane, rows, measured_at=measured_at)
 
 
 @dataclass(frozen=True)
@@ -73,28 +95,11 @@ def score_payload(payload: dict[str, Any]) -> ParityReport:
         raise ValueError("payload has no measured_at; a figure without a date is not a figure")
     rows = _present_rows(payload)
     round_label = int(payload.get("round", 0))
-    figures: list[LaneFigure] = []
-    for lane in LANE_IDS:
-        if lane == "bpm":
-            figures.append(score_bpm(rows, measured_at=measured_at))
-        elif lane == "key":
-            figures.append(score_key(rows, measured_at=measured_at))
-        elif lane in {"waveform_preview", "waveform_detail", "waveform_triband"}:
-            figures.append(score_waveform(lane, rows, measured_at=measured_at))
-        elif lane == "phrase":
-            figures.append(score_phrase(rows, measured_at=measured_at))
-        elif lane == "cues_db":
-            figures.append(score_cues_db(rows, measured_at=measured_at))
-        elif lane == "cues_anlz":
-            figures.append(score_cues_anlz(rows, measured_at=measured_at))
-        elif lane == "vocal":
-            figures.append(score_vocal(rows, measured_at=measured_at))
-        else:
-            figures.append(classify_remaining(lane, rows, measured_at=measured_at))
+    figures = tuple(_score_lane(lane, rows, measured_at=measured_at) for lane in LANE_IDS)
     return ParityReport(
         scorer_version=SCORER_VERSION,
         measured_at=measured_at,
-        figures=tuple(figures),
+        figures=figures,
         round=round_label,
     )
 
@@ -179,15 +184,10 @@ def _figure_notes(figure: LaneFigure) -> str:
             f"20 ms grain, not a threshold. "
             f"exact {figure.exact_n}/{figure.scored_n} scored."
         )
-    elif lane == "vocal" and figure.iou_mean is not None:
-        notes = (
-            f"mean IoU {figure.iou_mean:.3f} of {figure.scored_n} scored; "
-            f"exact (IoU=1) {figure.exact_n}; reporting, not a threshold."
-        )
     elif lane == "vocal" and figure.status == "scored":
-        notes = (
-            f"mean IoU - of {figure.scored_n} scored; exact (IoU=1) {figure.exact_n or 0}; reporting, not a threshold."
-        )
+        iou_part = f"{figure.iou_mean:.3f}" if figure.iou_mean is not None else "-"
+        exact_n = figure.exact_n if figure.iou_mean is not None else (figure.exact_n or 0)
+        notes = f"mean IoU {iou_part} of {figure.scored_n} scored; exact (IoU=1) {exact_n}; reporting, not a threshold."
     return notes
 
 

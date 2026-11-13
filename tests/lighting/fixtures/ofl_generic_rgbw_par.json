@@ -1,0 +1,26 @@
+{
+  "name": "Test RGBW Par",
+  "shortName": "test-rgbw-par",
+  "categories": ["Color Changer"],
+  "availableChannels": {
+    "Dimmer": {
+      "fineChannelAliases": ["Dimmer fine"],
+      "capability": {"type": "Intensity"}
+    },
+    "Red": {"capability": {"type": "ColorIntensity", "color": "Red"}},
+    "Green": {"capability": {"type": "ColorIntensity", "color": "Green"}},
+    "Blue": {"capability": {"type": "ColorIntensity", "color": "Blue"}},
+    "White": {"capability": {"type": "ColorIntensity", "color": "White"}},
+    "Strobe": {
+      "capabilities": [
+        {"dmxRange": [0, 9], "type": "NoFunction"},
+        {"dmxRange": [10, 249], "type": "ShutterStrobe", "shutterEffect": "Strobe"},
+        {"dmxRange": [250, 255], "type": "ShutterStrobe", "shutterEffect": "Open"}
+      ]
+    }
+  },
+  "modes": [
+    {"name": "6-channel", "shortName": "6ch", "channels": ["Dimmer", "Red", "Green", "Blue", "White", "Strobe"]},
+    {"name": "7-channel", "shortName": "7ch", "channels": ["Dimmer", "Dimmer fine", "Red", "Green", "Blue", "White", "Strobe"]}
+  ]
+}

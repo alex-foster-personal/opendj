@@ -7,6 +7,9 @@ CLI calls, so the two surfaces cannot drift on what "installed" means.
 
 The three callables are injected rather than imported, so this module does not
 import the server module that registers it.
+
+Persona cli-mcp runs (issue #11277) never call :func:`update_apply`; the harness
+refuses that tool before stdio dispatch.
 """
 
 from __future__ import annotations

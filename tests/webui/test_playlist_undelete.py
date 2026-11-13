@@ -84,6 +84,29 @@ def _put_tracks(
     return r.headers["ETag"]
 
 
+def _deleted_etag(client: TestClient, playlist_id: str) -> str:
+    rows = client.get("/api/v1/playlists/deleted").json()
+    return next(row["etag"] for row in rows if row["playlist_id"] == playlist_id)
+
+
+def _deleted_playlist(client: TestClient, name: str) -> str:
+    created, etag = _create_playlist(client, name)
+    playlist_id = created["playlist_id"]
+    _put_tracks(client, playlist_id, [TRACK_A, TRACK_B], etag)
+    detail = client.get(f"/api/v1/playlists/{playlist_id}")
+    delete = client.delete(
+        f"/api/v1/playlists/{playlist_id}",
+        headers={"If-Match": detail.headers["ETag"]},
+    )
+    assert delete.status_code == 204, delete.text
+    return playlist_id
+
+
+def _is_deleted(client: TestClient, playlist_id: str) -> bool:
+    rows = client.get("/api/v1/playlists/deleted").json()
+    return any(row["playlist_id"] == playlist_id for row in rows)
+
+
 def test_deleted_playlist_lists_and_live_get_404s(
     client: TestClient,
 ) -> None:
@@ -146,7 +169,10 @@ def test_undelete_restores_memberships_intact(
     )
     assert delete.status_code == 204
 
-    restore = client.post(f"/api/v1/playlists/{playlist_id}:undelete")
+    restore = client.post(
+        f"/api/v1/playlists/{playlist_id}:undelete",
+        headers={"If-Match": _deleted_etag(client, playlist_id)},
+    )
     assert restore.status_code == 200, restore.text
     assert "ETag" in restore.headers
     assert restore.json()["items"] == before_items
@@ -177,11 +203,17 @@ def test_undelete_live_409_and_missing_404(client: TestClient) -> None:
     created, _etag = _create_playlist(client, "Still live")
     playlist_id = created["playlist_id"]
 
-    live = client.post(f"/api/v1/playlists/{playlist_id}:undelete")
+    live = client.post(
+        f"/api/v1/playlists/{playlist_id}:undelete",
+        headers={"If-Match": _etag},
+    )
     assert live.status_code == 409
     assert live.json()["detail"]["error"] == "not_deleted"
 
-    missing = client.post("/api/v1/playlists/pl-does-not-exist:undelete")
+    missing = client.post(
+        "/api/v1/playlists/pl-does-not-exist:undelete",
+        headers={"If-Match": '"any-etag"'},
+    )
     assert missing.status_code == 404
 
 
@@ -198,3 +230,53 @@ def test_openapi_includes_deleted_and_undelete_paths(
     paths = app.openapi()["paths"]
     assert "/api/v1/playlists/deleted" in paths
     assert "/api/v1/playlists/{playlist_id}:undelete" in paths
+
+
+@pytest.mark.requirement("LIBM-13808")
+def test_undelete_without_if_match_answers_428(client: TestClient) -> None:
+    """[if] a deleted playlist is undeleted without If-Match [then] 428 precondition_required and it stays deleted, [else stop]."""
+    playlist_id = _deleted_playlist(client, "No header")
+
+    r = client.post(f"/api/v1/playlists/{playlist_id}:undelete")
+
+    assert r.status_code == 428, r.text
+    assert r.json()["error"] == "precondition_required"
+    assert _is_deleted(client, playlist_id)
+
+
+@pytest.mark.requirement("LIBM-13808")
+def test_undelete_with_stale_if_match_answers_409_conflict(client: TestClient) -> None:
+    """[if] a deleted playlist is undeleted with a stale If-Match [then] 409 conflict with the current etag and it stays deleted, [else stop]."""
+    playlist_id = _deleted_playlist(client, "Stale header")
+    current = _deleted_etag(client, playlist_id)
+
+    r = client.post(
+        f"/api/v1/playlists/{playlist_id}:undelete",
+        headers={"If-Match": '"stale-etag"'},
+    )
+
+    assert r.status_code == 409, r.text
+    body = r.json()
+    assert body["error"] == "conflict"
+    assert body["etag"] == current
+    assert body["current"]["playlist_id"] == playlist_id
+    assert r.headers["ETag"] == current
+    assert _is_deleted(client, playlist_id)
+
+
+@pytest.mark.requirement("LIBM-13808")
+def test_undelete_with_current_etag_restores_playlist(client: TestClient) -> None:
+    """[if] a deleted playlist is undeleted with its current ETag [then] 200 with a fresh ETag and it is live again, [else stop]."""
+    playlist_id = _deleted_playlist(client, "Fresh header")
+    current = _deleted_etag(client, playlist_id)
+
+    r = client.post(
+        f"/api/v1/playlists/{playlist_id}:undelete",
+        headers={"If-Match": current},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == [TRACK_A, TRACK_B]
+    assert "ETag" in r.headers
+    assert not _is_deleted(client, playlist_id)
+    assert client.get(f"/api/v1/playlists/{playlist_id}").status_code == 200

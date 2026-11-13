@@ -303,7 +303,7 @@ test('CLI without --out exits 1', () => {
 	assert.match(res.stderr, /^\[ERROR\].*--out/);
 });
 
-// Holds only while #9774, #9834, #9835 and #9776 are absent on main; rewrite when resolveRealRenderer wires an adapter.
+// Holds only while #9774 and #9776 are absent on main (#9834, #9835 landed the mod FX kernels); rewrite when an adapter is wired.
 test('CLI reports UNAVAILABLE and writes nothing', () => {
 	const out = join(freshDir(), 'round1');
 	const res = spawnSync(process.execPath, [fileURLToPath(SCRIPT_URL), '--out', out], {
@@ -311,8 +311,7 @@ test('CLI reports UNAVAILABLE and writes nothing', () => {
 	});
 	assert.equal(res.status, 2);
 	assert.match(res.stderr, /^\[UNAVAILABLE\]/);
-	for (const issue of ['#9774', '#9834', '#9835', '#9776'])
-		assert.ok(res.stderr.includes(issue), issue);
+	for (const issue of ['#9774', '#9776']) assert.ok(res.stderr.includes(issue), issue);
 	assert.equal(existsSync(out), false);
 });
 

@@ -364,12 +364,20 @@ test.describe('setup entry points', () => {
 		// SETUP-12768: visiting /setup remounts the performance route and stops a
 		// live deck. Re-arming setup must raise the overlay in place.
 		await gotoShellReady(page, '/performance');
-		const before = page.url();
+		const before = new URL(page.url());
 		await page.keyboard.press(SETTINGS_CHORD);
 		await expect(settingsDialog(page)).toBeVisible();
 		await runSetupButton(page).click();
 		await expectWizard(page);
-		expect(page.url()).toBe(before);
+		// The library pane writes its own selection (`?playlist=all`) with
+		// replaceState once its first pane loads, which can land after
+		// `before` is read. That is the host keeping state, not leaving: the
+		// path must not change and no query the host already had may be lost.
+		const after = new URL(page.url());
+		expect(after.pathname).toBe(before.pathname);
+		for (const [name, value] of before.searchParams) {
+			expect(after.searchParams.get(name), `host query ${name} kept`).toBe(value);
+		}
 		await expect(page.getByTestId('reload-resume-banner')).toHaveCount(0);
 	});
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 14336,
+  "measured_main": 483140,
+  "measured_with_pr": 497301,
+  "sha": "6c16b1a1db",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--10028-taglist-ui grows the performance surface; measured +14161 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

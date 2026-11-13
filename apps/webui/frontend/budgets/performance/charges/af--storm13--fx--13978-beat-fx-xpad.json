@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 483124,
+  "measured_with_pr": 485092,
+  "sha": "e111440330",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--fx--13978-beat-fx-xpad grows the performance surface; measured +1968 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

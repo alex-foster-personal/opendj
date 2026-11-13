@@ -14,7 +14,24 @@ import {
 	type RecordMode
 } from './record-input-choice';
 
-let autoRecEnabled = true;
+/** The build switch. `vite.config.ts` sets it in ONE place: `on` unless
+ *  `MUSIC_DJ_SET_AUTO_REC=off`. A browser suite sharing one engine sets it
+ *  off: a recording outlives the page that started it, stalls when that page
+ *  closes, and every later page then shows the failed recording. Unset (a node
+ *  harness with no bundler define) keeps the SETREC-11802b default, on. */
+type SetAutoRecFlag = 'on' | 'off';
+
+export function setAutoRecFlag(configured: unknown): SetAutoRecFlag {
+	if (configured === undefined) return 'on';
+	if (configured !== 'on' && configured !== 'off') {
+		throw new TypeError(`VITE_SET_AUTO_REC must be on or off, got ${String(configured)}`);
+	}
+	return configured;
+}
+
+let autoRecEnabled =
+	setAutoRecFlag(import.meta.env === undefined ? undefined : import.meta.env.VITE_SET_AUTO_REC) ===
+	'on';
 let autoRecConsumed = false;
 
 /** Test seam: default on in production (SETREC-11802b). */

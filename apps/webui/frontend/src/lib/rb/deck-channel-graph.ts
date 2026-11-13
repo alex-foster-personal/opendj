@@ -1,42 +1,23 @@
 import { autoGainLinear } from '$lib/rb/auto-gain.svelte';
-import { createMeterTap, type MeterTap, type MeterTapSource } from '$lib/rb/meter-tap';
+import { beatFxRackEnabled } from '$lib/rb/beat-fx-flag';
+import {
+	buildBeatFxInsert,
+	clearLiveBeatFxInsert,
+	wireBeatFxChannel
+} from '$lib/rb/beat-fx-insert';
+import type { MeterTapSource } from '$lib/rb/meter-tap';
 import { colorFilterParamsForBuild, colorFxChannelBuilt } from '$lib/rb/color-fx.svelte';
+import {
+	buildDeckChannelGraphCore,
+	type DeckChannelGraphDeps,
+	type DeckChannelNodes
+} from '$lib/rb/deck-channel-graph-core';
 import type { LoopState } from '$lib/rb/deck-state-types';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { StretchDeckProcessor } from '$lib/rb/stretch-adapter';
-import type { CrossfaderAssign, MixerState } from '$lib/rb/mixer-types';
-import {
-	ANALYSER_FFT_SIZE,
-	DECK_IDS,
-	EQ_FREQ_HIGH_HZ,
-	EQ_FREQ_LOW_HZ,
-	EQ_FREQ_MID_HZ,
-	EQ_MID_Q,
-	FILTER_Q,
-	TRIM_MAX_GAIN,
-	eqDbFromKnob
-} from '$lib/player/constants';
+import { TRIM_MAX_GAIN } from '$lib/player/constants';
 
-export interface DeckChannelNodes {
-	analyser: AnalyserNode;
-	trim: GainNode;
-	low: BiquadFilterNode;
-	mid: BiquadFilterNode;
-	high: BiquadFilterNode;
-	filterLp: BiquadFilterNode;
-	filterHp: BiquadFilterNode;
-	filterDry: GainNode;
-	filterLpWet: GainNode;
-	filterHpWet: GainNode;
-	/** COLORFX-01: unity sum of the FILTER branches; the SPACE / ECHO sends tap it. */
-	colorBus: GainNode;
-	cue: GainNode;
-	fader: GainNode;
-	xf: GainNode;
-	/** STEMPERF-11663: unity sum of the deck's per-stem FX sends; the colour FX graph feeds it into fxIn when spliced. */
-	stemFxSend: GainNode;
-	extsplit: ChannelSplitterNode | null;
-}
+export type { DeckChannelNodes } from '$lib/rb/deck-channel-graph-core';
 
 /** AUTOGAIN-02: the trim stage law, one place for the graph build and every
  * knob move: TRIM knob (0..1, 0.5 unity) x TRIM_MAX_GAIN x the deck's auto
@@ -67,117 +48,19 @@ export {
 	settleTrackAutoGain
 } from '$lib/rb/auto-gain.svelte';
 
-export function buildDeckChannelGraph(deps: {
-	ctx: AudioContext;
-	mixerState: MixerState;
-	masterGain: GainNode;
-	externalMerger: ChannelMergerNode | null;
-	routing: ReadonlyMap<DeckId, number> | null;
-	cueSum: AudioNode;
-	xfGainFor: (assign: CrossfaderAssign, x: number) => number;
-	onDeck: (deck: DeckId, nodes: DeckChannelNodes, tap: MeterTap) => void;
-}): MeterTapSource[] {
-	const meterSources: MeterTapSource[] = [];
-	for (const deck of DECK_IDS) {
-		const ch = deps.mixerState.channels[deck];
-		const analyser = deps.ctx.createAnalyser();
-		analyser.fftSize = ANALYSER_FFT_SIZE;
-		analyser.minDecibels = -120;
-		analyser.maxDecibels = 0;
-		analyser.smoothingTimeConstant = 0;
-		const trim = deps.ctx.createGain();
-		trim.gain.value = trimStageGain(ch.trim, deck);
-		const low = deps.ctx.createBiquadFilter();
-		low.type = 'lowshelf';
-		low.frequency.value = EQ_FREQ_LOW_HZ;
-		low.gain.value = eqDbFromKnob(ch.eq_low);
-		const mid = deps.ctx.createBiquadFilter();
-		mid.type = 'peaking';
-		mid.frequency.value = EQ_FREQ_MID_HZ;
-		mid.Q.value = EQ_MID_Q;
-		mid.gain.value = eqDbFromKnob(ch.eq_mid);
-		const high = deps.ctx.createBiquadFilter();
-		high.type = 'highshelf';
-		high.frequency.value = EQ_FREQ_HIGH_HZ;
-		high.gain.value = eqDbFromKnob(ch.eq_high);
-		const { lpHz, hpHz, dryGain, lpWetGain, hpWetGain } = colorFilterParamsForBuild(
-			deck,
-			ch.filter
-		);
-		const filterLp = deps.ctx.createBiquadFilter();
-		filterLp.type = 'lowpass';
-		filterLp.Q.value = FILTER_Q;
-		filterLp.frequency.value = lpHz;
-		const filterHp = deps.ctx.createBiquadFilter();
-		filterHp.type = 'highpass';
-		filterHp.Q.value = FILTER_Q;
-		filterHp.frequency.value = hpHz;
-		const filterDry = deps.ctx.createGain();
-		filterDry.gain.value = dryGain;
-		const filterLpWet = deps.ctx.createGain();
-		filterLpWet.gain.value = lpWetGain;
-		const filterHpWet = deps.ctx.createGain();
-		filterHpWet.gain.value = hpWetGain;
-		const colorBus = deps.ctx.createGain();
-		const stemFxSend = deps.ctx.createGain();
-		const cue = deps.ctx.createGain();
-		cue.gain.value = ch.cue_enabled ? 1 : 0;
-		const fader = deps.ctx.createGain();
-		fader.gain.value = ch.fader;
-		const xf = deps.ctx.createGain();
-		xf.gain.value = deps.xfGainFor(ch.assign, deps.mixerState.crossfader);
-		analyser.connect(trim);
-		trim.connect(low);
-		low.connect(mid);
-		mid.connect(high);
-		for (const stage of [filterDry, filterLp, filterHp]) high.connect(stage);
-		filterLp.connect(filterLpWet);
-		filterHp.connect(filterHpWet);
-		for (const branch of [filterDry, filterLpWet, filterHpWet]) branch.connect(colorBus);
-		colorBus.connect(cue);
-		cue.connect(deps.cueSum);
-		colorBus.connect(fader);
-		const usbLeft = deps.routing?.get(deck) ?? null;
-		let extsplit: ChannelSplitterNode | null = null;
-		if (usbLeft !== null && deps.externalMerger !== null) {
-			extsplit = deps.ctx.createChannelSplitter(2);
-			fader.connect(extsplit);
-			extsplit.connect(deps.externalMerger, 0, usbLeft - 1);
-			extsplit.connect(deps.externalMerger, 1, usbLeft);
-		} else {
-			fader.connect(xf);
-			xf.connect(deps.masterGain);
-		}
-		const nodes: DeckChannelNodes = {
-			analyser,
-			trim,
-			low,
-			mid,
-			high,
-			filterLp,
-			filterHp,
-			filterDry,
-			filterLpWet,
-			filterHpWet,
-			colorBus,
-			cue,
-			fader,
-			xf,
-			stemFxSend,
-			extsplit
-		};
-		const tap = createMeterTap();
-		deps.onDeck(deck, nodes, tap);
-		colorFxChannelBuilt(deck, nodes, ch.filter);
-		// The channel fader is the deck-volume control mounted with this meter.
-		// Tap its output so the physical slider and visible light describe the
-		// same audible channel level. The clip pip judges the level heard after
-		// the crossfader, measured on the audio thread from `xf` itself, so the
-		// gain is the one those samples played under (Sol P1, PR #6829); a deck
-		// routed out past the crossfader is heard at its fader.
-		meterSources.push({ tap, source: fader, heardSource: extsplit === null ? xf : fader });
-	}
-	return meterSources;
+/** Build the live deck channel graph through the shared builder the meter harness also runs (#12665). */
+export function buildDeckChannelGraph(deps: DeckChannelGraphDeps): MeterTapSource[] {
+	// Issue #9782: the beat FX unit hangs off each fader only with `fx.beat_rack` on.
+	const beatFx = beatFxRackEnabled() ? buildBeatFxInsert(deps.ctx, deps.masterGain) : null;
+	if (beatFx === null) clearLiveBeatFxInsert();
+	return buildDeckChannelGraphCore({
+		...deps,
+		trimStageGain,
+		colorFilterParamsForBuild,
+		colorFxChannelBuilt,
+		postFaderInsert: (deck, fader) =>
+			beatFx === null ? fader : wireBeatFxChannel(beatFx, deck, fader)
+	});
 }
 
 export function copyAudioBufferToContext(buffer: AudioBuffer, ctx: AudioContext): AudioBuffer {

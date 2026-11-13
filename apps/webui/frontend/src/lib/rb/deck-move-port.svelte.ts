@@ -6,7 +6,7 @@
  *
  * -Claude
  */
-import { colorFx, applyColorFxSettings } from '$lib/rb/color-fx.svelte';
+import { colorFx, applyColorFxSettings, reverbTailOnDeckEvent } from '$lib/rb/color-fx.svelte';
 import {
 	deckHandoverToken,
 	deckHandoverUntilSec,
@@ -57,8 +57,15 @@ export function webAudioDeckMovePort(): DeckMovePort {
 		colorFx: (deck) => ({ effect: colorFx[deck].effect, echo_beats: colorFx[deck].echo_beats }),
 		pitchRange: (deck) => pitchRanges[deck],
 		masterLocked: () => getMasterMode() === 'locked',
-		load: (deck, stableId) => engine.load(deck, stableId),
-		unload: (deck) => engine.unload(deck),
+		// A move bypasses the command bus, so it runs the FXVERB-05 tail cut itself.
+		load: (deck, stableId) => {
+			reverbTailOnDeckEvent(deck, 'track_load');
+			return engine.load(deck, stableId);
+		},
+		unload: (deck) => {
+			reverbTailOnDeckEvent(deck, 'eject');
+			return engine.unload(deck);
+		},
 		pause: (deck) => engine.pause(deck),
 		setPitchRange: (deck, range) => engine.setPitchRange(deck, range),
 		setTempoRatio: (deck, ratio) => engine.setTempoRatio(deck, ratio),

@@ -58,7 +58,7 @@ describe('track-table colour funnel', () => {
 			...filters.EMPTY_TRACK_TABLE_COLUMN_FILTERS,
 			colour,
 			bpm: { min: 120, max: 130 },
-			mytag: { tag: 'house' }
+			mytag: { selected: ['house'], mode: 'or' }
 		};
 		const forward = [
 			{ stable_id: 'hit', color_id: 1, bpm: 124, tags: ['house'] },

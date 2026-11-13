@@ -202,6 +202,7 @@ def _attach_image(tmp_path: Path, name: str) -> tuple[Path, str]:
 
 
 @on_macos
+@pytest.mark.host_mutation
 def test_real_diskutil_binds_the_disk_image_uuid(fixture_profile, fixture_canonical, disk_image) -> None:
     mount, whole = disk_image
     _copy_to(fixture_profile, fixture_canonical, mount)

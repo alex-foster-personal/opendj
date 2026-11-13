@@ -24,6 +24,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.webui.server.backend import ConflictError, NotFoundError
+from apps.webui.server.etag import compute_etag
 from apps.webui.server.playlist_history import (
     HISTORY_LIMIT,
     EditOp,
@@ -129,6 +130,19 @@ def _history_kinds(db_path: Path) -> list[str]:
 def _live_playlist_ids(db_path: Path) -> set[str]:
     backend = SqliteBackend(db_path)
     return {pl.playlist_id for pl in backend.list_playlists()}
+
+
+def _deleted_row_etag(db_path: Path, playlist_id: str) -> str:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT updated_at FROM playlists WHERE playlist_id = ? AND deleted_at IS NOT NULL",
+            (playlist_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, playlist_id
+    return compute_etag(playlist_id, row[0])
 
 
 def _deleted_playlist_ids(db_path: Path) -> set[str]:
@@ -515,7 +529,7 @@ def test_store_undelete_restores_deleted_playlist(db_path: Path) -> None:
         assert playlist_id not in _live_playlist_ids(db_path)
         assert playlist_id in _deleted_playlist_ids(db_path)
 
-        store.undelete_playlist(playlist_id)
+        store.undelete_playlist(playlist_id, expected_etag=_deleted_row_etag(db_path, playlist_id))
 
         assert playlist_id in _live_playlist_ids(db_path)
         assert playlist_id not in _deleted_playlist_ids(db_path)
@@ -527,4 +541,4 @@ def test_store_undelete_restores_deleted_playlist(db_path: Path) -> None:
 def test_store_undelete_unknown_playlist_raises_not_found(db_path: Path) -> None:
     """[if] undelete targets a missing playlist id [then] NotFoundError is raised, [else stop]."""
     with PlaylistStore(db_path, bus=FakeEventBus()) as store, pytest.raises(NotFoundError):
-        store.undelete_playlist("pl-does-not-exist")
+        store.undelete_playlist("pl-does-not-exist", expected_etag='"any-etag"')

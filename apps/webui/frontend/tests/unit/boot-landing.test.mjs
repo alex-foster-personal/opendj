@@ -50,6 +50,44 @@ test('first `/` visit redirects to Gig and sets session gate', () => {
 	assert.equal(store.get(bootLanding.BOOT_LANDING_SESSION_KEY), '1');
 });
 
+test('first `/` visit preserves tempo and unrelated query on redirect', () => {
+	const store = installSessionStorage();
+	gotoCalls = [];
+	globalThis.__shellNavGotoCalls = gotoCalls;
+
+	bootLanding.installBootLandingRedirect({
+		goto: (route, opts) => gotoCalls.push({ route, opts }),
+		getPathname: () => '/',
+		getSearch: () => '?tempo_regular=128&noise=1',
+		readBootStamp: () => null,
+		nowMs: () => Date.parse('2026-09-15T12:00:00.000Z')
+	});
+
+	assert.equal(gotoCalls.length, 1);
+	assert.equal(gotoCalls[0].route, '/performance?tempo_regular=128&noise=1');
+	assert.deepEqual(gotoCalls[0].opts, { replaceState: true });
+	assert.equal(store.get(bootLanding.BOOT_LANDING_SESSION_KEY), '1');
+});
+
+test('first `/` visit strips invalid tempo keys but keeps unrelated query on redirect', () => {
+	const store = installSessionStorage();
+	gotoCalls = [];
+	globalThis.__shellNavGotoCalls = gotoCalls;
+
+	bootLanding.installBootLandingRedirect({
+		goto: (route, opts) => gotoCalls.push({ route, opts }),
+		getPathname: () => '/',
+		getSearch: () => '?tempo_regular=abc&tempo_min=140&tempo_max=130&noise=1',
+		readBootStamp: () => null,
+		nowMs: () => Date.parse('2026-09-15T12:00:00.000Z')
+	});
+
+	assert.equal(gotoCalls.length, 1);
+	assert.equal(gotoCalls[0].route, '/performance?noise=1');
+	assert.deepEqual(gotoCalls[0].opts, { replaceState: true });
+	assert.equal(store.get(bootLanding.BOOT_LANDING_SESSION_KEY), '1');
+});
+
 test('second `/` visit in the same session does not redirect', () => {
 	const store = installSessionStorage();
 	store.set(bootLanding.BOOT_LANDING_SESSION_KEY, '1');

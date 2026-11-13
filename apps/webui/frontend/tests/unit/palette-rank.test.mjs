@@ -1,5 +1,7 @@
-// requirement: CMDK-9465
+// requirement: CMDK-9465, SEARCH-NAV-14561
 // if fixture top-1 hits fall below 18 of 20 then broken
+// if a keyword-only fixture query is not discoverable then broken
+// if a fixture miss omits query or actual top action then broken
 // if frecency does not break equal fuzzy ties then broken
 // if ranking 500 commands median is not under 2 ms then broken
 import assert from 'node:assert/strict';
@@ -20,6 +22,25 @@ const FIXTURE = JSON.parse(
 	readFileSync(new URL('./fixtures/palette-queries.json', import.meta.url), 'utf8')
 );
 
+/** @param {readonly import('../../src/lib/palette/rank.ts').RankItem[]} commands @param {readonly {query: string, expected: string}[]} queries */
+function paletteTop1Misses(commands, queries) {
+	const misses = [];
+	let hits = 0;
+	for (const { query, expected } of queries) {
+		const got = rankCommands(commands, query)[0]?.id ?? null;
+		if (got === expected) hits++;
+		else misses.push({ query, expected, got });
+	}
+	return { hits, misses };
+}
+
+/** @param {readonly {query: string, expected: string, got: string | null}[]} misses */
+function formatTop1Misses(misses) {
+	return misses
+		.map((m) => `query=${JSON.stringify(m.query)} expected=${m.expected} got=${m.got ?? 'null'}`)
+		.join('; ');
+}
+
 let actions;
 let prefsFields;
 
@@ -31,17 +52,56 @@ before(async () => {
 test('fixture top-1 hits at least 18 of 20', (t) => {
 	const { commands, queries } = FIXTURE;
 	assert.equal(queries.length, 20);
-	const misses = [];
-	let hits = 0;
-	for (const { query, expected } of queries) {
-		const ranked = rankCommands(commands, query);
-		const got = ranked[0]?.id;
-		if (got === expected) hits++;
-		else misses.push({ query, expected, got });
-	}
+	const { hits, misses } = paletteTop1Misses(commands, queries);
 	console.log(`palette top-1 hits: ${hits}/20`);
 	t.diagnostic(`palette top-1 hits: ${hits}/20`);
-	assert.ok(hits >= 18, `top-1 hits ${hits}/20 is below 18; misses: ${JSON.stringify(misses)}`);
+	assert.ok(
+		hits >= 18,
+		`top-1 hits ${hits}/20 is below 18; ${formatTop1Misses(misses)}; detail: ${JSON.stringify(misses)}`
+	);
+});
+
+test('keyword-only fixture query stays discoverable', () => {
+	const keywordRows = FIXTURE.queries.filter((q) => q.keywordOnly === true);
+	assert.ok(keywordRows.length >= 1, 'fixture must include at least one keyword-only query');
+	for (const { query, expected } of keywordRows) {
+		const command = FIXTURE.commands.find((c) => c.id === expected);
+		assert.ok(command, `missing command ${expected}`);
+		assert.ok(
+			command.keywords?.length,
+			`${expected} must declare keywords for keyword-only discovery`
+		);
+		assert.equal(
+			fuzzyScore(query, command.label),
+			null,
+			`query ${query} must not match label alone for ${expected}`
+		);
+		const ranked = rankCommands(FIXTURE.commands, query);
+		assert.equal(
+			ranked[0]?.id,
+			expected,
+			`keyword-only query ${query}: got ${ranked[0]?.id ?? 'null'}`
+		);
+	}
+});
+
+test('fixture ranking miss reports query and actual top action', () => {
+	const probe = FIXTURE.queries.slice(0, 1).map((row) => ({
+		...row,
+		expected: 'palette-rank-miss-probe-sentinel'
+	}));
+	const { misses } = paletteTop1Misses(FIXTURE.commands, probe);
+	assert.equal(misses.length, 1);
+	const [miss] = misses;
+	assert.equal(miss.query, probe[0].query);
+	assert.ok('got' in miss);
+	const report = formatTop1Misses(misses);
+	assert.match(
+		report,
+		new RegExp(`query=${JSON.stringify(miss.query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+	);
+	assert.match(report, /got=/);
+	assert.ok(miss.got !== 'palette-rank-miss-probe-sentinel');
 });
 
 test('frecency breaks equal fuzzy ties', (t) => {

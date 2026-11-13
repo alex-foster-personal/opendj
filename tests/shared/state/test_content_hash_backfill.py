@@ -372,3 +372,157 @@ def test_mutation_no_machine_filter_hashes_foreign_location(
     )
     report = run_backfill(data_dir, live=False)
     assert report.resolvable == 0
+
+
+MIXED_ID = "e" * 40
+STALE_ID = "f" * 40
+
+
+def _insert_remote_location(conn, stable_id: str, file_path: str) -> None:
+    """Register another machine and give it a local primary row for ``stable_id``."""
+    conn.execute(
+        "INSERT OR IGNORE INTO machines(machine_id, name, platform, is_hub, "
+        "first_seen, last_seen) VALUES ('m-remote', 'remote', 'macos', 0, ?, ?)",
+        (_TS, _TS),
+    )
+    conn.execute(
+        "INSERT INTO track_locations(location_id, stable_id, machine_id, "
+        "kind, role, file_path, created_at, updated_at, origin_device_id) "
+        "VALUES (?, ?, 'm-remote', 'local', 'primary', ?, ?, ?, 'm-remote')",
+        ("deadbeef" + stable_id[:24], stable_id, file_path, _TS, _TS),
+    )
+
+
+def _seed_track(conn, stable_id: str, file_path: Path, isrc: str) -> None:
+    """Upsert one track through StateWriter; it also writes this machine's local location."""
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
+    try:
+        writer.upsert_track(
+            stable_id=stable_id,
+            stable_id_tier="isrc",
+            title="Mixed Locations",
+            artists=["Someone"],
+            album=None,
+            isrc=isrc,
+            duration_ms=100,
+            file_path=str(file_path),
+        )
+    finally:
+        writer.close()
+
+
+def test_prefers_present_local_location_over_remote_location(
+    data_dir: Path,
+    good_wav: Path,
+    tmp_path: Path,
+) -> None:
+    """A present local location wins over a readable remote one and a foreign track path."""
+    remote_wav = tmp_path / "remote" / "other.wav"
+    _write_silent_wav(remote_wav, seconds=0.2)
+    assert hashing.sha256_file(remote_wav) != hashing.sha256_file(good_wav)
+
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_track(conn, MIXED_ID, good_wav, "GBCEN0900136")
+        conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
+            ("/Users/dev/Music/ghost.wav", MIXED_ID),
+        )
+        _insert_remote_location(conn, MIXED_ID, str(remote_wav))
+        conn.commit()
+    finally:
+        conn.close()
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 1
+    assert dry.resolved_via_location == 1
+    assert dry.resolved_via_track_path == 0
+
+    run_backfill(data_dir, live=True)
+    assert _content_hashes(db_path)[MIXED_ID] == hashing.sha256_file(good_wav)
+
+
+def test_remote_only_location_falls_back_to_track_path_not_remote_file(
+    data_dir: Path,
+    good_wav: Path,
+    tmp_path: Path,
+) -> None:
+    """With only a remote location, the hash comes from tracks.file_path, never the remote file."""
+    remote_wav = tmp_path / "remote" / "other.wav"
+    _write_silent_wav(remote_wav, seconds=0.2)
+
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_track(conn, MIXED_ID, good_wav, "GBCEN0900136")
+        conn.execute("DELETE FROM track_locations WHERE stable_id = ?", (MIXED_ID,))
+        _insert_remote_location(conn, MIXED_ID, str(remote_wav))
+        conn.commit()
+    finally:
+        conn.close()
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 1
+    assert dry.resolved_via_track_path == 1
+    assert dry.resolved_via_location == 0
+
+    run_backfill(data_dir, live=True)
+    assert _content_hashes(db_path)[MIXED_ID] == hashing.sha256_file(good_wav)
+
+
+def test_stale_local_location_falls_back_to_track_path(
+    data_dir: Path,
+    good_wav: Path,
+) -> None:
+    """A local location whose file is gone does not shadow a readable tracks.file_path."""
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_track(conn, STALE_ID, good_wav, "GBCEN0900137")
+        conn.execute(
+            "UPDATE track_locations SET file_path = ? WHERE stable_id = ?",
+            (str(data_dir / "audio" / "moved-away.wav"), STALE_ID),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 1
+    assert dry.unresolvable == 0
+    assert dry.resolved_via_track_path == 1
+    assert dry.resolved_via_location == 0
+
+    run_backfill(data_dir, live=True)
+    assert _content_hashes(db_path)[STALE_ID] == hashing.sha256_file(good_wav)
+
+
+def test_stale_local_location_with_dead_track_path_stays_unresolvable(
+    data_dir: Path,
+    good_wav: Path,
+    tmp_path: Path,
+) -> None:
+    """A stale local location never borrows a readable remote location's file."""
+    remote_wav = tmp_path / "remote" / "other.wav"
+    _write_silent_wav(remote_wav, seconds=0.2)
+
+    db_path = data_dir / "state" / "state.db"
+    conn = state_db.open_rw(db_path)
+    try:
+        _seed_track(conn, STALE_ID, good_wav, "GBCEN0900137")
+        dead = str(data_dir / "audio" / "moved-away.wav")
+        conn.execute("UPDATE track_locations SET file_path = ? WHERE stable_id = ?", (dead, STALE_ID))
+        conn.execute("UPDATE tracks SET file_path = ? WHERE stable_id = ?", (dead, STALE_ID))
+        _insert_remote_location(conn, STALE_ID, str(remote_wav))
+        conn.commit()
+    finally:
+        conn.close()
+
+    dry = run_backfill(data_dir, live=False)
+    assert dry.resolvable == 0
+    assert dry.unresolvable == 1
+    assert dry.hashed == 0
+
+    run_backfill(data_dir, live=True)
+    assert _content_hashes(db_path)[STALE_ID] is None

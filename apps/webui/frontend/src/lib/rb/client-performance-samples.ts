@@ -21,6 +21,7 @@ import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { readJsHeapMB } from '$lib/rb/js-heap-reading';
 import { readPerfEvents } from '$lib/rb/perf-event-log';
 import { frameProbeRequested } from '$lib/rb/frame-probe-flag';
+import { readPerfReadoutRows } from '$lib/rb/perf-readout-card';
 import type { FrameProbe, FrameProbeWindow } from '$lib/rb/frame-probe';
 import type { LiveHandlesTotals, LiveHandlesWindow } from '$lib/rb/live-handles-probe';
 import type { DeckId } from '$lib/rb/deck-slots';
@@ -44,6 +45,8 @@ export interface DeckSampleSource {
 	transport_pending: boolean;
 	stems: { status: string };
 	last_load_latency_ms: number | null;
+	last_load_stages: Record<string, number> | null;
+	last_load_stage_sources: Record<string, string> | null;
 	sync_error: string | null;
 	processor_error: string | null;
 }
@@ -61,6 +64,10 @@ export function deckPerformanceSampleFromState(
 		transport_pending: deck.transport_pending,
 		stem_status: mapStemStatus(deck.stems.status),
 		last_load_latency_ms: deck.last_load_latency_ms,
+		last_load_blocking_stage_ms:
+			deck.last_load_stages === null ? null : { ...deck.last_load_stages },
+		last_load_stage_sources:
+			deck.last_load_stage_sources === null ? null : { ...deck.last_load_stage_sources },
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error
 	};
@@ -94,7 +101,9 @@ export function buildClientPerformanceSamplePayload(
 		decks: buildDeckSamples(),
 		frame_probe: frameProbe,
 		// PERF-LEAK-11789: null unless ?perfprobe=1 armed the live handles probe.
-		live_handles: liveHandles
+		live_handles: liveHandles,
+		// PERFREADOUT-12579: the top-bar card rows, read back by agents.
+		readout_rows: readPerfReadoutRows()
 	};
 }
 

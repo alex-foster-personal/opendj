@@ -100,7 +100,8 @@ async function _plans(): Promise<PlanRunner> {
 		positionAnchor: (deck) => performancePositionAnchor(deck),
 		stepState: (stepId) => performanceStepState(stepId),
 		forgetStep: (stepId) => performanceForgetStep(stepId),
-		stemsSilent: (deck) => everyStemPartSilent(queryPerformanceState().decks[deck]),
+		// The page query returns the full snapshot, so its deck carries the stem-set the plan view does not type.
+		stemsSilent: (deck, state) => everyStemPartSilent(state.decks[deck] as unknown as Parameters<typeof everyStemPartSilent>[0]),
 		onOverlay: setPlanOverlay
 	});
 	return _planRunner;

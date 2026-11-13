@@ -23,6 +23,8 @@ SID_A = "a" * 40
 SID_B = "b" * 40
 SID_C = "c" * 40
 SID_D = "d" * 40
+SID_E = "e" * 40
+SID_F = "f" * 40
 
 
 def _provenance_energy(value: int) -> dict[str, Provenance]:
@@ -88,7 +90,24 @@ def _memory_backend(tmp_path: Path) -> InMemoryBackend:
             items=[SID_A, SID_B, SID_A, SID_C, SID_D],
         )
     )
+    # LIBM-105b: an analysed track with no BPM or key whose file is here, and a streaming row.
+    backend.seed_track(
+        Track(stable_id=SID_E, duration_ms=90_000, file_path=str(present), created_at=NOW, updated_at=NOW)
+    )
+    backend.seed_track(
+        Track(
+            stable_id=SID_F,
+            duration_ms=200_000,
+            bpm=124.0,
+            key="4A",
+            file_path="tidal:123",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
     backend.seed_playlist(Playlist(playlist_id="pl-empty", name="Empty", items=[]))
+    backend.seed_playlist(Playlist(playlist_id="pl-clean", name="Clean", items=[SID_A, SID_B]))
+    backend.seed_playlist(Playlist(playlist_id="pl-raw", name="Raw", items=[SID_E, SID_F]))
     return backend
 
 
@@ -132,6 +151,7 @@ def test_empty_and_unknown_playlist(client: TestClient) -> None:
         "energy": {"min": None, "max": None, "missing": 0},
         "keys": {"distinct": 0, "missing": 0},
         "unanalysed": 0,
+        "unavailable": 0,
     }
     assert client.get("/api/v1/playlists/nope/summary").status_code == 404
 
@@ -190,3 +210,52 @@ def test_sqlite_summary_10k_under_150ms(tmp_path: Path) -> None:
     assert elapsed < 0.150, (
         f"sqlite summary took {elapsed * 1000:.1f} ms at best of {[round(t * 1000, 1) for t in timings]}"
     )
+
+
+def test_health_analysed_available_only_reads_clean(client: TestClient) -> None:
+    """[if] every member is analysed and its file is here [then] unanalysed and unavailable are both 0, [else stop]."""
+    body = client.get("/api/v1/playlists/pl-clean/summary").json()
+    assert (body["tracks"], body["unanalysed"], body["unavailable"]) == (2, 0, 0)
+
+
+def test_health_counts_missing_file_members(client: TestClient) -> None:
+    """[if] two distinct members point at files that are gone [then] unavailable is 2 and the duplicate counts once, [else stop]."""
+    body = client.get("/api/v1/playlists/pl-sum/summary").json()
+    assert body["unavailable"] == 2
+
+
+def test_health_counts_unanalysed_members_and_skips_streaming(client: TestClient) -> None:
+    """[if] a present member has no BPM or key and another is streaming [then] unanalysed 1, unavailable 0, [else stop]."""
+    body = client.get("/api/v1/playlists/pl-raw/summary").json()
+    assert (body["tracks"], body["unanalysed"], body["unavailable"]) == (2, 1, 0)
+
+
+def test_sqlite_health_counts_absent_and_unmounted_members(tmp_path: Path) -> None:
+    """[if] sqlite members are absent, unmounted, present, streaming or unchecked [then] unavailable counts the first two, [else stop]."""
+    db_path = tmp_path / "state.db"
+    conn = state_db.open_rw(db_path)
+    conn.execute(
+        "INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) "
+        "VALUES ('pl-h', 'Health', 'webui', 'pl-h', ?, ?)",
+        (NOW, NOW),
+    )
+    states = ["absent", "awaiting_volume", "present", "streaming", None]
+    for i, state in enumerate(states):
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, duration_ms, file_path, created_at, updated_at) "
+            "VALUES (?, 'inferred', ?, 200000, ?, ?, ?)",
+            (_sid(i), f"t{i}", str(tmp_path / f"{i}.wav"), NOW, NOW),
+        )
+        if state is not None:
+            conn.execute(
+                "INSERT INTO track_availability(stable_id, state, checked_path, checked_at) VALUES (?, ?, ?, ?)",
+                (_sid(i), state, str(tmp_path / f"{i}.wav"), NOW),
+            )
+        conn.execute(
+            "INSERT INTO playlist_memberships(playlist_id, stable_id, position) VALUES ('pl-h', ?, ?)",
+            (_sid(i), i),
+        )
+    conn.commit()
+    conn.close()
+    stats = SqliteBackend(db_path).get_playlist_summary_stats("pl-h")
+    assert (stats.tracks, stats.unavailable) == (5, 2)

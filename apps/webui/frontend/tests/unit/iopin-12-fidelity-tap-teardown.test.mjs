@@ -3,6 +3,8 @@
 // [if] the tap's disconnect leaves its splitter feeding the analysers [then] the dropped tap keeps pulling audio ⛔️
 // [if] `/performance` unmounts (`engine.dispose()`) after the graph has built the AUDFID-03 tap [then] `_fidelityTap` is disconnected and null ⛔️
 // [if] `/performance` remounts after that unmount [then] `_ensureGraph` creates exactly one new tap ⛔️
+// [if] `engine.dispose()` is called twice [then] the tap is disconnected once and the second dispose is a no-op ⛔️
+// [if] the master bus throws InvalidAccessError on an edge disconnect after teardown [then] `engine.dispose()` still resolves with the tap dropped ⛔️
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 
@@ -111,6 +113,59 @@ describe('AUDFID-03a: route unmount drops the fidelity tap like stall-rebuild te
 			splitters.some((s) => ctx.disconnected.has(s)),
 			'FakeAudioContext records splitter.disconnect from the tap teardown'
 		);
+	});
+
+	// The second route unmount must not disconnect the dropped tap again or throw.
+	test('dispose called twice disconnects the tap once and the second dispose resolves', async () => {
+		await audio.ensureAudioGraphForCue();
+		const first = audio._fidelityTapForTests();
+		assert.ok(first, 'graph build should install the AUDFID-03 tap');
+		let disconnectCalls = 0;
+		const orig = first.disconnect;
+		first.disconnect = () => {
+			disconnectCalls += 1;
+			return orig.call(first);
+		};
+		await audio.engine.dispose();
+		await assert.doesNotReject(() => audio.engine.dispose());
+		assert.equal(audio._fidelityTapForTests(), null);
+		assert.equal(disconnectCalls, 1);
+	});
+
+	// Chromium rules on the bus: once teardown bare-disconnected it, disconnect(dest) throws InvalidAccessError.
+	test('if the bus throws InvalidAccessError after teardown then dispose still resolves and drops the tap', async () => {
+		await audio.ensureAudioGraphForCue();
+		assert.ok(audio._fidelityTapForTests(), 'graph build should install the AUDFID-03 tap');
+		const ctx = FakeAudioContext.instances.at(-1);
+		const windowFrames = FG.FIDELITY_GUARD_CFG.WINDOW_FRAMES;
+		const tapEdge = ctx.edges.find(
+			(e) =>
+				e.to.kind === 'splitter' &&
+				ctx.edges.some((o) => o.from === e.to && o.to.kind === 'analyser' && o.to.fftSize === windowFrames)
+		);
+		assert.ok(tapEdge, 'control: the fidelity splitter is fed from the master bus');
+		const bus = tapEdge.from;
+		const bareDisconnect = bus.disconnect;
+		let busDetached = false;
+		let invalidAccessThrows = 0;
+		bus.disconnect = (dest) => {
+			if (dest === undefined) {
+				busDetached = true;
+				return bareDisconnect.call(bus);
+			}
+			if (busDetached) {
+				invalidAccessThrows += 1;
+				const error = new Error("Failed to execute 'disconnect' on 'AudioNode': the given destination is not connected.");
+				error.name = 'InvalidAccessError';
+				throw error;
+			}
+			return bareDisconnect.call(bus);
+		};
+		await assert.doesNotReject(() => audio.engine.dispose());
+		assert.ok(busDetached, 'control: dispose tears the master bus down before dropping the tap');
+		assert.equal(invalidAccessThrows, 0, 'the tap teardown must not disconnect the already-detached bus edge');
+		assert.equal(audio._fidelityTapForTests(), null);
+		assert.ok(ctx.disconnected.has(tapEdge.to), 'the tap still disconnects its own splitter');
 	});
 
 	test('remount after unmount creates exactly one new tap (two 16384-frame analysers on the new context)', async () => {

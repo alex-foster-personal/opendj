@@ -37,6 +37,9 @@ interface JobRow {
 	id: string;
 	status: string;
 	progress: number;
+	message: string | null;
+	error: string | null;
+	stderr_tail: string[] | null;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -71,7 +74,13 @@ async function _waitJob(
 			async () => {
 				const job = await _job(request, id);
 				if (job.status === 'failed' || job.status === 'unknown')
-					throw new Error(`job ${id} ended ${job.status}`);
+					throw new Error(
+						`job ${id} ended ${job.status}: ${JSON.stringify({
+							message: job.message,
+							error: job.error,
+							stderr_tail: job.stderr_tail
+						})}`
+					);
 				return `${job.status} ${job.progress}`;
 			},
 			{ timeout: SEPARATE_TIMEOUT_MS, intervals: [500] }
@@ -116,6 +125,16 @@ async function _shot(target: Locator, skin: Skin, name: string): Promise<void> {
 }
 
 test('running-job progress text clears WCAG AA in every skin', async ({ page, request }) => {
+	// Restored skip (removed by 318ed9037e3). Since PR #14781 the real stems job
+	// succeeds, so this spec gets further than it ever has: it then looks for a
+	// progressbar named 'stems.separate progress' (the panel now says 'Separate
+	// stems progress'), and it leaves real stems on both fixture tracks, which
+	// broke wave-band-tiles and second-screen later in the same run. It needs the
+	// held-progress harness of #13583.
+	test.fixme(
+		true,
+		'needs a held-progress stems harness and must not leave stems behind, see #13531'
+	);
 	test.setTimeout(SEPARATE_TIMEOUT_MS * (SKINS.length + 1));
 	await page.setViewportSize({ width: 1600, height: 900 });
 	const tracks = await (await request.get('/api/v1/tracks?limit=2')).json();

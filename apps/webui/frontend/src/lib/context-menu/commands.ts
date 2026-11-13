@@ -107,8 +107,13 @@ export const MENU_COMMANDS = {
 	// No beatgrid lock exists yet; the deck menu names the route a lock would extend.
 	'track.grid_edit': http('PUT', '/api/v1/tracks/{stable_id}/grid-edit'),
 	'track.library_job': http('POST', '/api/v1/library-jobs/enqueue'),
+	// TITLEFIXSELECT-12587: selected rows or a playlist start a scoped title-fix scan.
+	'title_fix.scan': http('POST', '/api/v1/title-fix/scans', 'python -m apps.webui.title_fix_cli scan --ids <stable_id>...'),
 	'track.stems.generate': http('POST', '/api/v1/stems/generate'),
 	'track.remove_from_library': http('POST', '/api/v1/tracks/{stable_id}:remove'),
+	'track.undelete': http('POST', '/api/v1/tracks/{stable_id}:undelete'),
+	// Issue #10028: the bus command calls POST /api/v1/taglist/items (`opendj taglist add`).
+	'track.tag_list_add': ipc('tag_list_add'),
 	'work.link_many': http('POST', '/api/v1/works:link'),
 	'work.edit': http('PATCH', '/api/v1/tracks/{stable_id}/classical'),
 	'work.link_candidates': http('GET', '/api/v1/works/link-candidates'),
@@ -161,6 +166,8 @@ export const MENU_COMMANDS = {
 	'smartlist.update': http('PUT', '/api/v1/smartlists/{smartlist_id}'),
 	'smartlist.delete': http('DELETE', '/api/v1/smartlists/{smartlist_id}'),
 	'smartlist.duplicate': http('POST', '/api/v1/smartlists/{smartlist_id}/duplicate'),
+	// SMART (#10024): re-evaluate the rule now; membership is evaluated live on every read.
+	'smartlist.refresh': http('GET', '/api/v1/smartlists/{smartlist_id}/tracks', 'opendj api GET /api/v1/smartlists/{id}/tracks'),
 	// USB sticks (USBEXP-04).
 	'usb.export.plan': http('POST', '/api/v1/usb-export/plan', 'python -m apps.sync.usb.pioneer.export_workflow plan'),
 	'usb.eject': http('POST', '/api/v1/usb/eject'),

@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 483140,
+  "measured_with_pr": 484628,
+  "sha": "2ad4af73b5",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10784-retire-stub grows the performance surface; measured +1488 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

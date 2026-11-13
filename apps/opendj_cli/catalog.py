@@ -36,10 +36,12 @@ from apps.opendj_cli.kinds import (
     dial_value,
     enum_value,
     false_only_value,
+    fraction_enum_value,
     grid_edit_value,
     head_delay_ms_value,
     int_enum_value,
     int_value,
+    json_object_value,
     layout_px_value,
     loop_value,
     master_delay_ms_value,
@@ -56,17 +58,20 @@ from apps.opendj_cli.kinds import (
     unit_value,
 )
 
-STEM_VALUES: tuple[str, ...] = ("vocal", "instrumental", "drums", "bass")
+STEM_VALUES: tuple[str, ...] = ("vocal", "instrumental", "drums", "bass", "other")
 BAND_VALUES: tuple[str, ...] = ("low", "mid", "high")
 SLOT_VALUES: tuple[str, ...] = tuple("ABCDEFGH")
 ASSIGN_VALUES: tuple[str, ...] = ("A", "B", "THRU")
 EDGE_VALUES: tuple[str, ...] = ("top", "left", "right", "bottom")
+# PERFDRAWER-12580: top-bar drawers drawer_open / drawer_close reach (the JOBS drawer).
+DRAWER_VALUES: tuple[str, ...] = ("jobs",)
 PANEL_VALUES: tuple[str, ...] = ("next", "recommended")
 VOTE_VALUES: tuple[str, ...] = ("bad", "good", "great")
 SYNC_MODE_VALUES: tuple[str, ...] = ("beat", "bar")
 DECK_MOVE_MODE_VALUES: tuple[str, ...] = ("move", "copy")
 OUTPUT_MODE_VALUES: tuple[str, ...] = ("practice", "two_outputs", "split_cable")
 HEADPHONE_ALIGNMENT_MODE_VALUES: tuple[str, ...] = ("headphones_only", "delay_all", "hybrid")
+CALIBRATION_PROBE_VALUES: tuple[str, ...] = ("chirp", "click_train")
 BOOTH_SIGNAL_MODE_VALUES: tuple[str, ...] = ("off", "follows_master", "independent")
 MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
@@ -96,7 +101,7 @@ ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
 WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
 COLOR_FX_EFFECT_VALUES: tuple[str, ...] = ("filter", "space", "echo", "crush", "next")
 COLOR_FX_ECHO_BEAT_VALUES: tuple[float, ...] = (0.25, 0.5, 0.75, 1.0)
-# Keep in sync with TIME_FX_BUILT_EFFECT_NAMES in apps/webui/frontend/src/lib/rb/fx/time-fx-catalog.ts.
+# Keep in sync with BEAT_FX_EFFECT_NAMES in apps/webui/frontend/src/lib/rb/fx/beat-fx-effects/index.ts.
 BEAT_FX_EFFECT_VALUES: tuple[str, ...] = (
     "delay",
     "echo",
@@ -106,6 +111,10 @@ BEAT_FX_EFFECT_VALUES: tuple[str, ...] = (
     "reverse_delay",
     "multitap",
     "tape",
+    "filter",
+    "roll",
+    "crush",
+    "reverb",
 )
 BEAT_FX_TARGET_VALUES: tuple[str, ...] = ("1", "2", "3", "4", "master")
 BEAT_FX_BEAT_VALUES: tuple[float, ...] = (
@@ -120,6 +129,10 @@ BEAT_FX_BEAT_VALUES: tuple[float, ...] = (
     8,
     16,
 )
+# Keep in sync with TRIPLET_CYCLE_BEATS in apps/webui/frontend/src/lib/rb/mod-fx-lfo.ts (issue #10016).
+BEAT_FX_TRIPLET_BEAT_VALUES: tuple[float, ...] = (1 / 12, 1 / 6, 1 / 3, 2 / 3, 4 / 3, 8 / 3, 4)
+# Keep in sync with BEAT_FX_RELEASE_KINDS in apps/webui/frontend/src/lib/rb/beat-fx.ts.
+BEAT_FX_RELEASE_KIND_VALUES: tuple[str, ...] = ("echo",)
 WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("auto", "tri-band", "mono", "line", "blocks", "rgb")
 WAVE_HEIGHT_VALUES: tuple[str, ...] = ("full", "half")
 DECK_NUMBER_ART_VALUES: tuple[str, ...] = ("off", "halo", "glow", "tinted")
@@ -148,17 +161,23 @@ AUTOPLAY_VERDICT_VALUES: tuple[str, ...] = (
 # TOPVIEW-01..03: mirrors PERF_VIEWS in apps/webui/frontend/src/lib/rb/topbar-view-prefs.ts.
 TRANSITION_INTENT_VALUES: tuple[str, ...] = ("smooth", "energy_up", "wind_down", "showy", "vocals_clean")
 PERF_VIEW_VALUES: tuple[str, ...] = ("waveform", "list", "phase-scope", "phase-meter")
+DECK_LAYOUT_VALUES: tuple[str, ...] = ("two-deck", "four-deck")
 UI_SKIN_VALUES: tuple[str, ...] = ("default", "mono-dev", "light", "green-room", "practice-ddj-flx4")
 WAVE_PALETTE_VALUES: tuple[str, ...] = ("auto", "rekordbox", "legacy", "mono", "blue")
 WAVE_SPLIT_MASTER_VALUES: tuple[str, ...] = ("auto", "on", "off")
 # Issue #10199: mirrors LAYOUT_SURFACES / PERFORMANCE_LAYOUTS / LIBRARY_LAYOUTS in skin-layout.ts.
 LAYOUT_SURFACE_VALUES: tuple[str, ...] = ("performance", "library")
-_PERFORMANCE_LAYOUT_VALUES: tuple[str, ...] = ("deck-grid", "replica-desk")
+_PERFORMANCE_LAYOUT_VALUES: tuple[str, ...] = ("deck-grid", "replica-desk", "library-first")
 _LIBRARY_LAYOUT_VALUES: tuple[str, ...] = ("crate-desk", "three-panel")
 LAYOUT_PRESET_VALUES: tuple[str, ...] = ("auto", *_PERFORMANCE_LAYOUT_VALUES, *_LIBRARY_LAYOUT_VALUES)
 LAYOUT_REGION_VALUES: tuple[str, ...] = tuple(LAYOUT_REGION_BOUNDS)
+# Issue #10263: mirrors SectionJumpDirection in apps/webui/frontend/src/lib/rb/section-jump.ts.
+SECTION_JUMP_DIRECTION_VALUES: tuple[str, ...] = ("next", "previous")
 #: Issue #9434 / epic #9371: mixer column layout (rendering in MX-2/MX-3).
 MIXER_PLACEMENT_VALUES: tuple[str, ...] = ("center", "sides")
+MIXER_DECK_PAIR_VALUES: tuple[str, ...] = ("1-3", "2-4")
+#: OJ-13717: transition preset ids, in TRANSITION_PRESETS order (transition-presets.ts).
+TRANSITION_PRESET_VALUES: tuple[str, ...] = ("bass-swap-8", "filter-out-16", "fader-blend-16")
 
 # The command types AGENT-03 will ramp. An ordering that carries a target must
 # be one of these, mirroring the guard in the page's own ramp executor
@@ -168,11 +187,20 @@ RAMPABLE_TYPES: frozenset[str] = frozenset(
     {"eq", "fader", "trim", "filter", "stem_gain", "stem_fx_send", "crossfader", "tempo"}
 )
 
+
+def _stable_ids_value(key: str, raw: str) -> list[str]:
+    """Comma-separated track ids for one bus command; an empty id is refused."""
+    ids = [part.strip() for part in raw.split(",")]
+    if not ids or any(part == "" for part in ids):
+        raise ValueError(f"{key} must be comma-separated non-empty ids, got {raw!r}")
+    return ids
+
+
 _DECK = arg("deck", "deck", deck_value, "1-4")
 _ENABLED = arg("enabled", "bool", bool_value, "true|false")
 _SLOT = arg("slot", "enum", enum_value(SLOT_VALUES), "A-H")
 _BAND = arg("band", "enum", enum_value(BAND_VALUES), "low|mid|high")
-_STEM = arg("stem", "enum", enum_value(STEM_VALUES), "vocal|instrumental|drums|bass")
+_STEM = arg("stem", "enum", enum_value(STEM_VALUES), "vocal|instrumental|drums|bass|other")
 _UNIT = arg("value", "unit", unit_value, "0..1")
 # DIALCLOCK-8341: a bipolar dial also takes a clock time (3pm, 3 o'clock, 15:00; 12 = centre).
 _DIAL = arg("value", "dial", dial_value, "0..1|clock")
@@ -365,6 +393,16 @@ _VERBS: tuple[Verb, ...] = (
         note="DECKUX-6794: snapped jump on the fixed bar grid; -4 back, 4 forward, 8 with Shift.",
     ),
     Verb(
+        "section_jump",
+        "section_jump",
+        (
+            _DECK,
+            arg("direction", "enum", enum_value(SECTION_JUMP_DIRECTION_VALUES), "next|previous"),
+        ),
+        note="Issue #10263: seek to the next or previous analysed section start on its downbeat; "
+        "a deck with no phrases refuses with NO_SECTIONS (Shift+] and Shift+[ on the page).",
+    ),
+    Verb(
         "deck_move",
         "deck_move",
         (
@@ -549,6 +587,13 @@ _VERBS: tuple[Verb, ...] = (
         observes=_mixer("assign", "assign"),
     ),
     Verb("channel_cue", "channel_cue", (_DECK, _ENABLED), observes=_mixer("cue_enabled", "enabled")),
+    Verb(
+        "level_calibration",
+        "level_calibration",
+        (_DECK, arg("kind", "enum", enum_value(("red", "ceiling")), "red|ceiling"), _ENABLED),
+        note="#5586: the mixer's R|M level calibration (red anchor, master ceiling), also while "
+        "LESS hides it. Arming captures the deck's level and is refused while the deck is stopped.",
+    ),
     Verb("crossfader", "crossfader", (_UNIT,), observes=(Observe(("mixer", "crossfader"), "value", 1e-6),)),
     Verb("master_volume", "master_volume", (_UNIT,), observes=(Observe(("master", "level"), "value", 1e-6),)),
     Verb(
@@ -588,6 +633,12 @@ _VERBS: tuple[Verb, ...] = (
         "headphone_alignment_mode",
         (arg("value", "enum", enum_value(HEADPHONE_ALIGNMENT_MODE_VALUES), "headphones_only|delay_all|hybrid"),),
         note="CUEOUT-14: how a measured cue/master offset is split; re-applies the last calibration.",
+    ),
+    Verb(
+        "headphone_calibration_probe",
+        "headphone_calibration_probe",
+        (arg("value", "enum", enum_value(CALIBRATION_PROBE_VALUES), "chirp|click_train"),),
+        note="CUEOUT-12692: calibration stimulus for the next run; refused while one is running.",
     ),
     Verb(
         "master_delay_ms",
@@ -643,6 +694,66 @@ _VERBS: tuple[Verb, ...] = (
         "browser_related_criteria_reset",
         (),
         note="LIBUX-10046: restore the default Related criteria (bpm 6 percent, key, genre).",
+    ),
+    Verb(
+        "browser_tree_search",
+        "browser_tree_search",
+        (arg("query", "text", text_value, "playlist or folder name fragment"),),
+        note="LIBM-87: filter the playlist tree by name, as its search box does; the tree itself is unchanged.",
+    ),
+    Verb(
+        "browser_tree_search_clear",
+        "browser_tree_search_clear",
+        (),
+        note="LIBM-87: clear the playlist tree search; the tree shows its earlier open state and selection.",
+    ),
+    Verb(
+        "browser_prev_track",
+        "browser_step_selection",
+        (),
+        fixed=(("delta", -1),),
+        note="LIBUX (issue #9744): the pane tab's previous button; selection up one row (last row when none), "
+        "clamped; read it back as browser.selected_row.",
+    ),
+    Verb(
+        "browser_next_track",
+        "browser_step_selection",
+        (),
+        fixed=(("delta", 1),),
+        note="LIBUX (issue #9744): the pane tab's next button; selection down one row (first row when none), "
+        "clamped; read it back as browser.selected_row.",
+    ),
+    Verb(
+        "tag_list_add",
+        "tag_list_add",
+        (arg("stable_ids", "text", _stable_ids_value, "id[,id...]"),),
+        note="Issue #10028: Add to Tag List from the browser (the row menu's path), comma-separated ids; "
+        "the browser calls POST /api/v1/taglist/items and its rail badge follows. Without a browser use "
+        "opendj taglist add.",
+    ),
+    Verb(
+        "browser_type_ahead",
+        "browser_type_ahead",
+        (arg("prefix", "text", text_value, "title prefix"),),
+        note="LIBM-82b (issue #12317): jump the selection to the next visible row whose title starts with "
+        "prefix; the search and filters stay. A repeated single letter cycles; no match is refused.",
+    ),
+    Verb(
+        "library_filter",
+        "library_filter",
+        (),
+        fixed=(("op", "get"),),
+        note="LIBUX (issue #10043): read the mounted pane's Track Filter bar state; it is browser.filter "
+        "in the returned state.",
+    ),
+    Verb(
+        "library_filter_set",
+        "library_filter",
+        (arg("state", "json", json_object_value, "JSON object"),),
+        fixed=(("op", "set"),),
+        note="LIBUX (issue #10043): replace the Track Filter bar state, e.g. library_filter_set "
+        '\'{"bpm":{"min":120,"max":128},"suspended":false}\'. An unknown field or BPM min above max '
+        "is refused.",
     ),
     Verb("headphone_outputs_refresh", "headphone_outputs_refresh", ()),
     # CUEOUT-15: the mini-waveform click, without a pointer. It loads no deck
@@ -707,6 +818,12 @@ _VERBS: tuple[Verb, ...] = (
         (arg("mode", "enum", enum_value(MIDI_TAKEOVER_MODE_VALUES), "pickup|jump"),),
         note="IOPIN-06: pickup holds a MIDI dial until the hardware crosses the software value.",
     ),
+    Verb(
+        "midi_displaced_warning",
+        "midi_displaced_warning",
+        (_ENABLED,),
+        note="PVPIN-12193: the orange warning while a MIDI knob or slider stays displaced; true turns it back on.",
+    ),
     Verb("midi_learn_retry", "midi_learn_retry", ()),
     Verb("midi_learn_cancel", "midi_learn_cancel", ()),
     Verb(
@@ -736,10 +853,29 @@ _VERBS: tuple[Verb, ...] = (
         note="TOPVIEW-01..03: the top bar's view icons; what the wavestack area shows.",
     ),
     Verb(
+        "set_deck_layout",
+        "set_deck_layout",
+        (arg("layout", "enum", enum_value(DECK_LAYOUT_VALUES), "two-deck|four-deck"),),
+        note="Issue #12204: the top bar's 2-deck toggle; read back as ui.deck_layout.",
+    ),
+    Verb(
+        "toggle_large_library",
+        "toggle_large_library",
+        (),
+        note="Issue #9432: right Option's large library toggle; read back as ui.large_library.",
+    ),
+    Verb(
         "show_pads",
         "show_pads",
         (_ENABLED,),
         note="TOPVIEW-04: the top bar's PAD button; show or hide the performance-pad rows.",
+    ),
+    Verb(
+        "set_lyrics_global",
+        "set_lyrics_global",
+        (arg("enabled", "bool", bool_value, "on|off|true|false"),),
+        note="Issue #13057: the top bar's LYR master switch for every lyric overlay; persists lyrics_global "
+        "only, so set_waveform_overlay lyrics and the other lyric prefs keep their own state.",
     ),
     Verb(
         "key_nudge_step",
@@ -834,6 +970,30 @@ _VERBS: tuple[Verb, ...] = (
         note="LIBUX-02: the combined Next/Recommended chevron; omit collapsed to flip it.",
     ),
     Verb(
+        "library_single_column",
+        "library_single_column",
+        (arg("enabled", "bool", bool_value, "true|false", optional=True),),
+        note="LIBUX (issue #9743): the browser's single-column button; hides the playlist tree so the track "
+        "table fills the width, and persists. Omit enabled to flip it; read it back as "
+        "library_panels.single_column.",
+    ),
+    Verb(
+        "library_split_column",
+        "library_split_column",
+        (arg("enabled", "bool", bool_value, "true|false", optional=True),),
+        note="LIBUX (issue #9754): the browser's split-column button; two track tables side by side, each on its "
+        "own pane with its own source, sort and selection, and persists. Omit enabled to flip it; read it back "
+        "as library_panels.split_column.",
+    ),
+    Verb(
+        "library_mytag_pane",
+        "library_mytag_pane",
+        (arg("enabled", "bool", bool_value, "true|false", optional=True),),
+        note="LIBUX (issue #10026): the browser's My Tag pane toggle; docks the tag checkboxes right of the "
+        "track table, and persists. Omit enabled to flip it; read it back as library_panels.mytag_pane. "
+        "Tags themselves are written with POST /api/v1/mytags/assignments.",
+    ),
+    Verb(
         "deck_autocue",
         "deck_autocue",
         (_ENABLED,),
@@ -867,14 +1027,40 @@ _VERBS: tuple[Verb, ...] = (
         (
             arg("target", "enum", enum_value(BEAT_FX_TARGET_VALUES), "1|2|3|4|master", optional=True),
             arg("effect", "enum", enum_value(BEAT_FX_EFFECT_VALUES), "|".join(BEAT_FX_EFFECT_VALUES), optional=True),
-            arg("beats", "number", number_enum_value(BEAT_FX_BEAT_VALUES), "1/16..16", optional=True),
+            arg(
+                "beats",
+                "number",
+                fraction_enum_value(BEAT_FX_BEAT_VALUES + BEAT_FX_TRIPLET_BEAT_VALUES),
+                "1/16..16, or 1/12..4 with triplet=true",
+                optional=True,
+            ),
+            arg("triplet", "bool", bool_value, "true|false (default false)", optional=True),
+            arg("time_ms", "number", number_value, "1..4000 ms, not with beats", optional=True),
             arg("level", "dial", dial_value, "0..1", optional=True),
             arg("enabled", "bool", bool_value, "true|false", optional=True),
             arg("quantize", "bool", bool_value, "true|false", optional=True),
         ),
-        note="BEATFX-12: the channel-select beat FX unit (DELAY, ECHO, SPIRAL, HELIX, and the "
-        "rest of TIME_FX_CATALOG with builtOnMain). The mirror beat_fx field reports effect "
-        "and division. Refused in Rust engine mode.",
+        note="BEATFX-12: the channel-select beat FX unit (DELAY, ECHO, SPIRAL, HELIX, FILTER, ROLL, CRUSH and the "
+        "rest of the beat FX registry; one with no kernel on main is refused by name). The mirror "
+        "beat_fx field reports effect and division. Refused while fx.beat_rack is off, and in "
+        "Rust engine mode. BEATFX-10001: time_ms sets a free TIME (1..4000 ms, the effect's catalog "
+        "range) for the delay family; time_ms and beats in one command are refused, and beats again "
+        "returns to synced timing. BEATFX-10016: triplet=true takes beats from the triplet set "
+        "1/12, 1/6, 1/3, 2/3, 4/3, 8/3, 4 (12/3), written as a/b; a duple-only beats with triplet=true "
+        "is refused, and the unit refuses triplet until the triplet kernels are wired.",
+    ),
+    Verb(
+        "beat_fx_release",
+        "beat_fx_release",
+        (
+            arg("held", "bool", bool_value, "true|false"),
+            arg("beats", "number", number_enum_value(BEAT_FX_BEAT_VALUES), "1/16..16", optional=True),
+            arg("kind", "enum", enum_value(BEAT_FX_RELEASE_KIND_VALUES), "echo", optional=True),
+        ),
+        observes=(Observe(("beat_fx", "release_held"), "held"),),
+        note="BEATFX-12: hold (held=true) or let go of Release FX, an echo of the beat FX target "
+        "while the dry cuts; holding twice or letting go unheld is refused. The mirror beat_fx "
+        "field reports release_held. Refused while fx.beat_rack is off, and in Rust engine mode.",
     ),
     Verb("show_stems", "show_stems", (_ENABLED,), note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
     Verb(
@@ -993,7 +1179,10 @@ _VERBS: tuple[Verb, ...] = (
         (
             arg("surface", "enum", enum_value(LAYOUT_SURFACE_VALUES), "performance|library"),
             arg(
-                "preset", "enum", enum_value(LAYOUT_PRESET_VALUES), "auto|deck-grid|replica-desk|crate-desk|three-panel"
+                "preset",
+                "enum",
+                enum_value(LAYOUT_PRESET_VALUES),
+                "auto|deck-grid|replica-desk|library-first|crate-desk|three-panel",
             ),
         ),
         note="Issue #10199: any skin runs any surface preset; auto follows the skin's layout. "
@@ -1041,6 +1230,9 @@ _VERBS: tuple[Verb, ...] = (
     # AUDIO-DEVICE-05 HTTP parity (Reconnect speaker, not a command-bus verb):
     #   opendj audio_reconnect_speaker --confirm
     #   opendj api POST /api/v1/audio/reconnect-speaker
+    # PERFREADOUT-12579 HTTP parity (top-bar perf card rows, read-only):
+    #   opendj perf_readouts
+    #   opendj api GET /api/v1/performance/telemetry/readouts
     # FB-20 HTTP parity (issue #4085, not command-bus verbs):
     #   opendj feedback comments summary
     #   opendj api GET /api/v1/feedback/comments/summary
@@ -1119,7 +1311,32 @@ _VERBS: tuple[Verb, ...] = (
     ),
     Verb("track_info_open", "track_info_open", (arg("stable_id", "text", text_value),)),
     Verb("track_info_close", "track_info_close", ()),
+    Verb(
+        "mixer_deck_pair_select",
+        "mixer_deck_pair_select",
+        (
+            arg("pair", "enum", enum_value(MIXER_DECK_PAIR_VALUES), "1-3|2-4"),
+            arg("deck", "deck", deck_value, "1-4, a deck in the pair", optional=True),
+        ),
+        note="FLX10-style deck pair select (#13228): with deck, select that deck of the pair; "
+        "without, toggle between the pair's two decks. The other pair's selection is kept; "
+        "read back as mixer_selection.selected.",
+    ),
     Verb("oj_toggle", "oj_toggle", ()),
+    Verb(
+        "transition_preset",
+        "transition_preset",
+        (arg("preset", "enum", enum_value(TRANSITION_PRESET_VALUES), "|".join(TRANSITION_PRESET_VALUES)),),
+        note="Run a transition preset across the master and the other playing deck, as its "
+        "preset.run hotkey does; sending it again while it runs aborts it (#13717).",
+    ),
+    Verb(
+        "hotkeys_overlay",
+        "hotkeys_overlay",
+        (arg("open", "bool", bool_value, "true|false"),),
+        observes=(Observe(("hotkeys_overlay_open",), "open"),),
+        note="#12272: open or close the hotkeys overlay, the one ? toggles; UI state only, transport untouched.",
+    ),
     Verb("pairing_snapshot_open", "pairing_snapshot_open", ()),
     Verb("pairing_snapshot_remove_eq_adjuster", "pairing_snapshot_remove_eq_adjuster", (_DECK, _BAND)),
     Verb(
@@ -1137,6 +1354,9 @@ _VERBS: tuple[Verb, ...] = (
         note="Requires the Cmd K v2 bar (flag cmdk.v2) on /performance.",
     ),
     Verb("cmdk_close", "cmdk_close", (), note="Requires the Cmd K v2 bar (flag cmdk.v2) on /performance."),
+    # ----- top-bar drawers (PERFDRAWER-12580), read back as drawers.<name>.open -----
+    Verb("drawer_open", "drawer_open", (arg("drawer", "enum", enum_value(DRAWER_VALUES), "jobs"),)),
+    Verb("drawer_close", "drawer_close", (arg("drawer", "enum", enum_value(DRAWER_VALUES), "jobs"),)),
     Verb(
         "cmdk_pick",
         "cmdk_pick",

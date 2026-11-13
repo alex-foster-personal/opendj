@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { before, test } from 'node:test';
+import { before, mock, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -406,4 +406,87 @@ test('controls validate with and without fx_send and refuse an out-of-range send
 	const bad = stems.createDefaultStemControls();
 	bad.vocal.fx_send = 1.5;
 	assert.throws(() => stems.stemPartGains(bad));
+});
+
+// PERF-STEMDEC (#9988): the four branches are built concurrently.
+function createFakes({ delayMs = 50, failCreateAt = -1, latencies = [0.01, 0.01, 0.01, 0.01], handoff = 'transfer' } = {}) {
+	const created = [];
+	const gainsMade = [];
+	const ctx = { currentTime: 0, createGain: () => { const g = fxFakeNode(); gainsMade.push(g); return g; } };
+	let calls = 0;
+	const wait = () => new Promise((r) => setTimeout(r, delayMs));
+	const createProcessor = async () => {
+		const index = calls++;
+		await wait();
+		if (index === failCreateAt) throw new Error('boom');
+		const proc = {
+			disposed: 0,
+			connect() {}, disconnect() {},
+			load: async () => { await wait(); return typeof handoff === 'function' ? handoff(index) : handoff; },
+			latencySec: async () => latencies[index],
+			dispose: async () => { proc.disposed += 1; }
+		};
+		created.push(proc);
+		return proc;
+	};
+	return { ctx, created, gainsMade, deps: { createProcessor, scanEnvelope: async () => ({ peaks: [] }) } };
+}
+
+async function runWithFakeTimers(promise) {
+	let settled = false;
+	let elapsed = 0;
+	const tracked = promise.then((v) => { settled = true; return v; }, (e) => { settled = true; throw e; });
+	tracked.catch(() => {});
+	while (!settled && elapsed < 2000) {
+		for (let i = 0; i < 20; i += 1) await new Promise((r) => setImmediate(r));
+		if (settled) break;
+		mock.timers.tick(10);
+		elapsed += 10;
+	}
+	return { elapsed, result: tracked };
+}
+
+test('[if] each fake create and load takes 50 ms [then] a 4-part create completes under 150 ms, [else stop].', async () => {
+	mock.timers.enable({ apis: ['setTimeout'] });
+	try {
+		const fakes = createFakes();
+		const { elapsed, result } = await runWithFakeTimers(
+			stems.AlignedStemDeckProcessor.create(fakes.ctx, { ...ALIGNED }, {}, fakes.deps)
+		);
+		await result;
+		assert.ok(elapsed < 150, `elapsed ${elapsed} ms`);
+	} finally {
+		mock.timers.reset();
+	}
+});
+
+test('[if] parts build concurrently [then] processor part order and transfer verdict are unchanged, [else stop].', async () => {
+	const fakes = createFakes({ delayMs: 1 });
+	const out = await stems.AlignedStemDeckProcessor.create(fakes.ctx, { ...ALIGNED }, {}, fakes.deps);
+	assert.equal(out.pcmHandoff, 'transfer');
+	assert.deepEqual(Object.keys(out.processor.fxSends), ['vocals', 'drums', 'bass', 'other']);
+	const mixed = createFakes({ delayMs: 1, handoff: (i) => (i === 2 ? 'copy' : 'transfer') });
+	const out2 = await stems.AlignedStemDeckProcessor.create(mixed.ctx, { ...ALIGNED }, {}, mixed.deps);
+	assert.equal(out2.pcmHandoff, 'copy');
+});
+
+test('[if] the third part create rejects [then] every created processor is disposed and gain disconnected, [else stop].', async () => {
+	const fakes = createFakes({ delayMs: 1, failCreateAt: 2 });
+	await assert.rejects(
+		stems.AlignedStemDeckProcessor.create(fakes.ctx, { ...ALIGNED }, {}, fakes.deps),
+		/part bass/
+	);
+	assert.equal(fakes.created.length, 3);
+	for (const proc of fakes.created) assert.equal(proc.disposed, 1);
+	assert.equal(fakes.gainsMade.length, 6);
+	for (const gain of fakes.gainsMade) assert.ok(gain.disconnects >= 1);
+});
+
+test('[if] one branch reports another latency [then] create throws the latency mismatch, [else stop].', async () => {
+	const fakes = createFakes({ delayMs: 1, latencies: [0.01, 0.01, 0.02, 0.01] });
+	await assert.rejects(
+		stems.AlignedStemDeckProcessor.create(fakes.ctx, { ...ALIGNED }, {}, fakes.deps),
+		/latency alignment mismatch/
+	);
+	for (const proc of fakes.created) assert.equal(proc.disposed, 1);
 });

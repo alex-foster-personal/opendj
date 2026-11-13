@@ -18,7 +18,7 @@
   "Pitch bend +/- buttons (manual fig 12-13): no dedicated wires in the live map",
   "Rear-panel USB (manual callout 26)",
   "Branding print and mounting hardware",
-  "shift_midi: Steel uses software shift only; every control keeps shift_midi null"
+  "shift_midi: only the keypad keys carry a SHIFT wire; other controls use software shift"
  ],
  "controls": [
   {
@@ -278,7 +278,7 @@
    "fig": "9",
    "type": "pad",
    "label": "KEY 1",
-   "does": "Hot cue A (deck 1)",
+   "does": "Hot cue A; SHIFT hot cue G (deck 1)",
    "x": 120.5,
    "y": 84.5,
    "w": 11.0,
@@ -289,14 +289,18 @@
     "kind": "cc",
     "id": 1
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 100
+   }
   },
   {
    "id": "d1-hot-cue-b",
    "fig": "9",
    "type": "pad",
    "label": "KEY 2",
-   "does": "Hot cue B (deck 1)",
+   "does": "Hot cue B; SHIFT hot cue H (deck 1)",
    "x": 134.0,
    "y": 84.5,
    "w": 11.0,
@@ -307,7 +311,11 @@
     "kind": "cc",
     "id": 2
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 101
+   }
   },
   {
    "id": "d1-hot-cue-c",
@@ -325,7 +333,11 @@
     "kind": "cc",
     "id": 3
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 102
+   }
   },
   {
    "id": "d1-hot-cue-d",
@@ -343,7 +355,11 @@
     "kind": "cc",
     "id": 4
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 103
+   }
   },
   {
    "id": "d1-hot-cue-e",
@@ -361,7 +377,11 @@
     "kind": "cc",
     "id": 5
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 104
+   }
   },
   {
    "id": "d1-hot-cue-f",
@@ -379,50 +399,18 @@
     "kind": "cc",
     "id": 6
    },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-hot-cue-g",
-   "fig": "9",
-   "type": "pad",
-   "label": "KEY 7",
-   "does": "Hot cue G shift layer (deck 1)",
-   "x": 120.5,
-   "y": 84.5,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
+   "shift_midi": {
     "ch": 1,
     "kind": "cc",
-    "id": 100
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-hot-cue-h",
-   "fig": "9",
-   "type": "pad",
-   "label": "KEY 8",
-   "does": "Hot cue H shift layer (deck 1)",
-   "x": 134.0,
-   "y": 84.5,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 101
-   },
-   "shift_midi": null
+    "id": 105
+   }
   },
   {
    "id": "d2-hot-cue-a",
    "fig": "9",
    "type": "pad",
    "label": "KEY 1",
-   "does": "Hot cue A (deck 2)",
+   "does": "Hot cue A; SHIFT hot cue G (deck 2)",
    "x": 218.5,
    "y": 84.5,
    "w": 11.0,
@@ -433,14 +421,18 @@
     "kind": "cc",
     "id": 25
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 106
+   }
   },
   {
    "id": "d2-hot-cue-b",
    "fig": "9",
    "type": "pad",
    "label": "KEY 2",
-   "does": "Hot cue B (deck 2)",
+   "does": "Hot cue B; SHIFT hot cue H (deck 2)",
    "x": 205.0,
    "y": 84.5,
    "w": 11.0,
@@ -451,7 +443,11 @@
     "kind": "cc",
     "id": 26
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 107
+   }
   },
   {
    "id": "d2-hot-cue-c",
@@ -469,7 +465,11 @@
     "kind": "cc",
     "id": 27
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 108
+   }
   },
   {
    "id": "d2-hot-cue-d",
@@ -487,7 +487,11 @@
     "kind": "cc",
     "id": 28
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 109
+   }
   },
   {
    "id": "d2-hot-cue-e",
@@ -505,7 +509,11 @@
     "kind": "cc",
     "id": 29
    },
-   "shift_midi": null
+   "shift_midi": {
+    "ch": 1,
+    "kind": "cc",
+    "id": 110
+   }
   },
   {
    "id": "d2-hot-cue-f",
@@ -523,43 +531,11 @@
     "kind": "cc",
     "id": 30
    },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-g",
-   "fig": "9",
-   "type": "pad",
-   "label": "KEY 7",
-   "does": "Hot cue G shift layer (deck 2)",
-   "x": 218.5,
-   "y": 84.5,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
+   "shift_midi": {
     "ch": 1,
     "kind": "cc",
-    "id": 106
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-hot-cue-h",
-   "fig": "9",
-   "type": "pad",
-   "label": "KEY 8",
-   "does": "Hot cue H shift layer (deck 2)",
-   "x": 205.0,
-   "y": 84.5,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 107
-   },
-   "shift_midi": null
+    "id": 111
+   }
   },
   {
    "id": "ch1-ch-cue",
@@ -1066,78 +1042,6 @@
    "shift_midi": null
   },
   {
-   "id": "d1-shift-hot-cue-c",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 3 + SHIFT",
-   "does": "Shift on keypad 3 deck 1",
-   "x": 147.5,
-   "y": 84.5,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 102
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-shift-hot-cue-d",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 4 + SHIFT",
-   "does": "Shift on keypad 4 deck 1",
-   "x": 120.5,
-   "y": 98.0,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 103
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-shift-hot-cue-e",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 5 + SHIFT",
-   "does": "Shift on keypad 5 deck 1",
-   "x": 134.0,
-   "y": 98.0,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 104
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d1-shift-hot-cue-f",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 6 + SHIFT",
-   "does": "Shift on keypad 6 deck 1",
-   "x": 147.5,
-   "y": 98.0,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 105
-   },
-   "shift_midi": null
-  },
-  {
    "id": "d1-fx-control-1",
    "fig": "1",
    "type": "encoder",
@@ -1314,78 +1218,6 @@
     "ch": 1,
     "kind": "cc",
     "id": 40
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-shift-hot-cue-c",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 3 + SHIFT",
-   "does": "Shift on keypad 3 deck 2",
-   "x": 191.5,
-   "y": 84.5,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 108
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-shift-hot-cue-d",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 4 + SHIFT",
-   "does": "Shift on keypad 4 deck 2",
-   "x": 218.5,
-   "y": 98.0,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 109
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-shift-hot-cue-e",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 5 + SHIFT",
-   "does": "Shift on keypad 5 deck 2",
-   "x": 205.0,
-   "y": 98.0,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 110
-   },
-   "shift_midi": null
-  },
-  {
-   "id": "d2-shift-hot-cue-f",
-   "fig": "2",
-   "type": "pad",
-   "label": "KEY 6 + SHIFT",
-   "does": "Shift on keypad 6 deck 2",
-   "x": 191.5,
-   "y": 98.0,
-   "w": 11.0,
-   "h": 11.0,
-   "section": "performance",
-   "midi": {
-    "ch": 1,
-    "kind": "cc",
-    "id": 111
    },
    "shift_midi": null
   },

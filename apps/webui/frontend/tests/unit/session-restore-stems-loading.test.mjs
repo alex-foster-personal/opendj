@@ -266,7 +266,7 @@ test('restoring a session whose stem deck returns to loading mid-replay dispatch
 	}
 
 	const restoreFailedToasts = stores.toasts.filter((t) =>
-		String(t.message).startsWith('session restore deck')
+		/could not be restored/.test(String(t.message))
 	);
 	assert.deepEqual(
 		restoreFailedToasts.map((t) => t.message),
@@ -291,7 +291,7 @@ test('restoring a session whose stem deck returns to loading mid-replay dispatch
 	);
 });
 
-test('a genuine stems error during restore still raises a session-restore failed toast', async () => {
+test('a genuine stems error during restore still raises a named deck restore toast', async () => {
 	stores.toasts.length = 0;
 	const raw = snapshot.serializePerformanceSession(snapshotInput());
 	const storage = new Map([[snapshot.PERFORMANCE_SESSION_STORAGE_KEY, raw]]);
@@ -352,11 +352,11 @@ test('a genuine stems error during restore still raises a session-restore failed
 	}
 
 	const restoreFailedToasts = stores.toasts.filter((t) =>
-		String(t.message).startsWith('session restore deck')
+		/could not be restored/.test(String(t.message))
 	);
 	assert.ok(
-		restoreFailedToasts.some((t) => String(t.message).includes('stem restore failed')),
-		`expected stem restore failed in toast, got ${restoreFailedToasts.map((t) => t.message).join('; ')}`
+		restoreFailedToasts.some((t) => String(t.message).startsWith('Deck 1 could not be restored')),
+		`expected a named deck 1 restore toast, got ${restoreFailedToasts.map((t) => t.message).join('; ')}`
 	);
 	const stemForDeck1 = dispatched.filter(
 		(c) =>

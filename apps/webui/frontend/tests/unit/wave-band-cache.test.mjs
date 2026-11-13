@@ -8,6 +8,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if a sub-pixel playhead advance rebuilds the band image then broken
 // - if a one-pixel advance does not move the cached band image then broken
 // - if width or zoom changes reuse the old band image then broken
+// PERF-PAINT-10529 regression lines:
+// - if a row-height drag rebuilds band tiles per pixel of height then broken
+// - if a height move past HEIGHT_REUSE_RATIO is drawn from stretched tiles then broken
+// - if a row that has held its new height for HEIGHT_SETTLE_FRAMES draws is still scaled then broken
 
 let render;
 let createdCanvases = 0;
@@ -100,10 +104,10 @@ const anlz = {
 	vocals: { status: 'not_analyzed' }
 };
 
-function frame(positionMs, widthCss = 240, pitch = 1) {
+function frame(positionMs, widthCss = 240, pitch = 1, heightCss = 60) {
 	return {
 		widthCss,
-		heightCss: 60,
+		heightCss,
 		positionMs,
 		durationMs: 120_000,
 		anlz,
@@ -377,4 +381,98 @@ test('a pitch nudge that crosses the 10 px thinning threshold rebuilds the band 
 		pitch: 20 / 19.9
 	});
 	assert.equal(createdCanvases, 1, 'two nudges in the same stride band still build once');
+});
+
+// PERF-PAINT-10529 (#10218): row height reuses tiles by a scaled blit.
+function resetCounts() {
+	render.resetWaveBandCacheForTest();
+	createdCanvases = 0;
+	tiles = [];
+}
+
+function sweep(heights, extra = {}) {
+	const calls = [];
+	for (const hh of heights)
+		render.drawWaveRow(context(calls), { ...frame(30_000, 240, 1, hh), ...extra });
+	return calls;
+}
+
+function range(from, to) {
+	const step = to >= from ? 1 : -1;
+	const out = [];
+	for (let v = from; v !== to + step; v += step) out.push(v);
+	return out;
+}
+
+test('a row-height drag inside the reuse ratio builds tiles at the start and after it settles', () => {
+	const settle = render.BAND_CACHE_CFG.HEIGHT_SETTLE_FRAMES;
+	const drag = [...range(100, 150), ...range(149, 120)];
+	for (const [extra, perBuild] of [
+		[{}, 1],
+		[{ bandGains: { low: 0.5, mid: 1, high: 1 } }, 3]
+	]) {
+		resetCounts();
+		sweep(drag, extra);
+		assert.equal(createdCanvases, perBuild, 'today: one tile set per distinct height');
+		sweep(Array(settle - 1).fill(120), extra);
+		assert.equal(createdCanvases, 2 * perBuild, 'a settled height rebuilds once');
+		assert.equal(tiles.at(-1).height, 120);
+	}
+});
+
+test('the issue sweep 100 to 160 and back builds three times, not once per height', () => {
+	resetCounts();
+	const settle = render.BAND_CACHE_CFG.HEIGHT_SETTLE_FRAMES;
+	const heights = [...range(100, 160), ...range(159, 100), ...Array(settle - 1).fill(100)];
+	sweep(heights);
+	// 151 is 0.51 of 100, past the 0.5 HEIGHT_REUSE_RATIO, so the sweep rebuilds
+	// once there; every height back down to 100 is within 0.5 of 151.
+	assert.equal(createdCanvases, 3, 'start, the ratio crossing at 151, and the settle at 100');
+	console.log(
+		`PERF-PAINT-10529 sweep: ${createdCanvases} tile builds for ${heights.length} frames (one per distinct height before)`
+	);
+});
+
+test('a height move past the reuse ratio rebuilds at once at the new height', () => {
+	resetCounts();
+	sweep([100]);
+	const calls = sweep([220]);
+	assert.equal(createdCanvases, 2);
+	assert.equal(tiles.at(-1).height, 220);
+	assert.equal(calls.at(-1).length, 3, 'rebuilt tiles blit unscaled');
+});
+
+test('a height held for HEIGHT_SETTLE_FRAMES draws blits unscaled again', () => {
+	assert.equal(render.BAND_CACHE_CFG.HEIGHT_SETTLE_FRAMES, 12);
+	assert.equal(render.BAND_CACHE_CFG.HEIGHT_REUSE_RATIO, 0.5);
+	resetCounts();
+	sweep([100]);
+	const calls = sweep(Array(render.BAND_CACHE_CFG.HEIGHT_SETTLE_FRAMES - 1).fill(130));
+	assert.equal(createdCanvases, 1);
+	const args = calls.at(-1);
+	assert.equal(args.length, 9);
+	assert.equal(args[4], 100, 'source height is the built tile height');
+	assert.ok(Math.abs(args[6] + args[8] - 130) < 1e-9, 'row bottom lands on the row bottom');
+	assert.ok(Math.abs(args[8] - 100 * (120 / 90)) < 1e-9);
+	const settled = sweep([130]);
+	assert.equal(createdCanvases, 2);
+	assert.equal(settled.at(-1).length, 3);
+	assert.equal(settled.at(-1)[0].height, 130, 'destination height equals the source tile height');
+});
+
+test('layered band blits map rows by the built height', () => {
+	resetCounts();
+	const extra = { bandGains: { low: 1, mid: 0.5, high: 1 } };
+	sweep([100], extra);
+	const calls = sweep([130], extra);
+	assert.equal(createdCanvases, 3);
+	assert.equal(calls.length, 3);
+	for (const args of calls) {
+		assert.equal(args.length, 9);
+		assert.equal(args[4], 100);
+	}
+	assert.ok(
+		Math.abs(calls[0][6] + calls[0][8] - 130) < 1e-9,
+		'unity-gain low layer lands on the row bottom'
+	);
 });

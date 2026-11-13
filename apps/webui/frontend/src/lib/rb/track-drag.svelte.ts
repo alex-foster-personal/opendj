@@ -71,6 +71,30 @@ export function acceptTrackDragOver(event: DragEvent): boolean {
 	return true;
 }
 
+/** LIBM-84 (issue #12307): why a smartlist refuses a track drop. */
+export const SMARTLIST_DROP_REFUSAL =
+	'Smartlists fill themselves from their rules, so tracks cannot be dropped into one';
+
+/**
+ * Why a tree node of this kind refuses a track drop, or null when it takes
+ * one. Only a smartlist is refused out loud; other non-playlist kinds stay
+ * silent non-targets as before.
+ */
+export function trackDropRefusal(kind: string): string | null {
+	return kind === 'smartlist' ? SMARTLIST_DROP_REFUSAL : null;
+}
+
+/**
+ * Mark a dragover on a node that refuses tracks (LIBM-84). Shows the no-drop
+ * cursor and never calls preventDefault, so the drop event never fires and no
+ * playlist request can follow. Returns true when a track drag was refused.
+ */
+export function refuseTrackDragOver(event: DragEvent): boolean {
+	if (!trackDrag.active) return false;
+	if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'none';
+	return true;
+}
+
 /**
  * Stable ids carried by a drop: the explicit transfer payload first (it is the
  * only thing a cross-app or cross-window drag can carry), the in-app drag state

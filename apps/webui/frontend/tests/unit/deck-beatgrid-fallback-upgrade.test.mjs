@@ -145,12 +145,14 @@ const REAL_BEATS = CAPTURED.beatgrid_fallback_ok.body.beatgrid.beats;
 let source;
 let guardsSource;
 let upgrade;
+let gridFeatures;
 let toastHarness;
 const originalFetch = globalThis.fetch;
 
 before(async () => {
 	source = readFrontendSource(ENGINE);
 	guardsSource = readFrontendSource(GUARDS);
+	gridFeatures = await loadTypeScriptModule('src/lib/player/grid-features.ts');
 	upgrade = await loadTypeScriptModule(
 		'tests/unit/fixtures/beatgrid-upgrade-analysis-source-entry.ts',
 		{ viteApiBase: API_BASE }
@@ -977,6 +979,109 @@ test('the injected resync ports wire the real engine sync primitives, not stand-
 		);
 	}
 	assert.equal(body.includes('syncMaster: _syncMaster'), false, 'beatgrid reconciliation must read the filtered master, not the raw gridless clock');
+});
+
+// ----- behaviour: the resync port's real-grid predicate across an upgrade (issue #13230) -----
+//
+// The port above is wired to deckHasRealBeatGrid ((private path), issue #1943),
+// not deckHasTrustedBeatGrid. The source-text guard pins WHICH predicate is
+// wired; these pin what that predicate answers on the deck states the upgrade
+// actually produces, so a fallback grid upgrades followers when real data
+// arrives and a deck with no grid data, or one that changed tracks, stays
+// honestly gridless.
+
+test('a fallback grid that lands reads as real to the resync port only once published', async () => {
+	// Intent: real grid data arriving after the gridless fallback state flips the wired predicate to true at publish time.
+	stubDaemon({ vendor: 'local' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+	const seen = [];
+
+	assert.equal(gridFeatures.deckHasRealBeatGrid(st), false, 'control: the fallback state starts gridless');
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false, (deck, landed, publish) => {
+		seen.push({ landed, before: gridFeatures.deckHasRealBeatGrid(st) });
+		publish();
+		seen.push({ landed, after: gridFeatures.deckHasRealBeatGrid(st) });
+	});
+
+	assert.deepEqual(seen, [
+		{ landed: true, before: false },
+		{ landed: true, after: true }
+	]);
+});
+
+test('a real ANLZ grid refetched mid-flight reads as real to the resync port', async () => {
+	// Intent: the anlz_available upgrade path also hands resync a deck it can phase-lock against.
+	stubDaemon({ vendor: 'local', anlzAvailable: true, anlzRefetch: 'grid' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false, (deck, landed, publish) => publish());
+
+	assert.equal(gridFeatures.deckHasRealBeatGrid(st), true);
+});
+
+test('a real but untrusted own grid still reads as real to the resync port, unlike the trusted predicate', async () => {
+	// Intent: pin why the port must not use deckHasTrustedBeatGrid - an untrusted own grid is still a usable grid.
+	stubDaemon({ vendor: 'local' });
+	const st = { anlz: emptyAnlz(), anlz_error: null };
+	await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false, (deck, landed, publish) => publish());
+	const untrusted = { anlz: { ...st.anlz, beatgrid: { ...st.anlz.beatgrid, static_grid_untrusted: true } } };
+
+	assert.equal(gridFeatures.deckHasRealBeatGrid(untrusted), true, 'resync must see this grid');
+	assert.equal(
+		gridFeatures.deckHasTrustedBeatGrid(untrusted),
+		false,
+		'control: the trusted predicate rejects it, so wiring it into the port would strand followers'
+	);
+});
+
+test('with no real grid data the resync port keeps reading the deck as gridless', async () => {
+	// Intent: absent grid data (404, or a mapped refetch that is still empty) never makes a deck look gridded.
+	for (const [label, opts] of [
+		['404 not analyzed', { vendor: 'local', fallback: 'missing' }],
+		['empty anlz refetch', { vendor: 'local', anlzAvailable: true, anlzRefetch: 'empty' }]
+	]) {
+		stubDaemon(opts);
+		const st = { anlz: emptyAnlz(), anlz_error: null };
+		const calls = [];
+
+		await upgrade.upgradeDeckBeatgrid(1, SID, st, () => false, (deck, landed, publish) => {
+			calls.push(landed);
+			publish?.();
+		});
+
+		assert.equal(gridFeatures.deckHasRealBeatGrid(st), false, `${label}: must stay gridless`);
+		assert.deepEqual(calls, [false], `${label}: settles as not landed`);
+	}
+});
+
+test('a deck that changes tracks during the upgrade never reads as gridded off the old grid', async () => {
+	// Intent: a replacement track mid-request, mid-refetch, or before publish stays gridless for resync.
+	const cases = [
+		['mid-request', { vendor: 'local' }, (n) => n >= 1, false],
+		['mid-refetch', { vendor: 'local', anlzAvailable: true, anlzRefetch: 'grid' }, (n) => n >= 3, false],
+		['before publish', { vendor: 'local' }, () => false, true]
+	];
+	for (const [label, opts, staleAfter, swapBeforePublish] of cases) {
+		stubDaemon(opts);
+		const st = { anlz: emptyAnlz(), anlz_error: null };
+		let requests = 0;
+		let stale = false;
+		const inner = globalThis.fetch;
+		globalThis.fetch = async (input) => {
+			requests += 1;
+			return inner(input);
+		};
+
+		await upgrade.upgradeDeckBeatgrid(1, SID, st, () => stale || staleAfter(requests), (deck, landed, publish) => {
+			if (swapBeforePublish) {
+				stale = true;
+				st.anlz = emptyAnlz();
+			}
+			publish();
+		});
+
+		assert.equal(gridFeatures.deckHasRealBeatGrid(st), false, `${label}: the replacement track must stay gridless`);
+	}
 });
 
 test('the mid-flight anlz_available refetch bypasses the HTTP cache instead of possibly replaying the empty response it may have cached', async () => {

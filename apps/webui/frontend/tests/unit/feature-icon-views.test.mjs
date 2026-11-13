@@ -24,15 +24,15 @@ test('every view icon in the strip maps to a distinct real perf_view', () => {
 	assert.equal(cluster.featureIconView('2-deck'), null);
 });
 
-test('FX has no panel yet, so it renders inert and toggles nothing', () => {
+test('FX with fx.beat_rack off has no panel, so it renders inert and toggles nothing', () => {
 	assert.equal(cluster.toggleFeatureIcon, undefined, 'no page-local FX on/off state may come back');
 	assert.equal(cluster.featureIconOn, undefined);
-	const fxButton = TOPBAR.match(/<button[^>]*class="tb-icon fx rb-inert"[\s\S]*?>FX<\/button>/)?.[0] ?? '';
+	const fxButton = TOPBAR.match(/<button[^>]*class="tb-icon fx rb-inert"[\s\S]*?>FX<\/button\s*>/)?.[0] ?? '';
 	assert.match(fxButton, /\bdisabled\b/);
 	assert.doesNotMatch(fxButton, /\btitle=/, 'strip FX uses ControlExplainer only (issue #927)');
 	assert.doesNotMatch(fxButton, /onclick|aria-pressed/);
 	assert.match(TOPBAR, /const FX_INERT_TITLE = plannedTitle\('fx'\);/, 'the planned-control tooltip, not a bare stub');
-	assert.match(TOPBAR, /disabled=\{icon\.id === 'fx'\}/, 'the strip menu entry is inert too');
+	assert.match(TOPBAR, /disabled=\{icon\.id === 'fx' && !fxPanelAvailable\}/, 'the strip menu entry is inert too while fx.beat_rack is off');
 	for (const id of ['list-view', '4-waveform', 'scope-1', 'scope-2']) {
 		assert.doesNotMatch(TOPBAR, new RegExp(`toggleFeatureIcon\\('${id}'\\)`), `${id} is still a page-local toggle`);
 	}
@@ -55,7 +55,7 @@ test('single-click mode never hides the view icons, because its menu is off', ()
 	// Sol P1, PR #6228: at the default view the narrow tiers hid the view icons and
 	// the overflow rows while single-click mode had already disabled the menu.
 	assert.match(TOPBAR, /class:single-click=\{featureIconSingleClick\(\)\}/);
-	const viewRules = TOPBAR.match(/\.rb-topbar[^\n{]*\.icon-cluster > :global\(\.explainer:has\(\.tb-view\)\)/g) ?? [];
+	const viewRules = TOPBAR.match(/\.rb-topbar[^,{]*\.icon-cluster\s*>\s*:global\(\.explainer:has\(\.tb-view\)\)/g) ?? [];
 	assert.equal(viewRules.length, 2, 'both narrow tiers hide view icons at the default view');
 	for (const rule of viewRules) assert.match(rule, /:not\(\.single-click\)/, rule);
 	// Control: the menu really is off in single-click mode, which is why the icons must stay.
@@ -66,7 +66,7 @@ test('one-button mode makes every strip icon inert, so the cluster is the only c
 	// FICON-01. Codex P2 BLOCKING, PR #6228: tabindex -1 kept the inner buttons in the
 	// accessibility tree, so a screen reader could still press one directly.
 	// From the cluster to the component menu, which must stay operable.
-	const strip = TOPBAR.slice(TOPBAR.indexOf('class="icon-cluster"'), TOPBAR.indexOf('<div class="feature-menu"'));
+	const strip = TOPBAR.slice(TOPBAR.indexOf('class="icon-cluster"'), TOPBAR.search(/<div\s+class="feature-menu"/));
 	const buttons = strip.split('<button').slice(1).map((b) => b.slice(0, b.indexOf('onclick=')));
 	assert.ok(buttons.length >= 6, `expected the strip's icon buttons, found ${buttons.length}`);
 	assert.ok(buttons.some((b) => /class="tb-icon fx rb-inert"/.test(b)), 'FX is one of the checked buttons');

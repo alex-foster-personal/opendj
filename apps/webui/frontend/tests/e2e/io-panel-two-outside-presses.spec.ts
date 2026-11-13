@@ -103,7 +103,6 @@ test('IOPIN-20: the first outside press reaches its target and keeps I/O open; t
 test('IOPIN-20 control: a press inside the panel resets the count, so it takes two fresh outside presses', async ({
 	page
 }) => {
-	test.fixme(true, 'no track-row point outside the I/O panel, see #13523');
 	// A cold vite compile of /performance alone can take most of the 30 s default.
 	test.setTimeout(60_000);
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -172,7 +171,6 @@ async function _useSelect(page: Page, select: import('@playwright/test').Locator
 test('IOPIN-20: a focused select in the panel does not swallow later root presses (Sol P1 4285298949)', async ({
 	page
 }) => {
-	test.fixme(true, 'root hit points are no longer 0, see #13523');
 	test.setTimeout(60_000);
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/performance');

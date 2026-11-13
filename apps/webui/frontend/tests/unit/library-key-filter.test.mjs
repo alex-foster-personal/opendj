@@ -159,6 +159,7 @@ test('BrowserPanel keeps key predicate through search fallbacks', () => {
 });
 
 test('library key filter popover uses viewport clamping and is reachable from BrowserPanel', () => {
+	assert.match(BROWSER_PANEL, /\{#if LibraryKeyFilterPopover\}/);
 	assert.match(
 		BROWSER_PANEL,
 		/<LibraryKeyFilterPopover \{selectedRowKey\} decks=\{DECK_IDS\.map\(\(d\) => decks\[d\]\)\} \/>/

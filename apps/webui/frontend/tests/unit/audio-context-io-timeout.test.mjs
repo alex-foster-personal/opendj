@@ -5,6 +5,7 @@
  * [if] the promise never settles [then] it rejects AudioContextIoTimeoutError after timeoutMs, message contains timed out after
  * [if] timeoutMs is 0 or non-finite [then] RangeError
  * [if] the promise rejects first [then] that error propagates, not a timeout
+ * [if] default scheduler arms timeout [then] globalThis is setTimeout receiver, else illegal invocation
  */
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
@@ -51,6 +52,36 @@ describe('withAudioContextIoTimeout', () => {
 		await assert.rejects(
 			mod.withAudioContextIoTimeout('suspend', Promise.reject(boom), 50),
 			(err) => err === boom
+		);
+	});
+
+	it('calls default setTimeout with globalThis as receiver', async () => {
+		const origSetTimeout = globalThis.setTimeout;
+		/** @type {unknown[]} */
+		const receivers = [];
+		try {
+			globalThis.setTimeout = function (fn, ms) {
+				receivers.push(this);
+				return origSetTimeout.call(globalThis, fn, ms);
+			};
+			await assert.rejects(mod.withAudioContextIoTimeout('resume', new Promise(() => {}), 5));
+			assert.ok(receivers.length >= 1, 'expected at least one setTimeout call');
+			for (const receiver of receivers) {
+				assert.strictEqual(receiver, globalThis);
+			}
+		} finally {
+			globalThis.setTimeout = origSetTimeout;
+		}
+	});
+
+	it('propagates a delayed rejection before the I/O timeout fires', async () => {
+		const boom = new Error('device gone');
+		const delayedReject = new Promise((_resolve, reject) => {
+			setTimeout(() => reject(boom), 5);
+		});
+		await assert.rejects(
+			mod.withAudioContextIoTimeout('suspend', delayedReject, 50),
+			(err) => err === boom && !(err instanceof mod.AudioContextIoTimeoutError)
 		);
 	});
 });

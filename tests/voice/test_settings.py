@@ -20,6 +20,20 @@ def test_coalesce_env_none_reads_os_environ():
     assert merged.keys()  # non-empty in any real test env
 
 
+def test_env_float_parses_or_defaults():
+    env = {"VOICE_DEBOUNCE_S": "1.5", "VOICE_BAD": "nope"}
+    assert settings.env_float(env, "VOICE_DEBOUNCE_S", 2.0) == 1.5
+    assert settings.env_float(env, "VOICE_MISSING", 2.0) == 2.0
+    assert settings.env_float(env, "VOICE_BAD", 2.0) == 2.0
+
+
+def test_env_int_parses_or_defaults():
+    env = {"VOICE_VAD_MODE": "3", "VOICE_BAD": "nope"}
+    assert settings.env_int(env, "VOICE_VAD_MODE", 2) == 3
+    assert settings.env_int(env, "VOICE_MISSING", 2) == 2
+    assert settings.env_int(env, "VOICE_BAD", 2) == 2
+
+
 def test_set_get_roundtrip(tmp_path):
     s = settings.SettingsStore(path=tmp_path / "voice.sqlite")
     s.set("mute_until", 1234.5)

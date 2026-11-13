@@ -199,3 +199,52 @@ def test_fit_dynamic_grid_returns_tempo_map_not_activation_arrays(tmp_path) -> N
     result = fit_dynamic_grid(ref, beats)
     assert isinstance(result, TempoMap)
     assert not isinstance(result, dict)
+
+
+def _anchor(at_s: float, beat_index: int, bpm: float) -> TempoAnchor:
+    """Build a hand-made anchor with fixed confidence and residual."""
+    return TempoAnchor(at_s=at_s, beat_index=beat_index, bpm=bpm, confidence=0.9, residual_rms_s=0.0)
+
+
+def test_one_valid_anchor_applies_as_static_grid() -> None:
+    """[if] a map has one valid anchor [then] apply returns the static grid t(i) = at_s + i * 60 / bpm."""
+    tempo_map = TempoMap(anchors=(_anchor(0.25, 0, 120.0),))
+    assert apply_tempo_map(tempo_map, 5) == pytest.approx([0.25, 0.75, 1.25, 1.75, 2.25], abs=1e-12)
+
+
+def test_two_anchor_map_switches_period_at_second_anchor() -> None:
+    """[if] a valid two-anchor map is applied [then] beats from the second anchor use its tempo."""
+    tempo_map = TempoMap(anchors=(_anchor(0.0, 0, 120.0), _anchor(1.0, 2, 60.0)))
+    assert apply_tempo_map(tempo_map, 4) == pytest.approx([0.0, 0.5, 1.0, 2.0], abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("anchors", "match"),
+    [
+        ((_anchor(0.0, 0, 120.0), _anchor(2.0, 8, 124.0), _anchor(1.0, 4, 122.0)), "beat_index not strictly"),
+        ((_anchor(0.0, 0, 120.0), _anchor(1.0, 0, 124.0)), "beat_index not strictly"),
+        ((_anchor(0.0, 0, 120.0), _anchor(0.0, 4, 124.0)), "at_s not strictly"),
+        ((_anchor(0.5, 1, 120.0),), "opening anchor"),
+        ((_anchor(0.0, 0, 0.0),), "bpm"),
+        ((_anchor(0.0, 0, -120.0),), "bpm"),
+        ((_anchor(0.0, 0, float("nan")),), "bpm"),
+        ((_anchor(float("inf"), 0, 120.0),), "at_s"),
+    ],
+)
+def test_unsorted_or_invalid_anchors_are_refused(anchors: tuple[TempoAnchor, ...], match: str) -> None:
+    """[if] anchors are unsorted or invalid [then] apply refuses with ValueError."""
+    with pytest.raises(ValueError, match=match):
+        apply_tempo_map(TempoMap(anchors=anchors), 16)
+
+
+def test_apply_outside_valid_beat_range_is_refused() -> None:
+    """[if] a map is applied outside its valid beat range [then] apply refuses with ValueError."""
+    tempo_map = TempoMap(anchors=(_anchor(0.0, 0, 120.0), _anchor(4.0, 8, 124.0)))
+    for n_beats in (0, -1):
+        with pytest.raises(ValueError, match="n_beats"):
+            apply_tempo_map(tempo_map, n_beats)
+    with pytest.raises(ValueError, match="outside its beat range"):
+        apply_tempo_map(tempo_map, 8)
+    with pytest.raises(ValueError, match="no anchors"):
+        apply_tempo_map(TempoMap(anchors=()), 4)
+    assert len(apply_tempo_map(tempo_map, 9)) == 9

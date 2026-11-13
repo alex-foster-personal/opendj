@@ -69,7 +69,7 @@ test('the HOT CUE pad-mode menu sits stacked under the grid buttons, not in the 
 	const gridClose = deck.indexOf('</div>', gridOpen);
 	const gridBlock = deck.slice(gridOpen, gridClose);
 	const shift = gridBlock.indexOf('<GridEditButtons');
-	const menu = gridBlock.indexOf('<PadModeMenu {deckId} stacked />');
+	const menu = gridBlock.indexOf('<PadModeMenu {deckId} stacked');
 	assert.ok(shift >= 0, 'grid shift button is in the grid column');
 	assert.ok(menu > shift, 'the HOT CUE menu comes after (below) the grid shift button');
 	const buttons = await readFile('src/lib/components/rb/deck/GridEditButtons.svelte', 'utf8');

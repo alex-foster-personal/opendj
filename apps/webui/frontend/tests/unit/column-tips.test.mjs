@@ -67,7 +67,7 @@ function titleExpressions(text) {
 
 test('every column tip id has real explanatory copy behind it', () => {
 	const ids = Object.keys(tips.COLUMN_TIPS);
-	assert.equal(ids.length, 16, `expected 16 column tips, got ${ids.length}: ${ids.join(', ')}`);
+	assert.equal(ids.length, 22, `expected 22 column tips, got ${ids.length}: ${ids.join(', ')}`);
 	for (const [id, tip] of Object.entries(tips.COLUMN_TIPS)) {
 		assert.equal(typeof tip, 'string', `${id} has no tip string`);
 		assert.ok(

@@ -60,6 +60,7 @@
 		box-sizing: border-box;
 		padding: 2px 8px;
 		border: 1px solid var(--rb-border);
+		border-top: none;
 		border-radius: 0 0 3px 3px;
 		background: var(--rb-panel);
 		color: var(--rb-text-dim);

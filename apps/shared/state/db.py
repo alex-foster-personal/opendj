@@ -175,15 +175,15 @@ def open_rw(
     regenerates ``<state_dir>/AGENTS.md`` when the state directory is
     writable and the sidecar is not already current for this schema; a docs
     gap on an owned table
-    (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
-    still fails the open. Leftover tables that are not in
+    (:class:`apps.database.generate_agents_md.MissingColumnDocsError`, most
+    often columns a newer build added to a shared data dir) logs a warning
+    and keeps the existing sidecar instead of failing the open. Leftover tables that are not in
     :data:`apps.shared.state.schema.ALL_KNOWN_TABLES` are omitted from
     the sidecar rather than aborting the open -- they are one-shot
     conversion leftovers, not a forgotten schema column. Foreign-authority
     tables (pairings, play_orders, launcher_meta, FTS) stay in the sidecar
     when they are live. An
     unwritable directory is a spec-mandated skip, not a caught failure.
-    ``MissingColumnDocsError`` is intentionally not caught here.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
     busy_timeout_s = _checked_busy_timeout_s(busy_timeout_s)

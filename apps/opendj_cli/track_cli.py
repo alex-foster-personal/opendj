@@ -41,6 +41,8 @@ from apps.opendj_cli.kinds import grid_bpm_override_parts
 from apps.opendj_cli.origin import EngineNotRunning
 from apps.opendj_cli.refusal import fail as _fail
 from apps.opendj_cli.track_comment import TrackCommentError, engine_client, set_track_comment
+from apps.opendj_cli.track_delete import TIER_WORDS, TrackDeleteError, delete_track
+from apps.opendj_cli.track_relocate_folder import RelocateFolderError, relocate_folder, relocate_nearby
 from apps.opendj_cli.track_tracklist_hidden import set_tracklist_hidden
 from apps.webui.server.rb_vendor_pkg.own_lane_store import state_conn_ro
 
@@ -130,6 +132,9 @@ _USAGE = (
     "       opendj track mytag-delete NAME --confirm [--undo-session SESSION] [--json]\n"
     "       opendj track hide-in-tracklists <stable_id> on|off\n"
     "       opendj track find-replace apply <request JSON>\n"
+    "       opendj track relocate-folder OLD_FOLDER NEW_FOLDER [apply]\n"
+    "       opendj track relocate-nearby <stable_id>\n"
+    "       opendj track delete <stable_id> [delete-file] yes\n"
     "       opendj track related <stable_id> [limit N] [bpm-percent N]\n"
     "                            [key|genre|color|rating|mytag|artist 0|1]..."
 )
@@ -549,6 +554,63 @@ def _tracklist_hidden(args: Sequence[str]) -> int:
     return 0
 
 
+def _relocate_folder(args: Sequence[str]) -> int:
+    """LIBM-72: preview a folder relocate (`POST /api/v1/relocate-folder/preview`), then apply it with `apply`."""
+    if len(args) not in (2, 3) or (len(args) == 3 and args[2] != "apply"):
+        return _usage_error()
+    try:
+        base_url = api_cli.resolve_backend_base_url().base_url
+    except EngineNotRunning as error:
+        return _fail(True, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    try:
+        with engine_client(base_url) as client:
+            result = relocate_folder(client, args[0], args[1], apply=len(args) == 3)
+    except RelocateFolderError as error:
+        return _fail(True, error.code, error.message, EXIT_FAILED)
+    except httpx.TransportError as error:
+        return _fail(True, "engine_unreachable", f"{base_url}: {error}", EXIT_NO_ENGINE)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def _relocate_nearby(args: Sequence[str]) -> int:
+    """LIBM-73: `GET /api/v1/relocate-folder/nearby/{id}`, the folder move one located track implies."""
+    if len(args) != 1:
+        return _usage_error()
+    try:
+        base_url = api_cli.resolve_backend_base_url().base_url
+    except EngineNotRunning as error:
+        return _fail(True, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    try:
+        with engine_client(base_url) as client:
+            result = relocate_nearby(client, args[0])
+    except RelocateFolderError as error:
+        return _fail(True, error.code, error.message, EXIT_FAILED)
+    except httpx.TransportError as error:
+        return _fail(True, "engine_unreachable", f"{base_url}: {error}", EXIT_NO_ENGINE)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def _delete(args: Sequence[str]) -> int:
+    """LIBM-53: `POST /api/v1/tracks/{id}:delete`, remove from the collection plus the named extra tiers."""
+    if len(args) < 2 or args[-1] != "yes" or any(word not in TIER_WORDS for word in args[1:-1]):
+        return _usage_error()
+    try:
+        base_url = api_cli.resolve_backend_base_url().base_url
+    except EngineNotRunning as error:
+        return _fail(True, "engine_not_running", str(error), EXIT_NO_ENGINE)
+    try:
+        with engine_client(base_url) as client:
+            result = delete_track(client, args[0], {TIER_WORDS[word] for word in args[1:-1]})
+    except TrackDeleteError as error:
+        return _fail(True, error.code, error.message, EXIT_FAILED)
+    except httpx.TransportError as error:
+        return _fail(True, "engine_unreachable", f"{base_url}: {error}", EXIT_NO_ENGINE)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def _comment(args: Sequence[str]) -> int:
     """`PATCH /api/v1/tracks/{id}` with `{"comments": ...}`: what the Comment cell editor saves."""
     if len(args) == 2 and args[1] == "clear":
@@ -741,6 +803,9 @@ _API_VERBS: dict[str, Callable[[Sequence[str]], int]] = {
     COMMENT_VERB: _comment,
     TRACKLIST_HIDDEN_VERB: _tracklist_hidden,
     RELATED_VERB: _related,
+    "relocate-folder": _relocate_folder,
+    "relocate-nearby": _relocate_nearby,
+    "delete": _delete,
 }
 
 _HISTORY_USAGE = (

@@ -53,10 +53,11 @@ const PLAN_COMMAND_TYPES: ReadonlySet<string> = new Set([
 	'eq',
 	'crossfader',
 	'tempo',
-	'color_fx'
+	'color_fx',
+	'stem_gain'
 ]);
 /** The command types a plan may ramp (crossfader and tempo included, AGENT-24). */
-const PLAN_RAMP_TYPES: ReadonlySet<string> = new Set(['fader', 'trim', 'filter', 'eq', 'crossfader', 'tempo', 'color_fx']);
+const PLAN_RAMP_TYPES: ReadonlySet<string> = new Set(['fader', 'trim', 'filter', 'eq', 'crossfader', 'tempo', 'color_fx', 'stem_gain']);
 /** What `prepare` may carry: the compiler's setup (cue, tempo, Beat Sync, hoisted incoming-deck sets), never a transport play. */
 const PREPARE_TYPES: ReadonlySet<string> = new Set(['master', 'seek', 'beat_sync', 'tempo', 'fader', 'trim', 'filter', 'eq']);
 /** Setup the compiler emits only into `prepare`: a seek or Beat Sync fired mid-plan jumps the audible deck or re-syncs it. */
@@ -76,7 +77,7 @@ const TIMELINE_TOLERANCE_S = 0.002;
 /** Ramps that change whether a deck is heard, so a fader step judged against the room waits for them. */
 const ROOM_RAMP_TYPES = new Set(['fader', 'trim', 'crossfader']);
 /** The step sets the bus can start on an AudioContext time (`at_context_sec` on fader and eq, ADR on the scheduled set). */
-const SCHEDULABLE_STEP_TYPES: ReadonlySet<string> = new Set(['fader', 'eq']);
+const SCHEDULABLE_STEP_TYPES: ReadonlySet<string> = new Set(['fader', 'eq', 'stem_gain']);
 /** How long the finished/aborted plan stays on the mirror, for an agent to read. */
 export const PLAN_MIRROR_KEEP_MS = 5 * 60_000;
 
@@ -143,6 +144,8 @@ interface PlanDeckView {
 	effective_bpm?: number | null;
 	/** A quantized play waiting for its downbeat (`queryPerformanceState`), else null. */
 	quantized_launch_armed?: { launch_at_context_sec?: number } | null;
+	/** #10169: the deck's stem parts' live controls, read as the start of a stem_gain ramp. */
+	stems?: { controls?: Record<string, { gain?: number } | undefined> | null } | null;
 }
 
 /** Armed but not yet started: the play fired, the deck starts on its next downbeat. */
@@ -257,9 +260,10 @@ interface PlanDeps {
 	forgetStep: (stepId: string) => void;
 	/**
 	 * Whether a deck's ready stem parts are all muted or gained to zero, so it is silent whatever its channel reads.
+	 * Judged on the snapshot the guard already read (PERF #9713), so a guard never takes a second state read for it.
 	 * The page answers with `everyStemPartSilent`; a deck with no stem bundle is never silent this way.
 	 */
-	stemsSilent: (deck: DeckId) => boolean;
+	stemsSilent: (deck: DeckId, state: PlanStateView) => boolean;
 	/** WAVEPLAN-7896: the waveform's overlay changed: a new geometry, or null once no plan is pending. */
 	onOverlay?: (overlay: PlanOverlay | null) => void;
 }
@@ -435,7 +439,7 @@ export function parsePlanOrder(payload: unknown): AgentPlanOrder {
 // --------------------------------------------------------------- execute ---
 
 function _rampKey(command: Record<string, unknown>): string {
-	const third = command.type === 'color_fx' ? _noiseField(command) : (command.band ?? '');
+	const third = command.type === 'color_fx' ? _noiseField(command) : (command.band ?? command.stem ?? '');
 	return [command.type, command.deck ?? '', third].join(':');
 }
 
@@ -443,6 +447,12 @@ function _currentValue(state: PlanStateView, command: Record<string, unknown>): 
 	if (command.type === 'crossfader') return state.mixer.crossfader;
 	const deck = command.deck as DeckId;
 	if (command.type === 'tempo') return state.decks[deck].pitch;
+	if (command.type === 'stem_gain') {
+		// #10169: a stem ramp starts from the part's live gain knob (0..1, 0.5 unity) as the deck's stem state reads it.
+		const gain = state.decks[deck].stems?.controls?.[String(command.stem)]?.gain;
+		if (typeof gain !== 'number' || !Number.isFinite(gain)) throw new Error(`no current stem gain for ${String(command.stem)} on deck ${deck}`);
+		return gain;
+	}
 	const channel = state.mixer.channels[deck];
 	const key = command.type === 'eq' ? `eq_${String(command.band)}` : String(command.type);
 	const value = (channel as Record<string, unknown>)[key];
@@ -719,7 +729,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		else if ((command.type === 'fader' || command.type === 'trim') && command.deck === clock) {
 			clockChannel = { ...clockChannel, [command.type]: value };
 		} else return false;
-		return state.decks[clock].playing === true && (_channelSilent(clockChannel, crossfader, state.mixer.master) || deps.stemsSilent(clock));
+		return state.decks[clock].playing === true && (_channelSilent(clockChannel, crossfader, state.mixer.master) || deps.stemsSilent(clock, state));
 	}
 
 	/**
@@ -824,9 +834,9 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		} else return null;
 		// A paused outgoing deck is no path at all, so the room then rests on the incoming side alone.
 		const clockPlaying = state.decks[clock].playing === true;
-		if (clockPlaying && !_channelSilent(clockChannel, crossfader, state.mixer.master) && !deps.stemsSilent(clock)) return null;
+		if (clockPlaying && !_channelSilent(clockChannel, crossfader, state.mixer.master) && !deps.stemsSilent(clock, state)) return null;
 		const incomingStopped = _incomingPlayFired() ? _incomingStopped(state) : _incomingNotStarted();
-		if (incomingStopped === null && !_channelSilent(incomingChannel, crossfader, state.mixer.master) && !deps.stemsSilent(incomingDeck)) {
+		if (incomingStopped === null && !_channelSilent(incomingChannel, crossfader, state.mixer.master) && !deps.stemsSilent(incomingDeck, state)) {
 			return null;
 		}
 		const incoming = incomingStopped ?? `incoming deck ${incomingDeck} is silent (fader, trim, crossfader, master or every stem part closed)`;
@@ -839,7 +849,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		const clock = order!.clock.deck;
 		if (state.decks[clock].playing !== true) return `outgoing deck ${clock} is not playing`;
 		const channel = state.mixer.channels[clock] as Record<string, unknown>;
-		if (!_channelSilent(channel, state.mixer.crossfader, state.mixer.master) && !deps.stemsSilent(clock)) return null;
+		if (!_channelSilent(channel, state.mixer.crossfader, state.mixer.master) && !deps.stemsSilent(clock, state)) return null;
 		return `outgoing deck ${clock} is silent (fader, trim, crossfader, master or every stem part closed)`;
 	}
 
@@ -854,7 +864,7 @@ export function createPlanRunner(deps: PlanDeps): PlanRunner {
 		if (!_incomingPlayFired()) return _incomingNotStarted();
 		const deck = plan.incoming.deck;
 		const channel = state.mixer.channels[deck] as Record<string, unknown>;
-		if (!_channelSilent(channel, state.mixer.crossfader, state.mixer.master) && !deps.stemsSilent(deck)) return null;
+		if (!_channelSilent(channel, state.mixer.crossfader, state.mixer.master) && !deps.stemsSilent(deck, state)) return null;
 		return `incoming deck ${deck} is silent (fader, trim, crossfader, master or every stem part closed)`;
 	}
 

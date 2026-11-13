@@ -243,21 +243,31 @@ export function nextNavIndex(
 }
 
 /**
+ * Keyboard core shared by the Backstage nav and tables: W/A/S/D or the arrows
+ * move focus among `items` (in order), from `active`. Typing in a text field
+ * wins. Returns true when focus moved (the default is prevented).
+ */
+export function moveFocusAmong(event: KeyboardEvent, items: readonly HTMLElement[], active: Element | null): boolean {
+	if (isTextEntryTarget(event.target)) return false;
+	const arrow = navArrowKey(event.key);
+	if (arrow === null) return false;
+	const current = items.indexOf(active as HTMLElement);
+	const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+	const next = nextNavIndex(current, items.length, arrow, modified);
+	if (next < 0) return false;
+	event.preventDefault();
+	items[next].focus();
+	return true;
+}
+
+/**
  * Shared row keyboard handler for the Backstage tables: W/A/S/D or the arrows
  * move focus among the `rowSelector` matches inside `container`. Typing in a
  * text field wins. Returns true when focus moved (the event is consumed).
  */
 export function moveRowFocus(event: KeyboardEvent, container: HTMLElement, rowSelector: string): boolean {
-	if (isTextEntryTarget(event.target)) return false;
-	const arrow = navArrowKey(event.key);
-	if (arrow === null) return false;
 	const rows = Array.from(container.querySelectorAll<HTMLElement>(rowSelector));
-	const current = rows.indexOf(document.activeElement as HTMLElement);
-	const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
-	const next = nextNavIndex(current, rows.length, arrow, modified);
-	if (next < 0) return false;
-	event.preventDefault();
+	if (!moveFocusAmong(event, rows, document.activeElement)) return false;
 	event.stopPropagation();
-	rows[next].focus();
 	return true;
 }

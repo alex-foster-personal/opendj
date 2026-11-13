@@ -33,8 +33,11 @@ import {
 } from './wave-amp';
 import {
 	BAND_ORDER,
+	bandHeightScaleFor,
 	blitBandLayers,
+	type BuiltHeight,
 	cachedBandLayers,
+	keepBuiltHeight,
 	drawBandLayer,
 	newBandCanvas,
 	resetBandLayerCache,
@@ -221,7 +224,7 @@ export const BLOCKS_CFG = {
 	SNAP_DEFAULT: true
 } as const;
 
-interface WaveBandImage {
+interface WaveBandImage extends BuiltHeight {
 	/** Tiles of the whole-track image, built on first sight (WAVEZOOM-01). */
 	tiles: Map<number, HTMLCanvasElement>;
 	/** Width in px of the whole-track image the tiles cut up. */
@@ -252,7 +255,8 @@ interface BlockColumns {
  * image on every nudge. Now an image is reused, scaled at draw, while the
  * live scale stays within PITCH_TOLERANCE of the scale it was built at. A
  * real tempo move (a fader throw, a new master) still rebuilds, so the
- * resampling never exceeds 3%. Width, height, design and palette still
+ * resampling never exceeds 3%. Row height is reused the same way, by a
+ * vertically scaled blit (PERF-PAINT-10529). Width, design and palette still
  * select their own image.
  */
 export const BAND_CACHE_CFG = {
@@ -264,12 +268,19 @@ export const BAND_CACHE_CFG = {
 	 * span. A multiple of BLOCK_PITCH_PX so fixed-pitch 'blocks' bars never
 	 * straddle a tile edge; a snapped bar that does (DECKUX-42) paints its
 	 * part in each tile, at whole px, so the two halves meet edge to edge. */
-	TILE_PX: 4095
+	TILE_PX: 4095,
+	/** PERF-PAINT-10529 (#10218): a row-height drag blits the cached tiles
+	 * vertically scaled while the live height stays within this share of the
+	 * built height; past it the row rebuilds at once. */
+	HEIGHT_REUSE_RATIO: 0.5,
+	/** PERF-PAINT-10529 (#10218): consecutive draws at one new height before the
+	 * row rebuilds there, so a settled row is pixel-exact again. */
+	HEIGHT_SETTLE_FRAMES: 12
 } as const;
 
 /**
  * Band geometry is the expensive part of a scrolling waveform. It changes only
- * with the immutable waveform data, zoom, row width, height, or palette, so
+ * with the immutable waveform data, zoom, row width or palette (height reuses by scaled blit), so
  * retain an offscreen full-track image and translate it under the fixed
  * playhead. The image is deliberately transparent: moving overlays remain on
  * the destination canvas and no cached background can obscure them.
@@ -382,6 +393,9 @@ export interface WaveRowFrame {
 	hideVocals?: boolean;
 	/** issue #10244 `wave_grid_lines`; default beats_bars. */
 	gridLines?: WaveGridLines;
+	/** Issue #10330 `wave_stem_follow`: paints in place of the mix bands (the soloed stem's
+	 * envelope); the grid, loop, cues, phrases, labels, ghosts and playhead still paint over it. */
+	body?: ((ctx: CanvasRenderingContext2D) => void) | null;
 }
 
 /** Paint one full row frame. ctx must already be DPR-scaled so all
@@ -427,7 +441,9 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const sectionsApi = sectionsApiFor(frame.showSections === true && frame.anlz !== null);
 	const spans =
 		sectionsApi !== null && frame.anlz !== null ? sectionsApi.sectionSpans(frame.anlz.phrases) : null;
-	if (frame.anlz !== null && durS > 0) {
+	if (frame.body != null) {
+		frame.body(ctx);
+	} else if (frame.anlz !== null && durS > 0) {
 		const curve = blocksCurveFor(frame.anlz);
 		const blocks: BlocksSpec = {
 			curve,
@@ -553,6 +569,8 @@ export interface StemWaveRowFrame {
 	color: string;
 	/** Paint alpha 0..1: 1 audible, STEM_WAVE_ROW_SILENT_ALPHA muted or silenced (issue #10318). */
 	alpha: number;
+	/** Clear the row first; default true. False when it paints as the main row's body over its background. */
+	clear?: boolean;
 }
 
 /** Paint one stem mini-waveform row synced to the main wavestack scroll model.
@@ -570,7 +588,7 @@ export function drawStemWaveRow(ctx: CanvasRenderingContext2D, frame: StemWaveRo
 	if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) {
 		throw new RangeError(`drawStemWaveRow: alpha must be within 0..1, got ${alpha}`);
 	}
-	ctx.clearRect(0, 0, width, height);
+	if (frame.clear !== false) ctx.clearRect(0, 0, width, height);
 	if (envelope.length === 0 || width <= 0 || height <= 0) return;
 	if (durationMs === null || !(durationMs > 0) || !(pitch > 0)) return;
 
@@ -719,12 +737,14 @@ function _drawCachedBands(
 	if (layered) {
 		const sectionKey = sections === null ? '' : _sectionPaletteKey(palette.sections);
 		const snapKey = snapApi === null ? 'u' : snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted);
+		// PERF-PAINT-10529: live row height is not in the layer cache key; it reuses
+		// tiles via keepBuiltHeight / blitBandLayers, same as the combined image.
 		const key = waveBandCacheKey({
 			design,
 			blocks,
 			snapKey,
 			w,
-			h,
+			h: 0,
 			palette,
 			sectionKey,
 			waveHeight
@@ -739,6 +759,7 @@ function _drawCachedBands(
 			design,
 			bandImageScaleReusable,
 			BAND_CACHE_CFG.TILE_PX,
+			{ ratio: BAND_CACHE_CFG.HEIGHT_REUSE_RATIO, settleFrames: BAND_CACHE_CFG.HEIGHT_SETTLE_FRAMES },
 			waveHeight
 		);
 		blitBandLayers(ctx, layers, gains!, tLeft, pxPerS, w, h, design);
@@ -754,21 +775,28 @@ function _drawCachedBands(
 			: snapStride === undefined
 				? snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)
 				: `${snapApi.beatsVersion(blocks.beats, blocks.barPhaseUntrusted)}:st${snapStride}`;
-	const bakedKey = bakedGains === null ? '' : `:${_bakedGainsKey(bakedGains, h)}`;
+	let image = _bandImages.get(waveform);
+	// PERF-PAINT-10529: height is not in the key; a reused image keeps its built
+	// height and baked gains quantize against it.
+	const heightOk =
+		image !== undefined &&
+		keepBuiltHeight(image, h, BAND_CACHE_CFG.HEIGHT_REUSE_RATIO, BAND_CACHE_CFG.HEIGHT_SETTLE_FRAMES);
+	const keyH = heightOk && image !== undefined ? image.h : h;
+	const bakedKey = bakedGains === null ? '' : `:${_bakedGainsKey(bakedGains, keyH)}`;
 	const key = waveBandCacheKey({
 		design,
 		blocks,
 		snapKey,
 		w,
-		h,
+		h: keyH,
 		palette,
 		sectionKey,
 		waveHeight,
 		bakedKey
 	});
-	let image = _bandImages.get(waveform);
 	if (
 		image === undefined ||
+		!heightOk ||
 		image.key !== key ||
 		image.sections !== sections ||
 		!bandImageScaleReusable(image.pxPerS, cachePxPerS)
@@ -779,7 +807,10 @@ function _drawCachedBands(
 			key,
 			pxPerS: cachePxPerS,
 			sections,
-			blocks: null
+			blocks: null,
+			h,
+			liveH: h,
+			liveFrames: 0
 		};
 		_bandImages.set(waveform, image);
 	}
@@ -815,7 +846,7 @@ function _drawCachedBands(
 				sectionsApi,
 				sections,
 				durS,
-				h,
+				image.h,
 				palette,
 				design,
 				blocks,
@@ -832,6 +863,15 @@ function _drawCachedBands(
 		// a real canvas shows that as a seam (Sentry on PR #6786, caught by
 		// tests/e2e/wave-band-tiles.spec.ts). Every tile shares the same snapped
 		// origin, so they move together, edge to edge.
+		// PERF-PAINT-10529: rows map by the built height below the marker strip.
+		const k = bandHeightScaleFor(image.h, h);
+		const dy = MARKER_BAND_PX * (1 - k);
+		const dh = canvas.height * k;
+		if (scale === 1 && image.h !== h) {
+			const dx = originPx === undefined ? origin + x0 : x0 - originPx;
+			ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, dx, dy, canvas.width, dh);
+			continue;
+		}
 		if (scale === 1) {
 			// DECKUX-42: snapped Gothic blocks share main's whole-pixel origin with the beat grid.
 			ctx.drawImage(canvas, originPx === undefined ? origin + x0 : x0 - originPx, 0);
@@ -844,7 +884,7 @@ function _drawCachedBands(
 		if (!(sw > 0)) continue;
 		const dLeft = _snapDevicePx(origin + sx * scale, deviceScale);
 		const dRight = _snapDevicePx(origin + sxEnd * scale, deviceScale);
-		if (dRight > dLeft) ctx.drawImage(canvas, sx - x0, 0, sw, canvas.height, dLeft, 0, dRight - dLeft, canvas.height);
+		if (dRight > dLeft) ctx.drawImage(canvas, sx - x0, 0, sw, canvas.height, dLeft, dy, dRight - dLeft, dh);
 	}
 	ctx.imageSmoothingEnabled = smooth;
 }

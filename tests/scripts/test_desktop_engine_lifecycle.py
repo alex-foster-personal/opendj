@@ -100,3 +100,41 @@ def test_stop_or_quit_dialog_names_the_holder_pid() -> None:
     launch_rs = LAUNCH_RS.read_text(encoding="utf-8")
     combined = main_rs + launch_rs
     assert re.search(r"pid.*\{.*pid", combined) or "pid {pid}" in combined or "{pid}" in combined
+
+
+def _spawn_failure_branch(main_rs: str) -> str:
+    """Return the body of spawn_fresh_engine's failed-boot arm, where the race is handled."""
+    body = main_rs[main_rs.index("fn spawn_fresh_engine(") :]
+    body = body[: body.index("\nuse launch::LaunchPlan;")]
+    return body[body.index("Err(mut failure) =>") :]
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_a_spawn_that_loses_the_lock_race_reinspects_before_failing() -> None:
+    """[if] a spawned child dies after another engine took the lock [then] the generic dialog shows, [else stop]."""
+    branch = _spawn_failure_branch(MAIN_RS.read_text(encoding="utf-8"))
+    assert "launch::inspect_lock(" in branch
+    reinspect = branch.index("launch::inspect_lock(")
+    adopt = branch.index("LaunchPlan::Adopt")
+    stop = branch.index("LaunchPlan::StopOrQuit")
+    spawn = branch.index("LaunchPlan::Spawn")
+    assert reinspect < adopt and reinspect < stop and reinspect < spawn
+    adopt_arm = branch[adopt:stop]
+    assert "Supervised::Adopted" in adopt_arm
+    assert "write_parent_file" in adopt_arm
+    assert "Err(failure)" not in adopt_arm
+    stop_arm = branch[stop:spawn]
+    assert "show_stop_or_quit_dialog(" in stop_arm
+    assert "Err(failure)" not in stop_arm
+    assert "Err(failure)" in branch[spawn:]
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_an_unreachable_race_winner_is_not_reported_as_adopted() -> None:
+    """[if] the holder that won the race cannot be reached [then] the shell adopts a dead origin, [else stop]."""
+    branch = _spawn_failure_branch(MAIN_RS.read_text(encoding="utf-8"))
+    adopt_arm = branch[branch.index("LaunchPlan::Adopt") : branch.index("LaunchPlan::StopOrQuit")]
+    health = adopt_arm.index("engine::health_ok(port)")
+    refusal = adopt_arm.index("could not adopt the running engine")
+    assert health < refusal < adopt_arm.index("Supervised::Adopted")
+    assert "release_parent_watch_ownership" in adopt_arm[health:refusal]

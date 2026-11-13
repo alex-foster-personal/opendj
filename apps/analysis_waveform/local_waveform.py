@@ -137,16 +137,19 @@ def _strip_path(stable_id: str) -> Path:
     return config.LOCAL_WAVEFORM_CACHE_DIR / f"{stable_id}.strip.json"
 
 
-def _source_key(path: Path) -> dict[str, Any]:
-    """Identity of the decoded bytes: path, inode, size, nanosecond mtime,
-    cheap content fingerprint, and (POSIX only) nanosecond ctime.
+def _source_key(path: Path, *, stat: os.stat_result | None = None) -> dict[str, Any]:
+    """Identity of the decoded bytes: path, size, nanosecond mtime, cheap
+    content fingerprint, optional inode when meaningful, and (POSIX only)
+    nanosecond ctime.
 
     mtime alone cannot detect a replacement that preserves its timestamp - a
     sync/restore/repair tool commonly replaces a file via a temp-file plus
     atomic rename (the same pattern routes/relocate.py itself uses) and can
     explicitly carry the original mtime across that rename. inode is the
     signal that still moves for a rename-based replacement even when mtime
-    and size coincide (Codex finding, issue #735 follow-up).
+    and size coincide (Codex finding, issue #735 follow-up). When the stat
+    result has no inode or reports zero (typical on Windows), inode is
+    omitted from the key rather than stored as a false identity field.
 
     inode alone still misses an IN-PLACE overwrite (same file, same inode)
     that also restores the original mtime - size can coincide there too.
@@ -163,16 +166,21 @@ def _source_key(path: Path) -> dict[str, Any]:
     identity, and comparing it invalidated 300 of 640 live vocal-cache
     entries on a remount.
     """
-    stat = path.stat()
+    if stat is None:
+        stat = path.stat()
     key: dict[str, Any] = {
         "source": str(path),
-        "inode": stat.st_ino,
         "size": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
         "content_fp": content_fp_from_path(path, size=stat.st_size),
     }
+    inode = getattr(stat, "st_ino", 0)
+    if inode != 0:
+        key["inode"] = inode
     if os.name == "posix":
-        key["ctime_ns"] = stat.st_ctime_ns
+        ctime_ns = getattr(stat, "st_ctime_ns", None)
+        if ctime_ns is not None:
+            key["ctime_ns"] = ctime_ns
     return key
 
 
@@ -289,8 +297,9 @@ def peaks_entry_current(stable_id: str) -> bool:
 def audio_revision(stable_id: str, profile: decode.DecodeProfile = decode.PROFILE) -> str | None:
     """A digest of the peaks ``stable_id`` would get now: its bytes and how they are decoded. NEVER decodes.
 
-    The same identity the peak cache checks (``_decode_key``: path, inode, size,
-    mtime, content_fp, POSIX ctime, decoder) plus ``peaks_version()``, so anything
+    The same identity the peak cache checks (``_decode_key``: path, size, mtime,
+    content_fp, inode when present, POSIX ctime, decoder) plus ``peaks_version()``,
+    so anything
     that rebuilds the peaks also moves this.
     ``profile`` is the producer configuration asked about, as for
     ``peaks_version``; callers leave it at the shipped one.

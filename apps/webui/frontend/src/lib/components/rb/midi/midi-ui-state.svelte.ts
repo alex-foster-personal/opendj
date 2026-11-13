@@ -57,6 +57,7 @@ import {
 	type InferredControlKind
 } from '$lib/rb/midi/learn-infer';
 import { registerMidiLearnIpc, type MidiLearnSnapshot } from '$lib/rb/midi/learn-ipc';
+import { learnSaveTarget, saveLearnedBinding, type LearnSaveResult } from '$lib/rb/midi/learn-save';
 import type { LearnLogEntry, MidiAction, MidiBinding, MidiSource } from '$lib/rb/midi/midi-types';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { addMidiSetupDismissedPort } from '$lib/rb/prefs.svelte';
@@ -503,7 +504,12 @@ export function disableMidi(): void {
 
 let _learnWindow: LearnWindow | null = null;
 let _learnTarget: MidiLearnTarget | null = null;
-let _learnOnBind: ((deviceId: string, binding: MidiBinding) => void | Promise<void>) | null = null;
+type LearnOnBind = (
+	deviceId: string,
+	binding: MidiBinding,
+	deviceName: string
+) => void | Promise<void>;
+let _learnOnBind: LearnOnBind | null = null;
 
 function _finishLearn(result: InferredControl, entries: LearnLogEntry[]): void {
 	void _loadedMidiEngine?.registerLearnTap(null);
@@ -527,21 +533,19 @@ function _finishLearn(result: InferredControl, entries: LearnLogEntry[]): void {
 	}
 
 	const deviceId = entries[0]?.deviceId ?? '';
+	const deviceName = entries[0]?.deviceName ?? deviceId;
 	midiUi.learn = { phase: 'bound', target, deviceId, binding, kind: result.kind };
 
 	const onBind = _learnOnBind;
 	if (onBind === null) return;
-	void Promise.resolve(onBind(deviceId, binding)).catch((exc) => {
+	void Promise.resolve(onBind(deviceId, binding, deviceName)).catch((exc) => {
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
 		console.error('[midi-panel] learn save failed', exc);
 	});
 }
 
 /** Arm learn mode for one action. Finished bindings go to onBind (#9781 save seam). */
-export async function armMidiLearn(
-	target: MidiLearnTarget,
-	onBind: (deviceId: string, binding: MidiBinding) => void | Promise<void>
-): Promise<void> {
+export async function armMidiLearn(target: MidiLearnTarget, onBind: LearnOnBind): Promise<void> {
 	cancelMidiLearn();
 	_learnTarget = target;
 	_learnOnBind = onBind;
@@ -571,6 +575,43 @@ export async function retryMidiLearn(): Promise<void> {
 	const onBind = _learnOnBind;
 	if (onBind === null) throw new Error('retryMidiLearn: nothing to retry');
 	await armMidiLearn(target, onBind);
+}
+
+/** Save one learned binding into the device's user map copy (never a built-in). */
+export async function saveMidiLearnBinding(
+	deviceId: string,
+	binding: MidiBinding,
+	deviceName: string,
+	confirmReplace: (existing: MidiBinding) => boolean | Promise<boolean>
+): Promise<LearnSaveResult> {
+	const engine = await _loadMidiEngine();
+	const map = engine.getDeviceMap(deviceId);
+	const installedId = map === null ? null : engine.installedMapIdFor(map.nameMatch);
+	const result = await saveLearnedBinding(
+		learnSaveTarget(deviceName, map, installedId),
+		binding,
+		confirmReplace
+	);
+	if (result.status === 'saved') await _reloadInstalledMaps();
+	return result;
+}
+
+/** Panel Learn (#9781): arm capture for a command; the next moved control is saved to the user map. */
+export async function learnMidiCommand(
+	target: MidiLearnTarget,
+	confirmReplace: (existing: MidiBinding) => boolean | Promise<boolean>
+): Promise<void> {
+	await armMidiLearn(target, async (deviceId, binding, deviceName) => {
+		await saveMidiLearnBinding(deviceId, binding, deviceName, confirmReplace);
+	});
+}
+
+/** Escape cancels an armed or capturing learn without saving; true when it did. */
+export function handleMidiLearnKey(key: string): boolean {
+	const phase = midiUi.learn.phase;
+	if (key !== 'Escape' || (phase !== 'armed' && phase !== 'capturing')) return false;
+	cancelMidiLearn();
+	return true;
 }
 
 export function cancelMidiLearn(): void {

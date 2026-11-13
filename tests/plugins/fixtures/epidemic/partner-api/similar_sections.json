@@ -1,0 +1,17 @@
+{
+  "method": "GET",
+  "path": "/tracks/es-ref-demo/similar-sections",
+  "status": 200,
+  "headers": {
+    "x-ratelimit-remaining": "47"
+  },
+  "body": {
+    "tracks": [
+      {
+        "id": "es-trk-sim-1",
+        "title": "Parallel Pulse",
+        "score": 0.88
+      }
+    ]
+  }
+}

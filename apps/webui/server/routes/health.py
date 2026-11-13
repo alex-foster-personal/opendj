@@ -18,6 +18,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state
 from ..models import (
     HealthCloud,
+    HealthLiveOut,
     HealthOut,
     HealthStateDb,
     HealthSyncthing,
@@ -83,6 +84,15 @@ async def _call_optional_status_fn(fn: Callable[[], Any] | None) -> Any | None:
             return await to_thread.run_sync(fn, limiter=_HEALTH_THREAD_LIMITER)
     except Exception:  # noqa: BLE001  # pragma: no cover -- best-effort probe
         return None
+
+
+@router.get("/live", response_model=HealthLiveOut)
+async def health_live(request: Request) -> HealthLiveOut:
+    """PLATFORM-12937: answer that the process is up, touching no state DB or optional probe."""
+    # Liveness (restart this process?) is not readiness (can it serve state?):
+    # no backend dependency, no cloud/Syncthing probe, and no paths or env
+    # values in the body, so a wedged state.db never reads as a dead process.
+    return HealthLiveOut(version=getattr(request.app.state, "version", APP_VERSION))
 
 
 @router.get("", response_model=HealthOut)

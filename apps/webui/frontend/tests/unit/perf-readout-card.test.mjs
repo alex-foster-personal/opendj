@@ -169,3 +169,19 @@ test('the container is a keyboard-reachable pin toggle wired to one card', () =>
 	assert.match(src, /\{row\.explainer\}/);
 	assert.match(src, /\{row\.value\}/);
 });
+
+// -----------------------------------------------------------------------------
+// Agent read path (PERFREADOUT-12579)
+
+test('readPerfReadoutRows returns the registered card rows, and null once unregistered', () => {
+	assert.equal(card.readPerfReadoutRows(), null);
+	const unregister = card.setPerfReadoutRowsSource(() => card.perfReadoutRows(LIVE));
+	assert.deepEqual(card.readPerfReadoutRows(), card.perfReadoutRows(LIVE));
+	unregister();
+	assert.equal(card.readPerfReadoutRows(), null);
+});
+
+test('PerfMeters registers its live readoutRows as the agent row source', () => {
+	const src = readFileSync(PERF_METERS, 'utf8');
+	assert.match(src, /setPerfReadoutRowsSource\(\(\) => readoutRows\)/);
+});

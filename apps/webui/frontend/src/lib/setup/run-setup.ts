@@ -57,6 +57,7 @@
  *     [then ⛔️] broken
  */
 
+import { beginSoftNavigationHandoff } from '../api/lifecycle-abort';
 import { capabilities } from '../api/capabilities.svelte';
 import { isPerformanceRoutePath } from '../rb/performance-preset';
 import { openSetupOverlay } from './overlay.svelte';
@@ -166,7 +167,12 @@ export async function runSetup(navigate: SetupNavigate, pathname: string): Promi
 	// underneath. Visiting /setup remounts /performance underneath a live deck.
 	openSetupOverlay();
 	if (shouldNavigateSetupDoor(pathname, false)) {
-		await navigate(SETUP_ROUTE);
+		const endHandoff = beginSoftNavigationHandoff();
+		try {
+			await navigate(SETUP_ROUTE);
+		} finally {
+			queueMicrotask(endHandoff);
+		}
 	}
 	return null;
 }

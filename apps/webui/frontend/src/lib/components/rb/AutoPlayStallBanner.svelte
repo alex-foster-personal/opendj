@@ -12,6 +12,8 @@
 		autoplayStallBannerDismissMs,
 		shouldShowAutoplayStallBanner
 	} from '$lib/rb/autoplay-stall-banner-timer';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { bannerLeafSelId, bannerSelId } from './banner-selector-ids';
 
 	let showTracks = $state(false);
 	let expandedFor = $state<number | null>(null);
@@ -53,8 +55,10 @@
 </script>
 
 {#if stall !== null && bannerVisible}
+	<!-- #14559: a selector group while shown, one leaf per button, so Enter presses that button. -->
 	<div
 		class="ap-stall-root"
+		use:selectorNode={{ id: bannerSelId('autoplay-stall'), kind: 'group', enabled: true }}
 		onmouseenter={() => {
 			hovered = true;
 			scheduleHide();
@@ -71,6 +75,7 @@
 				<span class="ap-stall-detail" title="The error the handoff reported">{stall.detail}</span>
 			{/if}
 			{#if stall.blocked.length > 0}
+				<div class="sel-leaf" use:selectorNode={{ id: bannerLeafSelId('autoplay-stall', 'tracks'), kind: 'leaf', enabled: true }}>
 				<button
 					type="button"
 					class="ap-stall-toggle"
@@ -84,7 +89,9 @@
 				>
 					{listOpen ? 'Hide' : 'Show'} the {stall.blocked_total} track{stall.blocked_total === 1 ? '' : 's'}
 				</button>
+				</div>
 			{/if}
+			<div class="sel-leaf" use:selectorNode={{ id: bannerLeafSelId('autoplay-stall', 'dismiss'), kind: 'leaf', enabled: true }}>
 			<button
 				type="button"
 				class="ap-stall-dismiss"
@@ -93,6 +100,7 @@
 				aria-label="Dismiss AutoPlay stopped banner"
 				onclick={() => hideBannerForCurrentRevision()}>x</button
 			>
+			</div>
 		</div>
 		{#if listOpen && stall.blocked.length > 0}
 			<ul class="ap-stall-list" data-testid="autoplay-stall-tracks">
@@ -162,6 +170,11 @@
 		font-size: var(--rb-fs-label);
 		line-height: 15px;
 		cursor: pointer;
+	}
+
+	/* A selector leaf adds no box: the banner's flex row lays out its buttons as before. */
+	.sel-leaf {
+		display: contents;
 	}
 
 	.ap-stall-list {

@@ -1,4 +1,45 @@
 {
   "v": 1,
-  "anchors": []
+  "anchors": [
+    {
+      "source_s": 0.135,
+      "beat": 0,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 0.608,
+      "beat": 1,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 1.08,
+      "beat": 2,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 1.553,
+      "beat": 3,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 2.025,
+      "beat": 4,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 2.497,
+      "beat": 5,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 2.97,
+      "beat": 6,
+      "kind": "analyzed"
+    },
+    {
+      "source_s": 3.442,
+      "beat": 7,
+      "kind": "analyzed"
+    }
+  ]
 }

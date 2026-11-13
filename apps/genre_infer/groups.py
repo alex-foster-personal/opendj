@@ -134,6 +134,11 @@ def _tracks_token(conn: sqlite3.Connection) -> tuple[str, bytes] | None:
     return str(Path(row[2]).resolve()), bytes(token[0])
 
 
+def live_stable_ids(conn: sqlite3.Connection) -> frozenset[str]:
+    """Every live ``stable_id`` in ``tracks`` (deleted rows excluded)."""
+    return frozenset(str(row[0]) for row in conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL"))
+
+
 def load(conn: sqlite3.Connection) -> Groups:
     """The groups of every live track in ``conn``'s library.
 
@@ -438,6 +443,7 @@ __all__ = [
     "delete_findings",
     "describes_holder",
     "findings_for",
+    "live_stable_ids",
     "load",
     "nameable",
     "resolve",

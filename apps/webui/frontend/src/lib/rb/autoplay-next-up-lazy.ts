@@ -1,3 +1,5 @@
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
+
 /**
  * First-use loader for the NATIVE-5886 next-up client (`autoplay-next-up.ts`).
  *
@@ -51,6 +53,7 @@ export function lazyNextUpClient(load: () => Promise<NextUpClient>) {
 			})
 			.catch((error: unknown) => {
 				lost = true;
+				if (isPageGoingAway()) return;
 				console.error('[autoplay] next-up analysis client failed to load or run', error);
 			});
 	}

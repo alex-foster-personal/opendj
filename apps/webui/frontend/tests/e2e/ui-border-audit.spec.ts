@@ -202,10 +202,7 @@ function uniqueByKey(findings: SurfaceFinding[]): SurfaceFinding[] {
 
 for (const skin of ['default', 'mono-dev'] as const) {
 	test(`no doubled or clipped borders in the ${skin} skin`, async ({ page }, testInfo) => {
-		test.fixme(
-			true,
-			'new doubled and clipped borders in the default and mono-dev skins, see #13525'
-		);
+		test.fixme(true, 'doubled and clipped borders in the default and mono-dev skins, see #14903');
 		test.setTimeout(120_000);
 		const findings: SurfaceFinding[] = [];
 
@@ -226,22 +223,30 @@ for (const skin of ['default', 'mono-dev'] as const) {
 		await expect(rows.nth(1)).toBeVisible({ timeout: 60_000 });
 		await applySkin(page, skin);
 		// Loaded decks (waveform, cues, readouts) and a selected row are the
-		// bordered states worth covering. Load through the row's own quick-load
-		// box, past its 500ms double-click guard (TrackTable.svelte).
-		for (const [index, deck] of [
-			[0, '1'],
-			[1, '2']
-		] as const) {
-			const title = rows.nth(index).locator('td.c-title');
-			await title.click();
-			await title.hover();
-			await page.waitForTimeout(700);
-			await rows.nth(index).locator('button.deck-target', { hasText: deck }).click();
+		// bordered states worth covering. Dispatch load so the audit does not
+		// depend on row-0 quick-load beating the sticky thead (TrackTable #1602).
+		const trackIds: string[] = await page.evaluate(async () => {
+			const res = await fetch('/api/v1/tracks?limit=2');
+			return (await res.json()).items.map((t: { stable_id: string }) => t.stable_id);
+		});
+		expect(trackIds.length, 'the fixture library has two tracks').toBeGreaterThanOrEqual(2);
+		for (const [index, stable_id] of trackIds.slice(0, 2).entries()) {
+			const deck = String(index + 1);
+			await page.evaluate(
+				([d, sid]) =>
+					window.musicDjToolsPerformance!.dispatch({
+						type: 'load',
+						deck: Number(d),
+						stable_id: sid
+					}),
+				[deck, stable_id] as const
+			);
 			await expect(page.locator(`section.rb-deck[data-deck="${deck}"]`)).toContainText(
 				'webkit-fixture',
 				{ timeout: 30_000 }
 			);
 		}
+		await rows.nth(0).locator('td.c-title').click();
 		await expect(page.getByTestId('ingest-awaiting-rb')).toBeVisible({
 			timeout: 15_000
 		});

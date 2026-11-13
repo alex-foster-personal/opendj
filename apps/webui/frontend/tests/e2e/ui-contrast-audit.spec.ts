@@ -483,6 +483,8 @@ test('the first-run wizard and the hotkeys overlay clear WCAG AA in every skin, 
 		run.record(skin, 'hotkeys', list);
 		_expectProbed(list, `${skin} list group cell`, (p) => p.el.includes('span.hk-group'));
 		_expectProbed(list, `${skin} filter match`, (p) => p.el.includes('mark.hk-mark'));
+		// #12278: the first Esc clears the filter, the second hides the overlay.
+		await page.keyboard.press('Escape');
 		await page.keyboard.press('Escape');
 		await expect(hotkeys).toHaveCount(0);
 

@@ -190,11 +190,7 @@ import {
 	mergeDevUiPrefsFromParsed,
 	type DevUiPrefs
 } from './dev-ui-prefs';
-import {
-	makeVariantPrefAccessors,
-	onVariantChange,
-	type VariantPrefs
-} from './variant-prefs';
+import { makeVariantPrefAccessors, onVariantChange, type VariantPrefs } from './variant-prefs';
 import {
 	DECK_DEFAULT_PREF_DEFAULTS,
 	announceDeckDefaults,
@@ -224,7 +220,8 @@ import {
 	setLibraryBrowserDiskPref,
 	setTopbarDiskPref,
 	putDiskPrefsVerified,
-	syncDiskPrefs
+	syncDiskPrefs,
+	type DiskPrefsPatch
 } from './prefs-hydrate';
 import { notePick, type CommandPick } from '../palette/rank';
 import {
@@ -264,6 +261,9 @@ import {
 } from './ui-skin';
 import {
 	LAYOUT_OVERRIDE_DEFAULT,
+	LIBRARY_FIRST_VARIANT_DEFAULT,
+	parseLibraryFirstVariant,
+	type LibraryFirstVariant,
 	parseLayoutOverride,
 	parseLayoutPreset,
 	parseLayoutSurface,
@@ -348,6 +348,12 @@ export interface RbUiPrefs
 		WaveZoomPrefsState {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
+	/** LIBUX-9743: single-column library; hides the playlist tree, keeps playlist_tree_width for the way back. */
+	library_single_column: boolean;
+	/** LIBUX-9754: split-column library; two track tables side by side, each on its own pane. */
+	library_split_column: boolean;
+	/** Issue #10026: the My Tag pane docked right of the track table (rekordbox My Tag, mimicked). */
+	library_mytag_pane: boolean;
 	/** Per-deck beat jump size in beats (DECKUX-10470), restored on boot. */
 	beat_jump_sizes: BeatJumpSizesByDeck;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -449,6 +455,8 @@ export interface RbUiPrefs
 	cmdk_command_picks: CommandPick[];
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
+	/** STEMPERF: main waveform paints the sole audible stem's envelope. Default off. */
+	wave_stem_follow: boolean;
 	/** A11Y-11811: Appearance > Reduce motion. OR'd with the OS media query by $lib/motion/reduced-motion. */
 	reduce_motion: boolean;
 	/** Mixer S button (the maintainer, Mon 2 Nov 2026): stem level dials VOCAL/INST/BASS
@@ -490,6 +498,8 @@ export interface RbUiPrefs
 	ui_skin: UiSkin;
 	/** Issue #10199: each surface's layout preset, or 'auto' to follow SKIN_LAYOUT. */
 	layout_override: LayoutOverride;
+	/** SKINLAYOUT-10207: Settings id layout_variant.library_first. */
+	layout_variant_library_first: LibraryFirstVariant;
 	/** Split main waveform (master on top); 'auto' follows the skin. */
 	wave_split_master: WaveSplitMaster;
 	/** One-time defaults migrations already applied to this blob (PREFS_DEFAULTS_MIGRATION). */
@@ -563,6 +573,9 @@ const _PRE_GOTHIC_WAVE_PALETTE: WavePalettePref = 'rekordbox';
 
 const DEFAULTS: RbUiPrefs = {
 	playlist_tree_width: PLAYLIST_TREE_WIDTH_DEFAULT,
+	library_single_column: false,
+	library_split_column: false,
+	library_mytag_pane: false,
 	beat_jump_sizes: beatJumpSizesToPrefs(),
 	hide_broken_links: false,
 	library_density: 'compact',
@@ -595,6 +608,7 @@ const DEFAULTS: RbUiPrefs = {
 	pin_visible_days: PIN_VISIBLE_DAYS_DEFAULT,
 	cmdk_command_picks: [],
 	show_stems: false,
+	wave_stem_follow: false,
 	reduce_motion: false,
 	mixer_stems: false,
 	mixer_placement: 'center',
@@ -611,6 +625,7 @@ const DEFAULTS: RbUiPrefs = {
 	wave_palette: WAVE_PALETTE_PREF_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
 	layout_override: { performance: 'auto', library: 'auto' },
+	layout_variant_library_first: LIBRARY_FIRST_VARIANT_DEFAULT,
 	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
 	defaults_migration: PREFS_DEFAULTS_MIGRATION,
 	radial_off_pending: false,
@@ -847,6 +862,27 @@ function _validateAutomationPrefs(parsed: Partial<RbUiPrefs>): void {
 		);
 	}
 	if (
+		parsed.library_single_column !== undefined &&
+		typeof parsed.library_single_column !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (library_single_column is not a boolean) - ` +
+				'clear the key to recover'
+		);
+	}
+	if (parsed.library_mytag_pane !== undefined && typeof parsed.library_mytag_pane !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (library_mytag_pane is not a boolean) - ` +
+				'clear the key to recover'
+		);
+	}
+	if (parsed.library_split_column !== undefined && typeof parsed.library_split_column !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (library_split_column is not a boolean) - ` +
+				'clear the key to recover'
+		);
+	}
+	if (
 		parsed.next_panel_collapsed !== undefined &&
 		typeof parsed.next_panel_collapsed !== 'boolean'
 	) {
@@ -1001,6 +1037,12 @@ function _validatePerformanceTogglePrefs(parsed: Partial<RbUiPrefs>): void {
 	if (parsed.show_stems !== undefined && typeof parsed.show_stems !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (show_stems is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.wave_stem_follow !== undefined && typeof parsed.wave_stem_follow !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (wave_stem_follow is not a boolean) - ` +
 				'clear the localStorage key to recover'
 		);
 	}
@@ -1179,6 +1221,9 @@ function _assembleLoadedPrefs(
 	} = skinMixerDeck;
 	return {
 		playlist_tree_width: library.playlist_tree_width ?? DEFAULTS.playlist_tree_width,
+		library_single_column: parsed.library_single_column ?? DEFAULTS.library_single_column,
+		library_split_column: parsed.library_split_column ?? DEFAULTS.library_split_column,
+		library_mytag_pane: parsed.library_mytag_pane ?? DEFAULTS.library_mytag_pane,
 		hide_broken_links: library.hide_broken_links,
 		library_density: library.library_density ?? DEFAULTS.library_density,
 		sort_within_sections: parsed.sort_within_sections === true,
@@ -1195,10 +1240,8 @@ function _assembleLoadedPrefs(
 			parsed.recommended_panel_collapsed ?? DEFAULTS.recommended_panel_collapsed,
 		auto_play_enabled: parsed.auto_play_enabled ?? DEFAULTS.auto_play_enabled,
 		auto_play_unsaved: parsed.auto_play_unsaved ?? DEFAULTS.auto_play_unsaved,
-		auto_play_enforce_order:
-			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
-		auto_play_maximize_reach:
-			parsed.auto_play_maximize_reach ?? DEFAULTS.auto_play_maximize_reach,
+		auto_play_enforce_order: parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
+		auto_play_maximize_reach: parsed.auto_play_maximize_reach ?? DEFAULTS.auto_play_maximize_reach,
 		auto_play_early_planning: parsed.auto_play_early_planning ?? DEFAULTS.auto_play_early_planning,
 		auto_play_decide_after_s: parsed.auto_play_decide_after_s ?? DEFAULTS.auto_play_decide_after_s,
 		theme: theme ?? DEFAULTS.theme,
@@ -1217,6 +1260,7 @@ function _assembleLoadedPrefs(
 			? parsed.pin_visible_days
 			: DEFAULTS.pin_visible_days,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
+		wave_stem_follow: parsed.wave_stem_follow ?? DEFAULTS.wave_stem_follow,
 		reduce_motion: parsed.reduce_motion ?? DEFAULTS.reduce_motion,
 		mixer_stems: parsed.mixer_stems ?? DEFAULTS.mixer_stems,
 		mixer_placement: parsed.mixer_placement ?? DEFAULTS.mixer_placement,
@@ -1224,6 +1268,10 @@ function _assembleLoadedPrefs(
 		compact_decks: parsed.compact_decks ?? DEFAULTS.compact_decks,
 		...skinLook,
 		layout_override: { ...layoutOverride },
+		layout_variant_library_first:
+			parsed.layout_variant_library_first === undefined
+				? DEFAULTS.layout_variant_library_first
+				: parseLibraryFirstVariant(parsed.layout_variant_library_first),
 		wave_eq_reflect: parsed.wave_eq_reflect ?? DEFAULTS.wave_eq_reflect,
 		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...confirm },
@@ -1391,8 +1439,18 @@ function _settleRadialOff(): void {
 }
 if (_radialBootWrite) _settleRadialOff();
 
+/** Library-browser prefs: this browser keeps the new value at once, and a
+ * refused disk save is shown to the DJ through the settings save-error sink
+ * (an error toast) instead of being swallowed; a reload would otherwise drop
+ * it without a word (issue #13208). The shared queue still moves on. */
+function _syncLibraryBrowserPref(patch: Partial<DiskPrefsPatch>): void {
+	_syncDiskPrefs(patch, putDiskPrefsVerified).catch((err: unknown) =>
+		reportSettingSaveError(`Library setting not saved to disk; it resets on reload: ${err}`, err)
+	);
+}
+
 export function setHideBrokenLinks(next: boolean): void {
-	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncLibraryBrowserPref, 'hide_broken_links', next);
 }
 
 /** #328 / USB-328: show a toast when a new USB stick mounts. */
@@ -1434,6 +1492,27 @@ export function setPlaylistTreeWidth(next: number): void {
 	_persist();
 }
 
+/** LIBUX-9743: hide (true) or show (false) the playlist tree; the tree width pref is left as it was. */
+export function setLibrarySingleColumn(next: boolean): void {
+	if (typeof next !== 'boolean') throw new TypeError('setLibrarySingleColumn: next must be boolean');
+	uiPrefs.library_single_column = next;
+	_persist();
+}
+
+/** Issue #10026: show (true) or hide (false) the My Tag pane right of the track table. */
+export function setLibraryMyTagPane(next: boolean): void {
+	if (typeof next !== 'boolean') throw new TypeError('setLibraryMyTagPane: next must be boolean');
+	uiPrefs.library_mytag_pane = next;
+	_persist();
+}
+
+/** LIBUX-9754: show (true) or leave (false) the two side-by-side track tables. */
+export function setLibrarySplitColumn(next: boolean): void {
+	if (typeof next !== 'boolean') throw new TypeError('setLibrarySplitColumn: next must be boolean');
+	uiPrefs.library_split_column = next;
+	_persist();
+}
+
 /** Remember which playlist the first browser pane holds, so the next boot of
  * /performance restores it instead of opening on a blank track table. Writes
  * only when the identity actually changed - every pane load calls this. */
@@ -1460,7 +1539,13 @@ export function setLastPlaylist(next: LastPlaylistPref | null): void {
 export const { toggleSpotifyPinned, rememberSpotifyRecent, setSpotifyShrinkMain } =
 	makeSpotifyLibrarySetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 export function setSortWithinSections(next: boolean): void {
-	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'sort_within_sections', next);
+	setLibraryBrowserDiskPref(
+		uiPrefs,
+		_persist,
+		_syncLibraryBrowserPref,
+		'sort_within_sections',
+		next
+	);
 }
 
 /** Edge sampler on/off (spec edge-sampler 7.4). */
@@ -1472,28 +1557,34 @@ export function setSamplerEnabledPref(next: boolean): void {
 export function setSectionCollapsed(sectionId: string, collapsed: boolean): void {
 	const rest = uiPrefs.collapsed_sections.filter((id) => id !== sectionId);
 	const next = collapsed ? [...rest, sectionId] : rest;
-	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'collapsed_sections', next);
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncLibraryBrowserPref, 'collapsed_sections', next);
 }
 
 export function setLibraryDensity(next: LibraryDensity): void {
-	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_density', next);
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncLibraryBrowserPref, 'library_density', next);
 }
 export function setKeyNotation(next: KeyNotation): void {
-	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'key_notation', next);
+	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncLibraryBrowserPref, 'key_notation', next);
 }
 /** LIBUX-54: show or hide one track-table column (the header chooser's checkbox). */
 export function toggleLibraryColumn(col: HideableColumn): void {
 	setLibraryBrowserDiskPref(
 		uiPrefs,
 		_persist,
-		_syncDiskPrefs,
+		_syncLibraryBrowserPref,
 		'library_hidden_columns',
 		toggleHiddenColumn(uiPrefs.library_hidden_columns, col)
 	);
 }
 /** LIBUX-54: the chooser's "Show all columns". */
 export function showAllLibraryColumns(): void {
-	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'library_hidden_columns', []);
+	setLibraryBrowserDiskPref(
+		uiPrefs,
+		_persist,
+		_syncLibraryBrowserPref,
+		'library_hidden_columns',
+		[]
+	);
 }
 
 /** DECKUX-37: turning Max ON also turns Beat Sync ON for loaded decks (through
@@ -1602,6 +1693,34 @@ export function setAutoPlayEnabled(next: boolean): void {
 
 if (uiPrefs.auto_play_unsaved) _saveAutoPlay(uiPrefs.auto_play_enabled, _autoPlayRev);
 
+/** AutoPlay prefs slice used by boot-state unit tests (issue #700, #11216). */
+export type AutoPlayDefaultConfigMountPrefs = Pick<
+	RbUiPrefs,
+	'auto_play_enabled' | 'auto_play_enforce_order' | 'auto_play_maximize_reach'
+>;
+
+/** Shipped DEFAULTS for cold local boot (PLAY-5907: fresh profiles start with AutoPlay off). */
+export function readShippedAutoPlayMountPrefs(): AutoPlayDefaultConfigMountPrefs {
+	return {
+		auto_play_enabled: DEFAULTS.auto_play_enabled,
+		auto_play_enforce_order: DEFAULTS.auto_play_enforce_order,
+		auto_play_maximize_reach: DEFAULTS.auto_play_maximize_reach
+	};
+}
+
+/**
+ * Parent #700 default-config fixture: enabled at mount with enforce/maximize still
+ * at shipped defaults. Guards the Sep 2026 empty-feed snapshot incident when a new
+ * state machine lands under an on-at-mount configuration (PLAY-04 / PLAY-06).
+ */
+export function readAutoPlayDefaultConfigBootPrefs(): AutoPlayDefaultConfigMountPrefs {
+	return {
+		auto_play_enabled: true,
+		auto_play_enforce_order: DEFAULTS.auto_play_enforce_order,
+		auto_play_maximize_reach: DEFAULTS.auto_play_maximize_reach
+	};
+}
+
 export function setAutoPlayEnforceOrder(next: boolean): void {
 	setTopbarDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'auto_play_enforce_order', next);
 }
@@ -1627,7 +1746,7 @@ export function setLibraryPanelCollapsed(panel: LibraryPanel, collapsed: boolean
 /** The Next / Remixes / Vocals library filter setters, built against this
  * module's own uiPrefs/_persist (library-filter-prefs.ts). */
 export const { setNextOnlyFilter, setRemixesFilter, setVocalsFilter, setAvailableOfflineFilter } =
-	makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+	makeLibraryFilterSetters(uiPrefs, _persist, _syncLibraryBrowserPref);
 
 export function setTheme(next: UiTheme): void {
 	uiPrefs.theme = next;
@@ -1706,11 +1825,8 @@ export const { setShowTempoLane, setTempoLaneScale } = makeTempoLaneSetters(
 );
 
 /** Hot, memory and loop cue markers on deck waveforms (issue #10248). */
-export const { setShowHotCueMarkers, setShowMemoryCueMarkers, setShowLoopMarkers } = makeCueMarkerSetters(
-	uiPrefs,
-	_persist,
-	(patch) => void _syncDiskPrefs(patch)
-);
+export const { setShowHotCueMarkers, setShowMemoryCueMarkers, setShowLoopMarkers } =
+	makeCueMarkerSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 /** Vocal lane visibility (issue #10238): blue vocal bars on deck rows and overview strip (default on). */
 export const { setShowVocalLane } = makeVocalLaneSetters(
@@ -1756,6 +1872,13 @@ export function setShowStems(next: boolean): void {
 	void _syncDiskPrefs({ show_stems: next });
 }
 
+/** STEMPERF: main waveform follows the sole audible stem; synced to ui-prefs on disk. */
+export function setWaveStemFollow(next: boolean): void {
+	uiPrefs.wave_stem_follow = next;
+	_persist();
+	void _syncDiskPrefs({ wave_stem_follow: next });
+}
+
 /** A11Y-11811: Appearance > Reduce motion; also synced to ui-prefs on disk. */
 export function setReduceMotion(next: boolean): void {
 	uiPrefs.reduce_motion = next;
@@ -1788,7 +1911,8 @@ export function setDeckHoverLink(next: boolean): void {
 }
 
 export function setCompactDecks(next: boolean): void {
-	if (typeof next !== 'boolean') throw new TypeError(`compact_decks must be boolean, got ${String(next)}`);
+	if (typeof next !== 'boolean')
+		throw new TypeError(`compact_decks must be boolean, got ${String(next)}`);
 	uiPrefs.compact_decks = next;
 	_persist();
 	void _syncDiskPrefs({ compact_decks: next });
@@ -2140,6 +2264,12 @@ export function setLayoutOverride(surface: LayoutSurface, preset: unknown): void
 	const s = parseLayoutSurface(surface);
 	const p = parseLayoutPreset(s, preset);
 	uiPrefs.layout_override = { ...uiPrefs.layout_override, [s]: p };
+	_persist();
+}
+
+/** SKINLAYOUT-10207: library-first look variant. */
+export function setLibraryFirstVariant(next: unknown): void {
+	uiPrefs.layout_variant_library_first = parseLibraryFirstVariant(next);
 	_persist();
 }
 

@@ -115,6 +115,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         5278,
     ),
     (
+        "apps/webui/frontend/tests/e2e/library-error-zoom-endpoints.ts",
+        "export const LIBRARY_ERROR_ZOOM_FRONTEND_PORT = 5280;",
+        5280,
+    ),
+    (
         "apps/webui/frontend/tests/e2e/playwright.stretch-artifact.config.ts",
         "export const STRETCH_ARTIFACT_PORT = 5311;",
         5311,
@@ -178,6 +183,16 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vite.cmdk-ttx.config.ts",
         "export const CMDK_TTX_API_PORT = 8718;",
         8718,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.command-palette-focus.config.ts",
+        "export const CMDK_FOCUS_FRONTEND_PORT = 5339;",
+        5339,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/vite.command-palette-focus.config.ts",
+        "export const CMDK_FOCUS_API_PORT = 8719;",
+        8719,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.cmdk-pick-race.config.ts",
@@ -286,6 +301,11 @@ KNOWN_FIXED_PORTS: tuple[tuple[str, str, int], ...] = (
         "apps/webui/frontend/tests/e2e/vocals-demucs-overlay-endpoints.ts",
         "export const VOCALS_DEMUCS_OVERLAY_BACKEND_PORT = 8705;",
         8705,
+    ),
+    (
+        "apps/webui/frontend/tests/e2e/library-error-zoom-endpoints.ts",
+        "export const LIBRARY_ERROR_ZOOM_BACKEND_PORT = 8708;",
+        8708,
     ),
     (
         "apps/webui/frontend/tests/e2e/vite.lyrics-words.config.ts",

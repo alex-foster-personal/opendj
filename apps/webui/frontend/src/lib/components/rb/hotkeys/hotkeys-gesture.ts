@@ -8,9 +8,10 @@
  *
  * Releasing "/" clears the hold contribution only. Pressing "?" while
  * holding "/" sets toggledOn, so the overlay stays after release. Pressing
- * "?" again while not holding clears toggledOn and hides it. Esc / X always
- * wins: it clears BOTH contributions, plus view and query, so a list-view
- * or filtered state cannot trap the overlay open.
+ * "?" again while not holding clears toggledOn and hides it. hide() (X, or
+ * Esc on an empty filter) always wins: it clears BOTH contributions, plus
+ * view and query, so a list-view or filtered state cannot trap the overlay
+ * open. Esc with filter text only clears the query (install-hotkeys-overlay).
  *
  * Esc does not call keyUp() on the slash gesture. If "/" is still physically
  * down, createHoldOrPress stays `down` so OS key-repeat cannot re-fire

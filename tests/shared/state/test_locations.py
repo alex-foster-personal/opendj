@@ -476,3 +476,106 @@ def test_bulk_local_audio_paths_issues_one_select_per_bind_batch(
     # Control: answers on both sides of each boundary are real, not all None.
     assert per_id[ids[499]] == paths[ids[499]] and per_id[ids[500]] == paths[ids[500]]
     assert per_id[ids[1000]] == via_location and per_id[ids[1]] is None
+
+
+@pytest.mark.requirement("LIBM-13903")
+def test_primary_local_location_wins_over_stale_canonical(
+    state_conn,
+    tmp_path: Path,
+) -> None:
+    """[if] primary local track_locations materialises [then] it wins over stale canonical, [else stop]."""
+    local = _flac(tmp_path / "via-location.flac")
+    stale = str(tmp_path / "missing-canonical.flac")
+    writer = _init_track(state_conn, file_path=stale)
+    try:
+        writer.upsert_track_location(
+            stable_id=SID,
+            kind="local",
+            role="primary",
+            file_path=str(local),
+        )
+    finally:
+        writer.close()
+    assert locations.local_audio_path(state_conn, SID) == local
+    assert locations.bulk_local_audio_paths(state_conn, [SID])[SID] == local
+
+
+@pytest.mark.requirement("LIBM-13903")
+def test_deleted_local_location_falls_back_or_none(
+    state_conn,
+    tmp_path: Path,
+) -> None:
+    """[if] the local row is deleted [then] resolver never uses it, [else stop]."""
+    local = _flac(tmp_path / "via-location.flac")
+    canonical = _flac(tmp_path / "canonical.flac")
+    writer = _init_track(state_conn, file_path=str(canonical))
+    try:
+        location_id = writer.upsert_track_location(
+            stable_id=SID,
+            kind="local",
+            role="primary",
+            file_path=str(local),
+        )
+        locations.remove_location(state_conn, stable_id=SID, location_id=location_id)
+    finally:
+        writer.close()
+    assert locations.local_audio_path(state_conn, SID) == canonical
+
+    missing_sid = "e" * 40
+    writer2 = StateWriter(state_conn, actor="unit-test")
+    try:
+        writer2.upsert_track(
+            stable_id=missing_sid,
+            stable_id_tier="inferred",
+            title="gone",
+            artists=["X"],
+            album=None,
+            isrc=None,
+            duration_ms=1000,
+            file_path=str(tmp_path / "absent.flac"),
+        )
+        tomb_id = writer2.upsert_track_location(
+            stable_id=missing_sid,
+            kind="local",
+            role="primary",
+            file_path=str(local),
+        )
+        locations.remove_location(state_conn, stable_id=missing_sid, location_id=tomb_id)
+    finally:
+        writer2.close()
+    assert locations.local_audio_path(state_conn, missing_sid) is None
+
+
+@pytest.mark.requirement("LIBM-13903")
+def test_location_only_track_matches_stems_consumer(tmp_path: Path) -> None:
+    """[if] only track_locations materialises [then] stems CLI matches local_audio_path, [else stop]."""
+    from apps.stems.cli import resolve_audio_path
+
+    data_dir = tmp_path / "data"
+    local = _flac(tmp_path / "location-only.flac")
+    foreign = str(tmp_path / "ghost.flac")
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    writer = StateWriter(conn, actor="unit-test")
+    try:
+        writer.upsert_track(
+            stable_id=SID,
+            stable_id_tier="inferred",
+            title="Demo",
+            artists=["X"],
+            album=None,
+            isrc=None,
+            duration_ms=180_000,
+            file_path=foreign,
+        )
+        writer.upsert_track_location(
+            stable_id=SID,
+            kind="local",
+            role="primary",
+            file_path=str(local),
+        )
+        assert locations.local_audio_path(conn, SID) == local
+    finally:
+        writer.close()
+        conn.close()
+
+    assert resolve_audio_path(data_dir, SID) == local

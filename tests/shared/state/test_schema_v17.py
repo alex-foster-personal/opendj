@@ -55,32 +55,7 @@ def _seed_v16_store_with_epoch_changelog(path: Path) -> None:
     v17 has been through it and is marked done. Seeding at the top of the
     ladder and inserting the bad rows afterwards tests nothing.
     """
-    conn = sqlite3.connect(str(path), isolation_level=None)
-    try:
-        state_schema._ensure_meta(conn)
-        for step_idx in range(16):
-            for stmt in state_schema.MIGRATIONS[step_idx]:
-                conn.execute(stmt)
-            conn.execute(
-                "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
-                (step_idx + 1, "2026-09-01T00:00:00+00:00"),
-            )
-        _seed_track_field(conn)
-        conn.execute(
-            """
-            INSERT INTO hub_changelog(
-                table_name, row_pk, updated_at, origin_device_id, received_at
-            )
-            VALUES ('track_fields', ?, ?, '', ?)
-            """,
-            (
-                sync_stamp.encode_row_pk(("trk-1", "bpm")),
-                EPOCH,
-                "2026-09-15T10:07:28.000000+00:00",
-            ),
-        )
-    finally:
-        conn.close()
+    _seed_v16_store_with_changelog(path, [("trk-1", EPOCH)], origin="")
 
 
 def test_fresh_ladder_reaches_v17() -> None:
@@ -259,3 +234,86 @@ def test_an_unreadable_hub_flag_defers_the_repair_instead_of_aborting_the_open(
         assert schema_markers.has_marker(repaired, REPAIR_MARKER)
     finally:
         repaired.close()
+
+
+def _seed_v16_store_with_changelog(
+    path: Path, entries: list[tuple[str, str]], *, origin: str = "dev-hub"
+) -> None:
+    """Build a v16 store with one stamped track_fields row per stable_id and the given changelog entries."""
+    conn = sqlite3.connect(str(path), isolation_level=None)
+    try:
+        state_schema._ensure_meta(conn)
+        for step_idx in range(16):
+            for stmt in state_schema.MIGRATIONS[step_idx]:
+                conn.execute(stmt)
+            conn.execute(
+                "INSERT INTO schema_meta(version, applied_at) VALUES (?, ?)",
+                (step_idx + 1, "2026-09-01T00:00:00+00:00"),
+            )
+        for stable_id in dict.fromkeys(stable_id for stable_id, _stamp in entries):
+            _seed_track_field(conn, stable_id=stable_id)
+        for stable_id, stamp in entries:
+            conn.execute(
+                "INSERT INTO hub_changelog(table_name, row_pk, updated_at, origin_device_id, received_at) "
+                "VALUES ('track_fields', ?, ?, ?, '2026-09-15T10:07:28.000000+00:00')",
+                (sync_stamp.encode_row_pk((stable_id, "bpm")), stamp, origin),
+            )
+    finally:
+        conn.close()
+
+
+def _changelog_rows(path: Path) -> list[tuple[int, str, str, str]]:
+    """Return every hub_changelog row as (seq, row_pk, updated_at, origin) in seq order."""
+    conn = sqlite3.connect(str(path))
+    try:
+        return [
+            (int(seq), str(row_pk), str(updated_at), str(origin))
+            for seq, row_pk, updated_at, origin in conn.execute(
+                "SELECT seq, row_pk, updated_at, origin_device_id FROM hub_changelog ORDER BY seq"
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+
+def test_already_valid_changelog_open_leaves_history_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] an already-valid changelog is opened [then] no row is appended and the marker is set, [else stop]."""
+    monkeypatch.setenv("MDT_IS_HUB", "1")
+    path = tmp_path / "state.db"
+    _seed_v16_store_with_changelog(path, [("trk-1", _T_LIVE)])
+    before = _changelog_rows(path)
+
+    state_db.open_rw(path).close()
+
+    assert _changelog_rows(path) == before
+    marked = sqlite3.connect(str(path))
+    try:
+        assert schema_markers.has_marker(marked, REPAIR_MARKER)
+    finally:
+        marked.close()
+
+
+def test_repair_appends_only_for_stale_latest_stamps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] one key's latest stamp is stale and another's older entry is stale but latest valid
+    [then] only the stale-latest key gets one fresh row and history keeps its order, [else stop]."""
+    monkeypatch.setenv("MDT_IS_HUB", "1")
+    path = tmp_path / "state.db"
+    _seed_v16_store_with_changelog(path, [("trk-2", EPOCH), ("trk-2", _T_LIVE), ("trk-1", EPOCH)])
+    before = _changelog_rows(path)
+
+    state_db.open_rw(path).close()
+    after = _changelog_rows(path)
+
+    assert after[: len(before)] == before
+    appended = after[len(before) :]
+    assert [(row_pk, stamp, origin) for _seq, row_pk, stamp, origin in appended] == [
+        (sync_stamp.encode_row_pk(("trk-1", "bpm")), _T_LIVE, "dev-hub")
+    ]
+    assert appended[0][0] > max(seq for seq, *_rest in before)
+
+    state_db.open_rw(path).close()
+    assert _changelog_rows(path) == after

@@ -212,6 +212,8 @@ export async function patchTrack(
 		tempo_pref?: TempoPrefPatch | null;
 		/** NOWP-11487: withhold identity in tracklist exports while keeping the slot. */
 		tracklist_hidden?: boolean | null;
+		/** Issue #9737: rekordbox colour label 1..8; null clears it. */
+		color_id?: number | null;
 	}
 ): Promise<{ track: Track; etag: string }> {
 	// Spec decision 2: nothing is ever written for a stick track.
@@ -847,4 +849,80 @@ export async function getPlaylistRbDjayDiff(
 			})
 		).data
 	);
+}
+
+/** One sync artefact as GET /api/v1/rb-djay-sync/status reports it; `mtime` null = the file does not exist yet. */
+export interface RbDjaySyncArtefact {
+	path: string;
+	mtime: number | null;
+}
+
+/** The ratings-relevant part of the rb-djay sync status probe. */
+export interface RbDjayRatingsSyncStatus {
+	sync_dir: string;
+	writeback_enabled: boolean;
+	ratings_diff: RbDjaySyncArtefact;
+}
+
+/** What a ratings dry run reports: rows in ratings-diff.csv and their count per resolution. */
+export interface RbDjayRatingsDryRun {
+	row_count: number;
+	summary: Record<string, number>;
+}
+
+function _parseRbDjayArtefact(raw: unknown, label: string): RbDjaySyncArtefact {
+	const body = _requireRecord(raw, label);
+	const mtime = body.mtime;
+	if (mtime !== null && (typeof mtime !== 'number' || !Number.isFinite(mtime))) {
+		throw new Error(`${label}.mtime: expected a finite number or null`);
+	}
+	return { path: _requireString(body.path, `${label}.path`), mtime };
+}
+
+/** SYNC-06 status probe: GET /api/v1/rb-djay-sync/status, read for the ratings diff and the writeback gate. */
+export async function getRbDjayRatingsSyncStatus(): Promise<RbDjayRatingsSyncStatus> {
+	const body = _requireRecord(
+		requireBody(await api.GET('/api/v1/rb-djay-sync/status')).data,
+		'rb-djay sync status'
+	);
+	const artefacts = _requireRecord(body.artefacts, 'rb-djay sync status.artefacts');
+	const writeback = body.writeback_enabled;
+	if (typeof writeback !== 'boolean') {
+		throw new Error('rb-djay sync status.writeback_enabled: expected a boolean field');
+	}
+	return {
+		sync_dir: _requireString(body.sync_dir, 'rb-djay sync status.sync_dir'),
+		writeback_enabled: writeback,
+		ratings_diff: _parseRbDjayArtefact(
+			artefacts['ratings-diff.csv'],
+			'rb-djay sync status.artefacts.ratings-diff.csv'
+		)
+	};
+}
+
+/** SYNC-06 dry run: POST /api/v1/rb-djay-sync/ratings/apply with live off, so it never writes. */
+export async function dryRunRbDjayRatingsSync(): Promise<RbDjayRatingsDryRun> {
+	const requestBody: components['schemas']['RatingsApplyRequest'] = {
+		dry_run: true,
+		live: false,
+		cautious: false,
+		bulk: false,
+		i_understand_the_risks: false
+	};
+	const body = _requireRecord(
+		requireBody(await api.POST('/api/v1/rb-djay-sync/ratings/apply', { body: requestBody })).data,
+		'rb-djay ratings dry run'
+	);
+	if (body.dry_run !== true) {
+		throw new Error('rb-djay ratings dry run: the service did not answer as a dry run');
+	}
+	const rawSummary = _requireRecord(body.summary, 'rb-djay ratings dry run.summary');
+	const summary: Record<string, number> = {};
+	for (const [resolution, count] of Object.entries(rawSummary)) {
+		summary[resolution] = _requireNumber(count, `rb-djay ratings dry run.summary.${resolution}`);
+	}
+	return {
+		row_count: _requireNumber(body.row_count, 'rb-djay ratings dry run.row_count'),
+		summary
+	};
 }

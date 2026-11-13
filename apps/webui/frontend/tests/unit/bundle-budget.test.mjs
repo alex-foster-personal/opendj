@@ -28,6 +28,9 @@
 //   it then worklet weight is invisible again
 // - if the failure message stops naming the budget and the overage then a red
 //   build cannot be diagnosed from its log
+// - if the PR-delta noise floor stops scaling with the surface (max(128 B, 0.05% of main's gzip
+//   bytes)) then a same-source build of the 557 KB other-lazy surface reds a PR that changed no
+//   frontend source (72/156/217 B measured, #14810 #13662 #13678)
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -37,7 +40,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
-import { loadBudgets } from '../../scripts/bundle-budget-load.mjs';
+import { loadBudgets, noiseFloorBytes } from '../../scripts/bundle-budget-load.mjs';
 
 const GATE = fileURLToPath(new URL('../../scripts/bundle-budget.mjs', import.meta.url));
 const roots = [];
@@ -492,6 +495,55 @@ test('a PR delta within the build-noise floor passes without a charge; past it, 
   const real = _runArgs(_fixture({ sizes: { library: 10400 } }), _budgets(), ['--baseline', baseline, '--own', '9001']);
   assert.equal(real.code, 1, real.out);
   assert.match(real.out, /allowance of 0 \(plus 128 B build noise\) \(no charge file of its own\)/);
+});
+
+test('if the noise floor stops being max(128 B, 0.05% of main gzip bytes) then broken', () => {
+  assert.equal(noiseFloorBytes(0), 128);
+  assert.equal(noiseFloorBytes(10000), 128);
+  assert.equal(noiseFloorBytes(256000), 128);
+  assert.equal(noiseFloorBytes(256001), 129);
+  // other-lazy as measured on PRs #14810, #13662, #13678: every observed spread is inside it.
+  const otherLazy = noiseFloorBytes(557000);
+  assert.equal(otherLazy, 279);
+  for (const observed of [72, 156, 217]) assert.ok(observed <= otherLazy, `${observed} B is noise on other-lazy`);
+  assert.throws(() => noiseFloorBytes(-1), /non-negative integer/);
+  assert.throws(() => noiseFloorBytes(1.5), /non-negative integer/);
+});
+
+// A baseline exactly `delta` bytes under the PR's own measurement, so the delta is exact.
+function _baselineUnder(root, budgetsDir, surface, delta) {
+  const file = _measure(root, budgetsDir, SHA);
+  const parsed = JSON.parse(readFileSync(file, 'utf8'));
+  parsed.totals[surface].bytes -= delta;
+  writeFileSync(file, JSON.stringify(parsed));
+  return { file, main: parsed.totals[surface].bytes };
+}
+
+test('if a large surface reds on a same-source delta under its scaled floor then broken', () => {
+  const budgetsDir = _budgets();
+  const pr = _fixture({ sizes: { library: 560000 } });
+  const quiet = _baselineUnder(pr, budgetsDir, 'library', 217);
+  const floor = noiseFloorBytes(quiet.main);
+  assert.ok(floor > 217 && floor > 128, `floor ${floor} on ${quiet.main} B`);
+  const passes = _runArgs(pr, budgetsDir, ['--baseline', quiet.file, '--own', '9001']);
+  assert.equal(passes.code, 0, passes.out);
+  assert.match(passes.out, new RegExp(`library .* delta\\s+217\\s+noise\\s+${floor}\\s+allowance\\s+0\\s+\\[ok\\]`));
+
+  const real = _baselineUnder(pr, budgetsDir, 'library', 1024);
+  const fails = _runArgs(pr, budgetsDir, ['--baseline', real.file, '--own', '9001']);
+  assert.equal(fails.code, 1, fails.out);
+  assert.match(fails.out, new RegExp(`allowance of 0 \\(plus ${noiseFloorBytes(real.main)} B build noise\\)`));
+});
+
+test('if a small surface stops failing a delta just past 128 B then broken', () => {
+  const budgetsDir = _budgets();
+  const pr = _fixture({ sizes: { library: 10000 } });
+  const edge = _baselineUnder(pr, budgetsDir, 'library', 128);
+  assert.equal(_runArgs(pr, budgetsDir, ['--baseline', edge.file, '--own', '9001']).code, 0);
+  const past = _baselineUnder(pr, budgetsDir, 'library', 129);
+  const fails = _runArgs(pr, budgetsDir, ['--baseline', past.file, '--own', '9001']);
+  assert.equal(fails.code, 1, fails.out);
+  assert.match(fails.out, /allowance of 0 \(plus 128 B build noise\)/);
 });
 
 test("another PR's charge is not this PR's allowance", () => {

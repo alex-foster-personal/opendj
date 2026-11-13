@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -279,6 +280,154 @@ def test_online_backup_rejects_unlocked_connection_for_another_target(
         _close_sqlcipher_database(database)
 
     assert not backup_dir.exists() or list(backup_dir.iterdir()) == []
+
+
+class _FakePlaylistById:
+    def __init__(self, playlist_id: str, songs: list[_FakeSong]) -> None:
+        self.ID = playlist_id
+        self.Songs = list(songs)
+
+
+class _TransactionalFakeRBDatabase:
+    """Duck-type pyrekordbox for apply backup failure paths only."""
+
+    def __init__(self, database: SimpleNamespace, playlists: list[_FakePlaylistById]) -> None:
+        self.session = database.session
+        self.engine = database.engine
+        self._playlists = playlists
+        self.deleted: list[Any] = []
+
+    def get_playlist(self):
+        return list(self._playlists)
+
+    def delete(self, song: Any) -> None:
+        self.deleted.append(song)
+
+    def add(self, _table: Any) -> None:
+        return None
+
+    def commit(self) -> None:
+        return None
+
+
+@pytest.mark.requirement("PLAYLISTMANAGEMENT-13633")
+def test_encrypted_snapshot_reopens_after_detach(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] encrypted backup runs [then] snapshot reopens after DETACH, [else stop]."""
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        backup_id = _online_backup_unlocked_rekordbox(database, encrypted)
+    finally:
+        _close_sqlcipher_database(database)
+
+    backup = writeback_backup.backup_path("rekordbox", backup_id)
+    _assert_not_plaintext_sqlite(backup)
+    unlocked = _sqlcipher_connect(backup, _SQLCIPHER_KEY)
+    try:
+        assert unlocked.execute("PRAGMA quick_check").fetchone() == ("ok",)
+    finally:
+        unlocked.close()
+
+
+@pytest.mark.requirement("PLAYLISTMANAGEMENT-13633")
+def test_snapshot_wrong_key_fails_authentication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] snapshot uses SQLCipher [then] wrong key fails auth, [else stop]."""
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        backup_id = _online_backup_unlocked_rekordbox(database, encrypted)
+    finally:
+        _close_sqlcipher_database(database)
+
+    backup = writeback_backup.backup_path("rekordbox", backup_id)
+    import sqlcipher3
+
+    contender = _sqlcipher_connect(backup, "wrong-key")
+    try:
+        with pytest.raises(sqlcipher3.DatabaseError):
+            contender.execute("PRAGMA quick_check").fetchone()
+    finally:
+        contender.close()
+
+
+@pytest.mark.requirement("PLAYLISTMANAGEMENT-13633")
+def test_apply_aborts_when_snapshot_authentication_fails(
+    tmp_path: Path,
+    state_conn,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] snapshot auth fails on apply [then] membership stays unchanged, [else stop]."""
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    playlist_id = "playlist-1"
+    fake_db = _TransactionalFakeRBDatabase(
+        database,
+        [_FakePlaylistById(playlist_id, [_FakeSong("rb-100", track_no=1)])],
+    )
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", backup_dir)
+
+    def fail_verify(*_args, **_kwargs) -> None:
+        raise RuntimeError("rekordbox: online backup failed post-detach auth: snapshot")
+
+    monkeypatch.setattr(
+        "apps.smartlists.rb_writer._verify_encrypted_snapshot_reopens",
+        fail_verify,
+    )
+
+    writer = RBPlaylistWriter(
+        db=fake_db,
+        state_conn=state_conn,
+        live_db_path=encrypted,
+    )
+    expected_revision = hashlib.sha256(
+        json.dumps(
+            {"target_id": playlist_id, "members": ["sid-1"]},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    mapping_revision = hashlib.sha256(
+        json.dumps(
+            sorted([("sid-1", "rb-100"), ("sid-2", "rb-200")]),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+    try:
+        with pytest.raises(RuntimeError, match="post-detach auth"):
+            writer.apply_with_backup_by_id(
+                playlist_id,
+                ["sid-1", "sid-2"],
+                expected_revision,
+                mapping_revision,
+                nullcontext,
+            )
+        assert writer.read_members_by_id(playlist_id) == ["sid-1"]
+        assert fake_db.deleted == []
+        assert not backup_dir.exists() or list(backup_dir.iterdir()) == []
+    finally:
+        _close_sqlcipher_database(database)
 
 
 def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(

@@ -14,6 +14,7 @@ import { fetchHotCueSlots } from '$lib/rb/api-rb';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
 import { createFrameBackstop, notePositionSample } from '$lib/rb/engine-clock-reports';
 import { noteEngineMasterRms } from '$lib/rb/master-silence-report';
+import { setMasterMuted } from '$lib/player/master-mute.svelte';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
 import { clearWaveGains, parseWaveGains, setDeckWaveGains } from '$lib/rb/wave-eq-gains.svelte';
@@ -173,7 +174,10 @@ export async function executeRustCommand(command: PerformanceCommand): Promise<v
 		await decideOnPage(command);
 		return;
 	}
-	await send(command);
+	// refuseIfMaster never crosses the wire: performance-ipc has already
+	// enforced it, and odj-audio has no master election, so it refuses the flag.
+	// Only load and unload carry it, and load never reaches this line.
+	await send(command.type === 'unload' ? { type: 'unload', deck: command.deck } : command);
 	applyAcknowledged(command);
 	if (command.type === 'unload') {
 		publishDeckAutoGain(command.deck, { state: 'empty' });
@@ -420,6 +424,10 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 			break;
 		case 'master_volume':
 			mixerState.master = command.value;
+			break;
+		case 'master_mute':
+			// The TopBar renders isMasterMuted(): only the engine's ack flips it (#12209).
+			setMasterMuted(command.muted, { persist: command.persist !== false });
 			break;
 		case 'pitch_range':
 			pitchRanges[command.deck] = command.range;

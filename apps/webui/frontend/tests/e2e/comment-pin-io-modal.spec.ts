@@ -180,21 +180,22 @@ test.describe('comment pin on Audio I/O modal', () => {
 	});
 
 	test('feedback explainer does not overlap the open Audio I/O menu', async ({ page }) => {
-		test.fixme(true, 'fb-cluster popover never opens, see #13524');
 		const ioButton = page.getByRole('button', { name: 'SHOW AUDIO I/O' });
 		await ioButton.click({ timeout: 5_000 });
 		const menu = page.locator('.hp-menu');
 		await expect(menu).toBeVisible();
 
-		// Topbar pin: the explainer under test (.fb-cluster .pop) is the
-		// topbar's, not FB-18c's dock pin of the same name (#3981).
+		// Topbar pin: the explainer under test portals to body (data-explainer-pop),
+		// not FB-18c's dock pin of the same name (#3981).
 		const commentBtn = page.getByRole('banner').getByRole('button', { name: 'Drop a comment pin' });
 		await commentBtn.hover();
-		const explainerPop = page.locator('.fb-cluster .pop');
-		await expect(explainerPop).toBeVisible({ timeout: 5_000 });
+		const feedbackExplainer = page
+			.locator('[data-explainer-pop]')
+			.filter({ hasText: /comment pin/i });
+		await expect(feedbackExplainer).toBeVisible({ timeout: 5_000 });
 
 		const menuBox = await menu.boundingBox();
-		const popBox = await explainerPop.boundingBox();
+		const popBox = await feedbackExplainer.boundingBox();
 		expect(menuBox).not.toBeNull();
 		expect(popBox).not.toBeNull();
 		const overlaps =

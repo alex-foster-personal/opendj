@@ -20,6 +20,7 @@
 //   if any deck-3 or deck-4 binding exists then broken
 //   if pads use Pioneer 8/10 channels then broken
 //   if hints collide with bound sources or repeat then broken
+//   if any binding or hint uses a channel-16 placeholder for an analog control then broken
 //   if an LED rule drives a source no binding owns then broken
 //   if the registry does not carry DDJ_SB_MAP then broken
 
@@ -228,16 +229,11 @@ test('hints are unique and never collide with bound sources', () => {
 		seen.add(k);
 		assert.ok(h.label.length > 0);
 	}
-	for (const k of [
-		'1:cc:34',
-		'1:note:23',
-		'1:note:26',
-		'5:note:71',
-		'5:cc:2',
-		'16:cc:0',
-		'7:note:101'
-	]) {
+	for (const k of ['1:cc:34', '1:note:23', '1:note:26', '5:note:71', '5:cc:2', '7:note:101']) {
 		assert.ok(seen.has(k), `expected a hint on ${k}`);
+	}
+	for (const s of [...mapModule.DDJ_SB_MAP.bindings, ...mapModule.DDJ_SB_MAP.hints]) {
+		assert.notEqual(s.source.ch, 16, `${s.label ?? 'binding'} uses a channel-16 placeholder`);
 	}
 });
 

@@ -1,14 +1,16 @@
-"""LIGHT-02 beat clock acceptance tests (issue #9859).
+"""LIGHT-02 beat clock acceptance tests (issue #9859, TESTINFRA-14104).
 
 [if] the beat clock predicts a beat, downbeat or host time wrongly [then] fail, [else stop].
 [if] predict_beats misses a beat, mistimes at_host_ns, ignores rate, emits on a stopped deck,
 fails to extrapolate past the grid or mislabels downbeats [then] fail, [else stop].
+[if] invalid samples or grids are not refused or a grid boundary beat doubles [then] fail, [else stop].
 """
 
 from __future__ import annotations
 
 import ast
 import itertools
+import math
 import sys
 from pathlib import Path
 
@@ -16,7 +18,7 @@ import pytest
 
 from apps.lighting.beat_clock import DeckSample, predict_beats
 
-pytestmark = [pytest.mark.requirement("LIGHT-9938")]
+pytestmark = [pytest.mark.requirement("LIGHT-9938"), pytest.mark.requirement("TESTINFRA-14104")]
 
 HOST_NS = 5_000_000_000
 
@@ -96,3 +98,64 @@ def test_module_imports_only_stdlib_and_apps_lighting() -> None:
     for name in roots:
         top = name.split(".")[0]
         assert top in sys.stdlib_module_names or name.startswith("apps.lighting"), name
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("position_ms", math.nan),
+        ("position_ms", math.inf),
+        ("rate", math.nan),
+        ("rate", math.inf),
+    ],
+)
+def test_non_finite_sample_fields_raise_named_validation_error(field: str, value: float) -> None:
+    """[if] sample position or rate is non-finite [then] predict_beats raises ValueError naming the field."""
+    with pytest.raises(ValueError, match=f"sample {field}"):
+        predict_beats(_grid(120, 8), _sample(**{field: value}), 2000)
+
+
+@pytest.mark.parametrize(
+    "grid",
+    [
+        [
+            {"n": 1, "time_ms": 0, "bpm": 120},
+            {"n": 2, "time_ms": 500, "bpm": 120},
+            {"n": 3, "time_ms": 400, "bpm": 120},
+        ],
+        [
+            {"n": 1, "time_ms": 0, "bpm": 120},
+            {"n": 2, "time_ms": 500, "bpm": 120},
+            {"n": 2, "time_ms": 500, "bpm": 120},
+        ],
+    ],
+    ids=["unsorted", "duplicate"],
+)
+def test_unsorted_or_duplicate_grid_times_are_refused(grid: list[dict[str, float | int]]) -> None:
+    """[if] grid times are unsorted or duplicate [then] predict_beats refuses with a named validation error."""
+    pattern = "duplicate grid beat time" if grid[-1]["time_ms"] == grid[-2]["time_ms"] else "strictly increase"
+    with pytest.raises(ValueError, match=pattern):
+        predict_beats(grid, _sample(position_ms=0), 2000)
+
+
+@pytest.mark.parametrize("bpm", [math.nan, math.inf, 0.0, -1.0])
+def test_non_finite_or_nonpositive_grid_bpm_raises(bpm: float) -> None:
+    """[if] a grid beat bpm is non-finite or non-positive [then] predict_beats raises ValueError."""
+    grid = _grid(120, 4)
+    grid[1]["bpm"] = bpm
+    pattern = "bpm must be positive" if bpm <= 0 else "bpm must be finite"
+    with pytest.raises(ValueError, match=pattern):
+        predict_beats(grid, _sample(position_ms=0), 2000)
+
+
+def test_sample_on_exact_grid_boundary_emits_that_beat_once_in_order() -> None:
+    """[if] position sits on a grid beat time [then] that beat appears once and later beats stay ordered."""
+    grid = _grid(120, 16)
+    events = predict_beats(grid, _sample(position_ms=500.0), 2000)
+    beat_indices = [event.beat_index for event in events]
+    assert beat_indices[0] == 1
+    assert beat_indices == sorted(beat_indices)
+    assert len(beat_indices) == len(set(beat_indices))
+    assert events[0].at_host_ns == HOST_NS
+    for earlier, later in itertools.pairwise(events):
+        assert later.at_host_ns > earlier.at_host_ns

@@ -105,3 +105,58 @@ test('[if] ten thousand revisions are presented [then] schedules stay bounded wi
 		'the effective current revision and needed future revision remain mirrored'
 	);
 });
+
+/** Compact revisions 1..3 into the active segment 3, presented at contextTime 3.25. */
+const compactedTimeline = () => {
+	const timeline = presentation.createPresentedTransportTimeline(0);
+	for (let revision = 1; revision <= 3; revision += 1) {
+		presentation.acknowledgePresentedTransportSchedule(timeline, baseSchedule(revision, revision));
+		presentation.observePresentedTransportTimeline(
+			timeline,
+			{ contextTime: revision + 0.25, performanceTime: (revision + 0.25) * 1000 },
+			20
+		);
+	}
+	assert.deepEqual(
+		timeline.schedules.map(({ revision }) => revision),
+		[3]
+	);
+	return timeline;
+};
+
+test('[if] the active segment is queried after compaction [then] it still renders output-truth position, [else stop]', () => {
+	const timeline = compactedTimeline();
+	const observed = presentation.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 3.75, performanceTime: 3750 },
+		20
+	);
+	assert.equal(observed.presented_revision, 3);
+	assert.equal(observed.audible, true);
+	assert.ok(Math.abs(observed.position_sec - 3.75) < 1e-9, `position ${observed.position_sec}`);
+	const effective = presentation._effectivePresentedScheduleAt(timeline, 3.75);
+	assert.equal(effective?.revision, 3, 'the compacted active segment is still the effective one');
+});
+
+test('[if] an old acknowledgement arrives after compaction [then] it neither returns nor displaces active or future truth, [else stop]', () => {
+	const timeline = compactedTimeline();
+	presentation.acknowledgePresentedTransportSchedule(timeline, baseSchedule(4, 5));
+	presentation.acknowledgePresentedTransportSchedule(timeline, baseSchedule(2, 2));
+	assert.deepEqual(
+		timeline.schedules.map(({ revision }) => revision),
+		[3, 4],
+		'the stale revision is pruned and the active plus pending future revisions survive'
+	);
+	assert.equal(
+		timeline.desired_revision,
+		4,
+		'a stale acknowledgement never rewinds the desired revision'
+	);
+	const observed = presentation.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 3.5, performanceTime: 3500 },
+		20
+	);
+	assert.equal(observed.presented_revision, 3);
+	assert.ok(Math.abs(observed.position_sec - 3.5) < 1e-9, `position ${observed.position_sec}`);
+});

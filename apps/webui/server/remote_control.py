@@ -29,7 +29,7 @@ import os
 import secrets
 import socket
 from collections.abc import Coroutine
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -108,6 +108,9 @@ class DeviceRecord:
     last_seen: str
 
 
+_DEVICE_RECORD_KEYS: frozenset[str] = frozenset(f.name for f in fields(DeviceRecord))
+
+
 @dataclass
 class RemoteSession:
     """One remote-control listener: Crockford code, device table, wrong-code budget."""
@@ -161,7 +164,9 @@ class RemoteSession:
         for key, row in raw.items():
             if not isinstance(row, dict):
                 continue
-            out[key] = DeviceRecord(**row)
+            # A newer build sharing this data dir may store more per-device keys;
+            # keep the ones this build knows (the next save drops the rest).
+            out[key] = DeviceRecord(**{k: v for k, v in row.items() if k in _DEVICE_RECORD_KEYS})
         return out
 
     def _save_devices(
@@ -544,10 +549,15 @@ def encode_qr_url(*, target: str, address: str, port: int, code: str) -> str:
 
 
 def qr_svg_payload(url: str) -> str:
-    """SVG markup for ``url`` via segno (pure Python, no native deps)."""
+    """Standalone SVG for ``url`` via segno, keeping the SVG namespace so ``<img>`` renders it."""
+    import io
+
     import segno
 
-    return segno.make(url, error="m").svg_inline(scale=4)
+    buff = io.BytesIO()
+    # svg_inline() drops xmlns, which an XML-parsed image/svg+xml document needs to render.
+    segno.make(url, error="m").save(buff, kind="svg", xmldecl=False, svgns=True, nl=False, scale=4)
+    return buff.getvalue().decode("utf-8")
 
 
 def devices_file_is_owner_only(path: Path) -> bool:

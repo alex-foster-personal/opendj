@@ -60,6 +60,8 @@ const PITCH_FRAME_MIN = 0.8;
 /** Click bound: a 440 Hz sine at 0.5 moves at most 2*pi*440*0.5/SR per sample (measured: kernel 0.0291, step control 0.858). */
 const SINE_SLOPE = (2 * Math.PI * 440 * 0.5) / SR;
 const CLICK_MAX = 1.2 * SINE_SLOPE;
+/** Sub-knee DC matching `ECHO_GAIN_PROBE_DC` in echo-kernel.ts (FXECHO-10612 identity region). */
+const GAIN_PROBE_DC = 10 ** (-6 / 20) * 0.99;
 
 type Subject = 'kernel' | 'control-glide' | 'control-step';
 type Signal = 'dc' | 'impulses' | 'bursts' | 'sine';
@@ -98,7 +100,7 @@ async function render(
 	opts: { subject: Subject; signal: Signal; loop: boolean }
 ): Promise<number[][]> {
 	return page.evaluate(
-		async ({ subject, signal, loop, sr, seconds, beat, retunes }) => {
+		async ({ subject, signal, loop, sr, seconds, beat, retunes, gainProbeDc }) => {
 			const mod = (globalThis as unknown as { echoKernel: EchoBundle }).echoKernel;
 			const frames = Math.round(sr * seconds);
 			const ctx = new OfflineAudioContext(3, frames, sr);
@@ -107,7 +109,7 @@ async function render(
 			let source: AudioNode;
 			if (signal === 'dc') {
 				const dc = ctx.createConstantSource();
-				dc.offset.value = 1;
+				dc.offset.value = gainProbeDc;
 				dc.start(0);
 				source = dc;
 			} else if (signal === 'sine') {
@@ -146,6 +148,7 @@ async function render(
 
 			if (subject === 'kernel') {
 				const kernel = mod.buildEchoKernel(ctx, {
+					mode: 'echo',
 					maxDelaySec: mod.COLOR_FX_ECHO_MAX_DELAY_SEC,
 					feedback: feedbackGain,
 					loopHpHz: mod.ECHO_LOOP_HP_HZ,
@@ -197,7 +200,8 @@ async function render(
 			sr: SR,
 			seconds: RENDER_SEC,
 			beat: BEAT,
-			retunes: RETUNES
+			retunes: RETUNES,
+			gainProbeDc: GAIN_PROBE_DC
 		}
 	);
 }
@@ -265,7 +269,6 @@ test.describe('echo retune through a real OfflineAudioContext (FXECHO-03)', () =
 	test('rendered line gains: cold step, 30 ms fade, sum 1, slope-bounded per quantum', async ({
 		page
 	}) => {
-		test.fixme(true, 'line-gain sum off by 0.16, see #13528');
 		const [out, g0, g1] = await render(page, { subject: 'kernel', signal: 'dc', loop: false });
 		const from = frameAt(0.13);
 		const slopeBound = QUANTUM / (XFADE_SEC * SR) + 0.01;
@@ -273,7 +276,7 @@ test.describe('echo retune through a real OfflineAudioContext (FXECHO-03)', () =
 		let worstOut = 0;
 		let worstQuantumStep = 0;
 		for (let i = from; i < out.length; i++) {
-			worstSum = Math.max(worstSum, Math.abs(g0[i] + g1[i] - 1));
+			worstSum = Math.max(worstSum, Math.abs(g0[i] + g1[i] - GAIN_PROBE_DC));
 			worstOut = Math.max(worstOut, Math.abs(out[i] - (g0[i] + g1[i])));
 			if (i % QUANTUM === 0 && i >= from + QUANTUM) {
 				worstQuantumStep = Math.max(
@@ -292,11 +295,13 @@ test.describe('echo retune through a real OfflineAudioContext (FXECHO-03)', () =
 
 		let coldErr = 0;
 		for (let i = from; i < frameAt(0.7); i++)
-			coldErr = Math.max(coldErr, Math.abs(g0[i] - 1), Math.abs(g1[i]));
+			coldErr = Math.max(coldErr, Math.abs(g0[i] - GAIN_PROBE_DC), Math.abs(g1[i]));
 		expect(coldErr).toBeLessThanOrEqual(1e-6);
 		let fading = 0;
+		const fadeLo = 0.001 * GAIN_PROBE_DC;
+		const fadeHi = 0.999 * GAIN_PROBE_DC;
 		for (let i = frameAt(0.7); i < frameAt(0.8); i++) {
-			if (g0[i] > 0.001 && g0[i] < 0.999 && g1[i] > 0.001 && g1[i] < 0.999) fading++;
+			if (g0[i] > fadeLo && g0[i] < fadeHi && g1[i] > fadeLo && g1[i] < fadeHi) fading++;
 		}
 		console.log(`division-change fade frames: ${fading}`);
 		expect(Math.abs(fading - XFADE_SEC * SR)).toBeLessThanOrEqual(QUANTUM);
@@ -304,7 +309,7 @@ test.describe('echo retune through a real OfflineAudioContext (FXECHO-03)', () =
 		for (let i = frameAt(SETTLED_SEC); i < out.length; i++) {
 			settledErr = Math.max(
 				settledErr,
-				Math.min(Math.abs(g0[i] - 1), Math.abs(g1[i] - 1)),
+				Math.min(Math.abs(g0[i] - GAIN_PROBE_DC), Math.abs(g1[i] - GAIN_PROBE_DC)),
 				Math.min(Math.abs(g0[i]), Math.abs(g1[i]))
 			);
 		}

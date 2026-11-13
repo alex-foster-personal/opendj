@@ -3,7 +3,7 @@
  * Regression lines:
  * - if a selector command does not return the live tree's selected id then broken
  * - if leaf drill-in or root drill-out changes selection then broken
- * - if agent discovery omits an unbound selector command or includes callbacks then broken
+ * - if agent discovery omits a selector command, its W A S D / E / Q key, or includes callbacks then broken
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -12,14 +12,15 @@ import { createSelectorTree } from '../../src/lib/keyboard/selector-tree.ts';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const registry = await loadTypeScriptModule('src/lib/keyboard/command-registry.ts');
-const selectorIds = [
-	'selector.move.up',
-	'selector.move.down',
-	'selector.move.left',
-	'selector.move.right',
-	'selector.drill-in',
-	'selector.drill-out'
-];
+const selectorKeys = {
+	'selector.move.up': 'W',
+	'selector.move.down': 'S',
+	'selector.move.left': 'A',
+	'selector.move.right': 'D',
+	'selector.drill-in': 'E',
+	'selector.drill-out': 'Q'
+};
+const selectorIds = Object.keys(selectorKeys);
 
 function tree(initialId = 'root') {
 	const node = (id, parentId, x, y, kind = 'leaf') => ({
@@ -71,7 +72,7 @@ test('drill commands select the top-left child, remember it, and preserve leaf/r
 	run(selector, 'selector.drill-in', 'C');
 });
 
-test('agent discovery is serializable and lists every unbound selector command without mutating', () => {
+test('agent discovery is serializable and lists every selector command with its key without mutating', () => {
 	const selector = tree();
 	const metadata = registry.listPerformanceCommandMetadata();
 	assert.deepEqual(JSON.parse(JSON.stringify(metadata)), metadata);
@@ -86,7 +87,7 @@ test('agent discovery is serializable and lists every unbound selector command w
 				label: def.label,
 				scopes: ['global'],
 				scope: 'global',
-				defaultKeys: []
+				defaultKeys: [selectorKeys[id]]
 			}
 		);
 		assert.ok(def.label.trim().length > 0);

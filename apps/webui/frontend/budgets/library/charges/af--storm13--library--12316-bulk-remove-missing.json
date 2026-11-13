@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 373163,
+  "measured_with_pr": 376663,
+  "sha": "46adee1484",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--12316-bulk-remove-missing grows the library surface; measured +3500 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

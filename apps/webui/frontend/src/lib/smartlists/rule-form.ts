@@ -12,6 +12,7 @@ import {
 	ALLOWED_OPS_BY_FIELD,
 	FIELD_TYPES,
 	LOGICAL_OPS,
+	TOP_N_OP,
 	isRelativeDateLiteral,
 	type FieldName,
 	type LogicalOp,
@@ -127,6 +128,10 @@ export function changeGroupOp(group: FormGroup, nextOp: LogicalOp): string | nul
 
 /** Convert a validated (or freshly loaded) rule AST into an editable form tree. */
 export function astToForm(rule: RuleAst | WireRule): FormNode {
+	if ((rule as { op?: unknown }).op === TOP_N_OP) {
+		// Loading it as a predicate would drop the limit on the next save.
+		throw new Error('top-N rules are not editable in this form yet; edit them with `opendj api`');
+	}
 	if (isLogicalAst(rule)) {
 		return {
 			kind: 'group',

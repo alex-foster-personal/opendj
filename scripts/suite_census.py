@@ -375,7 +375,8 @@ def run_suite(paths: list[str], workers: int, out_dir: Path) -> tuple[int, float
     ]
     cores_dir = out_dir / "cores"
     shutil.rmtree(cores_dir, ignore_errors=True)
-    env = {**os.environ, CORE_DIR_ENV: str(cores_dir)}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE_")}
+    env[CORE_DIR_ENV] = str(cores_dir)
     started = time.monotonic()
     with (out_dir / "pytest.log").open("w", encoding="utf-8") as log:
         exit_code = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, check=False).returncode

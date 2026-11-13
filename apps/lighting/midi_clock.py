@@ -15,6 +15,7 @@ well-defined clock, so the followed deck wins.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -43,18 +44,43 @@ class ClockMessage:
 # ----------------------------------------------------------------------------- helpers
 
 
+def _require_finite_number(value: float, field: str) -> None:
+    if not math.isfinite(value):
+        raise ValueError(f"{field} must be finite, got {value!r}")
+
+
+def _validate_beat_timing(beat: BeatEvent) -> None:
+    _require_finite_number(beat.bpm, "bpm")
+    if beat.bpm <= 0:
+        raise ValueError(f"bpm must be positive to space clocks, got {beat.bpm}")
+    _require_finite_number(float(beat.at_host_ns), "at_host_ns")
+
+
+def _validate_monotonic_beats(beats: Sequence[BeatEvent]) -> None:
+    prev_host_ns: int | None = None
+    for beat in beats:
+        _validate_beat_timing(beat)
+        if prev_host_ns is not None and beat.at_host_ns < prev_host_ns:
+            raise ValueError(f"at_host_ns must not regress across beats, got {beat.at_host_ns} after {prev_host_ns}")
+        prev_host_ns = beat.at_host_ns
+
+
 def _clock_interval_ns(bpm: float) -> float:
+    _require_finite_number(bpm, "bpm")
     if bpm <= 0:
         raise ValueError(f"bpm must be positive to space clocks, got {bpm}")
     return NS_PER_MINUTE / (bpm * PULSES_PER_BEAT)
 
 
 def _clocks_for_beat(beat: BeatEvent) -> list[ClockMessage]:
+    _validate_beat_timing(beat)
     interval_ns = _clock_interval_ns(beat.bpm)
-    return [
-        ClockMessage(at_host_ns=beat.at_host_ns + round(pulse * interval_ns), data=bytes((TIMING_CLOCK,)))
-        for pulse in range(PULSES_PER_BEAT)
-    ]
+    clocks: list[ClockMessage] = []
+    for pulse in range(PULSES_PER_BEAT):
+        at_host_ns = beat.at_host_ns + round(pulse * interval_ns)
+        _require_finite_number(float(at_host_ns), "at_host_ns")
+        clocks.append(ClockMessage(at_host_ns=at_host_ns, data=bytes((TIMING_CLOCK,))))
+    return clocks
 
 
 # ----------------------------------------------------------------------------- public api
@@ -78,6 +104,7 @@ def transport_start(first_beat: BeatEvent) -> list[ClockMessage]:
     From a downbeat: Start (the receiver resets to the top). From anywhere else: a Song Position
     Pointer for the beat, then Continue, both due at the beat's host time and before its clocks.
     """
+    _validate_beat_timing(first_beat)
     if first_beat.is_downbeat:
         return [ClockMessage(first_beat.at_host_ns, bytes((START,)))]
     return [
@@ -90,6 +117,7 @@ def clocks_for_beats(beats: Sequence[BeatEvent]) -> list[ClockMessage]:
     """24 Timing Clocks per beat, spaced by that beat's BPM, in host-time order."""
     if len({beat.deck for beat in beats}) > 1:
         raise ValueError("clocks follow one deck; got beats from " + ", ".join(sorted({b.deck for b in beats})))
+    _validate_monotonic_beats(beats)
     messages: list[ClockMessage] = []
     for beat in beats:
         messages.extend(_clocks_for_beat(beat))

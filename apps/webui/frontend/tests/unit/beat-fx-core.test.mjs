@@ -5,6 +5,8 @@
 // [if] beatFxTempoSource reads the wrong deck for master, or returns a tempo outside 40..300 BPM [then] broken
 // [if] nextQuantizeBoundarySec waits more than one beat, or returns a boundary with no grid [then] broken
 // [if] xpadToBeats does not walk the division list in order across 0..1 [then] broken
+// [if] BEAT_FX_TRIPLET_BEATS drifts from 1/12..12/3, or beat_fx triplet takes a duple-only beats without a TypeError [then] broken
+// [if] xpadToBeats with triplet on does not walk the triplet list in order [then] broken
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -208,4 +210,42 @@ test('no U+2014 or U+2013 characters in the new files', () => {
 		const text = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 		assert.equal(banned.test(text), false, rel);
 	}
+});
+
+// requirement: BEATFX-14715
+describe('triplet divisions (issue #10016)', () => {
+	test('BEAT_FX_TRIPLET_BEATS is 1/12..12/3 and triplet beats parse only with triplet true', () => {
+		// [if] the triplet set drifts, or triplet true takes 3/4 or triplet false takes 1/3 without a TypeError naming beats [then] the wire lies, [else stop].
+		assert.deepEqual([...fx.BEAT_FX_TRIPLET_BEATS], [1 / 12, 1 / 6, 1 / 3, 2 / 3, 4 / 3, 8 / 3, 4]);
+		for (const beats of fx.BEAT_FX_TRIPLET_BEATS) {
+			const command = { type: 'beat_fx', triplet: true, beats };
+			assert.deepEqual(fx.parseBeatFxCommand(command), command);
+		}
+		assert.deepEqual(fx.parseBeatFxCommand({ type: 'beat_fx', triplet: false }), {
+			type: 'beat_fx',
+			triplet: false
+		});
+		const tripletOnly = { type: 'beat_fx', beats: 1 / 3 };
+		assert.throws(
+			() => fx.parseBeatFxCommand(tripletOnly),
+			(e) => e instanceof TypeError && /beats/.test(e.message)
+		);
+		const dupleOnly = { type: 'beat_fx', triplet: true, beats: 3 / 4 };
+		assert.throws(
+			() => fx.parseBeatFxCommand(dupleOnly),
+			(e) => e instanceof TypeError && /beats \(triplet\)/.test(e.message)
+		);
+		assert.throws(() => fx.parseBeatFxCommand({ type: 'beat_fx', triplet: 'yes' }), /triplet/);
+	});
+
+	test('xpadToBeats walks the triplet list in order when triplet is on', () => {
+		// [if] xpadToBeats(x, true) skips or reorders a triplet division, or false leaves the duple walk [then] the pad picks wrong, [else stop].
+		const n = fx.BEAT_FX_TRIPLET_BEATS.length;
+		const walked = Array.from({ length: n }, (_unused, i) => fx.xpadToBeats((i + 0.5) / n, true));
+		assert.deepEqual(walked, [...fx.BEAT_FX_TRIPLET_BEATS]);
+		assert.equal(fx.xpadToBeats(0, true), 1 / 12);
+		assert.equal(fx.xpadToBeats(1, true), 4);
+		assert.equal(fx.xpadToBeats(0, false), 1 / 16);
+		assert.throws(() => fx.xpadToBeats(0.5, 1), /triplet/);
+	});
 });

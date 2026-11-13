@@ -1,0 +1,527 @@
+{
+  "source": "https://support.allen-heath.com/hc/en-gb/articles/43084536824849-Xone-96-MIDI-Implementation",
+  "archived": "local only (not committed): article body.html via Zendesk API",
+  "fetched": "Fri 13 Nov 2026",
+  "device": "Xone:96",
+  "vendor": "Allen & Heath",
+  "channel_conventions": {
+    "channel": "default MIDI channel 16 (user settable at power on)",
+    "layers": "single layer; no shift in vendor map",
+    "notes": "codes are the article's hex values converted to decimal; Note On 7F / Off 00"
+  },
+  "controls": [
+    {
+      "name": "cue_1",
+      "section": "ch1",
+      "type": "note",
+      "ch": 16,
+      "code": 0,
+      "layer": "base",
+      "notes": "CUE 1 switch, Note On 7F / Off 00 (hex 00) [B1]"
+    },
+    {
+      "name": "cue_2",
+      "section": "ch2",
+      "type": "note",
+      "ch": 16,
+      "code": 1,
+      "layer": "base",
+      "notes": "CUE 2 switch, Note On 7F / Off 00 (hex 01) [B2]"
+    },
+    {
+      "name": "cue_3",
+      "section": "ch3",
+      "type": "note",
+      "ch": 16,
+      "code": 2,
+      "layer": "base",
+      "notes": "CUE 3 switch, Note On 7F / Off 00 (hex 02) [B3]"
+    },
+    {
+      "name": "cue_4",
+      "section": "ch4",
+      "type": "note",
+      "ch": 16,
+      "code": 3,
+      "layer": "base",
+      "notes": "CUE 4 switch, Note On 7F / Off 00 (hex 03) [B4]"
+    },
+    {
+      "name": "cue_a",
+      "section": "chA",
+      "type": "note",
+      "ch": 16,
+      "code": 4,
+      "layer": "base",
+      "notes": "CUE A switch, Note On 7F / Off 00 (hex 04) [B5]"
+    },
+    {
+      "name": "cue_b",
+      "section": "chB",
+      "type": "note",
+      "ch": 16,
+      "code": 5,
+      "layer": "base",
+      "notes": "CUE B switch, Note On 7F / Off 00 (hex 05) [B6]"
+    },
+    {
+      "name": "cue_c",
+      "section": "chC",
+      "type": "note",
+      "ch": 16,
+      "code": 6,
+      "layer": "base",
+      "notes": "CUE C switch, Note On 7F / Off 00 (hex 06) [B7]"
+    },
+    {
+      "name": "cue_d",
+      "section": "chD",
+      "type": "note",
+      "ch": 16,
+      "code": 7,
+      "layer": "base",
+      "notes": "CUE D switch, Note On 7F / Off 00 (hex 07) [B8]"
+    },
+    {
+      "name": "on_off_c",
+      "section": "chC",
+      "type": "note",
+      "ch": 16,
+      "code": 8,
+      "layer": "base",
+      "notes": "C ON/OFF switch, Note On 7F / Off 00 (hex 08) [B9]"
+    },
+    {
+      "name": "on_off_d",
+      "section": "chD",
+      "type": "note",
+      "ch": 16,
+      "code": 9,
+      "layer": "base",
+      "notes": "D ON/OFF switch, Note On 7F / Off 00 (hex 09) [B10]"
+    },
+    {
+      "name": "vcf1_hpf",
+      "section": "filter1",
+      "type": "note",
+      "ch": 16,
+      "code": 10,
+      "layer": "base",
+      "notes": "F1 HPF switch, Note On 7F / Off 00 (hex 0A) [B11]"
+    },
+    {
+      "name": "vcf1_bpf",
+      "section": "filter1",
+      "type": "note",
+      "ch": 16,
+      "code": 11,
+      "layer": "base",
+      "notes": "F1 BPF switch, Note On 7F / Off 00 (hex 0B) [B12]"
+    },
+    {
+      "name": "vcf1_lpf",
+      "section": "filter1",
+      "type": "note",
+      "ch": 16,
+      "code": 12,
+      "layer": "base",
+      "notes": "F1 LPF switch, Note On 7F / Off 00 (hex 0C) [B13]"
+    },
+    {
+      "name": "vcf1_on_off",
+      "section": "filter1",
+      "type": "note",
+      "ch": 16,
+      "code": 13,
+      "layer": "base",
+      "notes": "FILTER 1 switch, Note On 7F / Off 00 (hex 0D) [B14]"
+    },
+    {
+      "name": "vcf2_hpf",
+      "section": "filter2",
+      "type": "note",
+      "ch": 16,
+      "code": 14,
+      "layer": "base",
+      "notes": "F2 HPF switch, Note On 7F / Off 00 (hex 0E) [B15]"
+    },
+    {
+      "name": "vcf2_bpf",
+      "section": "filter2",
+      "type": "note",
+      "ch": 16,
+      "code": 15,
+      "layer": "base",
+      "notes": "F2 BPF switch, Note On 7F / Off 00 (hex 0F) [B16]"
+    },
+    {
+      "name": "vcf2_lpf",
+      "section": "filter2",
+      "type": "note",
+      "ch": 16,
+      "code": 16,
+      "layer": "base",
+      "notes": "F2 LPF switch, Note On 7F / Off 00 (hex 10) [B17]"
+    },
+    {
+      "name": "vcf2_on_off",
+      "section": "filter2",
+      "type": "note",
+      "ch": 16,
+      "code": 17,
+      "layer": "base",
+      "notes": "FILTER 2 switch, Note On 7F / Off 00 (hex 11) [B18]"
+    },
+    {
+      "name": "mute",
+      "section": "master",
+      "type": "note",
+      "ch": 16,
+      "code": 18,
+      "layer": "base",
+      "notes": "MUTE switch, Note On 7F / Off 00 (hex 12) [B19]"
+    },
+    {
+      "name": "fader_1",
+      "section": "ch1",
+      "type": "cc",
+      "ch": 16,
+      "code": 0,
+      "layer": "base",
+      "notes": "FADER 1, CC hex 00, out only [F1]"
+    },
+    {
+      "name": "fader_2",
+      "section": "ch2",
+      "type": "cc",
+      "ch": 16,
+      "code": 1,
+      "layer": "base",
+      "notes": "FADER 2, CC hex 01, out only [F2]"
+    },
+    {
+      "name": "fader_3",
+      "section": "ch3",
+      "type": "cc",
+      "ch": 16,
+      "code": 2,
+      "layer": "base",
+      "notes": "FADER 3, CC hex 02, out only [F3]"
+    },
+    {
+      "name": "fader_4",
+      "section": "ch4",
+      "type": "cc",
+      "ch": 16,
+      "code": 3,
+      "layer": "base",
+      "notes": "FADER 4, CC hex 03, out only [F4]"
+    },
+    {
+      "name": "crossfader",
+      "section": "master",
+      "type": "cc",
+      "ch": 16,
+      "code": 5,
+      "layer": "base",
+      "notes": "XFADER, CC hex 05, out only [F5]"
+    },
+    {
+      "name": "source_1_usb1",
+      "section": "ch1",
+      "type": "note",
+      "ch": 16,
+      "code": 19,
+      "layer": "base",
+      "notes": "CH 1 source position USB1, Note hex 13, out only [P1]"
+    },
+    {
+      "name": "source_1_phono",
+      "section": "ch1",
+      "type": "note",
+      "ch": 16,
+      "code": 20,
+      "layer": "base",
+      "notes": "CH 1 source position PHONO, Note hex 14, out only [P1]"
+    },
+    {
+      "name": "source_1_line",
+      "section": "ch1",
+      "type": "note",
+      "ch": 16,
+      "code": 21,
+      "layer": "base",
+      "notes": "CH 1 source position LINE, Note hex 15, out only [P1]"
+    },
+    {
+      "name": "source_1_usb2",
+      "section": "ch1",
+      "type": "note",
+      "ch": 16,
+      "code": 22,
+      "layer": "base",
+      "notes": "CH 1 source position USB2, Note hex 16, out only [P1]"
+    },
+    {
+      "name": "source_2_usb1",
+      "section": "ch2",
+      "type": "note",
+      "ch": 16,
+      "code": 23,
+      "layer": "base",
+      "notes": "CH 2 source position USB1, Note hex 17, out only [P2]"
+    },
+    {
+      "name": "source_2_phono",
+      "section": "ch2",
+      "type": "note",
+      "ch": 16,
+      "code": 24,
+      "layer": "base",
+      "notes": "CH 2 source position PHONO, Note hex 18, out only [P2]"
+    },
+    {
+      "name": "source_2_line",
+      "section": "ch2",
+      "type": "note",
+      "ch": 16,
+      "code": 25,
+      "layer": "base",
+      "notes": "CH 2 source position LINE, Note hex 19, out only [P2]"
+    },
+    {
+      "name": "source_2_usb2",
+      "section": "ch2",
+      "type": "note",
+      "ch": 16,
+      "code": 26,
+      "layer": "base",
+      "notes": "CH 2 source position USB2, Note hex 1A, out only [P2]"
+    },
+    {
+      "name": "source_3_usb1",
+      "section": "ch3",
+      "type": "note",
+      "ch": 16,
+      "code": 27,
+      "layer": "base",
+      "notes": "CH 3 source position USB1, Note hex 1B, out only [P3]"
+    },
+    {
+      "name": "source_3_phono",
+      "section": "ch3",
+      "type": "note",
+      "ch": 16,
+      "code": 28,
+      "layer": "base",
+      "notes": "CH 3 source position PHONO, Note hex 1C, out only [P3]"
+    },
+    {
+      "name": "source_3_line",
+      "section": "ch3",
+      "type": "note",
+      "ch": 16,
+      "code": 29,
+      "layer": "base",
+      "notes": "CH 3 source position LINE, Note hex 1D, out only [P3]"
+    },
+    {
+      "name": "source_3_usb2",
+      "section": "ch3",
+      "type": "note",
+      "ch": 16,
+      "code": 30,
+      "layer": "base",
+      "notes": "CH 3 source position USB2, Note hex 1E, out only [P3]"
+    },
+    {
+      "name": "source_4_usb1",
+      "section": "ch4",
+      "type": "note",
+      "ch": 16,
+      "code": 31,
+      "layer": "base",
+      "notes": "CH 4 source position USB1, Note hex 1F, out only [P4]"
+    },
+    {
+      "name": "source_4_phono",
+      "section": "ch4",
+      "type": "note",
+      "ch": 16,
+      "code": 32,
+      "layer": "base",
+      "notes": "CH 4 source position PHONO, Note hex 20, out only [P4]"
+    },
+    {
+      "name": "source_4_line",
+      "section": "ch4",
+      "type": "note",
+      "ch": 16,
+      "code": 33,
+      "layer": "base",
+      "notes": "CH 4 source position LINE, Note hex 21, out only [P4]"
+    },
+    {
+      "name": "source_4_usb2",
+      "section": "ch4",
+      "type": "note",
+      "ch": 16,
+      "code": 34,
+      "layer": "base",
+      "notes": "CH 4 source position USB2, Note hex 22, out only [P4]"
+    },
+    {
+      "name": "source_a_usb1",
+      "section": "chA",
+      "type": "note",
+      "ch": 16,
+      "code": 35,
+      "layer": "base",
+      "notes": "CH A source position USB1, Note hex 23, out only [P5]"
+    },
+    {
+      "name": "source_a_mic_a",
+      "section": "chA",
+      "type": "note",
+      "ch": 16,
+      "code": 36,
+      "layer": "base",
+      "notes": "CH A source position MIC_A, Note hex 24, out only [P5]"
+    },
+    {
+      "name": "source_a_rtn_a",
+      "section": "chA",
+      "type": "note",
+      "ch": 16,
+      "code": 37,
+      "layer": "base",
+      "notes": "CH A source position RTN_A, Note hex 25, out only [P5]"
+    },
+    {
+      "name": "source_a_usb2",
+      "section": "chA",
+      "type": "note",
+      "ch": 16,
+      "code": 38,
+      "layer": "base",
+      "notes": "CH A source position USB2, Note hex 26, out only [P5]"
+    },
+    {
+      "name": "source_b_usb1",
+      "section": "chB",
+      "type": "note",
+      "ch": 16,
+      "code": 39,
+      "layer": "base",
+      "notes": "CH B source position USB1, Note hex 27, out only [P6]"
+    },
+    {
+      "name": "source_b_mic_b",
+      "section": "chB",
+      "type": "note",
+      "ch": 16,
+      "code": 40,
+      "layer": "base",
+      "notes": "CH B source position MIC_B, Note hex 28, out only [P6]"
+    },
+    {
+      "name": "source_b_rtn_b",
+      "section": "chB",
+      "type": "note",
+      "ch": 16,
+      "code": 41,
+      "layer": "base",
+      "notes": "CH B source position RTN_B, Note hex 29, out only [P6]"
+    },
+    {
+      "name": "source_b_usb2",
+      "section": "chB",
+      "type": "note",
+      "ch": 16,
+      "code": 42,
+      "layer": "base",
+      "notes": "CH B source position USB2, Note hex 2A, out only [P6]"
+    },
+    {
+      "name": "phones2_source_1",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 43,
+      "layer": "base",
+      "notes": "PHONES 2 source position 1, Note hex 2B, out only [P7]"
+    },
+    {
+      "name": "phones2_source_2",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 44,
+      "layer": "base",
+      "notes": "PHONES 2 source position 2, Note hex 2C, out only [P7]"
+    },
+    {
+      "name": "phones2_source_3",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 45,
+      "layer": "base",
+      "notes": "PHONES 2 source position 3, Note hex 2D, out only [P7]"
+    },
+    {
+      "name": "phones2_source_4",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 46,
+      "layer": "base",
+      "notes": "PHONES 2 source position 4, Note hex 2E, out only [P7]"
+    },
+    {
+      "name": "phones2_source_a",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 47,
+      "layer": "base",
+      "notes": "PHONES 2 source position A, Note hex 2F, out only [P7]"
+    },
+    {
+      "name": "phones2_source_b",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 48,
+      "layer": "base",
+      "notes": "PHONES 2 source position B, Note hex 30, out only [P7]"
+    },
+    {
+      "name": "phones2_source_c",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 49,
+      "layer": "base",
+      "notes": "PHONES 2 source position C, Note hex 31, out only [P7]"
+    },
+    {
+      "name": "phones2_source_d",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 50,
+      "layer": "base",
+      "notes": "PHONES 2 source position D, Note hex 32, out only [P7]"
+    },
+    {
+      "name": "phones2_source_mst",
+      "section": "phones2",
+      "type": "note",
+      "ch": 16,
+      "code": 51,
+      "layer": "base",
+      "notes": "PHONES 2 source position MST, Note hex 33, out only [P7]"
+    }
+  ]
+}

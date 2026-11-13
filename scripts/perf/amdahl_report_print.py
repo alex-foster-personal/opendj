@@ -113,6 +113,12 @@ def print_notes(notes: dict[str, Any], records: list[LoadRecord]) -> None:
             f"  {ceiling_withheld} load(s) have a contested fetch group (#705): "
             "per-load AND pooled ceiling withheld, still counted in total/serial ms."
         )
+    service_timed = sum(1 for record in records if record.service_timed and not record.anomalous)
+    if service_timed:
+        print(
+            f"  {service_timed} contested load(s) split by service times from Server-Timing "
+            "(queueing = stage ms minus service ms; PERF-DIAG-9990)."
+        )
     if notes["stem_rows"] == 0:
         if notes["stem_rows_failed_excluded"]:
             print(

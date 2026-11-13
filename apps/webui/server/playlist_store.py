@@ -70,6 +70,7 @@ from .playlist_transfer import (
     apply_source_write,
     carry_edit_ids,
     membership_plan,
+    require_source_members,
     skip_writes,
     validate_transfer,
 )
@@ -195,14 +196,25 @@ class PlaylistStore:
         Split from :meth:`_load` so a write that must not read every member
         (the ``:add`` path, #3963) can read the header alone.
         """
+        row = self._select_header(playlist_id, deleted=False)
+        if row is None:
+            raise NotFoundError(f"playlist not found: {playlist_id}")
+        return row
+
+    def _try_load_deleted_header(self, playlist_id: str) -> PlaylistRow | None:
+        """The tombstoned playlist header (``items`` empty), or None if live or unknown."""
+        return self._select_header(playlist_id, deleted=True)
+
+    def _select_header(self, playlist_id: str, *, deleted: bool) -> PlaylistRow | None:
+        tombstone = "IS NOT NULL" if deleted else "IS NULL"
         row = self._conn.execute(
             "SELECT playlist_id, name, vendor, vendor_pl_id, "
             "       created_at, updated_at, forbid_duplicates "
-            "FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
+            f"FROM playlists WHERE playlist_id = ? AND deleted_at {tombstone}",
             (playlist_id,),
         ).fetchone()
         if row is None:
-            raise NotFoundError(f"playlist not found: {playlist_id}")
+            return None
         return PlaylistRow(
             playlist_id=row["playlist_id"], name=row["name"],
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"],
@@ -446,9 +458,13 @@ class PlaylistStore:
                         "delete", playlist_id, self._snapshot(row), None,
                     )
 
-    def undelete_playlist(self, playlist_id: str) -> PlaylistRow:
+    def undelete_playlist(self, playlist_id: str, *, expected_etag: str) -> PlaylistRow:
+        """Restore a tombstoned playlist after CAS-checking its deleted-row etag."""
         with self._lock:
             with self._writer.playlist_transaction():
+                deleted = self._try_load_deleted_header(playlist_id)
+                if deleted is not None:
+                    self._check_etag(deleted, expected_etag)
                 try:
                     self._writer.undelete_playlist(playlist_id)
                 except PlaylistNotFoundError as exc:
@@ -639,6 +655,8 @@ class PlaylistStore:
                     source = self._load(source_id)
                     if source_etag is not None:
                         self._check_etag(source, source_etag)
+                    if mode == "move":
+                        require_source_members(source.items, stable_ids)
 
                 source_items = list(source.items) if source is not None else None
                 source_edit_ids = list(source.edit_ids) if source is not None else None

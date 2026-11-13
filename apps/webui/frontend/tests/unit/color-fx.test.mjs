@@ -1,9 +1,12 @@
 // requirement: COLORFX-12718
+// requirement: FXVERB-14655
+// requirement: FXVERB-14813
 // requirement: COLORFX-01
 // requirement: COLORFX-02
 // requirement: COLORFX-04
 // requirement: COLORFX-05
 // requirement: COLORFX-8341
+// requirement: FXECHO-13830
 // [if] the effect switches (by name or effect next) [then] the old effect is removed and the knob returns to 12 o'clock unless the command names a value
 // [if] the current effect is re-picked or only echo_beats is sent [then] the knob stays where it is
 // [if] effect next is sent [then] it cycles FILTER, SPACE, ECHO, CRUSH and back to FILTER
@@ -13,10 +16,12 @@
 // [if] the effect type changes [then] every gain moves on a smoothing ramp, never a step
 // [if] ECHO runs on 3/4 beat at 128 BPM [then] its delay line is 0.3515625 s, and it follows a tempo change
 // [if] tempo or division changes on ECHO [then] delay times step and line gains crossfade, never delayTime ramps
+// [if] the color graph is built [then] ECHO is the shared kernel in echo mode and a feedback override past 0.95 throws
 // [if] the deck has no tempo [then] ECHO is inert and the view names why
 // [if] the selector (or an agent) dispatches color_fx [then] the effect changes, the knob reaches setFilter and query() reads it back
 // [if] an agent sends color_fx [then] the typed dispatcher validates it and the Rust engine mode refuses it by name
 // [if] a SPACE send has been closed past its tail plus a hold [then] the convolver detaches, and the next turn re-attaches it
+// [if] a load or unload command runs under a ringing SPACE [then] the return ramps from its current gain to 0 over 10 ms, the convolver detaches, the return is restored, and no polling timer is installed
 // [if] Rust engine mode is on and a channel is on SPACE or ECHO [then] its knob is refused by name, never sent to the Rust FILTER
 import assert from 'node:assert/strict';
 import { after, afterEach, before, beforeEach, describe, test } from 'node:test';
@@ -117,6 +122,9 @@ function fakeContext() {
 			n.curve = null;
 			n.oversample = 'none';
 			return n;
+		},
+		createChannelMerger() {
+			return ctx._node('merger');
 		},
 		createConvolver() {
 			const n = ctx._node('convolver');
@@ -277,6 +285,16 @@ describe('pure half', () => {
 		assert.ok(graph.COLOR_FX_ECHO_MAX_DELAY_SEC >= longest, 'the line holds the longest division');
 		assert.ok(graph.ECHO_FEEDBACK > 0 && graph.ECHO_FEEDBACK < 1, 'feedback decays, never runs away');
 	});
+
+	// [if] the color graph is built [then] ECHO is the shared kernel in echo mode and a feedback override past 0.95 throws, [else stop].
+	test('color ECHO runs the shared kernel in echo mode; the feedback override is clamped', () => {
+		const ctx = fakeContext();
+		const g = graph.buildColorFxGraph(ctx, ctx.createGain(), [], { echoFeedback: 0.95 });
+		assert.equal(g.echo.mode(), 'echo');
+		assert.equal(g.echoFeedback.gain.value, 0.95);
+		const bad = () => graph.buildColorFxGraph(ctx, ctx.createGain(), [], { echoFeedback: 1 });
+		assert.throws(bad, /echo feedback 1 is outside \[0, 0.95\]/);
+	});
 });
 
 describe('live channel', () => {
@@ -387,6 +405,87 @@ describe('live channel', () => {
 		assert.ok(g.spaceIn.outputs.has(g.space) && g.space.outputs.has(g.spaceReturn));
 		assert.equal(live.colorFxView()[1].space_attached, true);
 		for (const e of g.brightSend.gain.events) assert.equal(e[0], 'target', 'the re-turn ramps the send');
+	});
+
+	test('a load or unload through the command hook cuts a ringing SPACE from its current gain, with no watch timer', async () => {
+		const hadWindow = 'window' in globalThis;
+		if (!hadWindow) globalThis.window = {};
+		const hadLocation = 'location' in globalThis;
+		if (!hadLocation) globalThis.location = new URL('http://127.0.0.1/performance');
+		const realSetInterval = globalThis.setInterval;
+		const realFetch = globalThis.fetch;
+		const { load, unload } = engine;
+		const intervals = [];
+		const engineCalls = [];
+		globalThis.setInterval = (fn, ms, ...rest) => {
+			intervals.push(ms);
+			return realSetInterval(fn, ms, ...rest);
+		};
+		globalThis.fetch = async () => {
+			throw new Error('no daemon in this test');
+		};
+		engine.load = async (deck, stableId) => {
+			engineCalls.push(['load', deck, stableId]);
+		};
+		engine.unload = async (deck) => {
+			engineCalls.push(['unload', deck]);
+		};
+		const uninstall = ipc.installPerformanceBrowserIpc();
+		const dispatch = (command) => globalThis.window.musicDjToolsPerformance.dispatch(command);
+		try {
+			player.deckStates[1].stable_id = 'track-a';
+			live.applyColorFxSettings({ type: 'color_fx', deck: 1, effect: 'space' });
+			live.applyColorKnob(1, nodes, 0.9);
+			const g = live._colorFxGraphForTests(1);
+			const first = g.space;
+			assert.ok(first !== null, 'attached on the turn (control)');
+			assert.deepEqual(intervals, [], 'an attached SPACE installs no polling timer');
+			// The return is not at its resting gain (mid-crossfade): the cut starts from here.
+			g.spaceReturn.gain.value = 0.3;
+			g.spaceReturn.gain.events = [];
+			const t0 = ctx.currentTime;
+			await dispatch({ type: 'load', deck: 1, stable_id: 'track-b' });
+			assert.deepEqual(engineCalls, [['load', 1, 'track-b']], 'the load reached the engine (control)');
+			assert.deepEqual(g.spaceReturn.gain.events, [
+				['set', 0.3, t0],
+				['linear', 0, t0 + 0.01]
+			], 'ramp from the current gain, never a snap to SPACE_WET_GAIN');
+			assert.ok(g.space === first, 'held until the ramp lands');
+			ctx.currentTime = t0 + 0.02;
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			assert.equal(first.outputs.size, 0, 'the ringing convolver is disconnected');
+			assert.ok(g.space !== null && g.space !== first, 'the open send re-attaches a fresh convolver');
+			assert.equal(g.spaceReturn.gain.landing(), graph.SPACE_WET_GAIN, 'the return is restored');
+			// Eject (unload) with the knob at center: cut, and nothing re-attaches.
+			live.applyColorKnob(1, nodes, 0.5);
+			await dispatch({ type: 'unload', deck: 1 });
+			assert.deepEqual(engineCalls.at(-1), ['unload', 1]);
+			ctx.currentTime += 0.02;
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			assert.ok(g.space === null, 'ejected: the convolver stays detached');
+			assert.equal(live.colorFxView()[1].space_attached, false);
+			assert.deepEqual(intervals, [], 'still no polling timer');
+		} finally {
+			uninstall();
+			engine.load = load;
+			engine.unload = unload;
+			globalThis.setInterval = realSetInterval;
+			globalThis.fetch = realFetch;
+			if (!hadWindow) delete globalThis.window;
+			if (!hadLocation) delete globalThis.location;
+		}
+	});
+
+	test('a pause leaves a ringing SPACE alone: only load and eject cut', async () => {
+		live.applyColorFxSettings({ type: 'color_fx', deck: 1, effect: 'space' });
+		live.applyColorKnob(1, nodes, 0.9);
+		const g = live._colorFxGraphForTests(1);
+		const first = g.space;
+		g.spaceReturn.gain.events = [];
+		player.deckStates[1].playing = false;
+		await new Promise((resolve) => setTimeout(resolve, 40));
+		assert.ok(g.space === first, 'a pause never cuts');
+		assert.deepEqual(g.spaceReturn.gain.events, [], 'a pause never moves the return');
 	});
 
 	test('leaving SPACE for ECHO starts the idle clock even off center', () => {

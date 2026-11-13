@@ -48,7 +48,7 @@ from .dj_labels import label_sections, own_fast_abstain_reason
 from .drop_events import mark_drops
 
 PRODUCER = "own-fast"
-PRODUCER_VERSION = "0.3.0"  # bump when the features, kernel, peak picking or proxies change
+PRODUCER_VERSION = "0.4.0"  # bump when the features, kernel, peak picking or proxies change
 
 COLUMNS_PER_S = 150.0
 BEATS_PER_BAR = 4
@@ -165,26 +165,37 @@ def _weights(n: int, offset: int) -> np.ndarray:
     return w
 
 
-def pick_boundaries(curve: np.ndarray) -> tuple[list[int], int]:
-    """Bar indices where a new section starts (bar 0 excluded), and the phrase offset."""
+def pick_boundaries(
+    curve: np.ndarray,
+) -> tuple[list[int], int, dict[int, float], list[dict[str, Any]]]:
+    """Bar indices where a new section starts (bar 0 excluded), phrase offset, confidences, suppressed."""
     n = len(curve)
     offset = vote_phrase_offset(curve)
     score = curve * _weights(n, offset)
     live = score[1:]
     relative = float(live.mean() + THRESHOLD_SIGMA * live.std()) if len(live) else math.inf
     threshold = max(relative, NOVELTY_MIN)
-    cands = []
+    suppressed: list[dict[str, Any]] = []
+    cands: list[tuple[int, float]] = []
     for i in range(1, n):
         lo, hi = max(1, i - PEAK_WINDOW_BARS), min(n, i + PEAK_WINDOW_BARS + 1)
-        if score[i] >= threshold and score[i] == score[lo:hi].max():
-            cands.append(i)
+        if score[i] != score[lo:hi].max():
+            continue
+        conf = float(score[i])
+        if conf < threshold:
+            suppressed.append({"start_bar": i, "confidence": conf})
+            continue
+        cands.append((i, conf))
     chosen: list[int] = []
-    for i in sorted(cands, key=lambda j: -score[j]):
+    confidence: dict[int, float] = {}
+    for i, conf in sorted(cands, key=lambda item: -item[1]):
         if i < MIN_SECTION_BARS or n - i < MIN_SECTION_BARS // 2:
             continue
         if all(abs(i - c) >= MIN_SECTION_BARS for c in chosen):
             chosen.append(i)
-    return sorted(chosen), offset
+            confidence[i] = conf
+    suppressed.sort(key=lambda row: row["start_bar"])
+    return sorted(chosen), offset, confidence, suppressed
 
 
 def band_envelopes(peaks: np.ndarray, hop_s: float = ENVELOPE_HOP_S) -> dict[str, Any]:
@@ -221,7 +232,12 @@ def _grid_outruns_peaks(downbeats: Sequence[float], peaks: np.ndarray) -> bool:
     return times[-1] > peaks.shape[0] / COLUMNS_PER_S + bar_s / 4
 
 
-def _sections_from_bars(grid: list[float], bars: list[int], duration_s: float) -> list[dict[str, Any]]:
+def _sections_from_bars(
+    grid: list[float],
+    bars: list[int],
+    duration_s: float,
+    boundary_confidence: dict[int, float] | None = None,
+) -> list[dict[str, Any]]:
     """One section per boundary bar, each starting on a downbeat the deck draws.
 
     The first section starts on the first downbeat too: a pickup before it is
@@ -231,16 +247,20 @@ def _sections_from_bars(grid: list[float], bars: list[int], duration_s: float) -
     starts = [grid[b] for b in bar_starts]
     ends = [*starts[1:], duration_s]
     bar_ends: list[int | None] = [*bars, None]
-    return [
-        {
+    conf = boundary_confidence or {}
+    sections: list[dict[str, Any]] = []
+    for s, e, sb, be in zip(starts, ends, bar_starts, bar_ends, strict=True):
+        row: dict[str, Any] = {
             "start_s": round(s, 3),
             "end_s": round(e, 3),
             "label": "section",
             "start_bar": sb,
             "bars": (be - sb) if be is not None else None,
         }
-        for s, e, sb, be in zip(starts, ends, bar_starts, bar_ends, strict=True)
-    ]
+        if sb > 0 and sb in conf:
+            row["confidence"] = conf[sb]
+        sections.append(row)
+    return sections
 
 
 def _apply_dj_labels(sections: list[dict[str, Any]], dj: dict[str, Any]) -> list[dict[str, Any]]:
@@ -271,8 +291,8 @@ def segment(peaks: np.ndarray, downbeats: Sequence[float], duration_s: float) ->
         return {"status": "failed", "reason": f"too_few_bars:{max(len(edges) - 1, 0)}"}
     features = bar_features(peaks, edges)
     curve = novelty(self_similarity(features))
-    bars, offset = pick_boundaries(curve)
-    sections = _sections_from_bars(grid, bars, duration_s)
+    bars, offset, boundary_confidence, suppressed = pick_boundaries(curve)
+    sections = _sections_from_bars(grid, bars, duration_s, boundary_confidence)
     dj = label_sections(sections, band_envelopes(peaks))
     abstain = own_fast_abstain_reason(dj)
     if abstain is not None:
@@ -293,8 +313,19 @@ def segment(peaks: np.ndarray, downbeats: Sequence[float], duration_s: float) ->
         "sections": sections,
         "moments": moments,
         "phrase_offset": offset,
+        "suppressed": suppressed,
         "dj_labels": {k: v for k, v in dj.items() if k != "sections"},
     }
+
+
+def phrase_windows_ms(sections: list[dict[str, Any]]) -> list[dict[str, int]]:
+    """Own-fast section bounds in milliseconds for segment enrichment claims."""
+    from apps.genre_infer import segment_claims
+
+    return [
+        {"start_ms": window.start_ms, "end_ms": window.end_ms, "start_bar": window.start_bar}
+        for window in segment_claims.phrase_windows_from_sections(sections)
+    ]
 
 
 __all__ = [
@@ -307,4 +338,5 @@ __all__ = [
     "pick_boundaries",
     "segment",
     "self_similarity",
+    "phrase_windows_ms",
 ]

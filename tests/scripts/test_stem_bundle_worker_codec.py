@@ -406,6 +406,7 @@ def test_worker_publish_outside_data_dir_writes_no_download_index(tmp_path: Path
 
 
 @pytest.mark.requirement("STEM-12745")
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a directory the user cannot empty")
 def test_failed_publish_into_place_leaves_download_index_unchanged(tmp_path: Path) -> None:
     """[if] publish_into_place fails [then] the download index is not upserted, [else stop]."""
     import shutil
@@ -455,3 +456,11 @@ def test_write_bundle_records_the_download_index_after_publish() -> None:
     publish_at = calls.index("publish_into_place")
     record_at = calls.index("record_published_bundle_if_shared")
     assert publish_at < record_at
+
+
+@pytest.mark.requirement("STEM-12753")
+def test_the_worker_declares_pydantic_for_the_index_import() -> None:
+    """[if] the PEP 723 worker env lacks pydantic [then] the post-publish index import fails, [else stop]."""
+    source = Path(worker.__file__).read_text(encoding="utf-8")
+    block = source.split("# /// script", 1)[1].split("# ///", 1)[0]
+    assert '"pydantic' in block, block

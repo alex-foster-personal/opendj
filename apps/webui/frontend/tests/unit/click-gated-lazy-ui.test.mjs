@@ -1,5 +1,5 @@
 /**
- * requirement: CHROME-07, LIBM-29, UX-FLOAT-01
+ * requirement: CHROME-07, LIBM-29, UX-FLOAT-01, SMART-14852
  *
  * The MIDI drawer and the track-row popovers only exist after a click, so
  * they are fetched by that click instead of riding in the /performance boot
@@ -19,6 +19,8 @@
  *   if a failed popover import renders no role="alert" then broken
  *   if any lazy-load error promises a same-document retry, lacks Reload, or
  *     reloads without a click then broken
+ *   if TreeSmartlistSection statically imports SmartlistRuleModal (the whole
+ *     smartlist rule editor, about 12 KB gzip on /performance) then broken
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -37,6 +39,7 @@ const rowPopovers = read('src/lib/components/rb/browser/TrackRowPopovers.svelte'
 const performancePage = read('src/routes/performance/+page.svelte');
 const quickDrawLoader = read('src/lib/components/rb/QuickDrawMenuLoader.svelte');
 const quickDrawMenu = read('src/lib/components/rb/QuickDrawMenu.svelte');
+const treeSmartlists = read('src/lib/components/rb/browser/TreeSmartlistSection.svelte');
 
 // A static import is `import X from '...Y.svelte'`; import('...') is dynamic.
 const staticImportOf = (file) => new RegExp(`import\\s+\\w+\\s+from\\s+['"][^'"]*${file}['"]`);
@@ -79,7 +82,8 @@ test('every lazy-load error offers Reload on click, and none promises a same-doc
 	for (const [src, errors] of [
 		[midiLoader, 1],
 		[midiPanel, 2],
-		[rowPopovers, 2]
+		[rowPopovers, 2],
+		[treeSmartlists, 1]
 	]) {
 		// The markup is what the user reads; comments may describe the old promise.
 		const markup = src.slice(src.lastIndexOf('</script>'));
@@ -164,4 +168,16 @@ test('the lazy-load error offers Reload on click, and never promises a same-docu
 	const onClick = quickDrawLoader.match(/onclick=\{\(\) => location\.reload\(\)\}>Reload</g) ?? [];
 	assert.equal(onClick.length, 1, 'one Reload button on the error surface');
 	assert.equal(reloads.length, onClick.length, 'location.reload() only inside a Reload click');
+});
+
+// SMART (#10024, PR #14445): the smartlist rule editor opens only from a tree row's Edit rule...
+// or double-click, so the editor is fetched by that pick instead of riding in /performance.
+test('the smartlist rule editor is fetched by Edit rule, never statically, and a failure is shown inline', () => {
+	assert.doesNotMatch(treeSmartlists, staticImportOf('SmartlistRuleModal\\.svelte'));
+	assert.doesNotMatch(treeSmartlists, staticImportOf('SmartlistRuleEditor\\.svelte'));
+	assert.match(treeSmartlists, dynamicImportOf('SmartlistRuleModal\\.svelte'));
+	assert.equal((treeSmartlists.match(/\.catch\(/g) ?? []).length, 1);
+	assert.equal((treeSmartlists.match(/role="alert"/g) ?? []).length, 1);
+	assert.match(treeSmartlists, /Rule editor failed to load: \{ruleLoadError\}/);
+	assert.doesNotMatch(treeSmartlists, /pushToast\(`?Rule editor/, 'the failure is inline, never a toast');
 });

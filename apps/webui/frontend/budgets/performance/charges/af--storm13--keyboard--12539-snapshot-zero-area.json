@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 483140,
+  "measured_with_pr": 487407,
+  "sha": "7506941e29",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12539-snapshot-zero-area grows the performance surface; measured +4267 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

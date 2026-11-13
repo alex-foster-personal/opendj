@@ -125,9 +125,18 @@ def _decode_window(path: str, start: float, length: float) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.float32)
 
 
+def _clamp_window(start: float, length: float, duration: float) -> tuple[float, float]:
+    start_clamped = min(max(start, 0.0), duration)
+    length_clamped = min(length, max(0.0, duration - start_clamped))
+    return start_clamped, length_clamped
+
+
 def _windows(duration: float) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
-    edge = [(0.0, CFG.EDGE_S), (duration - CFG.EDGE_S, CFG.EDGE_S)]
-    mid = [(duration * f - CFG.MID_S / 2, CFG.MID_S) for f in (0.3, 0.5, 0.7)]
+    edge = [
+        _clamp_window(0.0, CFG.EDGE_S, duration),
+        _clamp_window(duration - CFG.EDGE_S, CFG.EDGE_S, duration),
+    ]
+    mid = [_clamp_window(duration * f - CFG.MID_S / 2, CFG.MID_S, duration) for f in (0.3, 0.5, 0.7)]
     return edge, mid
 
 

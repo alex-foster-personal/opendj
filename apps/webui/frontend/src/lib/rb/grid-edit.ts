@@ -232,6 +232,9 @@ export function formatBeatShift(shift: number): string {
 	return `bar 1 ${name} beat${count === 1 ? '' : 's'} ${shift > 0 ? 'later' : 'earlier'}`;
 }
 
+/** GRIDEDIT-9763: why the deck grid buttons are disabled on a locked grid (the server's 409 GRID_LOCKED). */
+export const GRID_LOCKED_REASON = 'the beatgrid is locked (GRID_LOCKED) - unlock it to edit the grid';
+
 /** Why a deck's grid cannot be edited, or null when it can. */
 export function gridEditUnavailableReason(
 	stableId: string | null,
@@ -245,6 +248,7 @@ export function gridEditUnavailableReason(
 	// The fallback grid never applies a stored edit, and the refresh after one
 	// would drop it for the empty /anlz grid (Codex P2, PR #6235).
 	if (anlz.beatgrid.fallback === true) return 'this grid is a provisional estimate until the track is analyzed, and grid edits apply to analyzed grids only';
+	if (anlz.beatgrid.locked === true) return GRID_LOCKED_REASON;
 	return null;
 }
 

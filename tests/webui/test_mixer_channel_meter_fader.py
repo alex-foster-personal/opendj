@@ -12,7 +12,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHANNEL_LEVEL_METER = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/mixer/ChannelLevelMeter.svelte"
 DECK_CHANNEL_GRAPH = REPO_ROOT / "apps/webui/frontend/src/lib/rb/deck-channel-graph.ts"
-HARNESS_GRAPH = REPO_ROOT / "apps/webui/frontend/src/lib/rb/deck-channel-meter-harness-graph.ts"
+GRAPH_CORE = REPO_ROOT / "apps/webui/frontend/src/lib/rb/deck-channel-graph-core.ts"
 METER_ARTIFACT = REPO_ROOT / "apps/webui/frontend/tests/e2e/meter-artifact.spec.ts"
 CHANNEL_HARNESS = REPO_ROOT / "apps/webui/frontend/tests/e2e/fixtures/channel-meter-browser-entry.ts"
 
@@ -33,7 +33,7 @@ def test_channel_meter_bar_uses_post_fader_db() -> None:
 
 def test_deck_graph_taps_the_channel_fader_node() -> None:
     """[if] the tap is not on fader [then] the slider and meter disagree, [else stop]."""
-    graph = _read(DECK_CHANNEL_GRAPH)
+    graph = _read(GRAPH_CORE)
     assert "meterSources.push({ tap, source: fader" in graph
     assert "source: high" not in graph
 
@@ -48,10 +48,23 @@ def test_meter_artifact_covers_closed_fader_then_unity() -> None:
 def test_browser_harness_drives_production_fader_gain() -> None:
     """[if] the harness skips fader.gain [then] graph proof is fake, [else stop]."""
     harness = _read(CHANNEL_HARNESS)
-    assert "buildDeckChannelMeterHarnessGraph" in harness
+    assert "buildDeckChannelGraphCore" in harness
     assert "deckNodes.fader.gain.setValueAtTime(value, ctx.currentTime)" in harness
     assert "readChannelMeterAtFaderGains" in harness
-    assert "meterSources.push({ tap, source: fader" in _read(HARNESS_GRAPH)
+    assert "meterSources.push({ tap, source: fader" in _read(GRAPH_CORE)
+
+
+def test_harness_and_production_share_one_channel_graph_builder() -> None:
+    """[if] production or the harness builds its own channel graph [then] the harness stops covering production wiring (#12665), [else stop]."""
+    production = _read(DECK_CHANNEL_GRAPH)
+    assert "return buildDeckChannelGraphCore({" in production
+    assert "createGain(" not in production
+    assert "meterSources.push(" not in production
+    harness = _read(CHANNEL_HARNESS)
+    assert "from '$lib/rb/deck-channel-graph-core'" in harness
+    assert "createBiquadFilter(" not in harness
+    assert "meterSources.push({ tap, source: fader" not in harness
+    assert not (REPO_ROOT / "apps/webui/frontend/src/lib/rb/deck-channel-meter-harness-graph.ts").exists()
 
 
 def test_next_observation_floors_when_fader_closes() -> None:

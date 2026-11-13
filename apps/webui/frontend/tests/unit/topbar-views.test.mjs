@@ -64,7 +64,7 @@ describe('TOPVIEW-01..04: the view icons and PAD are live controls', () => {
 		for (const view of ['list', 'waveform', 'phase-scope', 'phase-meter']) {
 			const re = new RegExp(
 				`class:active=\\{uiPrefs\\.perf_view === '${view}'\\}[\\s\\S]*?aria-pressed=\\{uiPrefs\\.perf_view === '${view}'\\}` +
-					`[\\s\\S]*?onclick=\\{\\(\\) => void runPerformanceCommandFromUi\\(\\{ type: 'set_perf_view', view: '${view}' \\}\\)\\}`
+					`[\\s\\S]*?onclick=\\{\\(\\) =>\\s*void runPerformanceCommandFromUi\\(\\{ type: 'set_perf_view', view: '${view}' \\}\\)\\}`
 			);
 			assert.match(TOPBAR, re, `${view} icon is not wired to the set_perf_view dispatcher command`);
 		}
@@ -80,7 +80,7 @@ describe('TOPVIEW-01..04: the view icons and PAD are live controls', () => {
 	it('PAD toggles show_pads and the route hides every pad bank when it is off', () => {
 		assert.match(
 			TOPBAR,
-			/data-testid="topbar-pad-toggle"[\s\S]*?onclick=\{\(\) => void runPerformanceCommandFromUi\(\{ type: 'show_pads', enabled: !uiPrefs\.show_pads \}\)\}/
+			/data-testid="topbar-pad-toggle"[\s\S]*?onclick=\{\(\) =>\s*void runPerformanceCommandFromUi\(\{ type: 'show_pads', enabled: !uiPrefs\.show_pads \}\)\}/
 		);
 		assert.match(PAGE, /class:pads-hidden=\{!uiPrefs\.show_pads\}/);
 		assert.match(PAGE, /\.perf-root\.pads-hidden :global\(\.cue-area > \.bank\) \{\s*display: none;/);
@@ -96,11 +96,16 @@ describe('TOPVIEW-01..04: the view icons and PAD are live controls', () => {
 		for (const n of ['4', '2']) {
 			assert.match(PAGE, new RegExp(`calc\\(${n} \\* \\(var\\(--rb-waverow-h\\) \\+ var\\(--rb-stemwave-stack-extra, 0px\\)\\) \\* var\\(--rb-wavestack-shown, 1\\)\\)`));
 		}
-		assert.equal((PAGE.match(/--rb-wavestack-shown/g) ?? []).length, 4, 'two tracks, the rule and its comment');
+		// PR #13833: right Option's large library has its own wavestack track, scaled the same way;
+		// its deck row is a fixed 249px, so List view still collapses only the wavestack track.
+		assert.match(PAGE, /calc\(2 \* var\(--rb-waverow-h\) \* var\(--rb-wavestack-shown, 1\)\)/);
+		assert.equal((PAGE.match(/--rb-wavestack-shown/g) ?? []).length, 5, 'three tracks, the rule and its comment');
 	});
 
 	it('the route mounts only the chosen view in the wavestack area', () => {
-		assert.match(PAGE, /<PerfViewArea view=\{uiPrefs\.perf_view\} lessLayout=\{uiPrefs\.deck_layout === 'less'\} \/>/);
+		assert.match(PAGE, /<PerfViewArea view=\{uiPrefs\.perf_view\} lessLayout=\{deckLayoutLess\} \/>/);
+		// SKINLAYOUT-10207: the flag is the LESS pref, or the library-first preset (always two decks).
+		assert.match(PAGE, /const deckLayoutLess = \$derived\(uiPrefs\.deck_layout === 'less' \|\| perfLayout === 'library-first'\);/);
 		assert.doesNotMatch(PAGE, /<WaveformStack \/>/);
 		assert.match(AREA, /\{#if mount === 'waveform'\}\s*<WaveformStack \/>/);
 		assert.match(AREA, /mount === 'phase-scope'\}\s*\{#await loadPhaseScope\(\) then \{ default: PhaseScopeView \}\}\s*<PhaseScopeView \{lessLayout\} \/>/);
@@ -421,13 +426,13 @@ describe('TOPVIEW-01/04: narrow width tiers never strand a persisted choice', ()
 	it('view icons and PAD yield only at their defaults', () => {
 		assert.match(TOPBAR_SRC, /class:view-chosen=\{uiPrefs\.perf_view !== 'waveform'\}/);
 		assert.match(TOPBAR_SRC, /class:pads-off=\{!uiPrefs\.show_pads\}/);
-		const viewRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.view-chosen\):not\(\.single-click\) \.icon-cluster > :global\(\.explainer:has\(\.tb-view\)\)/g) ?? [];
-		const padRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.pads-off\) \.topbar-slot-pad \{ display: none; \}/g) ?? [];
+		const viewRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.view-chosen\):not\(\.single-click\)\s+\.icon-cluster\s*>\s*:global\(\.explainer:has\(\.tb-view\)\)/g) ?? [];
+		const padRules = TOPBAR_SRC.match(/\.rb-topbar:not\(\.pads-off\) \.topbar-slot-pad \{\s*display: none;\s*\}/g) ?? [];
 		assert.equal(viewRules.length, 2, 'both narrow tiers must gate the view icons on the default view');
 		assert.equal(padRules.length, 2, 'both narrow tiers must gate PAD on pads being shown');
 		// Mutation guard, other direction: no rule hides them unconditionally.
 		assert.doesNotMatch(TOPBAR_SRC, /:has\(\.rb-inert, \.tb-view\)/);
-		assert.doesNotMatch(TOPBAR_SRC, /\t\.rb-topbar \.topbar-slot-pad \{ display: none; \}/);
+		assert.doesNotMatch(TOPBAR_SRC, /\t\.rb-topbar \.topbar-slot-pad \{\s*display: none;\s*\}/);
 	});
 });
 
@@ -645,6 +650,8 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 			title: 't',
 			artist: 'a',
 			album: 'al',
+			year: 2019,
+			label: 'Hotflush',
 			bpm: 120,
 			key: '1A',
 			key_source: 'own',
@@ -738,7 +745,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 	});
 
 	test('the top bar mounts the live button in the evictable utility slot', () => {
-		assert.match(TOPBAR, /<span class="info-slot topbar-slot-utility"\s*><TrackInfoButton\b[\s\S]*?\/><\/span\s*>/);
+		assert.match(TOPBAR, /<span\s+class="info-slot topbar-slot-utility"[^>]*><TrackInfoButton\b[\s\S]*?\/><\/span\s*>/);
 		assert.doesNotMatch(TOPBAR, /plannedTitle\('information'\)/);
 	});
 
@@ -746,7 +753,7 @@ describe('TOPVIEW-05: focused deck and the track record', () => {
 		// The width tiers and LESS view hide `.topbar-slot-utility` with
 		// display:none, which hides a position:fixed descendant too, while
 		// track_info_toggle still opens the record there.
-		const slot = TOPBAR.match(/<span class="info-slot topbar-slot-utility"\s*>([\s\S]*?)<\/span\s*>/);
+		const slot = TOPBAR.match(/<span\s+class="info-slot topbar-slot-utility"[^>]*>([\s\S]*?)<\/span\s*>/);
 		assert.ok(slot, 'the utility slot is in the top bar');
 		assert.doesNotMatch(slot[1], /TrackInfoHost|TrackInfoOverlay|loadFailure/);
 		assert.match(TOPBAR.slice(TOPBAR.indexOf(slot[0]) + slot[0].length), /^\s*<TrackInfoHost\b/);

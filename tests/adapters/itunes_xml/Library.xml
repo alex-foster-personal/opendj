@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hand-written fixture with placeholder paths (issue #9752). Not a real library. -->
+<plist version="1.0">
+<dict>
+	<key>Major Version</key><integer>1</integer>
+	<key>Minor Version</key><integer>1</integer>
+	<key>Application Version</key><string>1.4.0</string>
+	<key>Music Folder</key><string>file://localhost/fixture/Music/</string>
+	<key>Tracks</key>
+	<dict>
+		<key>101</key>
+		<dict>
+			<key>Track ID</key><integer>101</integer>
+			<key>Name</key><string>Alpha</string>
+			<key>Location</key><string>file://localhost/fixture/Music/Alpha%20One.mp3</string>
+		</dict>
+		<key>102</key>
+		<dict>
+			<key>Track ID</key><integer>102</integer>
+			<key>Name</key><string>Cafe</string>
+			<key>Location</key><string>file://localhost/fixture/Music/Cafe%CC%81.mp3</string>
+		</dict>
+		<key>103</key>
+		<dict>
+			<key>Track ID</key><integer>103</integer>
+			<key>Name</key><string>Not In Library</string>
+			<key>Location</key><string>file://localhost/fixture/Music/Missing.mp3</string>
+		</dict>
+		<key>104</key>
+		<dict>
+			<key>Track ID</key><integer>104</integer>
+			<key>Name</key><string>Stream</string>
+			<key>Track Type</key><string>URL</string>
+		</dict>
+	</dict>
+	<key>Playlists</key>
+	<array>
+		<dict>
+			<key>Name</key><string>Library</string>
+			<key>Master</key><true/>
+			<key>Playlist ID</key><integer>1</integer>
+			<key>Playlist Persistent ID</key><string>AAAA000000000001</string>
+			<key>Playlist Items</key>
+			<array>
+				<dict><key>Track ID</key><integer>101</integer></dict>
+			</array>
+		</dict>
+		<dict>
+			<key>Name</key><string>Music</string>
+			<key>Distinguished Kind</key><integer>4</integer>
+			<key>Playlist ID</key><integer>2</integer>
+			<key>Playlist Persistent ID</key><string>AAAA000000000002</string>
+		</dict>
+		<dict>
+			<key>Name</key><string>Recently Added</string>
+			<key>Playlist ID</key><integer>3</integer>
+			<key>Playlist Persistent ID</key><string>AAAA000000000003</string>
+			<key>Smart Info</key><data>AQEAAwAAAAIAAAAZAAAAAAAAAAc=</data>
+			<key>Smart Criteria</key><data>U0xzdAABAAEAAAAD</data>
+		</dict>
+		<dict>
+			<key>Name</key><string>Sets</string>
+			<key>Folder</key><true/>
+			<key>Playlist ID</key><integer>4</integer>
+			<key>Playlist Persistent ID</key><string>AAAA000000000004</string>
+		</dict>
+		<dict>
+			<key>Name</key><string>Warmup</string>
+			<key>Playlist ID</key><integer>5</integer>
+			<key>Playlist Persistent ID</key><string>AAAA000000000005</string>
+			<key>Parent Persistent ID</key><string>AAAA000000000004</string>
+			<key>Playlist Items</key>
+			<array>
+				<dict><key>Track ID</key><integer>102</integer></dict>
+				<dict><key>Track ID</key><integer>101</integer></dict>
+				<dict><key>Track ID</key><integer>103</integer></dict>
+			</array>
+		</dict>
+		<dict>
+			<key>Name</key><string>Peak</string>
+			<key>Playlist ID</key><integer>6</integer>
+			<key>Playlist Persistent ID</key><string>AAAA000000000006</string>
+			<key>Playlist Items</key>
+			<array>
+				<dict><key>Track ID</key><integer>101</integer></dict>
+				<dict><key>Track ID</key><integer>104</integer></dict>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

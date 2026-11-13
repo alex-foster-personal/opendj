@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
+import { installQualityBadgeDom } from './quality-badge-client-harness.mjs';
+import { bundleRecentlyDeletedFolderViewClient } from './mount-svelte-client.mjs';
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
 
 const ENTRY = [
@@ -14,12 +16,17 @@ const ENTRY = [
 ].join('\n');
 
 let ssr;
+let client;
+let teardownDom;
 
 before(async () => {
+	teardownDom = installQualityBadgeDom();
 	ssr = await loadSvelteSsrModule(ENTRY);
+	client = await bundleRecentlyDeletedFolderViewClient();
 });
 
 after(() => {
+	teardownDom?.();
 	delete globalThis.window;
 });
 
@@ -78,4 +85,71 @@ test('LIBUX-53: open true with empty list shows collapse wrappers and empty test
 	assert.ok(hasClass(html, 'collapse'));
 	assert.ok(hasClass(html, 'collapse-inner'));
 	assert.match(html, /data-testid="playlist-recently-deleted-empty"/);
+});
+
+function findByTestId(root, testId) {
+	if (root.getAttribute?.('data-testid') === testId) return root;
+	for (const child of root.childNodes ?? []) {
+		const hit = findByTestId(child, testId);
+		if (hit) return hit;
+	}
+	return null;
+}
+
+function mountHarness(props) {
+	const { mount, flushSync } = client;
+	const target = document.createElement('div');
+	document.body.appendChild(target);
+	const instance = mount(client.RecentlyDeletedFolderHarness, {
+		target,
+		props
+	});
+	flushSync();
+	return {
+		target,
+		instance,
+		done: () => {
+			client.unmount(instance);
+			target.remove();
+		}
+	};
+}
+
+const refreshedRows = [
+	deleted('pl-2', 'After Refresh A', 11),
+	deleted('pl-4', 'After Refresh B', 3)
+];
+
+// [if] expanded recently deleted gets new rows [then] the collapse node is unchanged, [else stop].
+test('#13326: expanded Recently deleted keeps the same collapse element after rows refresh', () => {
+	const h = mountHarness({ initialOpen: true, initialRows: sampleRows, initialError: null });
+	try {
+		const collapseEl = h.target.querySelector('.collapse');
+		assert.ok(collapseEl, 'collapse wrapper');
+		assert.equal(findByTestId(h.target, 'playlist-deleted-row') !== null, true);
+		h.instance.setRows(refreshedRows);
+		client.flushSync();
+		assert.equal(h.target.querySelector('.collapse'), collapseEl);
+		assert.equal(findByTestId(h.target, 'playlist-deleted-row') !== null, true);
+		assert.ok(h.target.textContent.includes('After Refresh A'));
+		assert.ok(!h.target.textContent.includes('Old Warmup'));
+	} finally {
+		h.done();
+	}
+});
+
+// [if] collapsed recently deleted gets new rows [then] the collapse subtree stays absent, [else stop].
+test('#13326: collapsed Recently deleted stays closed after rows refresh', () => {
+	const h = mountHarness({ initialOpen: false, initialRows: sampleRows, initialError: null });
+	try {
+		assert.equal(h.target.querySelector('.collapse'), null);
+		assert.ok(findByTestId(h.target, 'playlist-recently-deleted'));
+		h.instance.setRows(refreshedRows);
+		client.flushSync();
+		assert.equal(h.target.querySelector('.collapse'), null);
+		assert.equal(findByTestId(h.target, 'playlist-deleted-row'), null);
+		assert.ok(findByTestId(h.target, 'playlist-recently-deleted'));
+	} finally {
+		h.done();
+	}
 });

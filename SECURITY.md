@@ -9,7 +9,7 @@ a library or leak a token, so we take reports seriously.
 
 | Version | Status | Security updates |
 |:--------|:-------|:-----------------|
-| 1.0 alpha (`app-v1.0.0-alpha.1`) | Current public release | Yes |
+| 1.0 alpha (`app-v1.0.0-alpha.2`) | Current public release | Yes |
 | `main` | Development | Yes, best effort |
 | Anything older | Internal builds | No |
 

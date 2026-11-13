@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 483140,
+  "measured_with_pr": 488148,
+  "sha": "2c5022e46e",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--9742-mytag-filter grows the performance surface; measured +5008 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

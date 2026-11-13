@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "palette": "warm",
+  "looks": {
+    "wash_dim": [
+      "#401808"
+    ],
+    "wash_warm": [
+      "#ff8020"
+    ],
+    "wash_cool": [
+      "#c08040"
+    ],
+    "wash_full": [
+      "#ffa040",
+      "#ff6000"
+    ],
+    "sweep_slow": [
+      "#ff6010"
+    ],
+    "sweep_fast": [
+      "#ffc000"
+    ],
+    "chase_colour": [
+      "#ff4000",
+      "#ffa000",
+      "#ff2020"
+    ],
+    "pulse_white": [
+      "#fff0d0"
+    ],
+    "split_two_tone": [
+      "#ff3000",
+      "#ffb000"
+    ],
+    "spot_centre": [
+      "#ffe0b0"
+    ]
+  }
+}

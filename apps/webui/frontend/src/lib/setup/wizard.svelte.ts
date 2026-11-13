@@ -1,11 +1,12 @@
 /**
  * First-run wizard state: which step, what the daemon said, which job to watch.
  *
- * Rune module - the .svelte.ts extension is REQUIRED for $state. Only $state
- * is used (no $derived/$effect) so the node:test harness can bundle it, the
- * same constraint jobs-store.svelte.ts documents. Everything derived is a pure
- * exported function instead, which is also what makes the step rules testable
- * without mounting a component.
+ * Rune module - the .svelte.ts extension is REQUIRED for $state. This module
+ * uses $state only (no $effect; the node:test harness does not shim $effect).
+ * Derivation lives in pure exported functions in wizard-rules.ts and setup-api
+ * so step rules stay testable without mounting a component. Other setup modules
+ * may use $derived in the harness via an identity shim (init-time snapshot,
+ * not live reactivity); this file does not rely on that shim.
  *
  * There is no fabricated progress here and no optimistic step advance. The
  * progress step reads the real job row out of jobsStore; if the engine has said
@@ -60,10 +61,15 @@
  *     [if] row B fails while row A is scanning, then A succeeds [then ⛔️] broken
  *     if B's error is cleared
  *     [if] both rows failed and B is rechecked ok [then ⛔️] broken if A's error clears
+ *   ✔︎ 🎯 boot and setup redirects preserve validated tempo query fields (#13096):
+ *     [if] onboarding redirects with a tempo selection [then ⛔️] broken if valid
+ *       tempo query values do not survive on the host route
+ *     [if] onboarding redirects without tempo fields [then ⛔️] broken if tempo keys
+ *       are invented on the host route
+ *     [if] an invalid tempo value is supplied [then ⛔️] broken if invalid keys are
+ *       copied to the redirect target
  */
 
-import { capabilities } from '../api/capabilities.svelte';
-import { checkPreflight } from '../preflight/preflight.svelte';
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
@@ -71,6 +77,7 @@ import {
 	getFolderCandidates,
 	getSetupStatus,
 	normalizeSetupFolderPath,
+	probeSetupCapabilities,
 	scanFolder,
 	setDismissed,
 	setupRefusal,
@@ -92,7 +99,8 @@ import {
 	SetupReadTimeout,
 	bounded,
 	errorMessage,
-	finishBlocker
+	finishBlocker,
+	refreshPreflightAfterSetupClose
 } from './setup-read';
 import {
 	backRefusal,
@@ -269,7 +277,7 @@ class SetupWizard {
 	 */
 	async load(): Promise<void> {
 		this.detectState = 'scanning';
-		await capabilities.probe();
+		await probeSetupCapabilities();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this._fail(refusal);
@@ -305,7 +313,7 @@ class SetupWizard {
 	 * Reading the refusal synchronously would answer a legitimate retry with a
 	 * sentence about an unfinished health GET and change nothing. */
 	async redetect(): Promise<void> {
-		await capabilities.probe();
+		await probeSetupCapabilities();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this._fail(refusal);
@@ -395,7 +403,7 @@ class SetupWizard {
 		) {
 			return;
 		}
-		await capabilities.probe();
+		await probeSetupCapabilities();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this._fail(refusal);
@@ -598,7 +606,7 @@ class SetupWizard {
 		// dismissal while the first is still being confirmed.
 		this.busy = true;
 		try {
-			await checkPreflight();
+			await refreshPreflightAfterSetupClose();
 		} finally {
 			this.busy = false;
 		}
@@ -616,7 +624,7 @@ class SetupWizard {
 		// Same probe-before-refusal order as load(): this is the other door
 		// into the wizard, and a click in the first tick after page load must
 		// not be answered with a sentence about an unfinished health GET.
-		await capabilities.probe();
+		await probeSetupCapabilities();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this._fail(refusal);

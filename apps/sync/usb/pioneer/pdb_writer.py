@@ -1,8 +1,14 @@
-"""Encode rekordbox classic ``export.pdb`` (DeviceSQL pages, issue #10031).
+"""Production rekordbox ``export.pdb`` encoder (DeviceSQL pages).
+
+Encodes tracks, playlists, lookups and artwork into the page/row layout
+rekordbox writes, parsed back by the vendored Kaitai reader
+(``apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py``). Play-from-USB tests
+build sticks through this module (via ``tests/sync/usb/export_pdb_builder``).
 
 Layout matches crate-digger ``rekordbox_pdb.ksy`` (vendored under ``_vendor``):
 page 0 is the header and table directory; each table is a chain of 4096-byte
 pages with a 40-byte header, rows growing up, and 16-row group indexes down.
+Classic ``write-pdb`` CLI: issue #10031.
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+# The vendored parser is a whole-file ``# type: ignore``, so mypy sees no names in it.
 from apps.sync.usb.pioneer._vendor.rekordbox_pdb import RekordboxPdb  # type: ignore[attr-defined]
 
 _PT = RekordboxPdb.PageType
@@ -23,6 +30,7 @@ _ROWS_PER_GROUP = 16
 _DATA_PAGE_FLAGS = 0x24
 _TRACK_STRING_COUNT = 21
 _TRACK_FIXED_SIZE = 94 + 2 * _TRACK_STRING_COUNT
+# Indexes into a track row's 21 string offsets (crate-digger TrackRow).
 _ANALYZE_PATH, _DATE_ADDED, _COMMENT, _TITLE, _FILENAME, _FILE_PATH = 14, 10, 16, 17, 19, 20
 
 
@@ -65,7 +73,7 @@ class PdbPlaylist:
 
 @dataclass(frozen=True)
 class PdbExport:
-    """Everything one ``export.pdb`` encodes.
+    """Everything one synthetic ``export.pdb`` holds.
 
     Entry tuples are ``(list_id, track_id, entry_index)`` for playlist and
     history membership rows.
@@ -83,6 +91,9 @@ class PdbExport:
     playlist_entries: Sequence[tuple[int, int, int]] = ()
     history: Mapping[int, str] = field(default_factory=dict)
     history_entries: Sequence[tuple[int, int, int]] = ()
+
+
+# ----- strings and rows -----------------------------------------------------
 
 
 def _device_sql_string(text: str) -> bytes:
@@ -203,6 +214,9 @@ def _table_rows(export: PdbExport) -> list[tuple[int, list[bytes]]]:
         (_PT.history_entries, history_entry),
         (_PT.artwork, _sorted_rows(export.artwork, _id_name_row)),
     ]
+
+
+# ----- pages ---------------------------------------------------------------
 
 
 def _padded(row: bytes) -> bytes:

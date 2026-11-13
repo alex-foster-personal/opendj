@@ -102,6 +102,9 @@ def enroll(request: Request, payload: EnrollRequest) -> service_enroll.EnrollRes
     # unauthenticated caller must never hold the write lock across that.
     credential = service_enroll.verify_credential(payload.credential)
     with _hub_conn(request) as conn:
+        # The loser of a race on one grant must wait out the winner and get
+        # its 401, not a lock timeout (#9684).
+        service_enroll.wait_longer_for_enroll_lock(conn)
         try:
             with _transaction(conn):
                 return service_enroll.perform_enroll(

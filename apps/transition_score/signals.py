@@ -34,6 +34,11 @@ TRUE_PEAK_OVERSAMPLE = 4
 _SILENCE_FLOOR = 1e-12
 
 
+def overlap_ms(start_a: int, end_a: int, start_b: int, end_b: int) -> int:
+    """Milliseconds of overlap between two intervals (ENRICH-13622 segment windows)."""
+    return max(0, min(end_a, end_b) - max(start_a, start_b))
+
+
 def envelope_hop_s(sr: int) -> float:
     """Seconds between :data:`ENVELOPE_HOP` samples at ``sr``."""
     return ENVELOPE_HOP / sr

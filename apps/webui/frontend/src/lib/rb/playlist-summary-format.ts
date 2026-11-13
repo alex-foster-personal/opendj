@@ -10,6 +10,8 @@ export function formatDurationHms(durationS: number): string {
 }
 
 export function formatPlaylistSummaryLine(stats: PlaylistSummaryStatsDoc): string {
+	// LIBM-105b: an empty list has no duration, BPM or keys to report.
+	if (stats.tracks === 0) return '0 tracks';
 	const parts: string[] = [`${stats.tracks} tracks`, formatDurationHms(stats.duration_s)];
 	const { bpm, energy, keys } = stats;
 	const tracksTip = `${stats.tracks} distinct playlist members`;
@@ -22,6 +24,7 @@ export function formatPlaylistSummaryLine(stats: PlaylistSummaryStatsDoc): strin
 	}
 	parts.push(`${keys.distinct} keys`);
 	if (stats.unanalysed > 0) parts.push(`${stats.unanalysed} unanalysed`);
+	if (stats.unavailable > 0) parts.push(`${stats.unavailable} unavailable`);
 	return parts.join(', ');
 }
 
@@ -32,7 +35,8 @@ export function playlistSummaryTitle(stats: PlaylistSummaryStatsDoc): string {
 		`BPM range over ${stats.tracks - stats.bpm.missing} of ${stats.tracks} with BPM`,
 		`energy over ${stats.tracks - stats.energy.missing} of ${stats.tracks}`,
 		`${stats.keys.distinct} distinct keys (${stats.keys.missing} missing)`,
-		`${stats.unanalysed} missing BPM or key of ${stats.tracks}`
+		`${stats.unanalysed} missing BPM or key of ${stats.tracks}`,
+		`${stats.unavailable} with audio missing on this machine of ${stats.tracks}`
 	].join(' · ');
 }
 

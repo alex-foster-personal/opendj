@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 483140,
+  "measured_with_pr": 488032,
+  "sha": "91e2821a04",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--12328-playlist-health grows the performance surface; measured +4892 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

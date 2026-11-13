@@ -18,8 +18,12 @@
 //   if a non-ok response resolves instead of throwing then broken
 //   if deviceMapFromDoc drops relativeCentered/relativeUnit/ccButton then broken
 //   if [0xB6,cc,0x7F] on an installed ccButton binding is not a button press then broken
+//   if a map document carrying every runtime action kind loses one in conversion then broken
+//   if a new runtime action kind is not in INSTALLED_ACTION_TYPES then broken
+//   if an unknown action type converts into an inert binding then broken
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -32,6 +36,12 @@ import { startMidiMapsTestServer } from './midi-maps-test-server.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPO_ROOT = resolve(FRONTEND_ROOT, '../../..');
+const MIDI_TYPES_TS = resolve(FRONTEND_ROOT, 'src/lib/rb/midi/midi-types.ts');
+// The engine parity fixture: one binding per runtime action kind (#10276).
+const ALL_ACTIONS_FIXTURE = resolve(
+	REPO_ROOT,
+	'apps/audio-engine/tests/fixtures/midi/all-page-actions.json'
+);
 
 let vite;
 let webmidi;
@@ -451,4 +461,71 @@ test('an installed ccButton binding dispatches [0xB6, cc, 0x7F] as a button pres
 			}
 		}
 	}
+});
+
+// ------------------------------------- runtime action union drift (#13366)
+
+/** Action kinds the runtime MidiAction union declares, read from midi-types.ts
+ * with the same pattern as midi-action-parity.test.mjs. */
+function _runtimeActionTypes() {
+	const src = readFileSync(MIDI_TYPES_TS, 'utf8');
+	return new Set([...src.matchAll(/^\ttype: '([a-z_]+)';$/gm)].map((m) => m[1]));
+}
+
+/** An installed-map document carrying every binding of the engine parity fixture. */
+function _everyActionDoc() {
+	const fixture = JSON.parse(readFileSync(ALL_ACTIONS_FIXTURE, 'utf8'));
+	return { ...DOC, bindings: fixture.bindings.map((b) => ({ ...b, provenance: PROV })) };
+}
+
+// A doc with one binding per runtime kind converts with every action intact and validates.
+test('a map document carrying every runtime action kind converts with every action intact', () => {
+	const doc = _everyActionDoc();
+	const map = installed.deviceMapFromDoc(doc);
+	const runtime = _runtimeActionTypes();
+	assert.ok(runtime.size >= 31, `midi-types.ts declares ${runtime.size} action types`);
+	assert.deepEqual(new Set(map.bindings.map((b) => b.action.type)), runtime);
+	assert.deepEqual(
+		map.bindings.map((b) => b.action),
+		doc.bindings.map((b) => b.action)
+	);
+	webmidi.validateDeviceMap(map);
+});
+
+// The adapter's accepted kinds equal the runtime union both ways, so a new kind cannot drift.
+test('INSTALLED_ACTION_TYPES is exactly the runtime MidiAction union in midi-types.ts', () => {
+	const runtime = _runtimeActionTypes();
+	const accepted = installed.INSTALLED_ACTION_TYPES;
+	const missing = [...runtime].filter((t) => !accepted.has(t));
+	assert.deepEqual(
+		missing,
+		[],
+		'runtime kinds installed-map conversion refuses: list them in installed-maps.ts'
+	);
+	const extra = [...accepted].filter((t) => !runtime.has(t));
+	assert.deepEqual(
+		extra,
+		[],
+		'kinds installed-map conversion accepts that the runtime never dispatches'
+	);
+});
+
+// A binding whose action the runtime cannot dispatch throws instead of loading as an inert binding.
+test('an unknown action type throws instead of converting into an inert binding', () => {
+	const doc = {
+		...DOC,
+		bindings: [
+			...DOC.bindings,
+			{
+				source: { ch: 1, kind: 'note', id: 12 },
+				action: { type: 'deck_teleport', deck: 1 },
+				provenance: PROV
+			}
+		]
+	};
+	assert.throws(
+		() => installed.deviceMapFromDoc(doc),
+		/test-device\): bindings\[1\] action type 'deck_teleport' is not a runtime MidiAction/
+	);
+	assert.throws(() => installed.validateInstalledMapBatch([doc]), /deck_teleport/);
 });

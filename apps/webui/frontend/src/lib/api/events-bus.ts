@@ -75,7 +75,9 @@ export const LIBRARY_KINDS = [
 	'set_target',
 	'undo',
 	'source_flags',
-	'edits'
+	'edits',
+	'taglist',
+	'sampler'
 ] as const;
 
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];

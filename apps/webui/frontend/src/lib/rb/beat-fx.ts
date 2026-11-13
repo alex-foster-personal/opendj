@@ -7,10 +7,12 @@
  * Spec: `(private path)` sections 4.1, 4.3, 4.4.
  * Adapted from our own master-only rack on `af--b2b-link` (`beat-fx.ts`).
  * Mimicked: DJM CH SELECT targets 1 to 4 or master, division range 1/16 to 16
- * beats (DJM-A9 manual p. 52); 3/4 kept from main's color echo.
+ * beats (DJM-A9 manual p. 52); 3/4 kept from main's color echo. Triplet set
+ * 1/12 to 12/3 beats (DJM-A9 TRIPLET FILTER and TRIPLET ROLL, pp. 55-56).
  */
 import { COLOR_FX_MAX_BPM, COLOR_FX_MIN_BPM } from './color-fx';
-import { TIME_FX_BUILT_EFFECT_NAMES } from './fx/time-fx-catalog';
+import { BEAT_FX_EFFECT_NAMES } from './fx/beat-fx-effects';
+import { TRIPLET_CYCLE_BEATS, type TripletCycleBeats } from './mod-fx-lfo';
 
 /** Channel select: one of decks 1 to 4, or the master bus. */
 export const BEAT_FX_TARGETS = ['1', '2', '3', '4', 'master'] as const;
@@ -21,8 +23,12 @@ export type BeatFxDeckTarget = Exclude<BeatFxTarget, 'master'>;
 export const BEAT_FX_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16] as const;
 export type BeatFxBeats = (typeof BEAT_FX_BEATS)[number];
 
-/** Effects with `builtOnMain: true` in `fx/time-fx-catalog.ts` (issues #9973, #10015). */
-export const BEAT_FX_EFFECTS = TIME_FX_BUILT_EFFECT_NAMES;
+/** Triplet divisions (issue #10016): 1/12 to 12/3 beats, the mod FX LFO's triplet cycles. */
+export const BEAT_FX_TRIPLET_BEATS = TRIPLET_CYCLE_BEATS;
+export type BeatFxTripletBeats = TripletCycleBeats;
+
+/** Every effect in the registry `fx/beat-fx-effects/` (issue #13726); the unit refuses unbuilt ones. */
+export const BEAT_FX_EFFECTS = BEAT_FX_EFFECT_NAMES;
 export type BeatFxEffect = (typeof BEAT_FX_EFFECTS)[number];
 
 /**
@@ -52,7 +58,12 @@ export interface BeatFxCommand {
 	type: 'beat_fx';
 	target?: BeatFxTarget;
 	effect?: BeatFxEffect;
-	beats?: BeatFxBeats;
+	/** From BEAT_FX_BEATS, or from BEAT_FX_TRIPLET_BEATS when `triplet` is true. */
+	beats?: BeatFxBeats | BeatFxTripletBeats;
+	/** Triplet division set (issue #10016); absent means false. */
+	triplet?: boolean;
+	/** Free TIME in ms (issue #10001); never with `beats`. `beats` again returns to synced timing. */
+	time_ms?: number;
 	level?: number;
 	enabled?: boolean;
 	quantize?: boolean;
@@ -81,6 +92,8 @@ const BEAT_FX_FIELDS = new Set([
 	'target',
 	'effect',
 	'beats',
+	'triplet',
+	'time_ms',
 	'level',
 	'enabled',
 	'quantize',
@@ -123,6 +136,15 @@ function _unit(command: string, field: string, value: unknown): number {
 	return value;
 }
 
+function _assertFiniteGrid(gridBeatsSec: readonly number[]): void {
+	const at = gridBeatsSec.findIndex((t) => !Number.isFinite(t));
+	if (at >= 0) {
+		throw new RangeError(
+			`beat fx grid beat ${at} must be a finite number; got ${String(gridBeatsSec[at])}`
+		);
+	}
+}
+
 function _assertFiniteNonNegative(field: string, value: number): void {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
 		throw new RangeError(`beat fx ${field} must be a finite number >= 0; got ${String(value)}`);
@@ -147,7 +169,21 @@ export function parseBeatFxCommand(record: Record<string, unknown>): BeatFxComma
 		out.target = _oneOf(name, 'target', record.target, BEAT_FX_TARGETS);
 	if (record.effect !== undefined)
 		out.effect = _oneOf(name, 'effect', record.effect, BEAT_FX_EFFECTS);
-	if (record.beats !== undefined) out.beats = _oneOf(name, 'beats', record.beats, BEAT_FX_BEATS);
+	if (record.triplet !== undefined) out.triplet = _boolean(name, 'triplet', record.triplet);
+	if (record.beats !== undefined) {
+		const divisions = out.triplet === true ? BEAT_FX_TRIPLET_BEATS : BEAT_FX_BEATS;
+		const field = out.triplet === true ? 'beats (triplet)' : 'beats';
+		out.beats = _oneOf<BeatFxBeats | BeatFxTripletBeats>(name, field, record.beats, divisions);
+	}
+	if (record.time_ms !== undefined) {
+		if (record.beats !== undefined)
+			throw new TypeError('beat_fx time_ms and beats are exclusive; send one');
+		if (typeof record.time_ms !== 'number' || !Number.isFinite(record.time_ms))
+			throw new RangeError(
+				`beat_fx time_ms must be a finite number; got ${String(record.time_ms)}`
+			);
+		out.time_ms = record.time_ms;
+	}
 	if (record.level !== undefined) out.level = _unit(name, 'level', record.level);
 	if (record.enabled !== undefined) out.enabled = _boolean(name, 'enabled', record.enabled);
 	if (record.quantize !== undefined) out.quantize = _boolean(name, 'quantize', record.quantize);
@@ -155,7 +191,7 @@ export function parseBeatFxCommand(record: Record<string, unknown>): BeatFxComma
 		out.xpad = record.xpad === null ? null : _unit(name, 'xpad', record.xpad);
 	if (Object.keys(out).length === 1) {
 		throw new TypeError(
-			'beat_fx needs at least one of target, effect, beats, level, enabled, quantize, xpad'
+			'beat_fx needs at least one of target, effect, beats, triplet, time_ms, level, enabled, quantize, xpad'
 		);
 	}
 	return out;
@@ -201,6 +237,7 @@ export function beatFxTempoSource(
  * `gridBeatsSec` are the target's beat times in seconds, ascending. Null with
  * no grid, or when `nowSec` is off the grid (before the first beat or at or
  * after the last): the unit then engages at once in the `no_grid` state.
+ * Any non-finite grid beat throws a RangeError naming the grid, wherever it sits.
  */
 export function nextQuantizeBoundarySec(
 	gridBeatsSec: readonly number[],
@@ -209,6 +246,7 @@ export function nextQuantizeBoundarySec(
 ): number | null {
 	_assertFiniteNonNegative('nowSec', nowSec);
 	const division = _oneOf('beat fx', 'beats', beats, BEAT_FX_BEATS);
+	_assertFiniteGrid(gridBeatsSec);
 	if (
 		gridBeatsSec.length < 2 ||
 		nowSec < gridBeatsSec[0] ||
@@ -231,7 +269,14 @@ export function nextQuantizeBoundarySec(
 }
 
 /** X-PAD position 0..1 to a beat division, across `BEAT_FX_BEATS` in order. */
-export function xpadToBeats(x: number): BeatFxBeats {
+export function xpadToBeats(x: number): BeatFxBeats;
+/** X-PAD position 0..1 to a division, across `BEAT_FX_TRIPLET_BEATS` when `triplet` is true. */
+export function xpadToBeats(x: number, triplet: boolean): BeatFxBeats | BeatFxTripletBeats;
+export function xpadToBeats(x: number, triplet = false): BeatFxBeats | BeatFxTripletBeats {
 	_unit('beat fx', 'xpad', x);
-	return BEAT_FX_BEATS[Math.min(Math.floor(x * BEAT_FX_BEATS.length), BEAT_FX_BEATS.length - 1)];
+	_boolean('beat fx', 'triplet', triplet);
+	const list: readonly (BeatFxBeats | BeatFxTripletBeats)[] = triplet
+		? BEAT_FX_TRIPLET_BEATS
+		: BEAT_FX_BEATS;
+	return list[Math.min(Math.floor(x * list.length), list.length - 1)];
 }

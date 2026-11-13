@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557258,
+  "measured_with_pr": 557417,
+  "sha": "652f94211f",
+  "date": "Fri 13 Nov 2026",
+  "reason": "PR #13701 (RESCUE-13701): previewStripsEqual, idempotent strip adoption and session-played deck-key gating; measured +159 B gzip on other-lazy against merge base 652f9421 in CI.",
+  "payback": "none planned; small shared closure growth from api-rb + pane-contract helpers"
+}

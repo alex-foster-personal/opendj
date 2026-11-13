@@ -240,6 +240,7 @@ class _RbIngestRun:
     deleted_sids: set[str] = dataclasses.field(default_factory=set)
     existing_inferred: dict[str, str] = dataclasses.field(default_factory=dict)
     existing_rb_vendors: dict[str, tuple[str, str]] = dataclasses.field(default_factory=dict)
+    present_rb_vendor_ids: set[str] = dataclasses.field(default_factory=set)
 
 
 def _open_rb_db(rb_db_path: Path) -> Any:
@@ -287,6 +288,7 @@ def _resolve_rb_track_identity(run: _RbIngestRun, track: dict[str, Any]) -> tupl
         content_hash,
         audio_hash,
         rb_vendor_index=run.existing_rb_vendors,
+        present_rb_vendor_ids=run.present_rb_vendor_ids,
     )
     if reused is not None:
         sid, tier = reused
@@ -500,6 +502,7 @@ def ingest_rb(
                 cues_by_content=cues_by_content,
                 existing_inferred=live_inferred_by_path_key(writer.raw_conn),
                 existing_rb_vendors=live_rekordbox_stable_ids_by_vendor(writer.raw_conn),
+                present_rb_vendor_ids={str(track["id"]) for track in all_rows},
             )
             for i, track in enumerate(all_rows):
                 if limit is not None and i >= limit:

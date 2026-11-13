@@ -35,8 +35,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state
 from ..rb_vendor_pkg import own_beatgrid_overlay
 from . import analysis as analysis_routes
-from .rb_assets import _canonical_beatgrid_record
-from .rb_assets_beatgrid_source import beatgrid_source_for_track
+from .rb_assets_beatgrid_source import _canonical_beatgrid_record, beatgrid_source_for_track
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 MOUNT_UNDER_API_PREFIX = True

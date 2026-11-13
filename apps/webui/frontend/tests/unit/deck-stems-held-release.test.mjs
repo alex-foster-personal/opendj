@@ -293,8 +293,16 @@ async function settle(turns = 4) {
 	for (let i = 0; i < turns; i += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
+/** Wait until the engine's observable state matches. The stem parts download
+ * and decode on real timers, so a fixed count of event-loop turns ran out on
+ * loaded runners (#9673): yield to the timer queue instead and only give up
+ * after a generous ceiling that exists to fail a hung engine, not to pace it. */
 async function waitFor(predicate, what) {
-	for (let i = 0; i < 400 && !predicate(); i += 1) await settle(1);
+	const giveUpAt = Date.now() + 20_000;
+	while (!predicate() && Date.now() < giveUpAt) {
+		await settle(1);
+		await new Promise((resolve) => setTimeout(resolve, 1));
+	}
 	assert.ok(predicate(), `timed out waiting for ${what}`);
 }
 
@@ -313,7 +321,13 @@ async function stepFrames(count) {
 
 /** Step frames until the deck's presented state matches, as a real display would. */
 async function stepUntil(predicate, what) {
-	for (let i = 0; i < 240 && !predicate(); i += 1) await stepFrame();
+	// Bounded by a ceiling, not a frame count: stems decode on real timers, so
+	// a busy runner can need more frames than an idle one (#9673).
+	const giveUpAt = Date.now() + 20_000;
+	while (!predicate() && Date.now() < giveUpAt) {
+		await stepFrame();
+		if (!predicate()) await new Promise((resolve) => setTimeout(resolve, 1));
+	}
 	assert.ok(predicate(), `the deck never reached: ${what}`);
 }
 
@@ -386,7 +400,7 @@ describe('a stem bundle that finishes on a playing deck takes over the deck (STE
 		if (originalFetch !== undefined) globalThis.fetch = originalFetch;
 	});
 
-	it('control: a deck left at rest gets its stems as soon as they decode', { skip: 'quarantined: timing flake, fails on loaded runners, 3 main runs on Wed 4 Nov 2026 (latest b6eded3764), #8530' }, async () => {
+	it('control: a deck left at rest gets its stems as soon as they decode', async () => {
 		await entry.engine.load(1, SID);
 		await waitFor(() => stemPartsRequested === 4, 'the four stem part downloads to start');
 		releaseStemParts();
@@ -395,7 +409,7 @@ describe('a stem bundle that finishes on a playing deck takes over the deck (STE
 		assert.equal(heldRows().length, 0, 'a deck at rest has nothing to wait for');
 	});
 
-	it('control: a bundle that finishes while the deck plays takes over without stopping it (5a3faf758b)', { skip: 'quarantined: timing flake, fails on loaded runners, 3 main runs on Wed 4 Nov 2026 (latest b6eded3764), #8530' }, async () => {
+	it('control: a bundle that finishes while the deck plays takes over without stopping it (5a3faf758b)', async () => {
 		await loadPlayThenFinishStemDecode();
 		await stepFrames(30);
 		assert.equal(deck().playing, true, 'the deck stopped under the handoff');

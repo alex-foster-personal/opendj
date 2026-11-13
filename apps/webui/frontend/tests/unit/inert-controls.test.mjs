@@ -78,8 +78,8 @@ let catalog;
 let apply;
 
 before(async () => {
-	catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
-	apply = await loadTypeScriptModule('src/lib/settings/apply.ts');
+	// One module graph, so apply sees the variant rows the catalogue registered (#13727).
+	({ catalog, apply } = await loadTypeScriptModule('tests/unit/variant-families-entry.mjs'));
 });
 
 // ------------------------------------------------------ the markup contract
@@ -292,9 +292,9 @@ test('every implemented boolean, enum, multi_bool or number setting really is wr
 				: [def.id];
 		for (const key of keys) {
 			assert.equal(
-				apply.isAllowedSettingKey(key),
+				apply.isKnownSettingKey(key),
 				true,
-				`setting ${key} renders live but is not in ALLOWED_SETTING_KEYS - clicking it throws`
+				`setting ${key} renders live but is not in ALLOWED_SETTING_KEYS or the variant registry - clicking it throws`
 			);
 		}
 	}

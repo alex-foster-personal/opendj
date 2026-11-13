@@ -1,0 +1,16 @@
+{
+  "status_code": 200,
+  "turnaround_ms": 8011.2,
+  "stable_id": "pilot-bass-03",
+  "headers": {
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "2",
+    "x-ratelimit-reset": "1731340800"
+  },
+  "body": {
+    "modelVersion": "auto-tagging-2.0",
+    "BpmV2": {"bpm": 140},
+    "tags": [{"tag": "Bass Music", "score": 0.84}],
+    "segments": [{"start": 0, "end": 12000, "scores": {"movement": 0.9}}]
+  }
+}

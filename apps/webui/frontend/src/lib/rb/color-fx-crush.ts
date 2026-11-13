@@ -272,15 +272,12 @@ export interface CrushGraph {
 	failure: string | null;
 }
 
-/** Build the CRUSH nodes from `source` into `destination`, closed (wet 0). */
-export function buildCrushGraph(
+/** One CRUSH worklet node; the color knob and the beat FX unit (issue #10018) both build it here. */
+export function createCrushWorkletNode(
 	ctx: BaseAudioContext,
-	source: AudioNode,
-	destination: AudioNode,
-	voicing: CrushVoicing = DEFAULT_CRUSH_VOICING,
-	onProcessorError?: (graph: CrushGraph) => void
-): CrushGraph {
-	const node = new AudioWorkletNode(ctx, CRUSH_PROCESSOR_NAME, {
+	voicing: CrushVoicing
+): AudioWorkletNode {
+	return new AudioWorkletNode(ctx, CRUSH_PROCESSOR_NAME, {
 		numberOfInputs: 1,
 		numberOfOutputs: 1,
 		outputChannelCount: [2],
@@ -289,6 +286,17 @@ export function buildCrushGraph(
 		channelInterpretation: 'discrete',
 		processorOptions: crushProcessorOptions(voicing)
 	});
+}
+
+/** Build the CRUSH nodes from `source` into `destination`, closed (wet 0). */
+export function buildCrushGraph(
+	ctx: BaseAudioContext,
+	source: AudioNode,
+	destination: AudioNode,
+	voicing: CrushVoicing = DEFAULT_CRUSH_VOICING,
+	onProcessorError?: (graph: CrushGraph) => void
+): CrushGraph {
+	const node = createCrushWorkletNode(ctx, voicing);
 	const highpass = ctx.createBiquadFilter();
 	highpass.type = 'highpass';
 	highpass.frequency.value = CRUSH_HPF_MIN_HZ;
@@ -313,13 +321,14 @@ export function buildCrushGraph(
 	// A terminal processor error is sticky: the channel then plays dry with CRUSH_UNAVAILABLE.
 	node.onprocessorerror = (event: Event): void => {
 		if (graph.failure !== null) return;
-		graph.failure = _processorErrorText(event);
+		graph.failure = crushProcessorErrorText(event);
 		onProcessorError?.(graph);
 	};
 	return graph;
 }
 
-function _processorErrorText(event: Event): string {
+/** The message a processorerror event carries, or a fixed description when it has none. */
+export function crushProcessorErrorText(event: Event): string {
 	const message = (event as Partial<ErrorEvent>).message;
 	return typeof message === 'string' && message !== ''
 		? message

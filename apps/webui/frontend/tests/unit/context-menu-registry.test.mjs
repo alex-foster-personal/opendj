@@ -26,6 +26,7 @@ let deckMenuCommands;
 let deckMove;
 let mixerActions;
 let targetOfMod;
+let bind;
 
 before(async () => {
 	commands = await loadTypeScriptModule('src/lib/context-menu/commands.ts');
@@ -35,6 +36,7 @@ before(async () => {
 	deckMove = await loadTypeScriptModule('src/lib/rb/deck-move.ts');
 	mixerActions = await loadTypeScriptModule('src/lib/context-menu/mixer-actions.ts');
 	targetOfMod = await loadTypeScriptModule('src/lib/context-menu/target-of.ts');
+	bind = await loadTypeScriptModule('src/lib/context-menu/bind.ts');
 });
 
 class El {
@@ -301,7 +303,7 @@ test('tree folders get no Duplicate/Forbid duplicates and the root has no dead i
 		registry.menuFor({ kind: 'playlist-folder' }, {}).map((i) => i.id),
 		['new-playlist', 'new-smartlist', 'rename', 'delete']
 	);
-	const smartlist = registry.menuFor({ kind: 'smartlist' }, {}).map((i) => i.id);
+	const smartlist = registry.menuFor({ kind: 'smartlist' }, { refreshing: false }).map((i) => i.id);
 	assert.ok(!smartlist.includes('reveal'));
 	const playlist = registry.menuFor({ kind: 'playlist' }, { forbidDuplicates: true });
 	assert.equal(playlist.find((i) => i.id === 'forbid-duplicates').checked, true);
@@ -319,6 +321,29 @@ test('non-stick read-only trees stay empty; library source tabs offer refresh an
 		]
 	);
 	assert.ok((src.find((i) => i.id === 'source-finder')?.disabledReason ?? '').length > 0);
+});
+
+test('library source menu binds refresh and settings through the registry (#13325)', () => {
+	const resolved = registry.menuFor({ kind: 'library-source' }, {});
+	const runners = {
+		'source-refresh': () => {},
+		'source-settings': () => {}
+	};
+	const items = bind.bindMenuItems(resolved, runners);
+	const byId = (id) => items.find((i) => i.id === id);
+	assert.equal(typeof byId('source-refresh')?.run, 'function');
+	assert.equal(typeof byId('source-settings')?.run, 'function');
+	const finder = byId('source-finder');
+	assert.equal(finder?.run, undefined);
+	const finderResolved = resolved.find((i) => i.id === 'source-finder');
+	assert.ok((finderResolved?.disabledReason ?? '').length > 0);
+	assert.ok(!(finder?.title ?? '').includes(bind.NOT_WIRED_HERE));
+	assert.equal(finder?.title, finderResolved?.title);
+
+	const unwired = bind.bindMenuItems(resolved, {});
+	const refresh = unwired.find((i) => i.id === 'source-refresh');
+	assert.equal(refresh?.run, undefined);
+	assert.match(refresh?.title ?? '', /not available in this view/);
 });
 
 test('every target kind contributes at least one menu item somewhere (#9451)', () => {
@@ -411,7 +436,8 @@ test('track row parity set for collection rows in Gig (#9451)', () => {
 		'rate-3',
 		'rate-4',
 		'rate-5',
-		'colour',
+		'colour-1',
+		'colour-0',
 		'finder',
 		'copy-path',
 		'related-tracks',

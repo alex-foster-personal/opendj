@@ -35,9 +35,13 @@ import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
+const FAKE_STORES = fileURLToPath(new URL('./fake-app-stores.mjs', import.meta.url));
 
-/** Compile `.svelte` components and `.svelte.ts` rune modules for the server. */
-const sveltePlugin = {
+/**
+ * Compile `.svelte` components and `.svelte.ts` rune modules for the server.
+ * `css: 'injected'` makes svelte's `render` return each component's scoped CSS in `head`.
+ */
+const sveltePlugin = (css) => ({
 	name: 'svelte-ssr',
 	setup(builder) {
 		// Ordered before the component rule by specificity, not by luck: the
@@ -52,21 +56,24 @@ const sveltePlugin = {
 		});
 		builder.onLoad({ filter: /\.svelte$/ }, async (args) => {
 			const source = await readFile(args.path, 'utf8');
-			const compiled = compile(source, { generate: 'server', filename: args.path });
+			const compiled = compile(source, { generate: 'server', filename: args.path, css });
 			return { contents: compiled.js.code, loader: 'js', resolveDir: dirname(args.path) };
 		});
 	}
-};
+});
 
 /**
  * Bundle and import `entrySource`, TypeScript evaluated at the frontend root.
  *
  * Re-export the component under test plus whatever module state the test needs
  * to set before rendering, exactly as loadRuneModule's entry does. `alias`
- * adds import aliases on top of `$lib`, for a component that imports a
- * SvelteKit runtime module (`$app/navigation`) this harness has no build of.
+ * adds import aliases on top of `$lib`. `$app/stores` is stubbed by default;
+ * pass `alias` to override or add other SvelteKit runtime modules such as
+ * `$app/navigation`, for a component that imports one this harness has no build of.
+ * `css: 'injected'` puts component styles in `render(...).head`, for tests of
+ * what a stylesheet reads (custom properties, no literals); layout still needs a browser.
  */
-export async function loadSvelteSsrModule(entrySource, { alias = {} } = {}) {
+export async function loadSvelteSsrModule(entrySource, { alias = {}, css = 'external' } = {}) {
 	const bundled = await build({
 		stdin: {
 			contents: entrySource,
@@ -75,7 +82,7 @@ export async function loadSvelteSsrModule(entrySource, { alias = {} } = {}) {
 			sourcefile: 'ssr-entry.ts'
 		},
 		absWorkingDir: FRONTEND_ROOT,
-		alias: { $lib: LIB_ROOT, ...alias },
+		alias: { $lib: LIB_ROOT, '$app/stores': FAKE_STORES, ...alias },
 		bundle: true,
 		// DEV: prefs.svelte.ts gates its dev-only contrast diagnostic on it at
 		// import time; the harness renders as a production build would.
@@ -89,7 +96,7 @@ export async function loadSvelteSsrModule(entrySource, { alias = {} } = {}) {
 		loader: { '.css': 'empty' },
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [sveltePlugin, viteUrlSuffixPlugin],
+		plugins: [sveltePlugin(css), viteUrlSuffixPlugin],
 		resolveExtensions: ['.svelte', '.ts', '.js', '.mjs', '.json'],
 		target: 'es2022',
 		write: false

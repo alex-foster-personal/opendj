@@ -46,6 +46,20 @@ regexes = [
 
 [[allowlists]]
 description = """\
+  The legacy wheel-sensitivity localStorage key in its disk-hydration unit test \
+  (const LEGACY_KEY = 'mdt.rb.wheel-sensitivity.v1'): an identifier, not a credential. \
+  Flagged as generic-api-key in PR #14163 history; the constant is now LEGACY_STORAGE_KEY, \
+  which the storage_key entry above covers. Path AND the key literal, so the same shape \
+  elsewhere still reports. Review by Sat 6 Feb 2027."""
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/webui/frontend/tests/unit/wheel-sensitivity-disk-hydration\.test\.mjs$''']
+regexes = [
+  '''mdt\.rb\.wheel-sensitivity\.v1''',
+]
+
+[[allowlists]]
+description = """\
   The ui-prefs localStorage key in the gig-stamp mirror unit test \
   (const KEY = 'mdt.rb.ui-prefs.v1'): an identifier, not a credential. Flagged as \
   generic-api-key in PR #6208 history (7b24d9e34). Path AND the key literal, so the same shape \
@@ -70,4 +84,19 @@ regexTarget = "line"
 paths = ['''^tests/smartlists/test_writeback_read_members\.py$''']
 regexes = [
   '''^_PYREKORDBOX_TEST_KEY = "402fd0123456789abcdef0123456789abcdef0123456789abcdef0123456789"$''',
+]
+
+[[allowlists]]
+description = """\
+  The embed-picture import inside the rescue artwork script of the deck-load browser fixture \
+  (from tests.support.embed_picture import apic_frame, insert_wav_id3): an import line, not a \
+  credential. generic-api-key reads "apic_frame, insert_wav_id3" as a key name and its value. \
+  Flagged when PR #14791 (6504a27e0) moved the line out of deckload_fixture.py, where it had \
+  stood since before the scanner. Path AND the exact import, so the same shape elsewhere still \
+  reports. Review by Sat 6 Feb 2027."""
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/webui/frontend/tests/e2e/support/deckload_fixture_artwork\.py$''']
+regexes = [
+  '''from tests\.support\.embed_picture import apic_frame, insert_wav_id3''',
 ]

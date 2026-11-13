@@ -90,6 +90,7 @@ class PluginHost:
 
     manifest: PluginManifest
     data_dir: Path
+    providers: ProviderRegistry | None = None
     routers: list[Any] = field(default_factory=list)
     startup_hooks: list[Hook] = field(default_factory=list)
     shutdown_hooks: list[Hook] = field(default_factory=list)
@@ -255,8 +256,14 @@ def _load_one(
     data_dir: Path,
     manifest: PluginManifest,
     taken: list[tuple[str, str]],
+    *,
+    providers: ProviderRegistry | None = None,
 ) -> PluginHost:
-    host = PluginHost(manifest=manifest, data_dir=data_dir / "plugin-data" / manifest.plugin_id)
+    host = PluginHost(
+        manifest=manifest,
+        data_dir=data_dir / "plugin-data" / manifest.plugin_id,
+        providers=providers,
+    )
     python = manifest.python
     if python is None:
         return host
@@ -603,7 +610,7 @@ def load_enabled(  # noqa: PLR0913 - each keyword is one independent boot input.
             manifest = _verified_manifest(plugins_dir, installed, trusted, app_version, state.labs_opt_in)
             runtime.manifests[plugin_id] = manifest
             runtime.providers.register(manifest)
-            host = _load_one(plugins_dir, data_dir, manifest, claimed)
+            host = _load_one(plugins_dir, data_dir, manifest, claimed, providers=runtime.providers)
         except InstallError as exc:
             _record(exc.code, str(exc))
             continue

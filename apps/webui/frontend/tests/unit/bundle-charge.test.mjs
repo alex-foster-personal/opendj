@@ -9,8 +9,9 @@ import { join } from 'node:path';
 import {
 	applyCharges,
 	chargeDate,
-	NOISE_BYTES,
-	planCharges
+	noiseFloorBytes,
+	planCharges,
+	pnpmInvocation
 } from '../../scripts/bundle-charge.mjs';
 import { BUDGETS_DIR, chargeBranchId, loadBudgets } from '../../scripts/bundle-budget-load.mjs';
 
@@ -18,11 +19,13 @@ const BRANCH = 'af--test-branch';
 const totals = (entries) => ({
 	totals: Object.fromEntries(Object.entries(entries).map(([k, bytes]) => [k, { bytes, files: 1 }]))
 });
-const BASELINE = totals({ library: 300000, performance: 200000, 'other-lazy': 100000 });
+const BASELINE = totals({ library: 300000, performance: 200000, 'other-lazy': 557000 });
+// performance sits exactly on its 128 B floor; other-lazy grows 217 B, the largest same-source
+// spread measured on it (#13678), which its scaled floor (279 B) must call noise.
 const CURRENT = totals({
 	library: 300000 + 1500,
-	performance: 200000 + NOISE_BYTES,
-	'other-lazy': 100000 - 50
+	performance: 200000 + noiseFloorBytes(200000),
+	'other-lazy': 557000 + 217
 });
 
 function _snapshot(dir) {
@@ -67,8 +70,8 @@ test('if a surface that did not grow gets a charge file then broken', () => {
 	const { budgetsDir, lines } = _run();
 	assert.equal(existsSync(join(budgetsDir, 'performance', 'charges', `${BRANCH}.json`)), false);
 	assert.equal(existsSync(join(budgetsDir, 'other-lazy', 'charges', `${BRANCH}.json`)), false);
-	assert.ok(lines.includes(`performance +${NOISE_BYTES} within noise`));
-	assert.ok(lines.includes('other-lazy -50 within noise'));
+	assert.ok(lines.includes(`performance +${noiseFloorBytes(200000)} within noise`));
+	assert.ok(lines.includes('other-lazy +217 within noise'));
 });
 
 test("if a written charge file fails the gate's own schema check then broken", () => {
@@ -96,4 +99,16 @@ test('if a git branch with a slash is not mapped to a charge file id then broken
 	assert.doesNotThrow(() =>
 		applyCharges([], { budgetsDir: tmpdir(), branch: chargeBranchId('af/slash') })
 	);
+});
+
+test('if pnpm is launched through a bare name or a .cmd shim when pnpm gave its JS entry then broken', () => {
+	// #11984: a Windows pnpm.cmd shim cannot be spawned by execFileSync; node runs pnpm.cjs instead.
+	const entry = 'C:\\Users\\dev\\AppData\\pnpm\\node_modules\\pnpm\\bin\\pnpm.cjs';
+	const run = pnpmInvocation(['build'], { npm_execpath: entry }, 'win32');
+	assert.equal(run.file, process.execPath);
+	assert.deepEqual(run.args, [entry, 'build']);
+	const bin = pnpmInvocation(['build'], { npm_execpath: '/Users/dev/.local/bin/pnpm' }, 'linux');
+	assert.deepEqual(bin, { file: '/Users/dev/.local/bin/pnpm', args: ['build'] });
+	assert.throws(() => pnpmInvocation(['build'], {}, 'win32'), /pnpm bundle:charge/);
+	assert.deepEqual(pnpmInvocation(['build'], {}, 'darwin'), { file: 'pnpm', args: ['build'] });
 });

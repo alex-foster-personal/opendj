@@ -134,29 +134,78 @@ function fakeEffects() {
 	};
 }
 
+/** Virtual clock plus IO timeout timers for watchdog recovery under test. */
+function fakeEffectsWithVirtualIoTimers() {
+	let nowMs = 0;
+	const timers = [];
+	const toasts = [];
+	const perf = [];
+	function fireDueTimers() {
+		const due = timers.filter((t) => t.at <= nowMs);
+		for (const t of due) {
+			const i = timers.indexOf(t);
+			if (i >= 0) timers.splice(i, 1);
+		}
+		for (const t of due) t.fn();
+	}
+	async function advanceVirtualTime(ms) {
+		nowMs += ms;
+		fireDueTimers();
+		await Promise.resolve();
+	}
+	const ioScheduler = {
+		setTimeout: (fn, ms) => {
+			const h = { fn, at: nowMs + ms };
+			timers.push(h);
+			return h;
+		},
+		clearTimeout: (h) => {
+			const i = timers.indexOf(h);
+			if (i >= 0) timers.splice(i, 1);
+		}
+	};
+	return {
+		nowMs: () => nowMs,
+		toasts,
+		perf,
+		ioScheduler,
+		advanceVirtualTime,
+		effects: {
+			pushToast: (message, kind = 'info') => toasts.push({ message, kind }),
+			recordPerfTiming: (kind, stages) => perf.push({ kind, stages }),
+			sleep: advanceVirtualTime,
+			noteUnexpectedPause: (state) => {
+				perf.push({ kind: 'audio-unexpected-pause', state });
+			}
+		}
+	};
+}
+
 /** Let the watchdog's async recovery loop run to completion. */
 async function settle() {
 	for (let i = 0; i < 200; i += 1) await Promise.resolve();
 }
 
-async function _waitForWatchdogGiveUp({ harness, perf, ctx, deadlineMs = 5000 }) {
-	const deadline = Date.now() + deadlineMs;
+async function _advanceUntilWatchdogGiveUp({ harness, perf, ctx, mod, ioTimeoutMs }) {
 	const giveUpToast = () =>
 		harness.toasts.some(
 			(toast) => toast.kind === 'error' && toast.message.includes('did not come back')
 		);
 	const deadPerf = () =>
 		perf.some((row) => row.kind === 'audio-output-dead' && row.severity === 'error');
-	for (;;) {
-		if (ctx.resumeAtMs.length >= 2 && giveUpToast() && deadPerf()) return;
-		if (Date.now() > deadline) {
-			throw new Error(
-				'timed out waiting for watchdog give-up after hung resumes ' +
-					`(resumeAtMs=${ctx.resumeAtMs.length}, giveUpToast=${giveUpToast()}, deadPerf=${deadPerf()})`
-			);
-		}
+	const done = () => ctx.resumeAtMs.length >= 2 && giveUpToast() && deadPerf();
+	const backoffSum = mod.CONTEXT_RESUME_BACKOFF_MS.reduce((a, b) => a + b, 0);
+	const stepCap = backoffSum + mod.CONTEXT_RESUME_BACKOFF_MS.length * ioTimeoutMs + ioTimeoutMs;
+	for (let stepped = 0; stepped <= stepCap; stepped += 1) {
+		if (done()) return;
+		await harness.advanceVirtualTime(1);
 		await settle();
-		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	if (!done()) {
+		throw new Error(
+			'exhausted virtual time waiting for watchdog give-up after hung resumes ' +
+				`(resumeAtMs=${ctx.resumeAtMs.length}, giveUpToast=${giveUpToast()}, deadPerf=${deadPerf()})`
+		);
 	}
 }
 
@@ -901,7 +950,8 @@ const INSTRUMENTATION_MODULE = 'src/lib/rb/audio-context-instrumentation.ts';
 
 test('a hanging resume during watchdog recover continues the backoff and still give-up-toasts', async () => {
 	const mod = _watchdog();
-	const harness = fakeEffects();
+	const ioTimeoutMs = 30;
+	const harness = fakeEffectsWithVirtualIoTimers();
 	const perf = [];
 	harness.effects.recordPerfEvent = (kind, message, severity) => {
 		perf.push({ kind, message, severity });
@@ -917,11 +967,17 @@ test('a hanging resume during watchdog recover continues the backoff and still g
 		ctx.resumeAtMs.push(ctx.__nowMs());
 		return new Promise(() => {});
 	};
-	const detach = mod.installAudioContextWatchdog(ctx, harness.effects, () => true, 30);
+	const detach = mod.installAudioContextWatchdog(
+		ctx,
+		harness.effects,
+		() => true,
+		ioTimeoutMs,
+		harness.ioScheduler
+	);
 	ctx.state = 'interrupted';
 	for (const handler of listeners) handler();
 	await settle();
-	await _waitForWatchdogGiveUp({ harness, perf, ctx });
+	await _advanceUntilWatchdogGiveUp({ harness, perf, ctx, mod, ioTimeoutMs });
 	assert.ok(
 		ctx.resumeAtMs.length >= 2,
 		'if a hanging resume blocks the recover loop then broken - the backoff must continue'
@@ -934,6 +990,72 @@ test('a hanging resume during watchdog recover continues the backoff and still g
 	assert.ok(
 		perf.some((row) => row.kind === 'audio-output-dead' && row.severity === 'error'),
 		'if the schedule exhausts on hung resumes then audio-output-dead must be recorded - broken'
+	);
+	detach();
+});
+
+test('a recovery opportunity after clockless watchdog give-up starts another bounded schedule', async () => {
+	// Issue #13322: after IO timeouts exhaust the first schedule on a hung resume,
+	// a later noteRecoveryOpportunity must not leave recovery permanently wedged.
+	const mod = _watchdog();
+	const ioTimeoutMs = 30;
+	const harness = fakeEffectsWithVirtualIoTimers();
+	const perf = [];
+	harness.effects.recordPerfEvent = (kind, message, severity) => {
+		perf.push({ kind, message, severity });
+	};
+	const listeners = [];
+	const ctx = fakeAudioContext();
+	ctx.__nowMs = harness.nowMs;
+	ctx.addEventListener = (type, handler) => {
+		if (type === 'statechange') listeners.push(handler);
+	};
+	ctx.removeEventListener = () => {};
+	ctx.resume = () => {
+		ctx.resumeAtMs.push(ctx.__nowMs());
+		return new Promise(() => {});
+	};
+	const perArming = mod.CONTEXT_RESUME_BACKOFF_MS.length;
+	const detach = mod.installAudioContextWatchdog(
+		ctx,
+		harness.effects,
+		() => true,
+		ioTimeoutMs,
+		harness.ioScheduler
+	);
+	ctx.state = 'interrupted';
+	for (const handler of listeners) handler();
+	await settle();
+	await _advanceUntilWatchdogGiveUp({ harness, perf, ctx, mod, ioTimeoutMs });
+	assert.equal(
+		ctx.resumeAtMs.length,
+		perArming,
+		'if context resume never settles past the timeout then the first schedule must exhaust - broken'
+	);
+	const afterFirst = ctx.resumeAtMs.length;
+	mod.noteRecoveryOpportunity('the output device list changed');
+	// Virtual time, like the first schedule: one full backoff plus one IO timeout per attempt.
+	const backoffSum = mod.CONTEXT_RESUME_BACKOFF_MS.reduce((a, b) => a + b, 0);
+	const stepCap = backoffSum + perArming * ioTimeoutMs + ioTimeoutMs;
+	for (let stepped = 0; stepped <= stepCap; stepped += 1) {
+		if (ctx.resumeAtMs.length >= afterFirst + perArming) break;
+		await harness.advanceVirtualTime(1);
+		await settle();
+	}
+	// Let the second schedule's last attempt time out, so a third attempt would show.
+	for (let stepped = 0; stepped <= ioTimeoutMs; stepped += 1) {
+		await harness.advanceVirtualTime(1);
+		await settle();
+	}
+	assert.equal(
+		ctx.resumeAtMs.length,
+		afterFirst + perArming,
+		'if a later output-rebind request occurs then another full bounded schedule must run - broken'
+	);
+	const errors = harness.toasts.filter((toast) => toast.kind === 'error');
+	assert.ok(
+		errors.some((toast) => toast.message.includes('did not come back')),
+		'if every retry times out then give-up must still fire without blocking later recovery - broken'
 	);
 	detach();
 });

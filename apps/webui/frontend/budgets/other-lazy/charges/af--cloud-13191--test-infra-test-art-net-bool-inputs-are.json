@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557442,
+  "measured_with_pr": 557586,
+  "sha": "0c9d053f98",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--cloud-13191--test-infra-test-art-net-bool-inputs-are grows the other-lazy surface; measured +144 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

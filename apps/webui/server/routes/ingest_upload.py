@@ -22,11 +22,20 @@ Requirements (mini-PRD):
     logged and named in unchecked_library_tracks, never silently dropped
     [if] the destination filename already exists in the batch [then ⛔️] 409,
     existing staged file untouched
+    [if] a later file in a multi-file request is refused (409 or 422)
+    [then ⛔️] files staged or held earlier in that request are removed and
+    files staged by earlier requests are left untouched (LIBM-12329)
+  ✔︎ A multi-file request stages all of its files or none (issue #12295).
+    [if] a later file collides with a staged name [then ⛔️] 409, no earlier file staged
+    [if] a later file is empty or rejected [then ⛔️] 422, no earlier file staged
+    [if] every file is valid and unique [then] all of them are staged
 """
 from __future__ import annotations
 
 import logging
 import shutil
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, NoReturn
 
@@ -277,12 +286,28 @@ def _stage_one_upload(
     dest_dir: Path, up: UploadFile, batch: str, force: bool
 ) -> UploadFileResult:
     """Stage one uploaded file, or skip it as a duplicate. Raises on refusal."""
-    name = up.filename or ""
-    final = _safe_relative_path(dest_dir, name)
-    # POSIX separators on every OS, like materialize: the client named the file
-    # with /, and a Windows backslash here would not round-trip to it.
-    rel_name = final.relative_to(dest_dir.resolve()).as_posix()
-    hold = _hold_path(final)
+    (result,) = _stage_uploads(dest_dir, [up], batch, force)
+    return result
+
+
+# ----- all-or-nothing staging (issue #12295) -------------------------------
+@dataclass
+class _PreparedUpload:
+    """One file of a request, fully checked and written to a request-private temp, not yet visible."""
+
+    temp: Path
+    final: Path
+    hold: Path
+    batch: str
+    result: UploadFileResult
+
+
+def _temp_path(final: Path) -> Path:
+    """A request-private name beside ``final``; the ``.part`` ending keeps it out of every staged-file listing."""
+    return final.parent / f".{final.name}.{uuid.uuid4().hex}.upload.part"
+
+
+def _refuse_if_taken(final: Path, hold: Path, rel_name: str, batch: str) -> None:
     if final.exists():
         raise HTTPException(
             409,
@@ -294,47 +319,131 @@ def _stage_one_upload(
             409,
             f"{rel_name!r} is awaiting a duplicate decision in batch {batch!r}",
         )
+
+
+def _make_dirs(path: Path, created: list[Path]) -> None:
+    """mkdir -p ``path``, appending each directory this call created to ``created``."""
+    missing = [p for p in (path, *path.parents) if not p.exists()]
+    for directory in reversed(missing):
+        directory.mkdir()
+        created.append(directory)
+
+
+def _prepare_one_upload(
+    dest_dir: Path, up: UploadFile, batch: str, force: bool, claimed: set[Path], created: list[Path]
+) -> _PreparedUpload:
+    """Check one file and write it to a private temp. Raises on refusal, leaving no temp behind."""
+    name = up.filename or ""
+    final = _safe_relative_path(dest_dir, name)
+    # POSIX separators on every OS, like materialize: the client named the file
+    # with /, and a Windows backslash here would not round-trip to it.
+    rel_name = final.relative_to(dest_dir.resolve()).as_posix()
+    hold = _hold_path(final)
+    if final in claimed:
+        raise HTTPException(409, f"{rel_name!r} is named twice in this upload")
+    _refuse_if_taken(final, hold, rel_name, batch)
     if not HAS_TAG_READER:
         _raise_tag_reader_unavailable()
-    final.parent.mkdir(parents=True, exist_ok=True)
-    with hold.open("wb") as fh:
-        shutil.copyfileobj(up.file, fh)
-    if hold.stat().st_size == 0:
-        hold.unlink()
+    claimed.add(final)
+    _make_dirs(final.parent, created)
+    temp = _temp_path(final)
+    try:
+        with temp.open("wb") as fh:
+            shutil.copyfileobj(up.file, fh)
+        _refuse_if_empty(temp, rel_name)
+        result = _verdict_for(temp, final, rel_name, force)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
+    return _PreparedUpload(temp=temp, final=final, hold=hold, batch=batch, result=result)
+
+
+def _refuse_if_empty(temp: Path, rel_name: str) -> None:
+    if temp.stat().st_size == 0:
         raise HTTPException(422, f"empty upload: {rel_name}")
 
-    duration = _hold_duration(hold, rel_name)
-    dup, method, unchecked = None, "duration", []
+
+def _verdict_for(temp: Path, final: Path, rel_name: str, force: bool) -> UploadFileResult:
+    """The duplicate verdict for one written temp; ``staged_path`` is where it will land."""
+    duration = _hold_duration(temp, rel_name)
+    dup: dict | None = None
+    method = "duration"
+    unchecked: list[str] = []
     if duration is not None:
-        dup, method, unchecked = _best_duplicate(hold, duration)
+        dup, method, unchecked = _best_duplicate(temp, duration)
     is_confirmed_dup = (
         dup is not None
         and dup["method"] == "chromaprint"
         and dup["score"] >= ingest_cfg.DUP_FP_THRESHOLD
     )
     if is_confirmed_dup and not force:
-        hold.unlink()
-        return UploadFileResult(
-            filename=rel_name, staged_path=None, skipped_duplicate=True,
-            verdict="skipped_duplicate",
-            duplicate_of=dup, duration_s=duration, fingerprint_method=method,
-            unchecked_library_tracks=unchecked,
-        )
-    is_possible_dup = dup is not None and not is_confirmed_dup
-    if is_possible_dup and not force:
-        return UploadFileResult(
-            filename=rel_name, staged_path=None, skipped_duplicate=False,
-            verdict="possible_duplicate",
-            duplicate_of=dup, duration_s=duration, fingerprint_method=method,
-            unchecked_library_tracks=unchecked,
-        )
-    hold.rename(final)
+        verdict: Verdict = "skipped_duplicate"
+    elif dup is not None and not is_confirmed_dup and not force:
+        verdict = "possible_duplicate"
+    else:
+        verdict = "new"
     return UploadFileResult(
-        filename=rel_name, staged_path=str(final), skipped_duplicate=False,
-        verdict="new",
+        filename=rel_name, staged_path=str(final) if verdict == "new" else None,
+        skipped_duplicate=verdict == "skipped_duplicate", verdict=verdict,
         duplicate_of=dup, duration_s=duration, fingerprint_method=method,
         unchecked_library_tracks=unchecked,
     )
+
+
+def _publish(prepared: _PreparedUpload) -> Path | None:
+    """Move one checked temp to where its verdict puts it; the path it now holds, or None when dropped."""
+    _refuse_if_taken(prepared.final, prepared.hold, prepared.result.filename, prepared.batch)
+    verdict = prepared.result.verdict
+    landed: Path | None
+    if verdict == "skipped_duplicate":
+        prepared.temp.unlink()
+        landed = None
+    elif verdict == "possible_duplicate":
+        landed = prepared.temp.rename(prepared.hold)
+    elif verdict == "new":
+        landed = prepared.temp.rename(prepared.final)
+    else:
+        raise AssertionError(f"unhandled verdict {verdict!r}")
+    return landed
+
+
+def _roll_back(prepared: list[_PreparedUpload], published: list[Path], created: list[Path]) -> None:
+    """Remove every file and directory this request wrote, newest first."""
+    for path in [*published, *(p.temp for p in prepared)]:
+        path.unlink(missing_ok=True)
+    for directory in reversed(created):
+        try:
+            directory.rmdir()
+        except OSError as exc:
+            # Only a write by someone else lands in a directory this request made.
+            _log.warning("ingest upload: rollback kept %s, it is not empty: %s", directory, exc)
+
+
+def _stage_uploads(dest_dir: Path, uploads: list[UploadFile], batch: str, force: bool) -> list[UploadFileResult]:
+    """Stage every file of one request or none of them.
+
+    Each file is checked and written to a private temp first. Only when every
+    file passed are the temps moved to their staged or held names; a refusal
+    of any file, or a move that fails, removes everything this request wrote,
+    so the batch directory is left exactly as it was before the request.
+    """
+    created: list[Path] = []
+    claimed: set[Path] = set()
+    prepared: list[_PreparedUpload] = []
+    published: list[Path] = []
+    try:
+        _make_dirs(dest_dir, created)
+        for up in uploads:
+            # One at a time, not extend: the rollback needs every file prepared before a refusal.
+            prepared.append(_prepare_one_upload(dest_dir, up, batch, force, claimed, created))  # noqa: PERF401
+        for item in prepared:
+            landed = _publish(item)
+            if landed is not None:
+                published.append(landed)
+    except BaseException:
+        _roll_back(prepared, published, created)
+        raise
+    return [item.result for item in prepared]
 
 
 @router.post(
@@ -368,8 +477,7 @@ async def upload(
             422, f"invalid batch name {batch!r} (need {ingest_cfg.BATCH_RE.pattern})"
         )
     dest_dir = ingest_cfg.INGEST_INBOX / batch
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    results = [_stage_one_upload(dest_dir, up, batch, force) for up in files]
+    results = _stage_uploads(dest_dir, files, batch, force)
     return UploadOut(batch=batch, dest_dir=str(dest_dir), results=results)
 
 

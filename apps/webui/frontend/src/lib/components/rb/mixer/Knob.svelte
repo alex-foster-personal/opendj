@@ -26,6 +26,7 @@
 		clamp01,
 		isKnobLinked,
 		isKnobSelected,
+		knobUi,
 		linkedPartnerId,
 		nudgeKnobOrSelection,
 		pointerTravelIsDrag,
@@ -43,6 +44,21 @@
 	import { createDragTracker, trackDragMove, type DragTracker } from '$lib/rb/drag-sensitivity.svelte';
 	import { wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
+	import {
+		commandedMoveLanding,
+		commandedMovePresentation
+	} from '$lib/rb/commanded-move-runner.svelte';
+	import {
+		COMMANDED_GHOST_VARIANT,
+		COMMANDED_SETTLE_VARIANT,
+		KNOB_SETTLE_DEG,
+		commandedGhostStyle,
+		commandedSettleStyle,
+		commandedSettleVars,
+		progressRingDash
+	} from '$lib/rb/commanded-move-presentation';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
+	import { readVariant } from '$lib/rb/prefs.svelte';
 	import { DIAL_SWEEP_DEG } from '$lib/rb/dial-clock';
 	import { knobValueKind, valueText, type ValueTextKind } from '$lib/a11y/value-text';
 
@@ -191,6 +207,21 @@
 		takeoverGhost === null
 			? ''
 			: ` - hardware at ${(takeoverGhost.value * 100).toFixed(0)}%; move it to ${(takeoverGhost.target * 100).toFixed(0)}% to pick up`
+	);
+
+	// D6 (#9717): a commanded move's target ghost and progress ring; display only, never input.
+	const commanded = $derived(commandedMovePresentation(knobId));
+	const commandedStyle = $derived(commandedGhostStyle(readVariant(COMMANDED_GHOST_VARIANT.id)));
+	const COMMANDED_RING_CIRCUMFERENCE = 2 * Math.PI * 14;
+	// #14036: a landed move's settle, a CSS keyframe on a wrapper; never the value or aria.
+	const landing = $derived(commandedMoveLanding(knobId));
+	const settleVars = $derived(
+		landing === null
+			? null
+			: commandedSettleVars(KNOB_SETTLE_DEG, landing.direction, 'deg', {
+					reducedMotion: prefersReducedMotion(),
+					style: commandedSettleStyle(readVariant(COMMANDED_SETTLE_VARIANT.id))
+				})
 	);
 
 	const displayValue = $derived(dragShown ?? value);
@@ -393,6 +424,9 @@
 	data-knob-id={knobId}
 	data-testid={`knob-${knobId}`}
 	data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
+	data-commanded-target={commanded?.target}
+	data-commanded-progress={commanded?.progress}
+	data-commanded-settle={settleVars === null ? undefined : landing?.direction}
 	role="slider"
 	aria-label={accessibleLabel ?? label}
 	aria-valuemin={0}
@@ -433,17 +467,45 @@
 	>
 		<circle cx="15" cy="15" r="14" class="ring" />
 		<circle cx="15" cy="15" r="11" class="cap" />
-		<g style={`transform: rotate(${angleDeg}deg); transform-origin: 15px 15px;`}>
-			<line
-				x1="15"
-				y1="5"
-				x2="15"
-				y2="12"
-				class="indicator"
-				class:white={tone === 'white'}
-				class:rainbow={tone === 'rainbow'}
-			/>
-		</g>
+		{#key landing?.seq}
+			<g
+				class="commanded-settle"
+				class:settling={settleVars !== null}
+				data-testid={settleVars === null ? undefined : `commanded-settle-${knobId}`}
+				style={settleVars ?? undefined}
+			>
+				<g style={`transform: rotate(${angleDeg}deg); transform-origin: 15px 15px;`}>
+					<line
+						x1="15"
+						y1="5"
+						x2="15"
+						y2="12"
+						class="indicator"
+						class:white={tone === 'white'}
+						class:rainbow={tone === 'rainbow'}
+					/>
+				</g>
+			</g>
+		{/key}
+		{#if commanded !== null}
+			<g
+				class="commanded-ghost"
+				data-testid={`commanded-ghost-${knobId}`}
+				style={`transform: rotate(${(commanded.target - 0.5) * SWEEP_DEG}deg); transform-origin: 15px 15px;`}
+			>
+				<line x1="15" y1="5" x2="15" y2="12" />
+			</g>
+			{#if commandedStyle === 'ghost-arc'}
+				<circle
+					cx="15"
+					cy="15"
+					r="14"
+					class="commanded-progress"
+					data-testid={`commanded-progress-${knobId}`}
+					stroke-dasharray={progressRingDash(commanded.progress, COMMANDED_RING_CIRCUMFERENCE)}
+				/>
+			{/if}
+		{/if}
 		{#if takeoverGhost !== null}
 			<g
 				class="pickup-ghost-indicator"
@@ -454,6 +516,10 @@
 		{/if}
 	</svg>
 	<AnimRunningDot animKey={knobId} />
+	{#if selected}
+		<!-- #9455: the commanded move length that digits glide over; = and - double and halve it. -->
+		<span class="commanded-beats" data-testid={`commanded-beats-${knobId}`} aria-hidden="true">{knobUi.commandedBeats}b</span>
+	{/if}
 	{#if takeoverGhost !== null}
 		<span class="sr-only">Hardware at {(takeoverGhost.value * 100).toFixed(0)}%; move to {(takeoverGhost.target * 100).toFixed(0)}% to pick up.</span>
 	{/if}
@@ -492,6 +558,58 @@
 		stroke-dasharray: 1.5 1;
 	}
 	.takeover-armed .ring { stroke: var(--rb-knob-takeover, #f2b84b); }
+	.commanded-ghost,
+	.commanded-progress {
+		pointer-events: none;
+	}
+	.commanded-beats {
+		position: absolute;
+		top: -2px;
+		left: calc(50% + var(--knob-dial-size) / 2);
+		font-size: var(--knob-caption-size);
+		line-height: 1;
+		color: var(--rb-accent);
+		font-variant-numeric: tabular-nums;
+		pointer-events: none;
+		white-space: nowrap;
+	}
+	.commanded-ghost line {
+		stroke: var(--rb-accent);
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-dasharray: 1.5 1.5;
+		opacity: 0.6;
+	}
+	.commanded-settle {
+		transform-origin: 15px 15px;
+	}
+	.commanded-settle.settling {
+		animation: commanded-settle-knob var(--settle-ms) linear;
+	}
+	@keyframes commanded-settle-knob {
+		0% {
+			transform: rotate(var(--settle-0));
+		}
+		25% {
+			transform: rotate(var(--settle-1));
+		}
+		50% {
+			transform: rotate(var(--settle-2));
+		}
+		75% {
+			transform: rotate(var(--settle-3));
+		}
+		100% {
+			transform: rotate(var(--settle-4));
+		}
+	}
+	.commanded-progress {
+		fill: none;
+		stroke: var(--rb-accent);
+		stroke-width: 1.5;
+		transform: rotate(-90deg);
+		transform-origin: 15px 15px;
+	}
 	.knob.warn-orange .cap {
 		stroke: color-mix(in srgb, var(--rb-knob-warn) 70%, var(--rb-knob-cap-edge, #101318));
 		fill: color-mix(in srgb, var(--rb-knob-warn) 18%, var(--rb-knob-cap, #23272f));

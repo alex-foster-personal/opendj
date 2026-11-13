@@ -43,6 +43,7 @@ from apps.webui.server.routes.analysis import (
     router,
     synthesize_fallback_beats,
 )
+from tests.analysis_contract.conftest import own_record
 
 DURATION_S = 60.0
 BPM = 120.0            # -> 2.0 s bars, downbeats at 0, 2, 4, ...
@@ -57,6 +58,9 @@ SID_UNANALYZED = "sid-unanalyzed"  # library row, no analysis
 # settled a beatgrid determination for this track, so the endpoint must not
 # fall through to the superseded legacy row (discussion_r3975326241).
 SID_OWN_SETTLED_FAILED = "sid-own-settled-failed"
+# A legacy row AND a successful v1 own_beatgrid row that is not the serving
+# source - backfill must not cost the deck its legacy grid (issue #13373).
+SID_OWN_SETTLED_OK = "sid-own-settled-ok"
 SID_ISSUE_1777 = "sid-issue-1777"
 # sha256 shape required by AnalysisRecord's own-record contract; content is
 # arbitrary, only the shape is checked.
@@ -147,6 +151,8 @@ def client(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
         ),
         db_path=db,
     )
+    upsert_record(_record(SID_OWN_SETTLED_OK), db_path=db)
+    upsert_record(own_record(stable_id=SID_OWN_SETTLED_OK), db_path=db)
     # Two backends for SID_FULL: an OLDER row from another backend. The
     # default (no ?backend) must pick the newest analyzed_at row.
     upsert_record(
@@ -319,6 +325,20 @@ def test_beatgrid_fallback_defers_to_a_settled_own_lane(client: TestClient) -> N
     r = client.get(f"/api/v1/tracks/{SID_OWN_SETTLED_FAILED}/beatgrid-fallback")
     assert r.status_code == 404, r.text
     assert r.json()["detail"]["code"] == "BEATGRID_FALLBACK_NOT_FOUND"
+
+
+@pytest.mark.requirement("STANDALONE-04")
+def test_beatgrid_fallback_keeps_legacy_grid_beside_an_ok_own_lane(
+    client: TestClient,
+) -> None:
+    """[if] legacy grid plus unselected ok own record [then] legacy grid kept, [else stop]."""
+    baseline = client.get(f"/api/v1/tracks/{SID_FULL}/beatgrid-fallback")
+    assert baseline.status_code == 200, baseline.text
+    r = client.get(f"/api/v1/tracks/{SID_OWN_SETTLED_OK}/beatgrid-fallback")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["backend"] == "librosa+madmom"
+    assert body["beatgrid"]["beat_count"] == baseline.json()["beatgrid"]["beat_count"] > 0
 
 
 @pytest.mark.requirement("META-02")

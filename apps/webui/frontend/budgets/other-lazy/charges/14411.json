@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557433,
+  "measured_with_pr": 557570,
+  "sha": "8923859a7c",
+  "date": "Fri 13 Nov 2026",
+  "reason": "PR #14411 grows other-lazy with cmdk focus-return helper and CommandBarV2 close path; measured +137 B gzip over main on CI; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

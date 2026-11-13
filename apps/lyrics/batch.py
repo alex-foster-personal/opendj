@@ -54,6 +54,7 @@ from apps.lyrics.register_stems import (
     RegisterPairStorage,
     _corpus_pairs,
     _meta_model,
+    hub_pair_target,
     register_pair,
 )
 from apps.shared.paths import PROJECT_ROOT, STATE_DB, STATE_DIR
@@ -287,14 +288,18 @@ def _resolve_tracks(
                                      f"({db_file_path or 'no file_path'})")
 
 
-def _preflight_r2_credentials() -> None:
-    """Refuse cloud live runs before Modal when R2 credentials are absent."""
+def _preflight_r2_credentials(data_dir: Path | None = None) -> None:
+    """Refuse cloud live runs before Modal when neither R2 credentials nor a hub presign target exist."""
     if policy.CFG.mode != "cloud":
         return
     try:
         cfg = CloudConfig.from_env()
         require_credentials(cfg)
     except MissingEnvError as exc:
+        # LYRICS-13411: a spoke with a configured hub registers pairs through
+        # hub-presigned PUTs, so it needs no R2 credentials of its own.
+        if data_dir is not None and hub_pair_target(data_dir) is not None:
+            return
         raise StageBlocked(str(exc)) from exc
 
 
@@ -462,13 +467,13 @@ def _lane_stems(cmds: Cmds, report: BatchReport, runner: Runner,
     _symlink_registered_stems(report, stems_root, stems_dir)
     _separate_unregistered_stems(cmds, report, runner, progress, stems_dir)
     report.stages.append("stems")
-    _register_pairs(stems_dir, report, progress, stems_root)
+    _register_pairs(stems_dir, report, progress, stems_root, data_dir)
     report.stages.append("register")
     _run_stem_coverage(cmds, report, runner)
 
 
 def _register_pairs(stems_dir: Path, report: BatchReport, progress: Progress,
-                    stems_root: Path) -> None:
+                    stems_root: Path, data_dir: Path | None = None) -> None:
     """register-before-anything-else (the batch-1 sub-rung-A lesson): every
     pair in the corpus stems dir must hold a canonical bundle before any
     later stage runs; a failure here ABORTS, never quietly excludes."""
@@ -488,7 +493,8 @@ def _register_pairs(stems_dir: Path, report: BatchReport, progress: Progress,
             register_pair(stable_id=plan.stable_id, vocals=voc, instrumental=ins,
                           model_name=model_name, model_version=model_version,
                           source_path=source_path,
-                          storage=RegisterPairStorage(root=stems_root))
+                          storage=RegisterPairStorage(root=stems_root,
+                                                      data_dir=data_dir))
         except Exception as exc:
             raise StageBlocked(f"register: {key} ({plan.stable_id}): {exc}") from exc
         registered_now += 1
@@ -735,7 +741,7 @@ def run_batch(
         return report
 
     _preflight_cloud_policies(paths, stable_ids)
-    _preflight_r2_credentials()
+    _preflight_r2_credentials(paths.data_dir)
     _stage_corpus(cmds, report, effective_runner, notify)
     # R2: the two lanes have independent inputs - overlap them, nothing fancier.
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:

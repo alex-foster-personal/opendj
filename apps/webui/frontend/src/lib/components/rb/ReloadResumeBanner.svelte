@@ -10,6 +10,8 @@
 	} from '$lib/rb/reload-resume.svelte';
 
 	import { deckStates } from '$lib/player/state.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { bannerLeafSelId, bannerSelId } from './banner-selector-ids';
 
 	let busy = $state(false);
 
@@ -32,7 +34,13 @@
 </script>
 
 {#if reloadResume.offer !== null}
-	<div class="reload-resume-banner" role="alert" data-testid="reload-resume-banner">
+	<!-- #14559: a selector group while shown, one leaf per button, so Enter presses that button. -->
+	<div
+		class="reload-resume-banner"
+		role="alert"
+		data-testid="reload-resume-banner"
+		use:selectorNode={{ id: bannerSelId('reload-resume'), kind: 'group', enabled: true }}
+	>
 		<span class="headline">
 			{reloadResume.offer.decks.length === 1
 				? `Deck ${reloadResume.offer.decks[0]} was playing before the reload and is stopped.`
@@ -44,6 +52,7 @@
 		{#if reloadResume.error !== null}
 			<span class="error">{reloadResume.error}</span>
 		{/if}
+		<div class="sel-leaf" use:selectorNode={{ id: bannerLeafSelId('reload-resume', 'resume'), kind: 'leaf', enabled: true }}>
 		<button
 			type="button"
 			class="resume"
@@ -54,6 +63,8 @@
 		>
 			Resume {reloadResume.offer.decks.length === 1 ? 'deck' : `${reloadResume.offer.decks.length} decks`}
 		</button>
+		</div>
+		<div class="sel-leaf" use:selectorNode={{ id: bannerLeafSelId('reload-resume', 'dismiss'), kind: 'leaf', enabled: true }}>
 		<button
 			type="button"
 			class="dismiss"
@@ -64,6 +75,7 @@
 		>
 			Keep stopped
 		</button>
+		</div>
 	</div>
 {/if}
 
@@ -104,5 +116,9 @@
 	}
 	.resume {
 		font-weight: 600;
+	}
+	/* A selector leaf adds no box: the banner's flex row lays out its buttons as before. */
+	.sel-leaf {
+		display: contents;
 	}
 </style>

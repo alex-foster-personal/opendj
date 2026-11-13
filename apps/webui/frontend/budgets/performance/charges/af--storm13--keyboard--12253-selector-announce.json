@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 483140,
+  "measured_with_pr": 486281,
+  "sha": "71e10a286d",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12253-selector-announce grows the performance surface; measured +3141 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

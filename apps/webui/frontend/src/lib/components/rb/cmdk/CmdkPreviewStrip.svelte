@@ -77,7 +77,7 @@
 	);
 
 	$effect(() => {
-		if (canvas === null || width <= 0) return;
+		if (canvas === null || width <= 0 || view !== 'ready' || strip === null) return;
 		// paint() snapshots the --rb-wave-* vars, which the theme, the wave palette and the
 		// skin all swap, so a change to any of them repaints (Codex r4275811416). The key comes
 		// in as a prop rather than an import, to keep prefs.svelte's fan-in where it is.
@@ -93,7 +93,10 @@
 		if (ctx === null) throw new Error('CmdkPreviewStrip: 2d canvas context unavailable');
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, w, g.H);
-		const palette = readPalette(el);
+		const paletteRootEl = document.querySelector('.perf-root');
+		const paletteRoot =
+			paletteRootEl instanceof HTMLElement ? paletteRootEl : el;
+		const palette = readPalette(paletteRoot);
 		const dur = duration_s;
 		const xOf = (sec: number): number => (dur !== null && dur > 0 ? (sec / dur) * w : 0);
 		if (g.ribbonH > 0 && dur !== null && dur > 0) {

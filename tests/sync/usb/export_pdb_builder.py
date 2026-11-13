@@ -1,6 +1,8 @@
-"""Thin re-export of the production ``export.pdb`` writer for Play-from-USB tests."""
+"""Thin re-export of the production ``export.pdb`` encoder for Play-from-USB tests."""
 
-from apps.sync.usb.pioneer.pdb_writer import (
+from __future__ import annotations
+
+from apps.sync.usb.pioneer.pdb_writer import (  # noqa: F401
     PAGE_SIZE,
     PdbExport,
     PdbPlaylist,

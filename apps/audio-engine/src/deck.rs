@@ -362,6 +362,9 @@ struct Strip {
     hp_hz: CornerGlide,
     lp: StereoBiquad,
     hp: StereoBiquad,
+    /// FXFILT-09: each side's second section at 24 dB/oct, None at 12.
+    lp2: Option<StereoBiquad>,
+    hp2: Option<StereoBiquad>,
     dry: Smoothed,
     lp_wet: Smoothed,
     hp_wet: Smoothed,
@@ -381,11 +384,16 @@ struct Strip {
 }
 
 impl Strip {
-    fn new(sr: f64, glide: GlideDomain) -> Strip {
+    fn new(sr: f64, glide: GlideDomain, slope_db_oct: u32) -> Strip {
         let s = |v: f64| Smoothed::new(v, sr, mixer::PARAM_SMOOTH_S);
         let corner = |hz: f64| CornerGlide::new(hz, sr, mixer::FILTER_GLIDE_S, glide);
         let e = |v: f64| LinearRamp::new(v, sr, mixer::EQ_RAMP_S);
         let fp = mixer::filter_params(0.5);
+        let second = match slope_db_oct {
+            12 => None,
+            24 => Some(StereoBiquad::new(Coeffs::IDENTITY)),
+            other => panic!("FILTER slope must be 12 or 24 dB/oct, got {other}"),
+        };
         let mut strip = Strip {
             sr,
             trim: s(mixer::trim_gain_from_knob(0.5)),
@@ -395,6 +403,8 @@ impl Strip {
             hp_hz: corner(fp.hp_hz),
             lp: StereoBiquad::new(Coeffs::IDENTITY),
             hp: StereoBiquad::new(Coeffs::IDENTITY),
+            lp2: second,
+            hp2: second,
             dry: s(fp.dry),
             lp_wet: s(fp.lp_wet),
             hp_wet: s(fp.hp_wet),
@@ -429,11 +439,17 @@ impl Strip {
             self.eq_built[2] = db[2];
         }
         if lp_hz != self.lp_built {
-            self.lp.c = Coeffs::lowpass(sr, lp_hz, mixer::FILTER_Q);
+            self.lp.c = Coeffs::lowpass(sr, lp_hz, mixer::FILTER_Q_DB);
+            if let Some(bq) = &mut self.lp2 {
+                bq.c = Coeffs::lowpass(sr, lp_hz, mixer::FILTER_SECOND_SECTION_Q_DB);
+            }
             self.lp_built = lp_hz;
         }
         if hp_hz != self.hp_built {
-            self.hp.c = Coeffs::highpass(sr, hp_hz, mixer::FILTER_Q);
+            self.hp.c = Coeffs::highpass(sr, hp_hz, mixer::FILTER_Q_DB);
+            if let Some(bq) = &mut self.hp2 {
+                bq.c = Coeffs::highpass(sr, hp_hz, mixer::FILTER_SECOND_SECTION_Q_DB);
+            }
             self.hp_built = hp_hz;
         }
     }
@@ -458,7 +474,8 @@ impl Strip {
     #[inline]
     fn idle(&mut self) -> Option<(f64, f64)> {
         if self.idle_run == self.quiet_after {
-            for bq in self.eq.iter_mut().chain([&mut self.lp, &mut self.hp]) {
+            let seconds = self.lp2.iter_mut().chain(self.hp2.iter_mut());
+            for bq in self.eq.iter_mut().chain([&mut self.lp, &mut self.hp]).chain(seconds) {
                 bq.reset();
             }
         }
@@ -482,8 +499,14 @@ impl Strip {
             r = bq.process(1, r);
         }
         let (dry, lpw, hpw) = (self.dry.tick(), self.lp_wet.tick(), self.hp_wet.tick());
-        let (ll, lr) = (self.lp.process(0, l), self.lp.process(1, r));
-        let (hl, hr) = (self.hp.process(0, l), self.hp.process(1, r));
+        let (mut ll, mut lr) = (self.lp.process(0, l), self.lp.process(1, r));
+        let (mut hl, mut hr) = (self.hp.process(0, l), self.hp.process(1, r));
+        if let Some(bq) = &mut self.lp2 {
+            (ll, lr) = (bq.process(0, ll), bq.process(1, lr));
+        }
+        if let Some(bq) = &mut self.hp2 {
+            (hl, hr) = (bq.process(0, hl), bq.process(1, hr));
+        }
         l = dry * l + lpw * ll + hpw * hl;
         r = dry * r + lpw * lr + hpw * hr;
         let g = self.fader.tick() * self.xf.tick();
@@ -530,7 +553,7 @@ impl Deck {
             assign: Assign::Thru,
             master_tempo: true,
             key_shift: 0,
-            strip: Strip::new(sr, glide),
+            strip: Strip::new(sr, glide, mixer::FILTER_SLOPE_DB_OCT),
             stretch: Stretcher::new(sr, slot),
             stretch_warm: false,
             path_fade: 0,
@@ -1264,8 +1287,8 @@ mod tests {
         let mut out = Vec::with_capacity(n);
         for i in 0..n {
             let x = pcm[i * 2] as f64;
-            let yl = df1(Coeffs::lowpass(sr, dec(lp), mixer::FILTER_Q), &mut sl, x);
-            let yh = df1(Coeffs::highpass(sr, dec(hp), mixer::FILTER_Q), &mut sh, x);
+            let yl = df1(Coeffs::lowpass(sr, dec(lp), mixer::FILTER_Q_DB), &mut sl, x);
+            let yh = df1(Coeffs::highpass(sr, dec(hp), mixer::FILTER_Q_DB), &mut sh, x);
             out.push(dry * x + lw * yl + hw * yh);
             if i >= at {
                 lp += (enc(p1.lp_hz) - lp) * kc;
@@ -1531,6 +1554,47 @@ mod tests {
         let k = 1.0 - (-1.0 / (mixer::FILTER_GLIDE_S * 48000.0)).exp();
         let want = from + (to - from) * k;
         assert!((d.strip.lp_hz.hz() - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.hz());
+    }
+
+    // [if] a 24 dB/oct second section leaves its side's glided corner, or 12 adds one [then] the engines part, [else stop].
+    #[test]
+    fn a_24_db_filter_glides_both_sections_on_one_corner() {
+        assert!(Strip::new(48000.0, mixer::FILTER_GLIDE_DOMAIN, 12).lp2.is_none());
+        let mut d = Deck::new(48000.0);
+        d.strip = Strip::new(48000.0, mixer::FILTER_GLIDE_DOMAIN, 24);
+        d.load(Arc::new(silent(48000, 1.0, vec![])));
+        d.play(true).unwrap();
+        let q2 = mixer::FILTER_SECOND_SECTION_Q_DB;
+        let mut buf = vec![0.0f32; 2];
+        let mut corners = Vec::new();
+        for knob in [0.25, 0.75] {
+            d.set_filter(knob);
+            for _ in 0..2400 {
+                d.render_add(&mut buf, 48000.0);
+                let s = &d.strip;
+                assert_eq!(s.lp.c, Coeffs::lowpass(48000.0, s.lp_built, mixer::FILTER_Q_DB));
+                assert_eq!(s.lp2.unwrap().c, Coeffs::lowpass(48000.0, s.lp_built, q2));
+                assert_eq!(s.hp.c, Coeffs::highpass(48000.0, s.hp_built, mixer::FILTER_Q_DB));
+                assert_eq!(s.hp2.unwrap().c, Coeffs::highpass(48000.0, s.hp_built, q2));
+                corners.push((s.lp_built, s.hp_built));
+            }
+        }
+        let moved = |side: fn(&(f64, f64)) -> f64| corners.windows(2).filter(|w| side(&w[0]) != side(&w[1])).count();
+        assert!(moved(|c| c.0) > 100 && moved(|c| c.1) > 100, "both corners glided frame by frame");
+        assert!(buf.iter().all(|v| v.is_finite()));
+    }
+
+    // [if] the 24 dB/oct highpass at knob 0.75 falls outside 24 +/- 2 dB/oct 1 to 2 octaves below its corner [then] broken, [else stop].
+    #[test]
+    fn a_24_db_filter_falls_24_db_per_octave() {
+        let sr = 48000.0;
+        let hz = mixer::filter_params(0.75).hp_hz;
+        let mut strip = Strip::new(sr, mixer::FILTER_GLIDE_DOMAIN, 24);
+        strip.build([0.0; 3], mixer::FILTER_LP_CEILING_HZ, hz);
+        let (one, two) = (strip.hp.c, strip.hp2.unwrap().c);
+        let db = |f: f64| 20.0 * (one.magnitude_at(sr, f) * two.magnitude_at(sr, f)).log10();
+        let slope = db(hz / 2.0) - db(hz / 4.0);
+        assert!((slope - 24.0).abs() <= 2.0, "measured {slope} dB/oct at {hz} Hz");
     }
 
     // ----- FILTER corner glide (FXFILT-10611, issue #9828) -----

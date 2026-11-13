@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Render ops/dmg-smoke/com.af.dmg-smoke.plist.template and optionally install
+# Render (private path) and optionally install
 # the Air dmg-smoke launchd agent.
 #
 # Loading the job needs the maintainer's explicit say-so plus --install. Default and
 # --render-to stop before launchctl.
 #
 # USAGE
-#   MDT_MACOS_SIGNING_IDENTITY=... MDT_MACOS_NOTARY_KEYCHAIN_PROFILE=... \
+#   MDT_MACOS_SIGNING_IDENTITY=... MDT_MACOS_NOTARY_KEYCHAIN_PROFILE=... MDT_MACOS_NOTARY_KEYCHAIN=... \
 #     scripts/install_dmg_smoke_launchd.sh --host-label air
 #   scripts/install_dmg_smoke_launchd.sh --host-label air --render-to FILE
 #   scripts/install_dmg_smoke_launchd.sh --host-label air --install
@@ -47,14 +47,14 @@ if [ "$INSTALL" = 1 ] && [ "$(uname -s)" != "Darwin" ]; then
   exit 2
 fi
 
-# Supersedes: the implicit "air" attribution in ops/dmg-smoke/run.sh
+# Supersedes: the implicit "air" attribution in (private path)
 # (`${MDT_DMG_SMOKE_HOST_LABEL:-air}`), deleted there; run.sh now requires the
 # variable this flag renders into the plist.
 # --host-label has no hidden default (claude-review, PR #3827, round 2, P2):
 # a silent "air" fallback would attribute a second Mac's dmg-smoke runs to
 # Air in the ledger/evidence with no error, exactly the corruption
 # perf_kpi_job's own --host-label review finding describes for the sibling
-# perf-kpi installer (see .planning/debt/3827.md).
+# perf-kpi installer (see (private path)).
 if [ -z "$HOST_LABEL" ]; then
   echo "[ERROR] --host-label is required (e.g. --host-label air, --host-label silver)" >&2
   exit 2
@@ -78,9 +78,10 @@ _resolve_signing_env() {
 }
 
 if ! _resolve_signing_env MDT_MACOS_SIGNING_IDENTITY \
-  || ! _resolve_signing_env MDT_MACOS_NOTARY_KEYCHAIN_PROFILE; then
-  echo "[ERROR] MDT_MACOS_SIGNING_IDENTITY and MDT_MACOS_NOTARY_KEYCHAIN_PROFILE are required" >&2
-  echo "        Export both or define them in ~/.zshenv" >&2
+  || ! _resolve_signing_env MDT_MACOS_NOTARY_KEYCHAIN_PROFILE \
+  || ! _resolve_signing_env MDT_MACOS_NOTARY_KEYCHAIN; then
+  echo "[ERROR] MDT_MACOS_SIGNING_IDENTITY, MDT_MACOS_NOTARY_KEYCHAIN_PROFILE and MDT_MACOS_NOTARY_KEYCHAIN are required" >&2
+  echo "        Export all three or define them in ~/.zshenv" >&2
   exit 2
 fi
 
@@ -96,6 +97,7 @@ rendered="$(cat "$TEMPLATE")"
 rendered=${rendered//__ABS_HOME__/$(xml_escape "$HOME")}
 rendered=${rendered//__MDT_MACOS_SIGNING_IDENTITY__/$(xml_escape "$MDT_MACOS_SIGNING_IDENTITY")}
 rendered=${rendered//__MDT_MACOS_NOTARY_KEYCHAIN_PROFILE__/$(xml_escape "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE")}
+rendered=${rendered//__MDT_MACOS_NOTARY_KEYCHAIN__/$(xml_escape "$MDT_MACOS_NOTARY_KEYCHAIN")}
 rendered=${rendered//__MDT_DMG_SMOKE_HOST_LABEL__/$(xml_escape "$HOST_LABEL")}
 
 TARGET="${RENDER_ONLY:-$HOME/Library/LaunchAgents/com.af.dmg-smoke.plist}"

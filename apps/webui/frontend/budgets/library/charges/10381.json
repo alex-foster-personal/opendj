@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 330818,
+  "measured_with_pr": 331313,
+  "sha": "831f59446c",
+  "date": "Mon 9 Nov 2026",
+  "reason": "PR #10381 adds the section_jump command, its Shift+] / Shift+[ hotkeys and CLI verb (STRUCT-10381). Measured: CI bundle check of 831f59446c, +495 B gzip on library; ceiled to KiB",
+  "payback": "none planned; the growth is the feature's own code"
+}

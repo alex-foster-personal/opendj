@@ -43,6 +43,11 @@ def _require_value(slot: int, value: int) -> None:
         raise ValueError(f"DMX slot {slot} value {value} is outside {SLOT_MIN_VALUE}..{SLOT_MAX_VALUE}")
 
 
+def _require_frame(frame: bytes) -> None:
+    if len(frame) != SLOT_COUNT:
+        raise ValueError(f"a frame holds {SLOT_COUNT} slots, got {len(frame)}")
+
+
 # ----------------------------------------------------------------------------- universe
 
 
@@ -65,8 +70,7 @@ class Universe:
         return self._slots[slot - 1]
 
     def load(self, frame: bytes) -> None:
-        if len(frame) != SLOT_COUNT:
-            raise ValueError(f"a frame holds {SLOT_COUNT} slots, got {len(frame)}")
+        _require_frame(frame)
         self._slots[:] = frame
 
     def frame(self) -> bytes:
@@ -146,6 +150,7 @@ class SendPolicy:
 
     def packets_due(self, now: float, frame: bytes) -> int:
         """Return how many identical packets of ``frame`` to send now, and record the send."""
+        _require_frame(frame)
         if self._last_now is not None and now < self._last_now:
             raise ValueError(f"time went backwards: {now} after {self._last_now}")
         self._last_now = now

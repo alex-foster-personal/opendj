@@ -12,27 +12,36 @@ from apps.compatint.schema import (
     MIXXX_ARCHIVE_BASE_URL,
     MIXXX_VENDOR,
     DiscoveryContext,
+    GapKind,
     MixxxDiscoveryResult,
     ReleaseGap,
     StableReleaseRecord,
 )
 
 _PRE_DIR = re.compile(r"^\.\./$")
+_PRERELEASE_MARKERS = (
+    "-beta",
+    "-alpha",
+    "-rc",
+    "-svn",
+    "beta",
+    "alpha",
+    "rc",
+    "snapshot",
+)
+
+
+def _discovery_context(ctx: DiscoveryContext | None) -> DiscoveryContext:
+    return ctx if ctx is not None else DiscoveryContext()
 
 
 def _is_prerelease_identifier(identifier: str) -> bool:
     lowered = identifier.lower()
-    markers = (
-        "-beta",
-        "-alpha",
-        "-rc",
-        "-svn",
-        "beta",
-        "alpha",
-        "rc",
-        "snapshot",
-    )
-    return any(marker in lowered for marker in markers)
+    return any(marker in lowered for marker in _PRERELEASE_MARKERS)
+
+
+def _stable_folder_names(rows: Iterable[tuple[str, str | None]]) -> set[str]:
+    return {folder for folder, _ in rows if is_stable_archive_entry(folder)}
 
 
 def _looks_like_semver_release(identifier: str) -> bool:
@@ -113,7 +122,7 @@ def discover_stable_releases(
     *,
     ctx: DiscoveryContext | None = None,
 ) -> list[StableReleaseRecord]:
-    context = ctx or DiscoveryContext()
+    context = _discovery_context(ctx)
     base = context.source.rstrip("/") + "/"
     out: list[StableReleaseRecord] = []
     seen: set[str] = set()
@@ -161,14 +170,12 @@ def gap_tags_without_archive(
         if ident in archived or ident in seen:
             continue
         seen.add(ident)
-        kind: str = "tag_only"
-        if ident.startswith("1."):
-            kind = "older"
+        kind: GapKind = "older" if ident.startswith("1.") else "tag_only"
         gaps.append(
             ReleaseGap(
                 vendor=vendor,
                 identifier=ident,
-                kind=kind,  # type: ignore[arg-type]
+                kind=kind,
                 reason="Git tag has no matching stable archive folder",
                 tag_url=f"https://github.com/mixxxdj/mixxx/releases/tag/{raw_tag.strip()}",
             )
@@ -183,11 +190,10 @@ def discover_mixxx_from_archive_index(
     tags: Iterable[str] | None = None,
     ctx: DiscoveryContext | None = None,
 ) -> MixxxDiscoveryResult:
-    context = ctx or DiscoveryContext()
+    context = _discovery_context(ctx)
     rows = parse_archive_index(html)
     stable = discover_stable_releases(rows, ctx=context)
-    stable_identifiers = {folder for folder, _ in rows if is_stable_archive_entry(folder)}
-    denominator = len(stable_identifiers)
+    denominator = len(_stable_folder_names(rows))
     acquired = len(stable)
     gaps = gap_tags_without_archive(tags or (), stable, vendor=context.vendor)
     coverage = build_discovery_coverage(acquired=acquired, denominator=denominator)

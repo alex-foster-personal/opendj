@@ -149,7 +149,7 @@
       "doc_tier": 1,
       "status": {
         "docs": "pending",
-        "midi": "ok",
+        "midi": "pending",
         "diagram": "pending",
         "checksum": "pending",
         "hover": "pending"
@@ -282,9 +282,9 @@
       "doc_tier": 2,
       "status": {
         "docs": "blocked_tier2",
-        "midi": "pending",
-        "diagram": "stub",
-        "checksum": "n/a",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
         "hover": "skipped_blocked"
       }
     },
@@ -341,7 +341,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -356,7 +356,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -371,7 +371,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -414,7 +414,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -588,9 +588,9 @@
       "doc_tier": 1,
       "status": {
         "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
         "hover": "pending"
       }
     },
@@ -723,9 +723,9 @@
       "doc_tier": 1,
       "status": {
         "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
         "hover": "pending"
       }
     },
@@ -1001,7 +1001,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1058,7 +1058,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -1143,7 +1143,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1240,9 +1240,9 @@
       "doc_tier": 2,
       "status": {
         "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -1257,7 +1257,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -1302,7 +1302,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1587,9 +1587,9 @@
       "doc_tier": 2,
       "status": {
         "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1618,7 +1618,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1633,7 +1633,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1648,7 +1648,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1663,7 +1663,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1678,7 +1678,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -1693,7 +1693,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1708,7 +1708,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1723,7 +1723,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -1738,7 +1738,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -1753,7 +1753,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1768,7 +1768,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1783,7 +1783,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1798,7 +1798,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1813,7 +1813,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1828,7 +1828,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1843,7 +1843,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1858,7 +1858,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1873,7 +1873,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1888,7 +1888,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1903,7 +1903,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1918,7 +1918,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1933,7 +1933,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1948,7 +1948,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1963,7 +1963,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1978,7 +1978,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -1993,7 +1993,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2008,7 +2008,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2023,7 +2023,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2038,7 +2038,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2053,7 +2053,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2068,7 +2068,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2083,7 +2083,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2098,7 +2098,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2113,7 +2113,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2128,7 +2128,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2143,7 +2143,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2158,7 +2158,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2173,7 +2173,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2188,7 +2188,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2203,7 +2203,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2218,7 +2218,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2233,7 +2233,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2248,7 +2248,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2263,7 +2263,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2278,7 +2278,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2293,7 +2293,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2308,7 +2308,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2323,7 +2323,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2338,7 +2338,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2353,7 +2353,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2368,7 +2368,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2383,7 +2383,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2398,7 +2398,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2413,7 +2413,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2428,7 +2428,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2443,7 +2443,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2458,7 +2458,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2473,7 +2473,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2488,7 +2488,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2503,7 +2503,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2518,7 +2518,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2533,7 +2533,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2548,7 +2548,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2563,7 +2563,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "fail",
         "hover": "ok"
       }
     },
@@ -2578,7 +2578,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2593,7 +2593,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2608,7 +2608,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2623,7 +2623,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2638,7 +2638,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2653,7 +2653,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2668,7 +2668,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2683,7 +2683,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2698,7 +2698,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2713,7 +2713,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2728,7 +2728,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2743,7 +2743,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     },
@@ -2758,7 +2758,7 @@
         "docs": "mixxx",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "n/a",
+        "checksum": "ok",
         "hover": "ok"
       }
     }

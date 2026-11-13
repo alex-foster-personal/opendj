@@ -3,10 +3,12 @@
  * Hydrates GET /library-jobs; refetches on library_jobs invalidation.
  * Upserts real progress into job-progress (no asymptotic fake bar).
  */
+import { libraryJobsRefusal } from '$lib/api/capabilities.svelte';
 import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 import { jobProgress, type JobPhase } from '$lib/rb/job-progress.svelte';
 import {
+	enqueueLibraryJobsBatched,
 	listLibraryJobs,
 	type LibraryJobItem,
 	type LibraryJobLane
@@ -34,13 +36,18 @@ function upsertReal(item: LibraryJobItem): void {
 	});
 }
 
-let stems: LibraryJobItem[] = $state([]);
-let lyrics: LibraryJobItem[] = $state([]);
+// $state.raw (issue #10237): each hydrate replaces the whole array, never
+// edits it in place, so readers get the listing array as-is.
+let stems: LibraryJobItem[] = $state.raw([]);
+let lyrics: LibraryJobItem[] = $state.raw([]);
 let attached = 0;
 let unsubKind: (() => void) | null = null;
 let unsubResync: (() => void) | null = null;
 
 async function hydrate(lane: LibraryJobLane): Promise<void> {
+	// Gate before the request, as jobs-store does: no call site can fire a
+	// list at a daemon the capability probe has not cleared.
+	if (libraryJobsRefusal() !== null) return;
 	try {
 		const listing = await listLibraryJobs(lane, true);
 		if (lane === 'stems') stems = listing.items;
@@ -62,8 +69,35 @@ export const libraryJobsStore = {
 	get lyrics() {
 		return lyrics;
 	},
+	/** Why the queue is inert (capabilities.flavor), or null while it is offered. */
+	get refusal() {
+		return libraryJobsRefusal();
+	},
 	items(lane: LibraryJobLane): LibraryJobItem[] {
 		return lane === 'stems' ? stems : lyrics;
+	},
+	/** Enqueue ids; returns the refusal (and sends nothing) when the queue is not offered. */
+	async enqueue(lane: LibraryJobLane, stableIds: string[]): Promise<string | null> {
+		const refusal = libraryJobsRefusal();
+		if (refusal !== null) return refusal;
+		await enqueueLibraryJobsBatched({ lane, stable_ids: stableIds });
+		await hydrateAll();
+		return null;
+	},
+	/** Track-menu "do next": enqueue, and tell the DJ through `notify` (the app's
+	 * toast) when the queue refuses or the request fails, never silently. */
+	async doNext(
+		lane: LibraryJobLane,
+		stableIds: string[],
+		notify: (message: string, kind: 'error') => void
+	): Promise<void> {
+		const what = lane === 'stems' ? 'Stems' : 'Lyrics';
+		try {
+			const refusal = await this.enqueue(lane, stableIds);
+			if (refusal !== null) notify(`${what} not queued: ${refusal}`, 'error');
+		} catch (exc) {
+			notify(`${what} not queued: ${exc instanceof Error ? exc.message : String(exc)}`, 'error');
+		}
 	},
 	async refresh(): Promise<void> {
 		await hydrateAll();

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 /**
- * ui-mirror publish stall detection (#2154).
+ * ui-mirror publish stall detection (issues #13282, #2154).
  *
  * Regression lines:
  * - if a 6 s gap is classified ok then the Playwright AC cannot pass

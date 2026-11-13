@@ -101,7 +101,12 @@ def _census(tmp_path: Path) -> tuple[Path, Path]:
         f"source = pkg\ndata_file = {out / '.coverage'}\n",
         encoding="utf-8",
     )
-    env = {**os.environ, "PYTHONPATH": f"{repo}{os.pathsep}{REPO_ROOT}", child.CORE_DIR_ENV: str(out / "cores")}
+    # Hermetic child: an inherited COVERAGE_FILE (full-ci shards, 54b7e4e809) overrides the rc data_file.
+    env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("COVERAGE_")},
+        "PYTHONPATH": f"{repo}{os.pathsep}{REPO_ROOT}",
+        child.CORE_DIR_ENV: str(out / "cores"),
+    }
     env.pop(child.PROCESS_CONFIG_ENV, None)
     proc = subprocess.run(
         [
@@ -145,6 +150,14 @@ def _main(repo: Path, out: Path, *extra: str) -> int:
 def _verdicts(out: Path) -> dict[str, str]:
     doc = json.loads((out / mut.VERDICT_FILE).read_text(encoding="utf-8"))
     return {t.split("::", 1)[1]: row["verdict"] for t, row in doc["tests"].items()}
+
+
+def test_mutant_runs_do_not_inherit_outer_coverage_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the parent pytest exports COVERAGE_FILE [then] mutant pytest has no coverage override, [else stop]."""
+    monkeypatch.setenv("COVERAGE_FILE", ".coverage.outer-shard")
+    monkeypatch.setenv("COVERAGE_PROCESS_START", "outer.rc")
+
+    assert not any(key.startswith("COVERAGE_") for key in mut._pytest_env())
 
 
 @pytest.fixture(scope="module")

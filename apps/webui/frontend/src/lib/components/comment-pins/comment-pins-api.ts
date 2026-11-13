@@ -52,7 +52,8 @@ export class CommentPinsApi {
 	constructor(options: CommentPinsApiOptions = {}) {
 		this.#base = options.apiBase ?? '';
 		this.#paths = options.paths ?? DEFAULT_PATHS;
-		this.#fetch = options.fetchFn ?? fetch;
+		// Forward through globalThis: native fetch called as this.#fetch(...) throws Illegal invocation.
+		this.#fetch = options.fetchFn ?? ((input, init) => globalThis.fetch(input, init));
 	}
 
 	url(path: string): string {

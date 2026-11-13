@@ -433,6 +433,11 @@ def bulk_local_audio_paths(
     out: dict[str, Path | None] = {sid: None for sid in stable_ids}
     if not stable_ids:
         return out
+    if path_map is None:
+        # One map for the whole batch: a resolve with no map reloads and
+        # re-validates path-map.json per path, which a listing page paid once
+        # per row (Fri 13 Nov 2026 hang).
+        path_map = platform_paths.load_path_map()
     owner = machine_id or _sync_stamp.local_machine_id(conn)
     location_by_id = _local_location_paths(conn, stable_ids, owner)
     track_paths: dict[str, str | None] = {}

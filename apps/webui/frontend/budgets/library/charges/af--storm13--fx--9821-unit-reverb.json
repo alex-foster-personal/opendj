@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 373178,
+  "measured_with_pr": 376817,
+  "sha": "3c41e2cd97",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--fx--9821-unit-reverb grows the library surface; measured +3639 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

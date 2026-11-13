@@ -11,11 +11,6 @@ export interface StemWaveformLruEntry {
 export const STEM_WAVEFORM_ESTIMATE_BYTES = 4 * 1024;
 
 let _touchSeq = 0;
-let _boundCache: Record<string, StemWaveformLruEntry> | null = null;
-
-export function bindStemWaveformCapCache(cache: Record<string, StemWaveformLruEntry>): void {
-	_boundCache = cache;
-}
 
 export function nextStemWaveformTouch(): number {
 	return ++_touchSeq;
@@ -78,11 +73,4 @@ export function retouchStemWaveformReadyEntry<T extends StemWaveformLruEntry>(
 	if (entry !== undefined && entry.status === 'ready') {
 		cache[key] = { ...entry, touched: nextStemWaveformTouch() };
 	}
-}
-
-export function applyStemWaveformCaps(): void {
-	if (_boundCache === null) {
-		throw new Error('stem waveform cache is not bound');
-	}
-	applyStemWaveformCapsToCache(_boundCache, (entry) => entry.status === 'ready');
 }

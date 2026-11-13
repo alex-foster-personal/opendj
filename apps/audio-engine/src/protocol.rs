@@ -121,7 +121,12 @@ const LATER: &[(&str, &str)] = &[
     ("deck_brake", TRANSITION_FX_LATER),
     ("deck_backspin", TRANSITION_FX_LATER),
     ("fx_reset", TRANSITION_FX_LATER),
+    ("beat_fx", BEAT_FX_LATER),
+    ("beat_fx_release", BEAT_FX_LATER),
 ];
+
+/// Why `beat_fx` and `beat_fx_release` are refused here (BEATFX-13, issue #9783).
+pub(crate) const BEAT_FX_LATER: &str = "beat FX kernels play in Web Audio only";
 
 /// Why the transition FX commands and the `fx_echo` / `fx_dry` plan ramps are
 /// refused here (FXTRANS-03): no FX kernel exists in this engine yet.
@@ -200,6 +205,9 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         "deck_brake" => &["type", "deck", "beats", "curve", "quantize"],
         "deck_backspin" => &["type", "deck", "beats"],
         "fx_reset" => &["type", "deck"],
+        // Beat FX unit (spec fx-fanout-20261108/01 section 4.4).
+        "beat_fx" => &["type", "target", "effect", "beats", "level", "enabled", "quantize", "xpad"],
+        "beat_fx_release" => &["type", "held", "beats", "kind"],
         _ => return None,
     })
 }
@@ -444,6 +452,11 @@ fn check_later(o: &Obj, ty: &str) -> Result<(), ProtoError> {
         }
         "output_mode" => one_of(o, ty, "mode", &["practice", "two_outputs", "split_cable"])?,
         "echo_out" | "deck_brake" | "deck_backspin" | "fx_reset" => drop(deck_of(o, ty)?),
+        "beat_fx" if o.len() < 2 => {
+            let fields = "target, effect, beats, level, enabled, quantize, xpad";
+            return Err(invalid(format!("{ty} needs at least one of {fields}")));
+        }
+        "beat_fx_release" => drop(boolean(o, ty, "held")?),
         "headphone_output_select" | "headphone_master_select" => non_empty(o, ty, "device_id")?,
         "preview_cue" => {
             non_empty(o, ty, "stable_id")?;
@@ -971,6 +984,8 @@ mod tests {
             json!({"type": "deck_brake", "deck": 2}),
             json!({"type": "deck_backspin", "deck": 3}),
             json!({"type": "fx_reset", "deck": 4}),
+            json!({"type": "beat_fx", "target": "2", "enabled": true}),
+            json!({"type": "beat_fx_release", "held": true}),
         ];
         // Every deferred command is covered here, and has a field list.
         for (t, _) in LATER {
@@ -1583,6 +1598,28 @@ mod tests {
             json!({"type": "deck_backspin", "deck": 1, "speed": 3}),
         ] {
             assert_ne!(cmd(bad.clone()).unwrap_err().code, ErrorCode::NotImplemented, "{bad}");
+        }
+    }
+
+    #[test]
+    fn beat_fx_commands_are_refused_by_name_and_listed_as_not_built() {
+        for c in [
+            json!({"type": "beat_fx", "target": "2", "effect": "echo", "enabled": true}),
+            json!({"type": "beat_fx_release", "held": true, "beats": 2, "kind": "echo"}),
+        ] {
+            let ty = c["type"].as_str().unwrap().to_owned();
+            let e = cmd(c).unwrap_err();
+            assert_eq!(e.code, ErrorCode::NotImplemented, "{ty}");
+            assert_eq!(e.message, format!("{ty}: beat FX kernels play in Web Audio only"));
+            assert!(LATER.contains(&(ty.as_str(), BEAT_FX_LATER)), "{ty} missing from not_built");
+        }
+        // A malformed command is refused as malformed, as the page refuses it.
+        for bad in [
+            json!({"type": "beat_fx"}),
+            json!({"type": "beat_fx", "deck": 1}),
+            json!({"type": "beat_fx_release"}),
+        ] {
+            assert_eq!(cmd(bad.clone()).unwrap_err().code, ErrorCode::Invalid, "{bad}");
         }
     }
 

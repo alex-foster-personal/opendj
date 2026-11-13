@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,8 +18,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from apps.analysis import canonical
-from apps.analysis.record import AnalysisRecord
 from apps.analysis_structure.http import build_service as build_structure_service
 from apps.mik.serve_energy import MalformedStoredEnergySegment, merge_mik_energy
 from apps.shared import platform_paths, runtime_policy
@@ -40,7 +37,11 @@ from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
 from .grid_edit import apply_stored_grid_edit, stored_grid_edit, stored_tempo_pick
 from .grid_edit import state_db_path as grid_state_db_path
-from .rb_assets_beatgrid_source import beatgrid_source_for_track, phrase_source_for_request
+from .rb_assets_beatgrid_source import (
+    _canonical_beatgrid_record,
+    beatgrid_source_for_track,
+    phrase_source_for_request,
+)
 from .vocals import _own_vocals_for_serve, _request_vocals_ctx
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
@@ -179,55 +180,6 @@ def _local_artwork_response(
     if _etag_matches(request.headers.get("if-none-match"), etag):
         return Response(status_code=304, headers=headers)
     return Response(content=data, media_type=mime, headers=headers)
-
-
-def _canonical_beatgrid_record(db_path: Path, stable_id: str) -> AnalysisRecord | None:
-    """The analysis row ``analysis_canonical`` names for this track's beatgrid.
-
-    THE POINTER, NOT THE NEWEST ROW. ``_load_latest_record(.., None)``
-    cannot answer this: its default query excludes every ``own_*`` backend
-    on purpose (``analysis.py``), so it returns a legacy librosa row and the
-    OWN grid would be paired with the canonical record's BPM -- because
-    ``GET /tracks/{id}`` reads ``bpm`` from ``analysis_projection``, which
-    :func:`apps.analysis.canonical.rebuild_projection` derives from THIS
-    pointer. Two readers of one lane must resolve the same record or the
-    read model reports a grid and a tempo that were never measured together
-    (discussion_r3969942709 P1 BLOCKING).
-
-    Returns None when the track has no canonical own beatgrid (no pointer,
-    or the analysis tables have never been created). A pointer that names a
-    row which is not there is corruption, not an absence, and raises.
-    """
-    conn = analysis_routes._open_analysis_ro(db_path)
-    try:
-        try:
-            pointer = canonical.canonical_pointer(conn, stable_id, "beatgrid")
-        except sqlite3.OperationalError as exc:
-            if "no such table" in str(exc):
-                return None
-            raise
-        if pointer is None:
-            return None
-        backend, backend_version = pointer
-        row = conn.execute(
-            "SELECT record_json FROM analysis "
-            "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
-            (stable_id, backend, backend_version),
-        ).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "ANALYSIS_CANONICAL_DANGLING",
-                "message": (
-                    f"canonical beatgrid pointer for {stable_id!r} names "
-                    f"{backend!r}@{backend_version!r} but no such analysis row exists"
-                ),
-            },
-        )
-    return AnalysisRecord.from_json(row[0])
 
 
 def _own_beatgrid_beats(db_path: Path, stable_id: str) -> tuple[list[dict] | None, str | None]:

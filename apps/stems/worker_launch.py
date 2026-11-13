@@ -61,6 +61,7 @@ PAYLOAD_WORKER_SCRIPTS: tuple[str, ...] = (
     "scripts/stems_hydrate_worker.py",
     "scripts/stem_bundle_worker.py",
     "scripts/cloud_hydrate_worker.py",
+    "scripts/anlz_cache_rebuild_worker.py",
 )
 """Worker scripts the payload build copies to ``payload/app/scripts/``.
 

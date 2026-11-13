@@ -11,17 +11,21 @@
 	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import {
 		filterHotkeys,
+		shortcutCountAnnouncement,
+		visibleShortcutCount,
 		type FilteredHotkey,
 		type HighlightPiece,
 		type HotkeyEntry,
 		type HotkeysOverlayView
 	} from './hotkeys-filter';
+	import type { HotkeysOverlayTrigger } from './hotkeys-registry';
 
 	const {
 		open,
 		view,
 		query,
 		entries,
+		trigger,
 		onHide,
 		onSetView,
 		onSetQuery
@@ -31,6 +35,8 @@
 		query: string;
 		/** Every registered binding (HOTKEY_REGISTRY in the app). */
 		entries: readonly HotkeyEntry[];
+		/** The X button's name and shortcuts, from the live toggle key (#12277). */
+		trigger: HotkeysOverlayTrigger;
 		onHide: () => void;
 		onSetView: (next: HotkeysOverlayView) => void;
 		onSetQuery: (next: string) => void;
@@ -39,6 +45,8 @@
 	let searchEl = $state<HTMLInputElement | null>(null);
 
 	const filtered = $derived(filterHotkeys(entries, query));
+	// #12288: one polite summary of the result; the rows themselves are never read out twice.
+	const resultSummary = $derived(shortcutCountAnnouncement(visibleShortcutCount(filtered)));
 	const grouped = $derived.by(() => {
 		const order: string[] = [];
 		const map = new Map<string, FilteredHotkey[]>();
@@ -129,12 +137,17 @@
 					type="button"
 					class="hk-close"
 					onclick={() => onHide()}
-					aria-label="Close hotkeys overlay"
-					title="Hide hotkeys overlay (Esc)"
+					aria-label={trigger.label}
+					aria-keyshortcuts={trigger.ariaKeyshortcuts}
+					title={trigger.title}
 				>
 					X
 				</button>
 			</header>
+
+			<p class="hk-sr-only" role="status" aria-live="polite" data-hotkeys-overlay-count="true">
+				{resultSummary}
+			</p>
 
 			<div class="hk-body">
 				{#if entries.length === 0}
@@ -322,6 +335,18 @@
 		color: #111;
 		padding: 0;
 		border-radius: 2px;
+	}
+
+	.hk-sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 
 	.hk-search:focus-visible {

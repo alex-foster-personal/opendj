@@ -214,12 +214,13 @@ export function stripLessIdsNear<Row extends { stable_id: string; strip: unknown
 /** The filler's batch for library rows (LIBM-172): `POST /library/row-assets`, with the
  * module that applies it loaded on first use so it stays off the eager route bundle.
  * `rows` is read after the answer lands, so a refresh mid-request fills the new rows. */
-export async function fetchRowAssetsLazily(
+export async function fetchRowAssetsLazily<T extends RowAssetTarget>(
 	ids: string[],
-	rows: () => readonly RowAssetTarget[],
-	settled?: WeakSet<object>
+	rows: () => readonly T[],
+	settled: WeakSet<object>,
+	patchRow: (stable_id: string, map: (row: T) => T) => void
 ): Promise<PreviewStripBatch> {
-	return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows, settled);
+	return (await import('./row-assets-fill')).fetchAndApplyRowAssets(ids, rows, settled, patchRow);
 }
 
 /**

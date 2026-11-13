@@ -46,7 +46,7 @@ test.after(async () => {
 
 test('the deck renders the pad-mode menu for its own deck', () => {
 	const markup = deckSvelte.slice(deckSvelte.lastIndexOf('</script>'));
-	assert.match(markup, /<PadModeMenu \{deckId\} stacked \/>/);
+	assert.match(markup, /<PadModeMenu \{deckId\} stacked\b/);
 });
 
 test('hot cue menu lists every catalog pad mode', () => {

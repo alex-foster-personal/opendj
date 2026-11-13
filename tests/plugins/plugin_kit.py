@@ -207,6 +207,14 @@ def listing_for(
     }
     if capability_kind is not None:
         listing["capability_kind"] = capability_kind
+        if capability_kind in ("API", "MCP"):
+            listing.update(
+                {
+                    "provider_owner": "Example Provider (fixture)",
+                    "official_docs_url": "https://example.test/provider-docs",
+                    "allowed_use_review": "User-owned credentials; catalog hits never import into the owned library.",
+                }
+            )
     return listing, media
 
 

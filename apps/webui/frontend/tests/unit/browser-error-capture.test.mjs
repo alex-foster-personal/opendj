@@ -15,6 +15,8 @@ let originalFetch;
 let store;
 let listeners;
 let addEventListenerImpl;
+/** lifecycle-abort's own unload listeners, registered once when the reporter module loads. */
+let unloadSignalListeners;
 
 function defineGlobal(name, value) {
 	Object.defineProperty(globalThis, name, {
@@ -67,6 +69,10 @@ function installBrowserGlobals() {
 		warn: (...args) => {
 			globalThis.__consoleWarnCalls = (globalThis.__consoleWarnCalls ?? 0) + 1;
 			globalThis.__lastConsoleWarn = args;
+		},
+		debug: (...args) => {
+			globalThis.__consoleDebugCalls = (globalThis.__consoleDebugCalls ?? 0) + 1;
+			globalThis.__lastConsoleDebug = args;
 		}
 	});
 }
@@ -124,6 +130,12 @@ before(async () => {
 	reporting = await loadTypeScriptModule('src/lib/client-error-reporting.ts', {
 		viteApiBase: API_BASE
 	});
+	// Kept here because afterEach swaps in a fresh listener map, and the module
+	// registers these once, at load.
+	unloadSignalListeners = {
+		beforeunload: listeners.get('beforeunload:capture') ?? [],
+		pagehide: listeners.get('pagehide:capture') ?? []
+	};
 	perfLog = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts');
 	reporting.__setConsoleSampleGateForTests(() => 0);
 });
@@ -135,6 +147,7 @@ afterEach(() => {
 	reporting.__setConsoleSampleGateForTests(() => 0);
 	globalThis.__consoleErrorCalls = 0;
 	globalThis.__consoleWarnCalls = 0;
+	globalThis.__consoleDebugCalls = 0;
 });
 
 after(() => {
@@ -376,4 +389,112 @@ test('pending shell bridge rows drain through reportClientError', async () => {
 	await waitFor(() => posted.length === 1, 'pending shell drain');
 	assert.equal(posted[0].kind, 'webview-navigation');
 	assert.equal(globalThis.window.__OPENDJ_PENDING_SHELL_ERRORS__.length, 0);
+});
+
+// A page that is unloading kills its own in-flight fetches and module imports,
+// and every caller's catch then logs or toasts. Seen as the first test of the
+// webkit artifact gate (setup-entry-points.spec.ts:221), red on about half of
+// main's runs with a different caller named each time.
+
+/** The browser's unload signal, through the listener lifecycle-abort registered at module load. */
+function signalUnload(type) {
+	const handlers = unloadSignalListeners[type];
+	assert.ok(handlers.length > 0, `the reporter must listen for ${type} in the capture phase`);
+	for (const handler of handlers) handler({ type });
+}
+
+function offline() {
+	// A failed POST leaves the row in the durable queue, which is what these tests read.
+	globalThis.fetch = async () => {
+		throw new TypeError('offline');
+	};
+}
+
+for (const signal of ['beforeunload', 'pagehide']) {
+	test(`console.error after ${signal} prints at debug level and files nothing`, () => {
+		offline();
+		reporting.installClientErrorReporting();
+		signalUnload(signal);
+		console.error(
+			'[entitlements] load failed; nothing is treated as refused',
+			new TypeError('Load failed')
+		);
+		assert.equal(globalThis.__consoleErrorCalls ?? 0, 0, 'no error-level line for a killed request');
+		assert.equal(globalThis.__consoleDebugCalls, 1, 'the line stays readable at debug level');
+		assert.match(String(globalThis.__lastConsoleDebug[0]), /entitlements/);
+		assert.equal(readQueueLength(), 0, 'a killed request is not filed as a client error');
+	});
+}
+
+test('console.warn while the page is unloading prints at debug level and files nothing', () => {
+	offline();
+	reporting.installClientErrorReporting();
+	signalUnload('beforeunload');
+	console.warn('[analysis-source] poll failed; retrying on the next tick');
+	assert.equal(globalThis.__consoleWarnCalls ?? 0, 0);
+	assert.equal(globalThis.__consoleDebugCalls, 1);
+	assert.equal(readQueueLength(), 0);
+});
+
+test('console.error on a page that stays open is still an error and is still filed', () => {
+	offline();
+	reporting.installClientErrorReporting();
+	console.error('[entitlements] load failed; nothing is treated as refused');
+	assert.equal(globalThis.__consoleErrorCalls, 1, 'a live page keeps its error-level line');
+	assert.equal(globalThis.__consoleDebugCalls ?? 0, 0);
+	assert.equal(readQueueLength(), 1, 'a live page still files the console error');
+});
+
+test('an unhandled rejection and a failed resource load file nothing while unloading, and file on a live page', () => {
+	offline();
+	reporting.installClientErrorReporting();
+	const killedImport = { reason: new TypeError('Importing a module script failed.') };
+	const killedPreload = {
+		target: { tagName: 'LINK', href: 'https://app.example.test/_app/immutable/chunks/a.js' }
+	};
+	signalUnload('beforeunload');
+	fire('unhandledrejection', killedImport);
+	fire('error', killedPreload, true);
+	assert.equal(readQueueLength(), 0, 'what the unload killed is not filed');
+
+	reporting.__resetClientErrorReportingForTests();
+	installBrowserGlobals();
+	offline();
+	reporting.installClientErrorReporting();
+	fire('unhandledrejection', killedImport);
+	fire('error', killedPreload, true);
+	const kinds = JSON.parse(store.getItem(QUEUE_KEY)).map((row) => row.kind);
+	assert.deepEqual(kinds, ['unhandled-rejection', 'resource-error'], 'a live page files both');
+});
+
+test('the unload silence ends with its window, so a navigation that never left does not mute the page', () => {
+	offline();
+	reporting.installClientErrorReporting();
+	const realNow = Date.now;
+	const beforeSignal = realNow();
+	signalUnload('beforeunload');
+	const afterSignal = realNow();
+	try {
+		Date.now = () => beforeSignal + reporting.UNLOAD_NOISE_WINDOW_MS - 1;
+		console.error('inside the window');
+		assert.equal(globalThis.__consoleErrorCalls ?? 0, 0, 'inside the window the unload is still the cause');
+		Date.now = () => afterSignal + reporting.UNLOAD_NOISE_WINDOW_MS + 1;
+		console.error('the page is still here');
+		assert.equal(globalThis.__consoleErrorCalls, 1, 'past the window an error is an error again');
+		assert.equal(readQueueLength(), 1, 'and is filed again');
+	} finally {
+		Date.now = realNow;
+	}
+});
+
+test('a deliberate reportClientError while unloading is still filed (the quit gate reports on purpose)', () => {
+	offline();
+	reporting.installClientErrorReporting();
+	signalUnload('beforeunload');
+	reporting.reportClientError(
+		new Error('quit flush failed'),
+		{ source: 'quit-gate', route: 'lifecycle/quit' },
+		'unhandled-rejection'
+	);
+	assert.equal(readQueueLength(), 1, 'only ambient capture goes quiet, never an explicit report');
 });

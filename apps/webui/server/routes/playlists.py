@@ -15,9 +15,10 @@ from apps.sync.djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 from .. import playlist_thumbnail as thumbs
 from .. import playlist_tree_order as tree_order
 from .. import rb_vendor
-from ..backend import StateBackend
+from ..backend import StateBackend, track_matches_mytags
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state
 from ..etag import compute_etag
+from ..library_readiness import beatgrid_presence
 from ..models import (
     PlaylistDetail,
     PlaylistDiff,
@@ -31,7 +32,25 @@ from ..models import (
 )
 from ..playlist_summary_stats import PlaylistSummaryStatsData
 from ..playlist_text_export import TEXT_EXPORT_MEDIA_TYPE, TextExportTrack, export_filename, playlist_text_export
-from .tracks import AvailableFilter, keep_by_availability
+from .tracks import (
+    BPM_MAX_DOC,
+    BPM_MIN_DOC,
+    GENRE_QUERY_DOC,
+    KEY_QUERY_DOC,
+    MYTAG_MODE_DOC,
+    MYTAG_QUERY_DOC,
+    RATING_MIN_DOC,
+    AvailableFilter,
+    check_bpm_range,
+    keep_by_availability,
+    keep_by_bpm,
+    keep_by_genre,
+    keep_by_key,
+    keep_by_rating,
+    parse_genre_query,
+    parse_key_query,
+    parse_mytag_query,
+)
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
 MOUNT_UNDER_API_PREFIX = True
@@ -59,6 +78,7 @@ def _stats_out(raw: PlaylistSummaryStatsData) -> PlaylistSummaryStats:
             missing=raw.keys_missing,
         ),
         unanalysed=raw.unanalysed,
+        unavailable=raw.unavailable,
     )
 
 
@@ -97,6 +117,7 @@ class DeletedPlaylistOut(BaseModel):
     deleted_at: str
     updated_at: str
     track_count: int
+    etag: str
 
 
 _DELETED_PLAYLISTS_SQL = """
@@ -236,6 +257,7 @@ def list_deleted_playlists(
             deleted_at=row[4],
             updated_at=row[5],
             track_count=row[6],
+            etag=compute_etag(row[0], row[5]),
         )
         for row in rows
     ]
@@ -247,7 +269,7 @@ def get_playlist_summary(
     response: Response,
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> PlaylistSummaryStats:
-    """Aggregate playlist stats: count, duration, bpm, energy, keys, unanalysed (SETPREP-10645)."""
+    """Aggregate playlist stats: count, duration, bpm, energy, keys, unanalysed, unavailable (SETPREP-10645)."""
     pl = backend.get_playlist(playlist_id)
     response.headers["ETag"] = compute_etag(pl.playlist_id, pl.updated_at)
     return _stats_out(backend.get_playlist_summary_stats(playlist_id))
@@ -291,12 +313,14 @@ def list_playlist_tracks(
     rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in slice_ids], data_dir=data_dir, state_db_path=state_db)
     tracks: list[TrackRowOut] = []
     edits = _playlist_edit_map(state_db, list(pl.edit_ids))
+    gridded = beatgrid_presence(state_db, slice_ids)
     for i, row in enumerate(rows):
         iid = pl.item_ids[i] if i < len(pl.item_ids) else None
         eid = pl.edit_ids[i] if i < len(pl.edit_ids) else None
         tracks.append(
             TrackRowOut(
-                **row, item_id=iid or None, edit_id=eid, **_edit_overlay(edits.get(eid))
+                **row, item_id=iid or None, edit_id=eid, **_edit_overlay(edits.get(eid)),
+                has_beatgrid=gridded.get(row["stable_id"]),
             )
         )
     next_offset = offset + len(slice_ids)
@@ -386,10 +410,21 @@ def get_playlist(
             "(FR-1 agent parity). `items` always stays the full membership."
         ),
     ),
+    bpm_min: float | None = Query(None, ge=0, description=BPM_MIN_DOC),
+    bpm_max: float | None = Query(None, ge=0, description=BPM_MAX_DOC),
+    key: list[str] | None = Query(None, description=KEY_QUERY_DOC),
+    genre: list[str] | None = Query(None, description=GENRE_QUERY_DOC),
+    rating_min: int | None = Query(None, ge=1, le=5, description=RATING_MIN_DOC),
+    mytag: list[str] | None = Query(None, description=MYTAG_QUERY_DOC),
+    mytag_mode: Literal["and", "or"] = Query("or", description=MYTAG_MODE_DOC),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
     data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
     state_db: Path = Depends(get_library_state_db),  # noqa: B008  # FastAPI DI
 ) -> PlaylistDetail:
+    check_bpm_range(bpm_min, bpm_max)
+    keys = parse_key_query(key)
+    genres = parse_genre_query(genre)
+    mytags = parse_mytag_query(mytag)
     pl = backend.get_playlist(playlist_id)
     # add-remove-reorder-tracks: the write side's PUT .../tracks requires
     # If-Match (etag.py's compute_etag(playlist_id, updated_at), identical
@@ -421,7 +456,16 @@ def get_playlist(
         out = TrackRowOut(
             **row, item_id=iid or None, edit_id=eid, **_edit_overlay(edits.get(eid))
         )
-        if keep_by_availability(available, row.get("file_exists")):
+        # Issues #9738 / #9739 / #9740 / #9742: the BPM, Key, Genre, Rating and My Tag funnels filter
+        # the served row values, like ?available.
+        if (
+            keep_by_availability(available, row.get("file_exists"))
+            and keep_by_bpm(bpm_min, bpm_max, row["bpm"])
+            and keep_by_key(keys, row["key"])
+            and keep_by_genre(genres, out.genre)
+            and keep_by_rating(rating_min, out.rating)
+            and track_matches_mytags(tracks_map[pl.items[i]], mytags, mytag_mode)
+        ):
             tracks.append(out)
     return PlaylistDetail(
         playlist_id=pl.playlist_id, name=pl.name, vendor=pl.vendor,

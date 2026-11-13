@@ -197,7 +197,7 @@ class TestRoundTripReads:
         rating_page = backend.list_tracks(TrackFilter(rating_min=3))
         assert [t.stable_id for t in rating_page.items] == ["sid-001"]
 
-        key_page = backend.list_tracks(TrackFilter(key="8A"))
+        key_page = backend.list_tracks(TrackFilter(keys=("8A",)))
         assert [t.stable_id for t in key_page.items] == ["sid-001"]
 
     def test_list_tracks_pagination(self, fresh_state_db: Path) -> None:

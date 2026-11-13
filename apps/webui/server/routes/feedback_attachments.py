@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
+import os
 import re
 import uuid
 import warnings
@@ -45,6 +47,10 @@ from .feedback import (
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 MOUNT_UNDER_API_PREFIX = True
+
+log = logging.getLogger(__name__)
+
+FEEDBACK_ATTACHMENT_R2_PUSH_ENV = "MDT_FEEDBACK_ATTACHMENT_R2_PUSH"
 
 # CFG: the size/type policy an agent or reviewer can rely on without reading
 # this file. 8 MiB comfortably covers a full-screen screenshot; PNG/JPEG/GIF/
@@ -90,6 +96,44 @@ def _find_attachment_file(request: Request, attachment_id: str) -> Path | None:
         return None
     matches = list(_attachments_dir(request).glob(f"{attachment_id}.*"))
     return matches[0] if matches else None
+
+
+def _cloud_config_for_attachment_push() -> "CloudConfig":
+    """Load R2 config for a post-upload asset push (tests may replace this)."""
+    from apps.cloud.config import CloudConfig
+
+    return CloudConfig.from_env()
+
+
+def _asset_client_for_upload(cfg: "CloudConfig") -> "AssetS3Client":
+    """Build the S3 client for ``push_asset`` (tests may replace this)."""
+    from apps.cloud.asset_store import AssetS3Client, boto3_asset_client
+
+    return boto3_asset_client(cfg)
+
+
+def _attachment_r2_push_allowed() -> bool:
+    """Skip R2 during pytest unless ``MDT_FEEDBACK_ATTACHMENT_R2_PUSH=1``."""
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        return True
+    return os.environ.get(FEEDBACK_ATTACHMENT_R2_PUSH_ENV) == "1"
+
+
+def _push_feedback_attachment_to_r2(local_path: Path) -> None:
+    """Best-effort push of screenshot bytes to the content-addressed R2 tier."""
+    from apps.cloud.asset_store import AssetStoreError, push_asset
+    from apps.cloud.config import MissingEnvError
+
+    if not _attachment_r2_push_allowed():
+        return
+    try:
+        cfg = _cloud_config_for_attachment_push()
+    except MissingEnvError:
+        return
+    try:
+        push_asset(cfg, _asset_client_for_upload(cfg), local_path)
+    except AssetStoreError as exc:
+        log.warning("feedback attachment R2 push failed for %s: %s", local_path.name, exc)
 
 
 def _delete_attachment_file(attachments_dir: Path, attachment_id: str) -> None:
@@ -207,7 +251,9 @@ async def upload_attachment(comment_id: str, request: Request, file: Annotated[U
             attachments_dir.mkdir(parents=True, exist_ok=True)
             old_attachment = item.get("attachment")
             attachment_id = uuid.uuid4().hex[:12]
-            (attachments_dir / f"{attachment_id}.{ext}").write_bytes(data)
+            local_path = attachments_dir / f"{attachment_id}.{ext}"
+            local_path.write_bytes(data)
+            _push_feedback_attachment_to_r2(local_path)
             attachment = AttachmentOut(
                 id=attachment_id,
                 content_type=content_type,

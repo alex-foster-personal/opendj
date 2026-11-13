@@ -1,10 +1,12 @@
 """``opendj ingest``: HTTP parity for the ingest drop modal staging workflow.
 
-    opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh]
+    opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh] [--dry-run]
 
 Multipart upload to ``POST /api/v1/ingest/upload``, then the same conditional
 ``POST /api/v1/ingest/refresh`` the UI runs after ``uploadIngestFiles``.
 Follow-up refresh inspection: ``opendj api GET /api/v1/ingest/refresh/status``.
+``--dry-run`` prints the batch and the files that would be uploaded without
+contacting the engine.
 """
 
 from __future__ import annotations
@@ -153,6 +155,7 @@ def _stage_parser() -> argparse.ArgumentParser:
     stage.add_argument("--batch")
     stage.add_argument("--force", action="store_true")
     stage.add_argument("--no-refresh", action="store_true")
+    stage.add_argument("--dry-run", action="store_true", help="list what would be staged; send nothing")
     return parser
 
 
@@ -167,7 +170,7 @@ def _parse_stage_args(
         return None, _fail(
             as_json,
             "usage",
-            "usage: opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh]",
+            "usage: opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh] [--dry-run]",
             EXIT_FAILED,
         )
     if args.verb != "stage":
@@ -222,6 +225,17 @@ def _perform_refresh(
     return refresh, None
 
 
+def _print_dry_run(batch: str, pairs: Sequence[tuple[str, Path]], *, as_json: bool) -> None:
+    """Print the batch and files a stage run would upload, without sending anything."""
+    if as_json:
+        files = [{"filename": name, "path": str(path)} for name, path in pairs]
+        print(json.dumps({"dry_run": True, "batch": batch, "files": files}, indent=2, sort_keys=True))
+        return
+    lines = [f"dry run: would stage {len(pairs)} file(s) into batch {batch}"]
+    lines.extend(f"  {name}: {path}" for name, path in pairs)
+    print("\n".join(lines))
+
+
 def _print_stage_result(
     upload: dict[str, Any],
     refresh: dict[str, Any] | None,
@@ -248,6 +262,10 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
         pairs = collect_upload_paths(args.paths)
     except ValueError as error:
         return _fail(as_json, "usage", str(error), EXIT_FAILED)
+
+    if args.dry_run:
+        _print_dry_run(batch, pairs, as_json=as_json)
+        return EXIT_CONFIRMED
 
     try:
         target = resolve_backend_base_url(lock_path=lock)

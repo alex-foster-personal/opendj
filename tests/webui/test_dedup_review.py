@@ -12,6 +12,7 @@ Regression one-liners:
   - if a fingerprint-only db makes the review endpoint 500 then broken
   - if a decision can attach to a rebuilt cluster that reused a numeric id then broken
   - if a stale decision revision overwrites a newer decision then broken
+  - if a decision write without If-Match replaces a persisted decision then broken
   - if a corrupt decision store is silently replaced then broken
   - if decision writers on separate processes can overlap then broken
   - if OpenAPI omits the stable cluster key or If-Match contract then broken
@@ -456,6 +457,46 @@ def test_stale_revision_cannot_overwrite_decision(app_client, dedup_db: Path) ->
     assert stale.status_code == 409
     assert stale.headers["etag"] == first.headers["etag"]
     latest = app_client.get("/api/v1/dedup/clusters").json()["clusters"][0]
+    assert latest["decision"]["action"] == "keep-all"
+    assert latest["decision"]["survivor"] == "track-canon"
+
+
+def test_missing_if_match_cannot_overwrite_decision(app_client, dedup_db: Path) -> None:
+    """A decision POST without If-Match is 428 and leaves the persisted decision and ETag unchanged."""
+    _seed_cluster_db(
+        dedup_db,
+        cluster_id=1,
+        canonical_sid="track-canon",
+        canonical_path="/music/canon.flac",
+        alias_sid="track-alias",
+        alias_path="/music/alias-128.mp3",
+    )
+    current = app_client.get("/api/v1/dedup/clusters")
+    cluster_key = current.json()["clusters"][0]["cluster_key"]
+    first = app_client.post(
+        "/api/v1/dedup/clusters/1/decision",
+        headers={"If-Match": current.headers["etag"]},
+        json={
+            "cluster_key": cluster_key,
+            "survivor": "track-canon",
+            "action": "keep-all",
+        },
+    )
+    assert first.status_code == 200
+
+    missing = app_client.post(
+        "/api/v1/dedup/clusters/1/decision",
+        json={
+            "cluster_key": cluster_key,
+            "survivor": "track-alias",
+            "action": "merge",
+        },
+    )
+
+    assert missing.status_code == 428
+    after = app_client.get("/api/v1/dedup/clusters")
+    assert after.headers["etag"] == first.headers["etag"]
+    latest = after.json()["clusters"][0]
     assert latest["decision"]["action"] == "keep-all"
     assert latest["decision"]["survivor"] == "track-canon"
 

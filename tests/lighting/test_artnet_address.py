@@ -146,6 +146,39 @@ def test_flag_off_refuses_get_and_put_without_storing(tmp_path: Path) -> None:
         assert client.get(ADDRESS_PATH).json() is None
 
 
+@pytest.mark.requirement("LIGHT-14766")
+def test_put_refuses_json_boolean_net(tmp_path: Path) -> None:
+    """[if] net is a JSON boolean [then] PUT returns 422, [else stop]."""
+    with TestClient(_app(tmp_path)) as client:
+        accepted = client.put(ADDRESS_PATH, json=VALID_ADDRESS)
+        assert accepted.status_code == 200
+        for net in (True, False):
+            assert client.put(ADDRESS_PATH, json={**VALID_ADDRESS, "net": net}).status_code == 422
+        assert client.get(ADDRESS_PATH).json() == accepted.json()
+
+
+@pytest.mark.requirement("LIGHT-14766")
+def test_put_refuses_json_boolean_subnet(tmp_path: Path) -> None:
+    """[if] subnet is a JSON boolean [then] PUT returns 422, [else stop]."""
+    with TestClient(_app(tmp_path)) as client:
+        accepted = client.put(ADDRESS_PATH, json=VALID_ADDRESS)
+        assert accepted.status_code == 200
+        for subnet in (True, False):
+            assert client.put(ADDRESS_PATH, json={**VALID_ADDRESS, "subnet": subnet}).status_code == 422
+        assert client.get(ADDRESS_PATH).json() == accepted.json()
+
+
+@pytest.mark.requirement("LIGHT-14766")
+def test_put_refuses_json_boolean_universe(tmp_path: Path) -> None:
+    """[if] universe is a JSON boolean [then] PUT returns 422, [else stop]."""
+    with TestClient(_app(tmp_path)) as client:
+        accepted = client.put(ADDRESS_PATH, json=VALID_ADDRESS)
+        assert accepted.status_code == 200
+        for universe in (True, False):
+            assert client.put(ADDRESS_PATH, json={**VALID_ADDRESS, "universe": universe}).status_code == 422
+        assert client.get(ADDRESS_PATH).json() == accepted.json()
+
+
 @pytest.mark.parametrize("field", ["net", "subnet", "universe"])
 @pytest.mark.parametrize("invalid", [True, False, 1.0, "1", None])
 def test_put_requires_strict_integers(tmp_path: Path, field: str, invalid: object) -> None:

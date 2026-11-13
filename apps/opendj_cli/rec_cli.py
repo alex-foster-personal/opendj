@@ -55,6 +55,7 @@ def _namespace(rest: Sequence[str], base_url: str) -> argparse.Namespace:
         source=getattr(parsed, "source", None),
         device_name=getattr(parsed, "device_name", None),
         sources=getattr(parsed, "sources", ["djay_monitor", "opendj_decks"]),
+        session_id=None,
     )
 
 
@@ -118,19 +119,25 @@ def run(rest: Sequence[str], *, as_json: bool = False, lock: Path | None = None)
         return _run_remembered_input(rest, as_json=as_json, lock=lock)
     if rest[0] not in ("start", "status", "stop"):
         return _fail(as_json, "usage", _USAGE_DISPATCH, EXIT_FAILED)
+    return _run_dispatch(rest, as_json=as_json, lock=lock)
+
+
+def _run_dispatch(rest: Sequence[str], *, as_json: bool, lock: Path | None) -> int:
+    """Parse start/status/stop before discovery, then delegate to ``apps.sets`` rec dispatch."""
     try:
-        target = resolve_backend_base_url(lock_path=lock)
-        args = _namespace(rest, target.base_url)
-    except (UsageError, EngineNotRunning) as error:
-        return _fail(as_json, "engine_not_running", str(error), EXIT_NO_ENGINE)
+        args = _namespace(rest, "")
     except (ValueError, argparse.ArgumentError) as error:
         return _fail(as_json, "usage", str(error), EXIT_FAILED)
+    except SystemExit:
+        return _fail(as_json, "usage", _USAGE_DISPATCH, EXIT_FAILED)
+    try:
+        args.base_url = resolve_backend_base_url(lock_path=lock).base_url
+    except (UsageError, EngineNotRunning) as error:
+        return _fail(as_json, "engine_not_running", str(error), EXIT_NO_ENGINE)
     try:
         code = sets_rec_cli.dispatch(args)
     except sets_rec_cli.RecCommandFailed as error:
         return _fail(as_json, "rec_failed", str(error), EXIT_FAILED)
-    if as_json and rest[0] != "status":
-        return code
     return code
 
 

@@ -111,9 +111,12 @@ class GateErrorResponse(BaseModel):
 
 
 #: The gated endpoints, and whether each takes data out or puts it in.
-GatedEndpoint = Literal["push", "pull", "stems/index", "stems/bundle-presign", "stems/bundle-size"]
+GatedEndpoint = Literal[
+    "push", "pull", "stems/index", "stems/bundle-presign", "stems/bundle-size", "lyrics-pair/upload-presign"
+]
 _OPERATION_OF: dict[GatedEndpoint, Operation] = {
     "push": "write",
+    "lyrics-pair/upload-presign": "write",
     "pull": "read",
     "stems/index": "read",
     "stems/bundle-presign": "read",

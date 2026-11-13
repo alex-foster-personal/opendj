@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 398958,
+  "measured_with_pr": 399236,
+  "sha": "540c71e2a8",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 6 (PR 14896, branch rc-main-direct--r3-b6) grows the library surface by its 86 members' code: measured +278 B gzip at 540c71e2a8 over main 2c8612459b (bundle 5's merge commit) built on the same machine, ceiled to KiB with room for a different runner. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

@@ -29,7 +29,8 @@ Grammar, line by line (``#`` starts a comment outside a quoted string):
 * ``transition <style>``
 * ``out D<n> <track> from <bar> for <bars>`` and the same for ``in``; the ``in``
   line may end ``trim <dB|none> ["<reason>"]`` for the incoming gain trim
-* ``tempo sync`` | ``tempo none`` (default sync), ``anchor <name>`` (default window)
+* ``tempo sync`` | ``tempo none`` | ``tempo glide [over <bars>]`` (default sync; a glide lands the incoming at its
+  own tempo over that many bars, the plan's bars when left out), ``anchor <name>`` (default window)
 * ``intent "<text>"`` and ``rationale "<text>"`` (JSON string literals)
 * ``extra {"<key>": <json>}``: one extension key the plan JSON carries beyond
   the fields above, as a one-key JSON object filling the rest of the line (no
@@ -64,7 +65,7 @@ _TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|#.*|"\S*|[^\s"#]+')
 _NUMBER = r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
 _WHEN = re.compile(rf"^@({_NUMBER})(?:(\.\.|\+)({_NUMBER}))?$")
 _DECK = re.compile(r"^D([1-4])$")
-_TEMPO = {"sync": "sync_to_out", "none": "none"}
+_TEMPO = {"sync": "sync_to_out", "none": "none", "glide": "glide_to_in"}
 _BARE = re.compile(r'^[^\s"#\x00-\x1f\x7f]+$')
 
 
@@ -227,6 +228,8 @@ def _header(document: dict[str, Any], tokens: list[str], where: str) -> bool:
         document["style"] = score_text(tokens[1], where)
     elif head == "tempo" and pair and tokens[1] in _TEMPO:
         document["tempo"] = {"mode": _TEMPO[tokens[1]]}
+    elif head == "tempo" and tokens[1:3] == ["glide", "over"] and len(tokens) == 4:
+        document["tempo"] = {"mode": "glide_to_in", "over_bars": _whole(tokens[3], where)}
     elif head == "anchor" and pair:
         document["anchor"] = tokens[1]
     elif head in ("intent", "rationale") and pair:
@@ -390,6 +393,17 @@ def _readable_window(head: str, *numbers: int) -> None:
             raise ScoreError(f"{head} window {number} has more than {MAX_WINDOW_DIGITS} digits")
 
 
+def _tempo_line(plan: TransitionPlan) -> str:
+    """The header line for the plan's tempo mode; a glide (#10148) keeps its mode and its length, never ``tempo none``."""
+    if plan.tempo_mode == "glide_to_in":
+        return "tempo glide" if plan.tempo_over_bars is None else f"tempo glide over {plan.tempo_over_bars}"
+    elif plan.tempo_mode == "sync_to_out":
+        return "tempo sync"
+    elif plan.tempo_mode == "none":
+        return "tempo none"
+    raise ScoreError(f"tempo mode {plan.tempo_mode!r} has no score line")
+
+
 def print_score(plan: TransitionPlan) -> str:
     """The canonical mix score for ``plan``."""
     lines = [f"transition {score_quoted(plan.style)}"]
@@ -400,7 +414,7 @@ def print_score(plan: TransitionPlan) -> str:
             line += " trim " + ("none" if side.trim_db is None else _fmt(side.trim_db))
             line += "" if side.trim_reason is None else f" {json.dumps(side.trim_reason)}"
         lines.append(line)
-    lines.append("tempo sync" if plan.tempo_mode == "sync_to_out" else "tempo none")
+    lines.append(_tempo_line(plan))
     if plan.anchor != "window":
         lines.append(f"anchor {plan.anchor}")
     lines.extend(f"{name} {json.dumps(getattr(plan, name))}" for name in ("intent", "rationale") if getattr(plan, name) is not None)

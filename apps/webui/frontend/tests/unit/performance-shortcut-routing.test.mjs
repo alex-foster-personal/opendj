@@ -439,3 +439,16 @@ test('wiring: performance-hotkeys reads knob selection and filled-only trigger',
 		/if \(filled\) await runPerformanceCommandFromUi\(\{ type: 'hot_cue_trigger'/
 	);
 });
+
+// ----- #9455: a dial or fader selection owns = and -; a deck keeps loop resize -----
+
+test('if a deck (not a dial) is selected then = doubles and - halves the loop; a dial selection yields both', () => {
+	/** [if] no dial is selected [then] = + - _ resize the loop; with a dial selected they route nowhere, [else stop]. */
+	const deck = (k) => routing.resolvePerformanceShortcutAction(bareKey(k), { dialSelected: false });
+	const dial = (k) => routing.resolvePerformanceShortcutAction(bareKey(k), { dialSelected: true });
+	assert.deepEqual(deck('='), { kind: 'loop-resize', factor: 2 });
+	assert.deepEqual(deck('+'), { kind: 'loop-resize', factor: 2 });
+	assert.deepEqual(deck('-'), { kind: 'loop-resize', factor: 0.5 });
+	assert.deepEqual(deck('_'), { kind: 'loop-resize', factor: 0.5 });
+	for (const k of ['=', '+', '-', '_']) assert.equal(dial(k), null, k);
+});

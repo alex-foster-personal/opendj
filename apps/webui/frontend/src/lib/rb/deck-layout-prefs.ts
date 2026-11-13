@@ -17,6 +17,32 @@
  */
 export type DeckLayoutMode = 'more' | 'less';
 
+/** Agent-facing names for the two deck layouts (issue #12204): the
+ * set_deck_layout command and the performance query use these. */
+export const DECK_LAYOUT_CHOICES = ['two-deck', 'four-deck'] as const;
+export type DeckLayoutChoice = (typeof DECK_LAYOUT_CHOICES)[number];
+
+/** Named refusal for a set_deck_layout value outside DECK_LAYOUT_CHOICES. */
+export class DeckLayoutValidationError extends TypeError {
+	constructor(raw: unknown) {
+		super(`set_deck_layout layout must be two-deck|four-deck; got ${String(raw)}`);
+		this.name = 'DeckLayoutValidationError';
+	}
+}
+
+export function parseDeckLayoutChoice(raw: unknown): DeckLayoutChoice {
+	if (raw === 'two-deck' || raw === 'four-deck') return raw;
+	throw new DeckLayoutValidationError(raw);
+}
+
+export function deckLayoutModeFor(choice: DeckLayoutChoice): DeckLayoutMode {
+	return choice === 'two-deck' ? 'less' : 'more';
+}
+
+export function deckLayoutChoiceFor(mode: DeckLayoutMode): DeckLayoutChoice {
+	return mode === 'less' ? 'two-deck' : 'four-deck';
+}
+
 /** Allowed transition durations (ms) for the MORE/LESS switch. */
 export const DECK_LAYOUT_DURATIONS_MS = [0, 100, 200, 300, 400] as const;
 export type DeckLayoutDurationMs = (typeof DECK_LAYOUT_DURATIONS_MS)[number];

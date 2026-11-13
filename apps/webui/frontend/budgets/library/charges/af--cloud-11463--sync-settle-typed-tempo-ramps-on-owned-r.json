@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 352043,
+  "measured_with_pr": 352233,
+  "sha": "3dcc5f24cd",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11463--sync-settle-typed-tempo-ramps-on-owned-r grows the library surface; measured +190 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

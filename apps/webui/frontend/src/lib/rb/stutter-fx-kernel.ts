@@ -8,9 +8,10 @@
  * latency (output frame n uses input ≤ n). One stereo bar buffer is allocated on
  * engage; `render()` allocates nothing. Worklet registration is #10234; CPU row #9777.
  */
-import { defineVariantSetting } from '$lib/settings/variant-setting';
-
 import { onVariantChange } from './variant-prefs';
+import { STUTTER_CHUNK_VARIANT, STUTTER_BLEND_VARIANT } from './stutter-fx-variants';
+
+export { STUTTER_CHUNK_VARIANT, STUTTER_BLEND_VARIANT };
 
 export const STUTTER_BAR_BEATS = 4;
 export const STUTTER_LENGTHS = ['1/8', '1/4', '1/2', '1', '2', '4'] as const;
@@ -32,40 +33,6 @@ export const STUTTER_EDGE_XFADE_FRAMES: 128 | 256 | 512 = 128;
 export const STUTTER_RENDER_QUANTUM = 128;
 
 const SUBNORMAL_FLUSH = 1.1754943508222875e-38;
-
-export const STUTTER_CHUNK_VARIANT = defineVariantSetting({
-	id: 'variant_fx_stutter_chunk',
-	label: 'STUTTER FX default chunk',
-	group: 'advanced',
-	keywords: ['variant', 'fx', 'stutter', 'chunk', 'beat fx'],
-	detail: 'Chunk length the beat FX STUTTER replays until a length is chosen (issue #10226).',
-	variants: [
-		{ value: '1/4', label: '1/4 beat', summary: 'quarter-beat stutter' },
-		{ value: '1/8', label: '1/8 beat', summary: 'eighth-beat buzz' }
-	],
-	defaultValue: '1/4'
-});
-
-export const STUTTER_BLEND_VARIANT = defineVariantSetting({
-	id: 'variant_fx_stutter_blend',
-	label: 'STUTTER FX blend law',
-	group: 'advanced',
-	keywords: ['variant', 'fx', 'stutter', 'blend', 'gate', 'beat fx'],
-	detail: 'How LEVEL/DEPTH mixes dry and the STUTTER buffer (issue #10226).',
-	variants: [
-		{
-			value: 'equal-power',
-			label: 'Equal power',
-			summary: 'dry cos, buffer sin across LEVEL/DEPTH'
-		},
-		{
-			value: 'dry-held',
-			label: 'Dry held',
-			summary: 'dry stays full to the centre, buffer full from the centre'
-		}
-	],
-	defaultValue: 'equal-power'
-});
 
 export type StutterBlendLaw = 'equal-power' | 'dry-held';
 

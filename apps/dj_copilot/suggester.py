@@ -19,12 +19,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from apps.genre_infer import findings
 from apps.genre_infer import service as genre_service
-from apps.shared.harmonic import TrackFeature
+from apps.shared.harmonic import TrackFeature, harmonic_missing_for_rank
 
-from .candidates import filter_candidates
+from .candidates import filter_candidates, similar_library_candidates
 from .explainer import explain as _explain
 from .peak_pressure import PeakPlay, apply_pressure_prior, compute_peak_pressure
+from .play_it import InsufficientDataError
 from .rank_stage1 import ScoredCandidate, rank_stage1
 from .rank_stage2 import rerank_with_pairings
 from .session_context import PlayedTrack, SessionContext
@@ -43,6 +45,40 @@ class RankedSuggestion:
 
 FindSimilarMode = Literal["generic", "specific", "niche"]
 
+FIND_SIMILAR_PROVIDER_HARMONIC = "harmonic"
+
+
+def find_similar_specific(
+    *,
+    current_stable_id: str,
+    library: list[TrackFeature],
+    limit: int,
+) -> dict[str, Any]:
+    """Specific find-similar: rank library neighbours by track_compatibility only."""
+    current = next((t for t in library if t.stable_id == current_stable_id), None)
+    if current is None:
+        raise KeyError(f"track {current_stable_id} not in library")
+
+    missing = harmonic_missing_for_rank(current)
+    if missing["bpm"] or missing["key"]:
+        raise InsufficientDataError(playlist_id=f"find-similar:{current_stable_id}", missing=missing)
+
+    candidates = similar_library_candidates(current=current, library=library)
+    ranked = rank_stage1(current_track=current, candidates=candidates, top_n=limit)
+    return {
+        "stable_id": current_stable_id,
+        "mode": "specific",
+        "provider": FIND_SIMILAR_PROVIDER_HARMONIC,
+        "candidates": [
+            {
+                "stable_id": sc.stable_id,
+                "score": sc.score,
+                "rationale_numbers": dict(sc.rationale),
+            }
+            for sc in ranked
+        ],
+    }
+
 
 def find_similar_tracks(
     conn: sqlite3.Connection,
@@ -50,8 +86,19 @@ def find_similar_tracks(
     stable_id: str,
     mode: FindSimilarMode,
     limit: int = 20,
+    library: list[TrackFeature] | None = None,
 ) -> dict[str, Any]:
-    """find-similar-tracks for one track; Generic ranks genre-vector cosine neighbours."""
+    """find-similar-tracks for one track (parent #345).
+
+    Generic ranks JEV genre-vector cosine neighbours. Specific ranks BPM/key/energy
+    via :func:`track_compatibility` and never uses genre cosine.
+    """
+    if mode == "specific":
+        if library is None:
+            raise ValueError("library is required for specific find-similar mode")
+        return find_similar_specific(current_stable_id=stable_id, library=library, limit=limit)
+    if mode == "niche":
+        raise findings.GenreInputError("find-similar mode 'niche' is not implemented yet")
     return genre_service.find_similar_tracks(conn, stable_id, mode=mode, limit=limit)
 
 

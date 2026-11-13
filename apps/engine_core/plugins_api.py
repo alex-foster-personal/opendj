@@ -10,6 +10,11 @@
     GET    /api/v1/plugins/ui-slots           UI modules the SPA should mount
     GET    /api/v1/plugins/{id}/ui/{path}     a loaded module's UI file
     GET    /api/v1/plugins/{id}/media/{sha}   a listing screenshot, verified
+    GET    /api/v1/plugins/cyanite/facts      published Cyanite pricing and limits
+    GET    /api/v1/plugins/cyanite/ready      whether the Cyanite provider is configured
+    POST   /api/v1/plugins/cyanite/enrich     Cyanite responses as V2 claim envelopes
+    GET    /api/v1/plugins/epidemic-sound/ready   whether the Epidemic Sound provider is configured
+    POST   /api/v1/plugins/epidemic-sound/enrich  Epidemic Sound responses as claim envelopes
 
 THE SAME SURFACE FOR THE STORE PAGE AND FOR AGENTS. The page holds no logic
 of its own: every rule (labs opt-in, third-party terms notice, permission consent,
@@ -48,6 +53,11 @@ from apps.engine_core.plugins_api_routes import (  # noqa: F401
     _chunks,
     _newest_entries,
     _verified_handle,
+    cyanite_enrich,
+    cyanite_facts,
+    cyanite_ready,
+    epidemic_sound_enrich,
+    epidemic_sound_ready,
     listing_media,
     sideload_preview,
     ui_file,
@@ -60,6 +70,13 @@ from apps.engine_core.plugins_api_store import (  # noqa: F401
     STORE_CONFIG_ATTR,
     ChangeOut,
     ChannelOut,
+    CyaniteEnrichIn,
+    CyaniteEnrichOut,
+    CyaniteFactsOut,
+    CyaniteReadyOut,
+    EpidemicEnrichIn,
+    EpidemicEnrichOut,
+    EpidemicReadyOut,
     FaultOut,
     InstallIn,
     LabsIn,

@@ -121,11 +121,14 @@ export function createLibraryTabsController(deps: LibraryTabsDeps) {
 	}
 
 	/** Boot: reopen the saved tabs. False = nothing restored; the caller boots one pane.
-	 * `apply` false (a deep link owns the first pane) only arms persistence. */
-	async function restore(apply: boolean): Promise<boolean> {
+	 * `apply` is asked once the saved tabs are read, so a list the user opened
+	 * during the read wins; false (that, or a deep link owns the first pane)
+	 * only arms persistence. */
+	async function restore(apply: () => boolean): Promise<boolean> {
 		let reopened = false;
 		try {
-			reopened = apply && (await _apply(await _readLibraryTabs()));
+			const pref = await _readLibraryTabs();
+			reopened = apply() && (await _apply(pref));
 		} catch (error) {
 			if (!isPageGoingAway()) deps.report(`restoring library tabs failed: ${String(error)}`);
 		} finally {

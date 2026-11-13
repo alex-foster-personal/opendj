@@ -1,0 +1,2957 @@
+{
+ "source": "https://downloads.support.alphatheta.com/software_info/all-in-one-dj-systems/OPUS-QUAD/OPUS-QUAD_MIDI_Message_List_E1.pdf",
+ "archived": "local only (gitignored source/)",
+ "fetched": "Fri 13 Nov 2026",
+ "device": "AlphaTheta OPUS-QUAD",
+ "vendor": "AlphaTheta / Pioneer DJ",
+ "channel_conventions": {
+  "deck_rows": "PDF lists each deck row once for ch 1/2/3/4 (status 9n/Bn, n = deck - 1). Deck 1 rows keep the plain name on ch 1; decks 2-4 have their own rows named <name>_deck2/3/4 on ch 2/3/4.",
+  "channel_assignment": "ch1 browser (shared with deck 1), ch1-4 decks 1-4, ch5 effect+mixer, ch12 MIDI-OUT illumination",
+  "sides": "Left deck side sends deck 1 or 3 and the right side deck 2 or 4, by DECK SELECT (fig 1-11)."
+ },
+ "controls": [
+  {
+   "name": "jog_top_turn",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 34,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) jog top turn, relative 65+/63- [1-1]"
+  },
+  {
+   "name": "jog_top_turn_shift",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 41,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT jog top turn [1-1]"
+  },
+  {
+   "name": "jog_touch",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) jog top touch [1-1]"
+  },
+  {
+   "name": "jog_touch_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 72,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT jog touch [1-1]"
+  },
+  {
+   "name": "jog_side_turn",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) jog side turn [1-1]"
+  },
+  {
+   "name": "jog_side_turn_shift",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 38,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT jog side turn [1-1]"
+  },
+  {
+   "name": "tempo_msb",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) 14-bit MSB [1-2]"
+  },
+  {
+   "name": "tempo_lsb",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) 14-bit LSB [1-2]"
+  },
+  {
+   "name": "tempo_reset",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 19,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-3]"
+  },
+  {
+   "name": "tempo_range",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 16,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-4]"
+  },
+  {
+   "name": "master_tempo",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 17,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-5]"
+  },
+  {
+   "name": "key_sync",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 2,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-6]"
+  },
+  {
+   "name": "master",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-8]"
+  },
+  {
+   "name": "jog_mode",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 18,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-9]"
+  },
+  {
+   "name": "deck_select",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 3,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-11]"
+  },
+  {
+   "name": "deck_quantize",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 9,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-13]"
+  },
+  {
+   "name": "loop_out",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 7,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-16]"
+  },
+  {
+   "name": "slip_reverse",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-18]"
+  },
+  {
+   "name": "cue",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 1,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-19]"
+  },
+  {
+   "name": "play_pause",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-20]"
+  },
+  {
+   "name": "shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 63,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-29]"
+  },
+  {
+   "name": "load",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 81,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-30]"
+  },
+  {
+   "name": "sync",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 31,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-7]"
+  },
+  {
+   "name": "sync_long",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 71,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) long press [1-7]"
+  },
+  {
+   "name": "vinyl_speed_adjust",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-10]"
+  },
+  {
+   "name": "track_search_fwd",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 4,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-12]"
+  },
+  {
+   "name": "track_search_rev",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 5,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-12]"
+  },
+  {
+   "name": "beat_loop_turn",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 46,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) relative [1-14]"
+  },
+  {
+   "name": "beat_loop_press",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 67,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-14]"
+  },
+  {
+   "name": "beat_loop_press_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 68,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-14]"
+  },
+  {
+   "name": "loop_in",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 6,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-15]"
+  },
+  {
+   "name": "loop_in_long",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 69,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) long press [1-15]"
+  },
+  {
+   "name": "beat_jump_fwd",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 44,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-17]"
+  },
+  {
+   "name": "beat_jump_fwd_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 73,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-17]"
+  },
+  {
+   "name": "beat_jump_rev",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 45,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 74,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-17]"
+  },
+  {
+   "name": "hot_cue_a",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 8,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-21]"
+  },
+  {
+   "name": "hot_cue_a_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 10,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-21]"
+  },
+  {
+   "name": "hot_cue_b",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 11,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-22]"
+  },
+  {
+   "name": "hot_cue_b_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 12,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-22]"
+  },
+  {
+   "name": "hot_cue_c",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 13,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-23]"
+  },
+  {
+   "name": "hot_cue_c_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 14,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-23]"
+  },
+  {
+   "name": "hot_cue_d",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 15,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-24]"
+  },
+  {
+   "name": "hot_cue_d_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 20,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-24]"
+  },
+  {
+   "name": "hot_cue_e",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 21,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-25]"
+  },
+  {
+   "name": "hot_cue_e_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 22,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-25]"
+  },
+  {
+   "name": "hot_cue_f",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 23,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-26]"
+  },
+  {
+   "name": "hot_cue_f_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 24,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-26]"
+  },
+  {
+   "name": "hot_cue_g",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 25,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-27]"
+  },
+  {
+   "name": "hot_cue_g_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 26,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-27]"
+  },
+  {
+   "name": "hot_cue_h",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 27,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-28]"
+  },
+  {
+   "name": "hot_cue_h_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 28,
+   "layer": "shift",
+   "notes": "deck 1 (ch 1) +SHIFT [1-28]"
+  },
+  {
+   "name": "needle_position",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 28,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) GUI full waveform position [1-31]"
+  },
+  {
+   "name": "needle_position_touch",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 54,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) [1-31]"
+  },
+  {
+   "name": "jog_top_turn_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 34,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) jog top turn, relative 65+/63- [1-1]"
+  },
+  {
+   "name": "jog_top_turn_shift_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 41,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT jog top turn [1-1]"
+  },
+  {
+   "name": "jog_touch_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) jog top touch [1-1]"
+  },
+  {
+   "name": "jog_touch_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 72,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT jog touch [1-1]"
+  },
+  {
+   "name": "jog_side_turn_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) jog side turn [1-1]"
+  },
+  {
+   "name": "jog_side_turn_shift_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 38,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT jog side turn [1-1]"
+  },
+  {
+   "name": "tempo_msb_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) 14-bit MSB [1-2]"
+  },
+  {
+   "name": "tempo_lsb_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) 14-bit LSB [1-2]"
+  },
+  {
+   "name": "tempo_reset_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 19,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-3]"
+  },
+  {
+   "name": "tempo_range_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 16,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-4]"
+  },
+  {
+   "name": "master_tempo_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 17,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-5]"
+  },
+  {
+   "name": "key_sync_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 2,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-6]"
+  },
+  {
+   "name": "master_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-8]"
+  },
+  {
+   "name": "jog_mode_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 18,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-9]"
+  },
+  {
+   "name": "deck_select_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 3,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-11]"
+  },
+  {
+   "name": "deck_quantize_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 9,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-13]"
+  },
+  {
+   "name": "loop_out_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 7,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-16]"
+  },
+  {
+   "name": "slip_reverse_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-18]"
+  },
+  {
+   "name": "cue_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 1,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-19]"
+  },
+  {
+   "name": "play_pause_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-20]"
+  },
+  {
+   "name": "shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 63,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-29]"
+  },
+  {
+   "name": "load_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 81,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-30]"
+  },
+  {
+   "name": "sync_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 31,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-7]"
+  },
+  {
+   "name": "sync_long_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 71,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) long press [1-7]"
+  },
+  {
+   "name": "vinyl_speed_adjust_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-10]"
+  },
+  {
+   "name": "track_search_fwd_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 4,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-12]"
+  },
+  {
+   "name": "track_search_rev_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 5,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-12]"
+  },
+  {
+   "name": "beat_loop_turn_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 46,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) relative [1-14]"
+  },
+  {
+   "name": "beat_loop_press_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 67,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-14]"
+  },
+  {
+   "name": "beat_loop_press_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 68,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-14]"
+  },
+  {
+   "name": "loop_in_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 6,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-15]"
+  },
+  {
+   "name": "loop_in_long_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 69,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) long press [1-15]"
+  },
+  {
+   "name": "beat_jump_fwd_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 44,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-17]"
+  },
+  {
+   "name": "beat_jump_fwd_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 73,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 45,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 74,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-17]"
+  },
+  {
+   "name": "hot_cue_a_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 8,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-21]"
+  },
+  {
+   "name": "hot_cue_a_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 10,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-21]"
+  },
+  {
+   "name": "hot_cue_b_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 11,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-22]"
+  },
+  {
+   "name": "hot_cue_b_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 12,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-22]"
+  },
+  {
+   "name": "hot_cue_c_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 13,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-23]"
+  },
+  {
+   "name": "hot_cue_c_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 14,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-23]"
+  },
+  {
+   "name": "hot_cue_d_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 15,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-24]"
+  },
+  {
+   "name": "hot_cue_d_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 20,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-24]"
+  },
+  {
+   "name": "hot_cue_e_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 21,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-25]"
+  },
+  {
+   "name": "hot_cue_e_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 22,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-25]"
+  },
+  {
+   "name": "hot_cue_f_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 23,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-26]"
+  },
+  {
+   "name": "hot_cue_f_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 24,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-26]"
+  },
+  {
+   "name": "hot_cue_g_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 25,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-27]"
+  },
+  {
+   "name": "hot_cue_g_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 26,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-27]"
+  },
+  {
+   "name": "hot_cue_h_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 27,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-28]"
+  },
+  {
+   "name": "hot_cue_h_shift_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 28,
+   "layer": "shift",
+   "notes": "deck 2 (ch 2) +SHIFT [1-28]"
+  },
+  {
+   "name": "needle_position_deck2",
+   "section": "deck",
+   "type": "cc",
+   "ch": 2,
+   "code": 28,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) GUI full waveform position [1-31]"
+  },
+  {
+   "name": "needle_position_touch_deck2",
+   "section": "deck",
+   "type": "note",
+   "ch": 2,
+   "code": 54,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) [1-31]"
+  },
+  {
+   "name": "jog_top_turn_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 34,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) jog top turn, relative 65+/63- [1-1]"
+  },
+  {
+   "name": "jog_top_turn_shift_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 41,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT jog top turn [1-1]"
+  },
+  {
+   "name": "jog_touch_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) jog top touch [1-1]"
+  },
+  {
+   "name": "jog_touch_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 72,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT jog touch [1-1]"
+  },
+  {
+   "name": "jog_side_turn_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) jog side turn [1-1]"
+  },
+  {
+   "name": "jog_side_turn_shift_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 38,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT jog side turn [1-1]"
+  },
+  {
+   "name": "tempo_msb_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) 14-bit MSB [1-2]"
+  },
+  {
+   "name": "tempo_lsb_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) 14-bit LSB [1-2]"
+  },
+  {
+   "name": "tempo_reset_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 19,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-3]"
+  },
+  {
+   "name": "tempo_range_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 16,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-4]"
+  },
+  {
+   "name": "master_tempo_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 17,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-5]"
+  },
+  {
+   "name": "key_sync_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 2,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-6]"
+  },
+  {
+   "name": "master_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-8]"
+  },
+  {
+   "name": "jog_mode_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 18,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-9]"
+  },
+  {
+   "name": "deck_select_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 3,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-11]"
+  },
+  {
+   "name": "deck_quantize_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 9,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-13]"
+  },
+  {
+   "name": "loop_out_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 7,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-16]"
+  },
+  {
+   "name": "slip_reverse_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-18]"
+  },
+  {
+   "name": "cue_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 1,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-19]"
+  },
+  {
+   "name": "play_pause_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-20]"
+  },
+  {
+   "name": "shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 63,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-29]"
+  },
+  {
+   "name": "load_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 81,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-30]"
+  },
+  {
+   "name": "sync_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 31,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-7]"
+  },
+  {
+   "name": "sync_long_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 71,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) long press [1-7]"
+  },
+  {
+   "name": "vinyl_speed_adjust_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-10]"
+  },
+  {
+   "name": "track_search_fwd_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 4,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-12]"
+  },
+  {
+   "name": "track_search_rev_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 5,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-12]"
+  },
+  {
+   "name": "beat_loop_turn_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 46,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) relative [1-14]"
+  },
+  {
+   "name": "beat_loop_press_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 67,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-14]"
+  },
+  {
+   "name": "beat_loop_press_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 68,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-14]"
+  },
+  {
+   "name": "loop_in_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 6,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-15]"
+  },
+  {
+   "name": "loop_in_long_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 69,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) long press [1-15]"
+  },
+  {
+   "name": "beat_jump_fwd_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 44,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-17]"
+  },
+  {
+   "name": "beat_jump_fwd_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 73,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 45,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 74,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-17]"
+  },
+  {
+   "name": "hot_cue_a_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 8,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-21]"
+  },
+  {
+   "name": "hot_cue_a_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 10,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-21]"
+  },
+  {
+   "name": "hot_cue_b_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 11,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-22]"
+  },
+  {
+   "name": "hot_cue_b_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 12,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-22]"
+  },
+  {
+   "name": "hot_cue_c_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 13,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-23]"
+  },
+  {
+   "name": "hot_cue_c_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 14,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-23]"
+  },
+  {
+   "name": "hot_cue_d_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 15,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-24]"
+  },
+  {
+   "name": "hot_cue_d_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 20,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-24]"
+  },
+  {
+   "name": "hot_cue_e_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 21,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-25]"
+  },
+  {
+   "name": "hot_cue_e_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 22,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-25]"
+  },
+  {
+   "name": "hot_cue_f_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 23,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-26]"
+  },
+  {
+   "name": "hot_cue_f_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 24,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-26]"
+  },
+  {
+   "name": "hot_cue_g_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 25,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-27]"
+  },
+  {
+   "name": "hot_cue_g_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 26,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-27]"
+  },
+  {
+   "name": "hot_cue_h_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 27,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-28]"
+  },
+  {
+   "name": "hot_cue_h_shift_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 28,
+   "layer": "shift",
+   "notes": "deck 3 (ch 3) +SHIFT [1-28]"
+  },
+  {
+   "name": "needle_position_deck3",
+   "section": "deck",
+   "type": "cc",
+   "ch": 3,
+   "code": 28,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) GUI full waveform position [1-31]"
+  },
+  {
+   "name": "needle_position_touch_deck3",
+   "section": "deck",
+   "type": "note",
+   "ch": 3,
+   "code": 54,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) [1-31]"
+  },
+  {
+   "name": "jog_top_turn_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 34,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) jog top turn, relative 65+/63- [1-1]"
+  },
+  {
+   "name": "jog_top_turn_shift_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 41,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT jog top turn [1-1]"
+  },
+  {
+   "name": "jog_touch_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) jog top touch [1-1]"
+  },
+  {
+   "name": "jog_touch_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 72,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT jog touch [1-1]"
+  },
+  {
+   "name": "jog_side_turn_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) jog side turn [1-1]"
+  },
+  {
+   "name": "jog_side_turn_shift_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 38,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT jog side turn [1-1]"
+  },
+  {
+   "name": "tempo_msb_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) 14-bit MSB [1-2]"
+  },
+  {
+   "name": "tempo_lsb_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 32,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) 14-bit LSB [1-2]"
+  },
+  {
+   "name": "tempo_reset_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 19,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-3]"
+  },
+  {
+   "name": "tempo_range_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 16,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-4]"
+  },
+  {
+   "name": "master_tempo_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 17,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-5]"
+  },
+  {
+   "name": "key_sync_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 2,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-6]"
+  },
+  {
+   "name": "master_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-8]"
+  },
+  {
+   "name": "jog_mode_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 18,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-9]"
+  },
+  {
+   "name": "deck_select_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 3,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-11]"
+  },
+  {
+   "name": "deck_quantize_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 9,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-13]"
+  },
+  {
+   "name": "loop_out_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 7,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-16]"
+  },
+  {
+   "name": "slip_reverse_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 33,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-18]"
+  },
+  {
+   "name": "cue_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 1,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-19]"
+  },
+  {
+   "name": "play_pause_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 0,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-20]"
+  },
+  {
+   "name": "shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 63,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-29]"
+  },
+  {
+   "name": "load_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 81,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-30]"
+  },
+  {
+   "name": "sync_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 31,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-7]"
+  },
+  {
+   "name": "sync_long_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 71,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) long press [1-7]"
+  },
+  {
+   "name": "vinyl_speed_adjust_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 30,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-10]"
+  },
+  {
+   "name": "track_search_fwd_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 4,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-12]"
+  },
+  {
+   "name": "track_search_rev_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 5,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-12]"
+  },
+  {
+   "name": "beat_loop_turn_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 46,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) relative [1-14]"
+  },
+  {
+   "name": "beat_loop_press_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 67,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-14]"
+  },
+  {
+   "name": "beat_loop_press_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 68,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-14]"
+  },
+  {
+   "name": "loop_in_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 6,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-15]"
+  },
+  {
+   "name": "loop_in_long_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 69,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) long press [1-15]"
+  },
+  {
+   "name": "beat_jump_fwd_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 44,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-17]"
+  },
+  {
+   "name": "beat_jump_fwd_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 73,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 45,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-17]"
+  },
+  {
+   "name": "beat_jump_rev_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 74,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-17]"
+  },
+  {
+   "name": "hot_cue_a_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 8,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-21]"
+  },
+  {
+   "name": "hot_cue_a_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 10,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-21]"
+  },
+  {
+   "name": "hot_cue_b_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 11,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-22]"
+  },
+  {
+   "name": "hot_cue_b_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 12,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-22]"
+  },
+  {
+   "name": "hot_cue_c_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 13,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-23]"
+  },
+  {
+   "name": "hot_cue_c_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 14,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-23]"
+  },
+  {
+   "name": "hot_cue_d_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 15,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-24]"
+  },
+  {
+   "name": "hot_cue_d_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 20,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-24]"
+  },
+  {
+   "name": "hot_cue_e_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 21,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-25]"
+  },
+  {
+   "name": "hot_cue_e_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 22,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-25]"
+  },
+  {
+   "name": "hot_cue_f_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 23,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-26]"
+  },
+  {
+   "name": "hot_cue_f_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 24,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-26]"
+  },
+  {
+   "name": "hot_cue_g_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 25,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-27]"
+  },
+  {
+   "name": "hot_cue_g_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 26,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-27]"
+  },
+  {
+   "name": "hot_cue_h_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 27,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-28]"
+  },
+  {
+   "name": "hot_cue_h_shift_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 28,
+   "layer": "shift",
+   "notes": "deck 4 (ch 4) +SHIFT [1-28]"
+  },
+  {
+   "name": "needle_position_deck4",
+   "section": "deck",
+   "type": "cc",
+   "ch": 4,
+   "code": 28,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) GUI full waveform position [1-31]"
+  },
+  {
+   "name": "needle_position_touch_deck4",
+   "section": "deck",
+   "type": "note",
+   "ch": 4,
+   "code": 54,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) [1-31]"
+  },
+  {
+   "name": "fx_select_delay",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 42,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_echo",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 55,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_ping_pong",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 51,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_spiral",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 43,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_reverb",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 54,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_trans",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 53,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_filter",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 59,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_flanger",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 50,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_phaser",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 57,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_pitch",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 63,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_spiral_roll",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 58,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_roll",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 46,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_vinyl_brake",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 61,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_select_helix",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 62,
+   "layer": "base",
+   "notes": "effect select position [2-1]"
+  },
+  {
+   "name": "fx_tap",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 78,
+   "layer": "base",
+   "notes": "[2-2]"
+  },
+  {
+   "name": "fx_time",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 45,
+   "layer": "base",
+   "notes": "[2-4]"
+  },
+  {
+   "name": "fx_level_depth",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 91,
+   "layer": "base",
+   "notes": "[2-5]"
+  },
+  {
+   "name": "beat_fx_on_off",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 114,
+   "layer": "base",
+   "notes": "[2-6]"
+  },
+  {
+   "name": "sound_color_parameter",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 108,
+   "layer": "base",
+   "notes": "[2-8]"
+  },
+  {
+   "name": "sc_space",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 105,
+   "layer": "base",
+   "notes": "[2-9]"
+  },
+  {
+   "name": "sc_dub_echo",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 107,
+   "layer": "base",
+   "notes": "[2-10]"
+  },
+  {
+   "name": "sc_crush",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 86,
+   "layer": "base",
+   "notes": "[2-11]"
+  },
+  {
+   "name": "sc_sweep",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 106,
+   "layer": "base",
+   "notes": "[2-12]"
+  },
+  {
+   "name": "sc_noise",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 85,
+   "layer": "base",
+   "notes": "[2-13]"
+  },
+  {
+   "name": "sc_filter",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 87,
+   "layer": "base",
+   "notes": "[2-14]"
+  },
+  {
+   "name": "smooth_echo_level",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 93,
+   "layer": "base",
+   "notes": "[2-15]"
+  },
+  {
+   "name": "smooth_echo_on_off",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 94,
+   "layer": "base",
+   "notes": "[2-16]"
+  },
+  {
+   "name": "fx_beat_left",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 76,
+   "layer": "base",
+   "notes": "[2-3]"
+  },
+  {
+   "name": "fx_beat_right",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 77,
+   "layer": "base",
+   "notes": "[2-3]"
+  },
+  {
+   "name": "color_ch1",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 5,
+   "layer": "base",
+   "notes": "CH1 [2-7]"
+  },
+  {
+   "name": "color_ch2",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 10,
+   "layer": "base",
+   "notes": "CH2 [2-7]"
+  },
+  {
+   "name": "color_ch3",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 22,
+   "layer": "base",
+   "notes": "CH3 [2-7]"
+  },
+  {
+   "name": "color_ch4",
+   "section": "effect",
+   "type": "cc",
+   "ch": 5,
+   "code": 83,
+   "layer": "base",
+   "notes": "CH4 [2-7]"
+  },
+  {
+   "name": "crossfader",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 11,
+   "layer": "base",
+   "notes": "[3-1]"
+  },
+  {
+   "name": "ch_fader_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 17,
+   "layer": "base",
+   "notes": "CH1 [3-2]"
+  },
+  {
+   "name": "ch_fader_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 18,
+   "layer": "base",
+   "notes": "CH2 [3-2]"
+  },
+  {
+   "name": "ch_fader_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 19,
+   "layer": "base",
+   "notes": "CH3 [3-2]"
+  },
+  {
+   "name": "ch_fader_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 20,
+   "layer": "base",
+   "notes": "CH4 [3-2]"
+  },
+  {
+   "name": "crossfader_assign_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 65,
+   "layer": "base",
+   "notes": "CH1 touch (MIXER info display); A=0x00 THRU=0x40 B=0x7F [3-3]"
+  },
+  {
+   "name": "crossfader_assign_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 66,
+   "layer": "base",
+   "notes": "CH2 touch (MIXER info display); A=0x00 THRU=0x40 B=0x7F [3-3]"
+  },
+  {
+   "name": "crossfader_assign_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 67,
+   "layer": "base",
+   "notes": "CH3 touch (MIXER info display); A=0x00 THRU=0x40 B=0x7F [3-3]"
+  },
+  {
+   "name": "crossfader_assign_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 68,
+   "layer": "base",
+   "notes": "CH4 touch (MIXER info display); A=0x00 THRU=0x40 B=0x7F [3-3]"
+  },
+  {
+   "name": "input_select_ch3_deck",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 61,
+   "layer": "base",
+   "notes": "INPUT SELECT CH3 DECK touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch3_line",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 59,
+   "layer": "base",
+   "notes": "INPUT SELECT CH3 LINE touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch3_phono",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 60,
+   "layer": "base",
+   "notes": "INPUT SELECT CH3 PHONO touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch3_bluetooth",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 62,
+   "layer": "base",
+   "notes": "INPUT SELECT CH3 BLUETOOTH touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch4_deck",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 65,
+   "layer": "base",
+   "notes": "INPUT SELECT CH4 DECK touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch4_line",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 63,
+   "layer": "base",
+   "notes": "INPUT SELECT CH4 LINE touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch4_phono",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 64,
+   "layer": "base",
+   "notes": "INPUT SELECT CH4 PHONO touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "input_select_ch4_bluetooth",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 66,
+   "layer": "base",
+   "notes": "INPUT SELECT CH4 BLUETOOTH touch (MIXER info display) [3-4]"
+  },
+  {
+   "name": "trim_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 1,
+   "layer": "base",
+   "notes": "CH1 [3-5]"
+  },
+  {
+   "name": "trim_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 6,
+   "layer": "base",
+   "notes": "CH2 [3-5]"
+  },
+  {
+   "name": "trim_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 12,
+   "layer": "base",
+   "notes": "CH3 [3-5]"
+  },
+  {
+   "name": "trim_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 80,
+   "layer": "base",
+   "notes": "CH4 [3-5]"
+  },
+  {
+   "name": "eq_high_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 2,
+   "layer": "base",
+   "notes": "CH1 [3-6]"
+  },
+  {
+   "name": "eq_high_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 7,
+   "layer": "base",
+   "notes": "CH2 [3-6]"
+  },
+  {
+   "name": "eq_high_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 14,
+   "layer": "base",
+   "notes": "CH3 [3-6]"
+  },
+  {
+   "name": "eq_high_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 81,
+   "layer": "base",
+   "notes": "CH4 [3-6]"
+  },
+  {
+   "name": "eq_mid_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 3,
+   "layer": "base",
+   "notes": "CH1 [3-7]"
+  },
+  {
+   "name": "eq_mid_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 8,
+   "layer": "base",
+   "notes": "CH2 [3-7]"
+  },
+  {
+   "name": "eq_mid_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 15,
+   "layer": "base",
+   "notes": "CH3 [3-7]"
+  },
+  {
+   "name": "eq_mid_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 92,
+   "layer": "base",
+   "notes": "CH4 [3-7]"
+  },
+  {
+   "name": "eq_low_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 4,
+   "layer": "base",
+   "notes": "CH1 [3-8]"
+  },
+  {
+   "name": "eq_low_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 9,
+   "layer": "base",
+   "notes": "CH2 [3-8]"
+  },
+  {
+   "name": "eq_low_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 21,
+   "layer": "base",
+   "notes": "CH3 [3-8]"
+  },
+  {
+   "name": "eq_low_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 82,
+   "layer": "base",
+   "notes": "CH4 [3-8]"
+  },
+  {
+   "name": "ch_cue_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 70,
+   "layer": "base",
+   "notes": "CH1 [3-11]"
+  },
+  {
+   "name": "ch_cue_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 71,
+   "layer": "base",
+   "notes": "CH2 [3-11]"
+  },
+  {
+   "name": "ch_cue_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 72,
+   "layer": "base",
+   "notes": "CH3 [3-11]"
+  },
+  {
+   "name": "ch_cue_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 73,
+   "layer": "base",
+   "notes": "CH4 [3-11]"
+  },
+  {
+   "name": "headphones_mixing",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 27,
+   "layer": "base",
+   "notes": "[3-9]"
+  },
+  {
+   "name": "headphones_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 26,
+   "layer": "base",
+   "notes": "[3-10]"
+  },
+  {
+   "name": "master_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 24,
+   "layer": "base",
+   "notes": "[3-12]"
+  },
+  {
+   "name": "booth_monitor_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 25,
+   "layer": "base",
+   "notes": "[3-13]"
+  },
+  {
+   "name": "zone_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 39,
+   "layer": "base",
+   "notes": "[3-14]"
+  },
+  {
+   "name": "browse_rotate",
+   "section": "browser",
+   "type": "cc",
+   "ch": 1,
+   "code": 79,
+   "layer": "base",
+   "notes": "relative CW 1-30, CCW 127-98 [4-1]"
+  },
+  {
+   "name": "browse_rotate_shift",
+   "section": "browser",
+   "type": "cc",
+   "ch": 1,
+   "code": 96,
+   "layer": "shift",
+   "notes": "+SHIFT [4-1]"
+  },
+  {
+   "name": "browse_press",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 51,
+   "layer": "base",
+   "notes": "[4-1]"
+  },
+  {
+   "name": "browse_press_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 97,
+   "layer": "shift",
+   "notes": "+SHIFT [4-1]"
+  },
+  {
+   "name": "browse_tilt_up",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 49,
+   "layer": "base",
+   "notes": "[4-1]"
+  },
+  {
+   "name": "browse_tilt_up_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 93,
+   "layer": "shift",
+   "notes": "+SHIFT [4-1]"
+  },
+  {
+   "name": "browse_tilt_down",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 52,
+   "layer": "base",
+   "notes": "[4-1]"
+  },
+  {
+   "name": "browse_tilt_down_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 53,
+   "layer": "shift",
+   "notes": "+SHIFT [4-1]"
+  },
+  {
+   "name": "browse_tilt_left",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 55,
+   "layer": "base",
+   "notes": "[4-1]"
+  },
+  {
+   "name": "browse_tilt_left_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 56,
+   "layer": "shift",
+   "notes": "+SHIFT [4-1]"
+  },
+  {
+   "name": "browse_tilt_right",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 57,
+   "layer": "base",
+   "notes": "[4-1]"
+  },
+  {
+   "name": "browse_tilt_right_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 58,
+   "layer": "shift",
+   "notes": "+SHIFT [4-1]"
+  },
+  {
+   "name": "back",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 50,
+   "layer": "base",
+   "notes": "[4-2]"
+  },
+  {
+   "name": "back_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 95,
+   "layer": "shift",
+   "notes": "+SHIFT [4-2]"
+  },
+  {
+   "name": "tag_track_remove",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 48,
+   "layer": "base",
+   "notes": "[4-3]"
+  },
+  {
+   "name": "tag_track_remove_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 98,
+   "layer": "shift",
+   "notes": "+SHIFT [4-3]"
+  },
+  {
+   "name": "pc_control_mode",
+   "section": "others",
+   "type": "cc",
+   "ch": 1,
+   "code": 100,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) PC CONTROL MODE"
+  },
+  {
+   "name": "smooth_echo_timing_out",
+   "section": "others",
+   "type": "cc",
+   "ch": 1,
+   "code": 101,
+   "layer": "base",
+   "notes": "deck 1 (ch 1) MIDI OUT only, deck ch 1-4, CC 0x65 smooth echo timing notification"
+  },
+  {
+   "name": "pc_control_mode_deck2",
+   "section": "others",
+   "type": "cc",
+   "ch": 2,
+   "code": 100,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) PC CONTROL MODE"
+  },
+  {
+   "name": "smooth_echo_timing_out_deck2",
+   "section": "others",
+   "type": "cc",
+   "ch": 2,
+   "code": 101,
+   "layer": "base",
+   "notes": "deck 2 (ch 2) MIDI OUT only, deck ch 1-4, CC 0x65 smooth echo timing notification"
+  },
+  {
+   "name": "pc_control_mode_deck3",
+   "section": "others",
+   "type": "cc",
+   "ch": 3,
+   "code": 100,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) PC CONTROL MODE"
+  },
+  {
+   "name": "smooth_echo_timing_out_deck3",
+   "section": "others",
+   "type": "cc",
+   "ch": 3,
+   "code": 101,
+   "layer": "base",
+   "notes": "deck 3 (ch 3) MIDI OUT only, deck ch 1-4, CC 0x65 smooth echo timing notification"
+  },
+  {
+   "name": "pc_control_mode_deck4",
+   "section": "others",
+   "type": "cc",
+   "ch": 4,
+   "code": 100,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) PC CONTROL MODE"
+  },
+  {
+   "name": "smooth_echo_timing_out_deck4",
+   "section": "others",
+   "type": "cc",
+   "ch": 4,
+   "code": 101,
+   "layer": "base",
+   "notes": "deck 4 (ch 4) MIDI OUT only, deck ch 1-4, CC 0x65 smooth echo timing notification"
+  },
+  {
+   "name": "load_flash_out_deck1",
+   "section": "illumination",
+   "type": "note",
+   "ch": 12,
+   "code": 4,
+   "layer": "base",
+   "notes": "MIDI OUT only, LOAD button flash"
+  },
+  {
+   "name": "load_flash_out_deck2",
+   "section": "illumination",
+   "type": "note",
+   "ch": 12,
+   "code": 5,
+   "layer": "base",
+   "notes": "MIDI OUT only, LOAD button flash"
+  },
+  {
+   "name": "load_flash_out_deck3",
+   "section": "illumination",
+   "type": "note",
+   "ch": 12,
+   "code": 6,
+   "layer": "base",
+   "notes": "MIDI OUT only, LOAD button flash"
+  },
+  {
+   "name": "load_flash_out_deck4",
+   "section": "illumination",
+   "type": "note",
+   "ch": 12,
+   "code": 7,
+   "layer": "base",
+   "notes": "MIDI OUT only, LOAD button flash"
+  },
+  {
+   "name": "bar_rotation_out_deck1",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 0,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog current position bar rotation (plate 7-1)"
+  },
+  {
+   "name": "bar_rotation_out_deck2",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 1,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog current position bar rotation (plate 7-1)"
+  },
+  {
+   "name": "bar_rotation_out_deck3",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 2,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog current position bar rotation (plate 7-1)"
+  },
+  {
+   "name": "bar_rotation_out_deck4",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 3,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog current position bar rotation (plate 7-1)"
+  },
+  {
+   "name": "cue_marker_out_deck1",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 4,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog cue marker (plate 7-2)"
+  },
+  {
+   "name": "cue_marker_out_deck2",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 5,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog cue marker (plate 7-2)"
+  },
+  {
+   "name": "cue_marker_out_deck3",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 6,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog cue marker (plate 7-2)"
+  },
+  {
+   "name": "cue_marker_out_deck4",
+   "section": "illumination",
+   "type": "cc",
+   "ch": 12,
+   "code": 7,
+   "layer": "base",
+   "notes": "MIDI OUT only, jog cue marker (plate 7-2)"
+  }
+ ]
+}

@@ -663,3 +663,49 @@ test('releaseMidiInputs clears every device shift entry', () => {
 	assert.deepEqual(webmidi.midiState.shiftHeldByDevice, {});
 	assert.equal(webmidi.midiState.shiftHeld, false);
 });
+
+const FEEDBACK_LED_MAP = {
+	vendor: 'Test',
+	nameMatch: 'LED-FEEDBACK-TEST',
+	bindings: [],
+	leds: [
+		{
+			trigger: { kind: 'shift_held' },
+			out: { ch: 1, note: 0x3f, velocityOn: 0x7f, velocityOff: 0 }
+		},
+		{
+			trigger: { kind: 'sync_master', deck: 1 },
+			out: { ch: 1, note: 0x20, velocityOn: 0x7f, velocityOff: 0 }
+		},
+		{
+			trigger: { kind: 'sync_master', deck: 2 },
+			out: { ch: 2, note: 0x20, velocityOn: 0x7f, velocityOff: 0 }
+		}
+	]
+};
+
+/** Velocity the feedback snapshot sends to (ch, note), or undefined. */
+function _ledVelocity(out, ch, note) {
+	return out.find((o) => o.ch === ch && o.note === note)?.velocity;
+}
+
+test('shift_held LED follows this device own shift layer only (#10114)', () => {
+	webmidi.midiState.shiftHeldByDevice = { 'led-a': true };
+	try {
+		assert.equal(_ledVelocity(glue.midiLedFeedback(FEEDBACK_LED_MAP, 'led-a'), 1, 0x3f), 0x7f);
+		assert.equal(_ledVelocity(glue.midiLedFeedback(FEEDBACK_LED_MAP, 'led-b'), 1, 0x3f), 0);
+		webmidi.midiState.shiftHeldByDevice = {};
+		assert.equal(_ledVelocity(glue.midiLedFeedback(FEEDBACK_LED_MAP, 'led-a'), 1, 0x3f), 0);
+	} finally {
+		webmidi.midiState.shiftHeldByDevice = {};
+	}
+});
+
+test('sync_master LED lights only the deck the engine names as Beat Sync master (#10114)', () => {
+	const master = audioEngine.beatSyncMasterDeck();
+	const out = glue.midiLedFeedback(FEEDBACK_LED_MAP);
+	for (const deck of [1, 2]) {
+		assert.equal(_ledVelocity(out, deck, 0x20), master === deck ? 0x7f : 0);
+	}
+	assert.equal(glue.ledTriggerActive({ kind: 'sync_master', deck: 1 }), master === 1);
+});

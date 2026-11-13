@@ -60,3 +60,54 @@ def test_require_on_path_returns_which_result(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("PATH", str(interpreter.parent))
     found = require_on_path(interpreter.name, RuntimeError, "probe")
     assert os.path.samefile(found, interpreter)
+
+
+_POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="POSIX exec bits; Windows resolves via PATHEXT")
+
+
+def _fake_tool(directory: Path, name: str = "probe-tool") -> Path:
+    """Write an executable stub named ``name`` into ``directory`` and return it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    tool = directory / name
+    tool.write_text("#!/bin/sh\nexit 0\n")
+    tool.chmod(0o755)
+    return tool
+
+
+@_POSIX_ONLY
+def test_require_on_path_absolute_entry_returns_absolute_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """[if] PATH holds an absolute dir with the tool [then] that absolute path is returned, [else stop]."""
+    tool = _fake_tool(tmp_path / "abs")
+    monkeypatch.setenv("PATH", str(tool.parent))
+    assert require_on_path(tool.name, RuntimeError, "probe") == str(tool)
+
+
+@_POSIX_ONLY
+def test_require_on_path_relative_entry_resolves_inside_that_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] PATH holds a relative dir with the tool [then] the result names that dir, not a bare name, [else stop]."""
+    _fake_tool(tmp_path / "bin")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "bin")
+    assert require_on_path("probe-tool", RuntimeError, "probe") == os.path.join("bin", "probe-tool")
+
+
+@_POSIX_ONLY
+def test_require_on_path_empty_entry_skips_working_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """[if] an empty PATH entry precedes an absolute one [then] the absolute tool wins over the cwd copy, [else stop]."""
+    _fake_tool(tmp_path)
+    tool = _fake_tool(tmp_path / "abs")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", os.pathsep + str(tool.parent))
+    assert require_on_path(tool.name, RuntimeError, "probe") == str(tool)
+
+
+@_POSIX_ONLY
+def test_require_on_path_only_empty_entries_raise(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """[if] PATH has only empty entries and the cwd holds the tool [then] the caller's error is raised, [else stop]."""
+    _fake_tool(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", os.pathsep)
+    with pytest.raises(RuntimeError, match=r"^probe-tool is not on PATH$"):
+        require_on_path("probe-tool", RuntimeError, "probe-tool is not on PATH")

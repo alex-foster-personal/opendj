@@ -17,7 +17,15 @@ describe('library file path columns', () => {
 	it('lists File name and Location in the chooser hidden by default', () => {
 		assert.equal(cols.HIDEABLE_COLUMN_LABELS.filename, 'File name');
 		assert.equal(cols.HIDEABLE_COLUMN_LABELS.location, 'Location');
-		assert.deepEqual(cols.DEFAULT_HIDDEN_LIBRARY_COLUMNS, ['filename', 'location']);
+		assert.deepEqual(cols.DEFAULT_HIDDEN_LIBRARY_COLUMNS, [
+			'album',
+			'filename',
+			'location',
+			'date_added',
+			'bitrate',
+			'kind',
+			'last_played'
+		]);
 	});
 
 	it('registers filename and location as browser sort keys', () => {

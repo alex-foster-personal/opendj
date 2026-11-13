@@ -5,6 +5,8 @@ import { isLibraryTrackListTarget } from './library-track-list-target';
 import { isNativeInteractiveTarget } from './performance-hotkeys-target';
 import type { DeckId } from '$lib/player/constants';
 import type { TempoKeyAction } from './tempo-keys';
+import type { SelectorCommandId, SelectorLeafCommandId } from '$lib/keyboard/command-registry';
+import { isForwardedSelectorKey, selectorLeafCommandForKey } from '$lib/keyboard/selector-activate';
 
 /** KEYB-11383: the deck verbs C, V and K send for the recent deck. */
 export type RecentDeckVerb = 'cue' | 'beat-sync' | 'master-tempo';
@@ -16,6 +18,7 @@ export type PerformanceShortcutAction =
 	| { kind: 'loop-exit' }
 	| { kind: 'wave-zoom'; direction: 'in' | 'out' }
 	| { kind: 'grid-jump'; bars: number; repeat: boolean }
+	| { kind: 'section-jump'; direction: 'next' | 'previous' }
 	| { kind: 'recent-deck'; verb: RecentDeckVerb; repeat: boolean }
 	| { kind: 'cycle-deck'; direction: 1 | -1; repeat: boolean }
 	| { kind: 'tempo-step'; direction: 1 | -1; coarse: boolean }
@@ -23,7 +26,10 @@ export type PerformanceShortcutAction =
 	| { kind: 'pitch-range-cycle'; repeat: boolean }
 	| { kind: 'hot-cue-trigger'; slot: HotCueSlot; repeat: boolean }
 	| { kind: 'hot-cue-save'; slot: HotCueSlot; repeat: boolean }
-	| { kind: 'hot-cue-clear'; slot: HotCueSlot; repeat: boolean };
+	| { kind: 'hot-cue-clear'; slot: HotCueSlot; repeat: boolean }
+	| { kind: 'selector'; command: SelectorCommandId; repeat: boolean }
+	| { kind: 'selector-clear' }
+	| { kind: 'selector-leaf'; command: SelectorLeafCommandId; repeat: boolean };
 
 export interface PerformanceShortcutKeyEvent {
 	code: string;
@@ -46,8 +52,16 @@ export interface PerformanceShortcutContext {
 	/** The key's target is inside the library root; Cmd/Ctrl+Shift+arrow there
 	 * is the library's instant double (KEYB-11643), so the 8-bar grid jump yields. */
 	libraryFocus?: boolean;
-	/** #9453: a dial or fader selection owns the digit row. */
+	/** #9453: a dial or fader selection owns the digit row; #9455: and = and -. */
 	dialSelected?: boolean;
+	/** #9395: the keyboard selector has a live selection (Esc clears it). */
+	selectorActive?: boolean;
+	/** #9395: the live selection is the library section or inside it, so W and S stay rows. */
+	selectorInLibrary?: boolean;
+	/** #13708: the selected leaf's id (Enter and the arrows operate it), null when none is. */
+	selectorLeafId?: string | null;
+	/** #14324: the leaf has a knob, jog or slider for the arrows to adjust (asked only for arrows). */
+	selectorLeafAdjustable?: (leafId: string) => boolean;
 }
 
 export interface PerformanceShortcutKeydownEvent extends PerformanceShortcutKeyEvent {
@@ -64,6 +78,8 @@ export interface PerformanceShortcutHandlers {
 	/** WAVEZOOM-6802b: one main-waveform zoom step. */
 	waveZoomStep: (direction: 'in' | 'out') => void;
 	gridJump?: (bars: number) => void;
+	/** Issue #10263: Shift+] and Shift+[ jump the transport deck a section. */
+	sectionJump?: (direction: 'next' | 'previous') => void;
 	/** KEYB-11383: C cue, V beat sync, K master tempo on the recent deck. */
 	recentDeckCommand?: (verb: RecentDeckVerb) => void;
 	/** KEYB-11383: Backquote moves the recent deck to the next loaded deck. */
@@ -73,6 +89,12 @@ export interface PerformanceShortcutHandlers {
 	hotCueTrigger?: (slot: HotCueSlot) => void;
 	hotCueSave?: (slot: HotCueSlot) => void;
 	hotCueClear?: (slot: HotCueSlot) => void;
+	/** #9395: W A S D move the selector, E drills in, Q drills out. */
+	selectorCommand?: (command: SelectorCommandId) => void;
+	/** #9395: Esc drops the selection and hides the ring. */
+	clearSelector?: () => void;
+	/** #13708: Enter activates the selected leaf, the arrows adjust it. */
+	selectorLeafCommand?: (command: SelectorLeafCommandId) => void;
 }
 
 const RECENT_DECK_LETTERS: Readonly<Record<string, RecentDeckVerb>> = {
@@ -80,6 +102,85 @@ const RECENT_DECK_LETTERS: Readonly<Record<string, RecentDeckVerb>> = {
 	v: 'beat-sync',
 	k: 'master-tempo'
 };
+
+const SELECTOR_LETTERS: Readonly<Record<string, SelectorCommandId>> = {
+	w: 'selector.move.up',
+	a: 'selector.move.left',
+	s: 'selector.move.down',
+	d: 'selector.move.right',
+	e: 'selector.drill-in',
+	q: 'selector.drill-out'
+};
+
+/**
+ * #9395: W A S D / E / Q drive the keyboard selector and Esc clears it. The library keeps
+ * its own W/S row keys while the selection is in it, and all of W A S D while no selection
+ * exists and the key comes from inside the library, so its A/D zone keys still work there.
+ */
+function selectorAction(
+	e: PerformanceShortcutKeyEvent,
+	context: PerformanceShortcutContext
+): PerformanceShortcutAction | null {
+	const active = context.selectorActive === true;
+	if (e.key === 'Escape') return active ? { kind: 'selector-clear' } : null;
+	if (e.shiftKey === true) return null;
+	const leafCommand = selectorLeafKeyCommand(e, context);
+	if (leafCommand !== null)
+		return { kind: 'selector-leaf', command: leafCommand, repeat: e.repeat === true };
+	if (e.key.length !== 1) return null;
+	const command = SELECTOR_LETTERS[e.key.toLowerCase()];
+	if (command === undefined) return null;
+	const rows = command === 'selector.move.up' || command === 'selector.move.down';
+	const columns = command === 'selector.move.left' || command === 'selector.move.right';
+	if (active && rows && context.selectorInLibrary === true) return null;
+	if (!active && (rows || columns) && context.libraryFocus === true) return null;
+	return { kind: 'selector', command, repeat: e.repeat === true };
+}
+
+/** A popup (menu, listbox, dialog) owns Enter and the arrows while focus is inside it. */
+const POPUP_SELECTOR = '[role="menu"], [role="listbox"], [role="dialog"], dialog';
+
+/**
+ * #13708: Enter and the arrows go to the selected selector leaf, never while the selection is
+ * a group, is in the library (its rows keep Enter and the arrows), or focus is in a popup.
+ * The arrows are taken only on an adjustable leaf (#14324: a knob, jog or slider behind it), and
+ * never the arrow the leaf host itself forwarded to that slider. #14120: a focused native
+ * control outside the selected leaf keeps them too (the Space rule); inside the leaf they agree.
+ */
+function selectorLeafKeyCommand(
+	e: PerformanceShortcutKeyEvent,
+	context: PerformanceShortcutContext
+): SelectorLeafCommandId | null {
+	const leafId = context.selectorLeafId ?? null;
+	if (leafId === null || context.selectorInLibrary === true) return null;
+	const command = selectorLeafCommandForKey(e.key);
+	if (command === null) return null;
+	if (command !== 'selector.activate' && context.selectorLeafAdjustable?.(leafId) !== true)
+		return null;
+	if (isForwardedSelectorKey(e)) return null;
+	if (_insidePopup(e.target)) return null;
+	if (_isFocusedNativeControl(e.target) && !_insideLeaf(e.target, leafId)) return null;
+	return command;
+}
+
+/** isNativeInteractiveTarget reads the DOM classes; with no DOM nothing is a native control. */
+function _isFocusedNativeControl(target: EventTarget | null): boolean {
+	return typeof Element === 'function' && isNativeInteractiveTarget(target);
+}
+
+/** #14120: the target sits in the selected leaf's own element (its nearest `data-sel-node`). */
+function _insideLeaf(target: EventTarget | null, leafId: string): boolean {
+	type Node = { getAttribute?: (name: string) => string | null };
+	const el = target as { closest?: (selector: string) => Node | null } | null;
+	if (typeof el?.closest !== 'function') return false;
+	return el.closest('[data-sel-node]')?.getAttribute?.('data-sel-node') === leafId;
+}
+
+/** Duck-typed like isTextEntryTarget, so the router also runs where there is no DOM. */
+function _insidePopup(target: EventTarget | null): boolean {
+	const el = target as { closest?: (selector: string) => unknown } | null;
+	return typeof el?.closest === 'function' && el.closest(POPUP_SELECTOR) !== null;
+}
 
 /** Pure routing for /performance global shortcuts; null means leave the event alone. */
 export function resolvePerformanceShortcutAction(
@@ -118,6 +219,8 @@ export function resolvePerformanceShortcutAction(
 	if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return null;
 	// Tab always traverses focus, including from body and inert page chrome.
 	if (e.key === 'Tab') return null;
+	const selector = selectorAction(e, context);
+	if (selector !== null) return selector;
 	// KEYB-11383: Backquote by code (Shift turns the key into ~), C/V/K by letter.
 	if (e.code === 'Backquote')
 		return {
@@ -130,9 +233,18 @@ export function resolvePerformanceShortcutAction(
 			? undefined
 			: RECENT_DECK_LETTERS[e.key.toLowerCase()];
 	if (verb !== undefined) return { kind: 'recent-deck', verb, repeat: e.repeat === true };
-	if (e.key === '+' || e.key === '=') return { kind: 'loop-resize', factor: 2 };
-	if (e.key === '-' || e.key === '_') return { kind: 'loop-resize', factor: 0.5 };
+	// #9455: a dial or fader selection owns = and - (commanded move length, commanded-keys.ts).
+	const loopResizeKeys = context.dialSelected !== true;
+	if (loopResizeKeys && (e.key === '+' || e.key === '=')) return { kind: 'loop-resize', factor: 2 };
+	if (loopResizeKeys && (e.key === '-' || e.key === '_'))
+		return { kind: 'loop-resize', factor: 0.5 };
 	if (e.key === ')') return { kind: 'loop-exit' };
+	// Issue #10263: the shifted bracket pair (`}` and `{`; the code pair covers a
+	// layout whose shifted key is not a brace) jumps the transport deck a section.
+	if (e.key === '}' || (e.shiftKey === true && e.code === 'BracketRight'))
+		return { kind: 'section-jump', direction: 'next' };
+	if (e.key === '{' || (e.shiftKey === true && e.code === 'BracketLeft'))
+		return { kind: 'section-jump', direction: 'previous' };
 	// WAVEZOOM-6802b: - and = already halve and double the loop, so zoom takes
 	// the bracket pair: [ shows more of the track, ] shows less.
 	if (e.key === '[') return { kind: 'wave-zoom', direction: 'out' };
@@ -220,6 +332,11 @@ export function handlePerformanceShortcutKeydown(
 	if (options.settingsOpen === true) return false;
 	const action = resolvePerformanceShortcutAction(e, options);
 	if (action === null) return false;
+	if (action.kind === 'selector-clear') {
+		// Esc is shared (dialogs, menus), so clearing the selector leaves the event alone.
+		handlers.clearSelector?.();
+		return false;
+	}
 	e.preventDefault();
 	switch (action.kind) {
 		case 'space':
@@ -244,6 +361,9 @@ export function handlePerformanceShortcutKeydown(
 			e.stopPropagation?.();
 			if (!action.repeat) handlers.gridJump?.(action.bars);
 			break;
+		case 'section-jump':
+			handlers.sectionJump?.(action.direction);
+			break;
 		case 'recent-deck':
 			if (!action.repeat) handlers.recentDeckCommand?.(action.verb);
 			break;
@@ -262,6 +382,18 @@ export function handlePerformanceShortcutKeydown(
 			break;
 		case 'pitch-range-cycle':
 			if (!action.repeat) handlers.tempoKey?.({ kind: 'pitch-range-cycle' });
+			break;
+		case 'selector':
+			// A held W/A/S/D keeps travelling; a held E or Q drills once.
+			if (!action.repeat || action.command.startsWith('selector.move.'))
+				handlers.selectorCommand?.(action.command);
+			break;
+		case 'selector-leaf':
+			// The leaf's own control must not also see the key (a focused knob would step twice).
+			e.stopPropagation?.();
+			// A held arrow keeps stepping (OS key repeat); a held Enter activates once.
+			if (!action.repeat || action.command !== 'selector.activate')
+				handlers.selectorLeafCommand?.(action.command);
 			break;
 		case 'hot-cue-trigger':
 		case 'hot-cue-save':

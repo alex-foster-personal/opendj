@@ -146,7 +146,7 @@ test('stale smartlist update surfaces current summary and revision without retry
 });
 
 test('smartlist editor preserves stale server state and exposes explicit recovery actions', async () => {
-	const source = await readFile('src/routes/smartlists/[id]/+page.svelte', 'utf8');
+	const source = await readFile('src/lib/components/smartlists/SmartlistRuleEditor.svelte', 'utf8');
 
 	assert.match(source, /conflictCurrent = exc\.current/);
 	assert.match(source, /etag = exc\.etag/);

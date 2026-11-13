@@ -90,8 +90,14 @@ test('BrowserPanel mounts the strip above the table instead of as a body overlay
 	);
 	assert.match(
 		panel,
-		/<LibraryLoadIndicator[^>]*\/>\s*<TrackTable/,
+		/<LibraryLoadIndicator[^>]*\/>\s*(?:<div\s+class="tracks-sel-node"[^>]*>\s*)?<TrackTable/,
 		'the reserved strip must sit directly above the table, below the toolbar'
+	);
+	// PR #13918 wraps the table in a keyboard selector leaf; the wrapper must add no box of its own.
+	assert.match(
+		panel,
+		/\.tracks-sel-node\s*\{\s*display:\s*contents;\s*\}/,
+		'the selector wrapper around the table must be display: contents so the strip stays directly above it'
 	);
 	const mounts = panel.match(/<LibraryLoadIndicator/g) ?? [];
 	assert.equal(mounts.length, 1, 'exactly one load strip per browser pane');

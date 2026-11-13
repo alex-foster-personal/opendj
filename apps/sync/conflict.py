@@ -16,6 +16,7 @@ Cue-array conflicts are handled separately in Plan 3's
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -37,6 +38,17 @@ class ConflictInput:
     djay_modified_at: datetime | None = None
     prefer: Literal["rb", "djay", "newest"] = "newest"
     newest_window_days: int = DEFAULT_WINDOW_DAYS
+
+
+def parse_window_days(value: str) -> int:
+    """Parse a CLI conflict window as a positive whole number of days."""
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"conflict window must be a whole number of days, got {value!r}") from None
+    if days <= 0:
+        raise argparse.ArgumentTypeError(f"conflict window must be a positive number of days, got {days}")
+    return days
 
 
 def _is_empty(value: Any) -> bool:

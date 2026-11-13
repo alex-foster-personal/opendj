@@ -16,10 +16,10 @@
 
 <script lang="ts">
 	// 4-pane browser tabs (SCREENSHOT-SPEC 5c). Active tab shows
-	// 'Name (N Tracks)' + inert stepper chevrons; the other panes each
+	// 'Name (N Tracks)' + stepper chevrons; the other panes each
 	// remember their own playlist selection (only the active pane renders).
 	import type { Snippet } from 'svelte';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import { builtTitle } from '$lib/rb/planned-explainers';
 	import {
 		canAddPaneSlot,
 		MAX_PANE_SLOTS
@@ -42,7 +42,8 @@
 		onaddpane,
 		relatedActive = false,
 		onrelated,
-		relatedTools
+		relatedTools,
+		onstep
 	}: {
 		tabs: PaneTabInfo[];
 		active: number;
@@ -65,6 +66,8 @@
 		onrelated?: () => void;
 		/** Rendered inside the active Related tab (the criteria cog). */
 		relatedTools?: Snippet;
+		/** Issue #9744: the stepper moves the table selection up (-1) or down (1); omitted disables it. */
+		onstep?: (delta: -1 | 1) => void;
 	} = $props();
 
 	/** Index of the tab being dragged; null when no tab drag is in flight. */
@@ -182,9 +185,9 @@
 					<!-- up/down stepper: crisp SVG chevrons (SCREENSHOT-SPEC 5c) -->
 					<span class="stepper">
 						<button
-							class="rb-inert"
-							disabled
-							title={plannedTitle('pane-prev-track')}
+							disabled={onstep === undefined}
+							onclick={() => onstep?.(-1)}
+							title={builtTitle('pane-prev-track')}
 							aria-label="previous track in pane"
 						>
 							<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
@@ -197,9 +200,9 @@
 							</svg>
 						</button>
 						<button
-							class="rb-inert"
-							disabled
-							title={plannedTitle('pane-next-track')}
+							disabled={onstep === undefined}
+							onclick={() => onstep?.(1)}
+							title={builtTitle('pane-next-track')}
 							aria-label="next track in pane"
 						>
 							<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">

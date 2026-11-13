@@ -1,4 +1,4 @@
-"""Hermetic tests for live-engine boot identity helpers (issue #7582).
+"""Hermetic tests for live-engine boot identity helpers (issues #7582, #13304).
 
 The live module is slow and LANE_IGNORES'd; these run on the sharded lane.
 

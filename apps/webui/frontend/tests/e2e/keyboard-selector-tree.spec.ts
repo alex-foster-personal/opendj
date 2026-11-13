@@ -10,6 +10,11 @@
  * - [if] decks is drilled into once, then twice [then] the selection is deck.1, then deck.1.header [then stop]
  * - [if] channel 4 LOW is reached by right/down moves from the mixer [then] its id is mixer.ch4.low [then stop]
  * - [if] two-deck mode hides decks 3 and 4 [then] their nodes leave the tree and no move lands on them [then stop]
+ * - [if] selector movement selects a different node while Tab focus stays put [then] focus-visible and selector rings stay distinguishable [else stop]
+ * - [if] the focused channel 1 fader re-mounts in the LESS swap [then] its new slider holds focus (#13428) [then stop]
+ * - [if] a deck is drilled into from the decks section [then] drill lands on deck.N then a deck part [then stop]
+ * - [if] each declared deck part is present in MORE mode [then] every inventory id is in the tree [then stop]
+ * - [if] a deck part is disabled or removed by layout [then] its ids leave the snapshot [then stop]
  *
  * deck_layout persists to the shared ui-prefs.json, so afterEach puts it back the way
  * topbar-list-view-geometry.spec.ts does.
@@ -18,6 +23,11 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 
 import type { SelectorCommandId } from '../../src/lib/keyboard/command-registry';
 import { waitForPerformanceIpc } from './support/performance-ready';
+import {
+	assertFocusAndSelectorRingsDistinguishable,
+	readFocusSelectorCoexistence,
+	syncSelectorRingToDomSelection
+} from './support/selector-focus-ring';
 import { watchUiPrefsPuts, type UiPrefsPutWatch } from './support/ui-prefs-puts';
 
 type Dir = 'up' | 'down' | 'left' | 'right';
@@ -54,6 +64,20 @@ test.afterEach(async ({ request }) => {
 	}
 });
 
+async function loadDeckOneForSelectorFocus(page: Page): Promise<void> {
+	const stableId = await page
+		.locator('[data-testid="track-row"]')
+		.first()
+		.getAttribute('data-stable-id');
+	expect(stableId, 'fixture row has no data-stable-id').toBeTruthy();
+	await page.evaluate(async (id) => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC is not installed');
+		await ipc.dispatch({ type: 'load', deck: 1, stable_id: id });
+	}, stableId as string);
+	await expect(page.locator('[data-testid="play-deck-1"]')).toBeEnabled({ timeout: 15_000 });
+}
+
 async function boot(page: Page, layout: 'MORE' | 'LESS'): Promise<void> {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto('/performance');
@@ -88,6 +112,10 @@ const drillIn = (page: Page): Promise<string> =>
 	page.evaluate(() => window.__odjSelector!.drillIn());
 const move = (page: Page, dir: Dir): Promise<string> =>
 	page.evaluate((d) => window.__odjSelector!.move(d), dir);
+const deckPartIds = (page: Page, deck: number): Promise<readonly string[]> =>
+	page.evaluate((n) => window.__odjSelector!.deckPartNodeIds(n as 1 | 2 | 3 | 4), deck);
+const deckParts = (page: Page): Promise<readonly string[]> =>
+	page.evaluate(() => [...window.__odjSelector!.deckParts()]);
 
 test('selector commands are discoverable and share the agent handle selection', async ({
 	page
@@ -170,6 +198,41 @@ test('A11Y-9723: four-deck roots, drill into deck.1.header, reach mixer.ch4.low'
 	await expect(page.locator('[data-sel-node="mixer.ch4.low"]')).toHaveCount(1);
 });
 
+test('[if] selector movement changes selection while Tab focus stays on play [then] focus and selector rings stay visible and distinct, [else stop]', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	await boot(page, 'MORE');
+	await loadDeckOneForSelectorFocus(page);
+
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+	for (let i = 0; i < 600; i++) {
+		await page.keyboard.press('Tab');
+		const onPlay = await page.evaluate(
+			() =>
+				document.activeElement?.matches('[data-testid="play-deck-1"]') === true &&
+				(document.activeElement as HTMLElement).matches(':focus-visible')
+		);
+		if (onPlay) break;
+	}
+	await expect(page.locator('[data-testid="play-deck-1"]')).toBeFocused();
+
+	await page.evaluate(() => window.__odjSelector!.start('deck.1'));
+	await page.evaluate(() => window.__odjSelector!.move('right'));
+	const selectedAfterMove = await syncSelectorRingToDomSelection(page);
+	expect(selectedAfterMove, 'selector move should leave deck.1').not.toBe('deck.1');
+
+	const focusedSelNode = await page.evaluate(() => {
+		const el = document.activeElement as HTMLElement;
+		return el.closest('[data-sel-node]')?.getAttribute('data-sel-node') ?? null;
+	});
+	expect(focusedSelNode, 'play button sits under a selector node').toBeTruthy();
+	expect(selectedAfterMove).not.toBe(focusedSelNode);
+
+	const snapshot = await readFocusSelectorCoexistence(page);
+	assertFocusAndSelectorRingsDistinguishable(snapshot, 'selector move with play focused');
+});
+
 test('A11Y-9723: two-deck mode drops decks 3 and 4 from the selector', async ({ page }) => {
 	test.setTimeout(90_000);
 	await boot(page, 'LESS');
@@ -202,4 +265,75 @@ test('A11Y-9723: two-deck mode drops decks 3 and 4 from the selector', async ({ 
 
 	await setLayout(page, 'MORE');
 	expect(await nodeIds(page)).toContain('deck.3');
+});
+
+const focusedNodeId = (page: Page): Promise<string | null> =>
+	page.evaluate(() => {
+		const active = document.activeElement;
+		if (active === null || active.getAttribute('role') !== 'slider') return null;
+		return active.closest('[data-sel-node]')?.getAttribute('data-sel-node') ?? null;
+	});
+
+test('#13428: a fader re-mounted by the LESS swap keeps focus by selector id', async ({ page }) => {
+	test.setTimeout(90_000);
+	await boot(page, 'MORE');
+	const fader = page.locator('[data-sel-node="mixer.ch1.fader"] [role="slider"]');
+	await fader.focus();
+	expect(await focusedNodeId(page)).toBe('mixer.ch1.fader');
+	const firstFader = await fader.elementHandle();
+	// A script click leaves focus on the fader, so only the re-render can drop it.
+	await page.evaluate(() => {
+		const buttons = document.querySelectorAll<HTMLButtonElement>('.deck-layout-toggle button');
+		const less = [...buttons].find((button) => button.textContent?.trim() === 'LESS');
+		if (less === undefined) throw new Error('no LESS button in .deck-layout-toggle');
+		less.click();
+	});
+	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+	await expect.poll(() => focusedNodeId(page)).toBe('mixer.ch1.fader');
+	const stillMounted = await firstFader!.evaluate((el) => el.isConnected);
+	expect(stillMounted, 'the LESS swap re-mounted the fader').toBe(false);
+});
+
+test('[if] a deck is drilled into from the decks section [then] drill lands on deck.N then a deck part, [else stop]', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	await boot(page, 'MORE');
+	expect(await start(page, 'decks')).toBe('decks');
+	const deckGroup = await drillIn(page);
+	expect(deckGroup, 'first drill-in reaches a deck group').toMatch(/^deck\.[1-4]$/);
+	const deckPart = await drillIn(page);
+	const parts = await deckPartIds(page, Number(deckGroup.slice(5)));
+	expect(parts, `second drill-in reaches a deck part, got ${deckPart}`).toContain(deckPart);
+});
+
+test('[if] each declared deck part is present in MORE mode [then] every inventory id is in the tree, [else stop]', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	await boot(page, 'MORE');
+	const ids = new Set(await nodeIds(page));
+	expect(await deckParts(page)).toHaveLength(7);
+	for (const deck of [1, 2, 3, 4] as const) {
+		for (const partId of await deckPartIds(page, deck)) {
+			expect(ids, `${partId} missing from selector snapshot`).toContain(partId);
+			await expect(page.locator(`[data-sel-node="${partId}"]`)).toHaveCount(1);
+		}
+	}
+});
+
+test('[if] a deck part is disabled or removed by layout [then] its ids leave the snapshot, [else stop]', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	await boot(page, 'LESS');
+	const ids = await nodeIds(page);
+	const hiddenParts = [...(await deckPartIds(page, 3)), ...(await deckPartIds(page, 4))];
+	expect(
+		ids.filter((id) => hiddenParts.includes(id)),
+		'deck 3/4 parts absent in LESS snapshot'
+	).toEqual([]);
+	await expect(page.locator('.rb-deck[data-deck="3"]')).toHaveAttribute('data-sel-disabled', '');
+	await expect(page.locator('.rb-deck[data-deck="4"]')).toHaveAttribute('data-sel-disabled', '');
+	expect(ids).toContain('deck.1.header');
 });

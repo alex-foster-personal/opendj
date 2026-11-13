@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483140,
+  "measured_with_pr": 483578,
+  "sha": "1f31a8452e",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--9733-date-added-column grows the performance surface; measured +438 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

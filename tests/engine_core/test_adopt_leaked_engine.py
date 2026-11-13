@@ -42,16 +42,21 @@ _LEAKED_HOLDER = textwrap.dedent(
     port = server.server_address[1]
     lock = EngineLock(lock_path, host="127.0.0.1", port=port)
     lock.acquire()
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    if len(sys.argv) > 2 and sys.argv[2] == "dark":
+        server.server_close()
+    else:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
     print(port, flush=True)
     signal.pause()
     """
 )
 
 
-def _start_leaked_holder(lock_path: Path) -> subprocess.Popen[str]:
+def _start_leaked_holder(lock_path: Path, *, dark: bool = False) -> subprocess.Popen[str]:
+    """Spawn a process holding the lock; ``dark`` closes its health server first."""
+    mode = ["dark"] if dark else []
     proc = subprocess.Popen(
-        [sys.executable, "-c", _LEAKED_HOLDER, str(lock_path)],
+        [sys.executable, "-c", _LEAKED_HOLDER, str(lock_path), *mode],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -100,3 +105,33 @@ def test_leaked_engine_is_adoptable_and_singleton_stays_enforced(tmp_path: Path)
     lock = EngineLock(lock_path, boot_id="after-leak")
     lock.acquire()
     lock.release()
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_a_holder_with_an_unreachable_health_endpoint_is_never_adopted(
+    tmp_path: Path,
+) -> None:
+    """
+    [if] the holder health endpoint is unreachable [then] the lock stays held, health fails and a second engine is refused, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    dark = _start_leaked_holder(lock_path, dark=True)
+    try:
+        inspected = inspect_lock(lock_path)
+        assert inspected != "free"
+        holder = read_holder(lock_path)
+        assert holder is not None
+        assert holder.pid == dark.pid
+        assert holder.port is not None
+
+        with pytest.raises(urllib.error.URLError):
+            _http_get(f"http://127.0.0.1:{holder.port}/api/v1/health")
+
+        with pytest.raises(EngineLockError):
+            EngineLock(lock_path, boot_id="second").acquire()
+        assert inspect_lock(lock_path) != "free"
+    finally:
+        dark.send_signal(signal.SIGTERM)
+        dark.wait(timeout=5)
+
+    assert inspect_lock(lock_path) == "free"

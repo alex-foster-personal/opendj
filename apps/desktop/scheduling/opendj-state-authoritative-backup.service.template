@@ -1,0 +1,11 @@
+# TEMPLATE: rendered by `python -m apps.shared.state_authoritative_backup schedule-install`.
+# One online, verified backup of the machine's state.db (issue #2498).
+[Unit]
+Description=Open DJ local state-authoritative backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=__DATA_DIR__
+ExecStart=__EXEC_START__
+StandardOutput=append:__LOG_DIR__/state-authoritative-backup.log
+StandardError=append:__LOG_DIR__/state-authoritative-backup.log

@@ -207,6 +207,7 @@ def fetch_hub_rows(
     """Load every sync-eligible hub row for ``table`` via ``GET /rows``."""
     by_pk: dict[tuple[str, ...], HubRowSample] = {}
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     while True:
         params = {
             "machine_id": machine_id,
@@ -228,6 +229,8 @@ def fetch_hub_rows(
             if not isinstance(raw_pk, list) or not isinstance(canonical_hex, str):
                 continue
             pk = tuple(str(value) for value in raw_pk)
+            if pk in by_pk:
+                raise SyncTransportError(f"rows cursor for {table} regressed: pk {list(pk)} was already served")
             by_pk[pk] = HubRowSample(
                 pk=pk,
                 canonical_hex=canonical_hex,
@@ -239,6 +242,9 @@ def fetch_hub_rows(
         if not next_cursor:
             break
         cursor = str(next_cursor)
+        if cursor in seen_cursors or not raw_rows:
+            raise SyncTransportError(f"rows cursor for {table} did not progress: {cursor}")
+        seen_cursors.add(cursor)
     return by_pk
 
 

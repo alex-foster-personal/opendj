@@ -3,12 +3,12 @@
   "capture": {
     "kind": "warp-map-pqtz-seed",
     "source": "apps/webui/frontend/tests/unit/warp-map.test.mjs",
-    "track_stable_id": "placeholder-stable-id"
+    "track_stable_id": "real-pqtz-127bpm-8beat-seed"
   },
   "files": {
     "warp-map-pqtz-captured.json": {
-      "bytes": 0,
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "bytes": 670,
+      "sha256": "fbd2cebe9feb28a591de841a2dec85ea91eb903fef12bcc7976210a118e1f003"
     }
   }
 }

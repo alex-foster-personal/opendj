@@ -7,6 +7,8 @@
 	// engine's. Inert with a reason when no track or no beatgrid is loaded.
 	import { BEAT_JUMP_PADS, beatJumpPadLabel } from '$lib/rb/beat-jump-pads';
 	import type { DeckState } from '$lib/rb/deck-state-types';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { deckPadSelId, padNumberForSlot } from './deck-pad-selector-ids';
 
 	let {
 		deck,
@@ -38,6 +40,11 @@
 					class="pad"
 					class:back={pad.beats < 0}
 					disabled={blockedReason !== null}
+					use:selectorNode={{
+						id: deckPadSelId(deck.deck_id, padNumberForSlot(pad.slot)),
+						kind: 'leaf',
+						enabled: blockedReason === null
+					}}
 					aria-label={`beat jump ${beatJumpPadLabel(pad.beats)} deck ${deck.deck_id}`}
 					data-testid={`beat-jump-pad-${deck.deck_id}-${pad.slot}`}
 					data-beats={pad.beats}

@@ -27,7 +27,7 @@ type Space<C> = { [F in keyof C]-?: readonly C[F][] };
 export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKind[K]> } = {
 	track: {
 		selection: ['one', 'many'],
-		source: ['collection', 'playlist', 'usb', 'readonly-import'],
+		source: ['collection', 'playlist', 'usb', 'readonly-import', 'deleted'],
 		audio: ['present', 'missing', 'streaming', 'offloaded', 'temporary'],
 		stems: ['none', 'ready'],
 		tracklistHidden: ['shown', 'hidden'],
@@ -38,7 +38,7 @@ export const MENU_CONTEXT_SPACE: { [K in MenuTargetKind]: Space<MenuContextByKin
 	playlist: { forbidDuplicates: [false, true] },
 	'playlist-folder': {},
 	'playlist-section': { editable: [false, true] },
-	smartlist: {},
+	smartlist: { refreshing: [false, true] },
 	'tree-readonly': { stick: [false, true] },
 	'library-source': {},
 	deck: {

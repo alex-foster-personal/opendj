@@ -240,7 +240,8 @@ def _skipped_refresh_note(refresh_report: FolderIngestReport) -> str | None:
     minted, a file that is a track the user removed) leaves the row live
     with the hash and analysis of bytes no longer on disk. The count goes on
     the cycle's warning, never dropped with the refresh report. It is a
-    count only: the ingest report carries no per-file list.
+    count only for rescan cycles: folder import records capped per-file probe
+    reasons on its ingest report; this warning still carries only the count.
     """
     skipped = (
         refresh_report.files_rejected_unplayable

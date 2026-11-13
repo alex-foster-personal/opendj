@@ -12,17 +12,20 @@ import pytest
 
 from apps.autodj.contract import ValidationResult
 from apps.autodj.http import build_service
-from apps.autodj.pair_memory import PairTransition
+from apps.autodj.pair_memory import PairTransition, get_pair_transition, record_played
 from apps.autodj.plan import parse_plan
-from apps.autodj.profile import trim_db_of_knob
+from apps.autodj.profile import trim_db_of_knob, trim_knob
 from apps.autodj.propose import propose_transition
 from apps.transition_score import live as live_module
 from apps.transition_score.contract import SCORER_VERSION, Candidate, Measured
 from apps.transition_score.live import PREPARE_N, LiveRequest, PlanCache, PrepareKey, plan_live, prepare_live
 from apps.transition_score.tryer import TryError
+from apps.shared.state import db as state_db
+from apps.shared.state import schema as state_schema
 from tests.autodj.fixtures import profile
+from tests.transition_score.arrangements import IN_ARRANGEMENT
 
-OUT, IN = profile("trk-out"), profile("trk-in", key="9A")
+OUT, IN = profile("trk-out"), profile("trk-in", key="9A", arrangement=IN_ARRANGEMENT)
 _AUTODJ = build_service()
 plan_live = partial(plan_live, autodj=_AUTODJ)
 prepare_live = partial(prepare_live, autodj=_AUTODJ)
@@ -455,41 +458,22 @@ def test_a_cached_pick_takes_the_live_outgoing_trim(monkeypatch: pytest.MonkeyPa
     prepare_live(_request(), key, mirror=_mirror, source=source, cache=cache)
     assert rendered
 
-    def turned_down() -> dict[str, Any]:
-        document = _mirror()
-        document["mixer"]["channels"]["1"]["trim"] = 0.25
-        return document
-
     def trim_of(mirror: Any) -> Any:
         answer = plan_live(_request(), mirror=mirror, source=source, cache=cache)
         assert answer.order is not None
         return [c["value"] for c in answer.order["plan"]["prepare"] if c["type"] == "trim"]
 
-    assert trim_of(turned_down) != trim_of(_mirror)
+    assert trim_of(_turned_down) != trim_of(_mirror)
 
 
 @pytest.mark.requirement("AGENT-31")
 @pytest.mark.requirement("MEMORY-03")
 def test_scored_candidate_plan_matches_live_trim_for_save_on_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """[if] the outgoing trim is lower at press than at prepare [then] candidate.plan.in.trim_db matches the compiled trim, [else stop]."""
-    loud = replace(IN, lufs=-8.0, lufs_reason=None)
-    source = _Source()
-    source.tracks[IN.stable_id] = loud
-    source.tracks[OUT.stable_id] = replace(OUT, lufs=-10.0, lufs_reason=None)
-    _patch_renders(monkeypatch)
-    cache = PlanCache()
-    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
-    cache.begin(key)
-    prepare_live(_request(), key, mirror=_mirror, source=source, cache=cache)
-    entry = cache.get(key)
+    cache, source = _loud_prepared(monkeypatch)
+    entry = cache.get(PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0))
     assert entry is not None and entry.candidates
-
-    def turned_down() -> dict[str, Any]:
-        document = _mirror()
-        document["mixer"]["channels"]["1"]["trim"] = 0.25
-        return document
-
-    answer = plan_live(_request(), mirror=turned_down, source=source, cache=cache)
+    answer = plan_live(_request(), mirror=_turned_down, source=source, cache=cache)
     assert answer.order is not None and answer.candidate is not None
     prepared = next(c for c in entry.candidates if c.id == answer.candidate.id)
     prepared_in_trim = prepared.plan["in"]["trim_db"]
@@ -516,6 +500,85 @@ def test_scored_candidate_plan_unchanged_when_trim_unchanged(monkeypatch: pytest
     assert answer.candidate is not None
     prepared = next(c for c in entry.candidates if c.id == answer.candidate.id)
     assert answer.candidate.plan == prepared.plan
+
+
+def _loud_prepared(monkeypatch: pytest.MonkeyPatch) -> tuple[PlanCache, _Source]:
+    """A ready cache prepared at trim knob 0.5 over loud profiles, so a later trim change moves the match."""
+    source = _Source()
+    source.tracks[IN.stable_id] = replace(IN, lufs=-8.0, lufs_reason=None)
+    source.tracks[OUT.stable_id] = replace(OUT, lufs=-10.0, lufs_reason=None)
+    _patch_renders(monkeypatch)
+    cache = PlanCache()
+    key = PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0)
+    cache.begin(key)
+    prepare_live(_request(), key, mirror=_mirror, source=source, cache=cache)
+    return cache, source
+
+
+def _turned_down() -> dict[str, Any]:
+    """The prepare-time mirror with the outgoing trim knob lowered to 0.25 (about -6 dB)."""
+    document = _mirror()
+    document["mixer"]["channels"]["1"]["trim"] = 0.25
+    return document
+
+
+def _compiled_trim(order: dict[str, Any]) -> float:
+    """The incoming trim knob the compiled order sets before the transition runs."""
+    return next(c["value"] for c in order["plan"]["prepare"] if c["type"] == "trim")
+
+
+@pytest.mark.requirement("AGENT-31")
+@pytest.mark.requirement("MEMORY-03")
+def test_a_rejected_pick_never_lends_its_plan_to_the_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the first pick fails live validation [then] the next one's live-trimmed plan returns, [else stop]."""
+    cache, source = _loud_prepared(monkeypatch)
+    real = _AUTODJ.validate_plan
+    validated: list[Any] = []
+
+    def refuse_first(plan: Any, *args: Any, **kwargs: Any) -> Any:
+        validated.append(plan)
+        result = real(plan, *args, **kwargs)
+        if len(validated) == 1:
+            return ValidationResult(ok=False, errors=(*result.errors, "control: refused"))
+        return result
+
+    monkeypatch.setattr(_AUTODJ, "validate_plan", refuse_first)
+    answer = plan_live(_request(), mirror=_turned_down, source=source, cache=cache)
+    assert answer.order is not None and answer.candidate is not None and len(validated) == 2
+    rejected, ran = validated[0].to_document(), validated[1].to_document()
+    plan = answer.candidate.plan
+    assert plan != rejected
+    assert plan["in"]["trim_db"] != ran["in"]["trim_db"]
+    assert plan == {
+        **ran,
+        "in": {**ran["in"], "trim_db": plan["in"]["trim_db"], "trim_reason": plan["in"]["trim_reason"]},
+    }
+    assert trim_knob(plan["in"]["trim_db"]) == pytest.approx(_compiled_trim(answer.order))
+
+
+@pytest.mark.requirement("AGENT-31")
+@pytest.mark.requirement("MEMORY-03")
+def test_save_on_run_persists_the_live_trim_that_played(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """[if] the live-trimmed pick is saved after it ran [then] the stored trim is the played one, [else stop]."""
+    cache, source = _loud_prepared(monkeypatch)
+    entry = cache.get(PrepareKey("trk-out", "trk-in", 1, 2, "smooth", in_pitch_range=8.0))
+    assert entry is not None
+    answer = plan_live(_request(), mirror=_turned_down, source=source, cache=cache)
+    assert answer.order is not None and answer.candidate is not None
+    prepared = next(c for c in entry.candidates if c.id == answer.candidate.id)
+    conn = state_db.open_rw(tmp_path / "state.db")
+    try:
+        state_schema.apply_migrations(conn)
+        record_played(
+            conn, "trk-out", "trk-in", plan=answer.candidate.plan, source="planner", style=answer.candidate.style
+        )
+        saved = get_pair_transition(conn, "trk-out", "trk-in")
+    finally:
+        conn.close()
+    assert saved is not None
+    stored = saved.plan["in"]["trim_db"]
+    assert stored != pytest.approx(prepared.plan["in"]["trim_db"], abs=0.02)
+    assert trim_knob(stored) == pytest.approx(_compiled_trim(answer.order))
 
 
 @pytest.mark.requirement("AGENT-31")

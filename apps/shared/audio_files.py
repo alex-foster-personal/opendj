@@ -9,6 +9,7 @@ from typing import cast
 
 from . import _tagreader, paths
 from ._tagreader import HAS_TAG_READER
+from .classical_tags import tag_label, tag_year
 from .text import as_text
 
 
@@ -33,6 +34,9 @@ class AudioMetadata:
     duration_s: float | None = None
     bitrate_kbps: int | None = None
     sample_rate: int | None = None
+    # Issue #10029: the Year and Label columns, from the file's own tags.
+    year: int | None = None
+    label: str | None = None
 
 
 def scan_music_files(roots: list[Path] | None = None) -> Iterator[AudioFile]:
@@ -91,6 +95,8 @@ def read_metadata(path: Path) -> AudioMetadata | None:
         duration_s=float(tag.duration) if tag.duration else None,
         bitrate_kbps=int(bitrate) if bitrate else None,
         sample_rate=int(tag.samplerate) if tag.samplerate else None,
+        year=tag_year(tag),
+        label=tag_label(tag),
     )
 
 

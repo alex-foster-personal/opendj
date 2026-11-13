@@ -42,10 +42,10 @@ test('remove from playlist context menu DELETEs by item_id', async ({ page }) =>
 		.click();
 	await expect(page.getByText(/Added 1 track to/i)).toBeVisible({ timeout: 10_000 });
 
-	// Scoped to the tree: the add-to-playlist toast is itself a button (it is
-	// click-to-copy) and its message quotes the playlist name, so an unscoped
-	// role+name lookup resolves to two elements while the toast is on screen.
-	await page.getByTestId('playlist-tree').getByRole('button', { name: playlistName }).click();
+	// The row by its test id, not by role and name: the add-to-playlist toast is a
+	// button whose message quotes the playlist name, and a row can hold buttons
+	// labelled with its name (pin, rename), so a role+name lookup matches several.
+	await page.getByTestId('playlist-row').filter({ hasText: playlistName }).click();
 	await page.waitForSelector('[data-testid="track-row"]', { timeout: 30_000 });
 
 	deleteRequests.length = 0;
@@ -106,10 +106,10 @@ test('Delete key removes membership via DELETE not PUT', async ({ page }) => {
 		.click();
 	await expect(page.getByText(/Added 1 track to/i)).toBeVisible({ timeout: 10_000 });
 
-	// Scoped to the tree: the add-to-playlist toast is itself a button (it is
-	// click-to-copy) and its message quotes the playlist name, so an unscoped
-	// role+name lookup resolves to two elements while the toast is on screen.
-	await page.getByTestId('playlist-tree').getByRole('button', { name: playlistName }).click();
+	// The row by its test id, not by role and name: the add-to-playlist toast is a
+	// button whose message quotes the playlist name, and a row can hold buttons
+	// labelled with its name (pin, rename), so a role+name lookup matches several.
+	await page.getByTestId('playlist-row').filter({ hasText: playlistName }).click();
 	await page.waitForSelector('[data-testid="track-row"]', { timeout: 30_000 });
 
 	deleteRequests.length = 0;

@@ -120,3 +120,67 @@ test("library chords load to a named deck and locate the recent deck's track", a
 	await expect(search).toBeFocused();
 	await expect(targetRow).toHaveAttribute('aria-selected', 'true');
 });
+
+test('[if] a button inside a focused row receives ArrowDown [then] row navigation stops, [else stop].', async ({
+	page
+}) => {
+	await page.goto('/performance');
+	const rows = page.locator('[data-testid="track-row"]');
+	await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
+
+	const first = rows.nth(0);
+	const second = rows.nth(1);
+	const title = first.locator('td.c-title');
+	await title.click();
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+	// A rating star is an in-row control that is not a deck-target chord target.
+	const starBtn = first.locator('.c-rating button.rb-star').first();
+	await starBtn.focus();
+	await expect(starBtn).toBeFocused();
+
+	await page.keyboard.press('ArrowDown');
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+	await expect(second).toHaveAttribute('aria-selected', 'false');
+	await expect(second).not.toBeFocused();
+});
+
+test('[if] Cmd or Control plus an arrow is pressed on a row [then] row navigation stops, [else stop].', async ({
+	page
+}) => {
+	await page.goto('/performance');
+	const rows = page.locator('[data-testid="track-row"]');
+	await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
+
+	const first = rows.nth(0);
+	const second = rows.nth(1);
+	await first.locator('td.c-title').click();
+	await first.focus();
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+
+	await page.keyboard.press('ControlOrMeta+ArrowDown');
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+	await expect(second).toHaveAttribute('aria-selected', 'false');
+	await expect(first).toBeFocused();
+});
+
+test('[if] Alt plus an arrow is pressed on a row [then] row navigation stops, [else stop].', async ({
+	page
+}) => {
+	await page.goto('/performance');
+	const rows = page.locator('[data-testid="track-row"]');
+	await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
+
+	const first = rows.nth(0);
+	const second = rows.nth(1);
+	await first.locator('td.c-title').click();
+	await first.focus();
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+
+	await page.keyboard.press('Alt+ArrowDown');
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+	await expect(second).toHaveAttribute('aria-selected', 'false');
+	await expect(first).toBeFocused();
+});

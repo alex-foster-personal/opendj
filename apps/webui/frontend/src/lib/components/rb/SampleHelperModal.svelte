@@ -11,6 +11,7 @@
 	import { startIngestRefresh } from '$lib/rb/api-ingest';
 	import { refreshIngestPending } from '$lib/rb/ingest-pending.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 
 	let { open = $bindable(false) } = $props<{
 		open?: boolean;
@@ -50,6 +51,15 @@
 		if (open && e.key === 'Escape') close();
 	}
 
+	/** Escape closes from inside; Tab reaches the focus trap; every other key stops here, off the page shortcuts. */
+	function onDialogKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			close();
+		}
+		if (e.key !== 'Tab') e.stopPropagation();
+	}
+
 	async function download(): Promise<void> {
 		const trimmed = url.trim();
 		if (!trimmed) {
@@ -85,11 +95,13 @@
 		<div
 			class="modal"
 			role="dialog"
+			aria-modal="true"
 			aria-label="Sample from YouTube"
 			data-testid="sample-helper-modal"
 			tabindex="-1"
+			use:focusTrap
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
+			onkeydown={onDialogKeydown}
 		>
 			<div class="m-title">Paste YouTube link</div>
 			<label class="m-field">

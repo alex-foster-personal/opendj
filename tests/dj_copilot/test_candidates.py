@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.dj_copilot.candidates import filter_candidates, recording_identity
+from apps.dj_copilot.candidates import filter_candidates, recording_identity, similar_library_candidates
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.shared.harmonic import TrackFeature
 from tests.dj_copilot.conftest import FIXED_NOW
@@ -101,6 +101,15 @@ def test_energy_slope_cap_rejects_reverse() -> None:
     assert "t-ok" in ids
     assert "t-bad" not in ids
     assert trace.dropped_energy >= 1
+
+
+@pytest.mark.requirement("INTEL-12031")
+def test_similar_library_candidates_drop_reference_only() -> None:
+    """[if] Specific filters the library [then] the reference track is excluded, [else stop]."""
+    cur = TrackFeature("cur", "A", 120.0, "8A", 5)
+    lib = [cur, TrackFeature("n1", "B", 121.0, "8A", 5)]
+    out = similar_library_candidates(current=cur, library=lib)
+    assert [t.stable_id for t in out] == ["n1"]
 
 
 @pytest.mark.requirement("SETPREP-12113")

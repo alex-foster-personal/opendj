@@ -343,6 +343,20 @@ export function decodePreviewStrip(
 	return { cols: PREVIEW_COLS, bands, max: preview_max };
 }
 
+/** True when two decoded strips would render the same row artwork. */
+export function previewStripsEqual(
+	a: PreviewStripData | null,
+	b: PreviewStripData | null
+): boolean {
+	if (a === b) return true;
+	if (a === null || b === null) return false;
+	if (a.cols !== b.cols || a.max !== b.max || a.bands.length !== b.bands.length) return false;
+	for (let i = 0; i < a.bands.length; i += 1) {
+		if (a.bands[i] !== b.bands[i]) return false;
+	}
+	return true;
+}
+
 // ------------------------------- hydrated listings (contract 1, 2, 4)
 // NOTE two contract-vs-convention bindings (flag to integrator if the
 // backend chose differently): the contract lists "duration" and
@@ -423,6 +437,15 @@ export interface PlaylistTrackRowWire {
 	valid?: boolean;
 	title: string | null;
 	artist: string | null;
+	/** LIBUX-13747: the Album column; absent on payloads older than the field. */
+	album?: string | null;
+	/** LIBUX-13803: the Date Added column, YYYY-MM-DD; absent on older payloads. */
+	date_added?: string | null;
+	/** Issue #10029: the Year and Label columns from file tags; absent on older payloads. */
+	year?: number | null;
+	label?: string | null;
+	/** LIBUX-13845: the Last Played column's timestamp; absent on older payloads. */
+	last_played_at?: string | null;
 	key: string | null;
 	bpm: number | null;
 	rating: number | null;
@@ -504,6 +527,8 @@ export interface PlaylistTrackRowWire {
 	lyrics?: LyricsRowSummary | null;
 	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
 	grid_quality?: GridQualityRow | null;
+	/** PLAY-5884: usable beat grid, playlist-tracks page only; null or absent when unknown. */
+	has_beatgrid?: boolean | null;
 	/** Row strip tempo curve (TEMPOROW-8874c); null when steady or never judged. Optional for older payloads. */
 	tempo_curve?: TempoCurveData | null;
 	is_remix?: boolean | null;
@@ -737,6 +762,8 @@ export async function getReconcileSummary(
 export type GenreGuess = { family: string; confidence: number; source: 'jev' };
 
 export type TrackListItemWire = Track & {
+	/** LIBUX-13803: the Date Added column, YYYY-MM-DD; absent on older payloads. */
+	date_added?: string | null;
 	edit_id?: string | null;
 	in_ms?: number | null;
 	out_ms?: number | null;

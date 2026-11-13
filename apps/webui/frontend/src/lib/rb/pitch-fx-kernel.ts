@@ -7,10 +7,12 @@
  * depth is 0 or the kernel is off. CPU per-effect row waits on #9777.
  */
 import pitchShiftProcessorUrl from '$lib/rb/pitch-shift-processor.js?url';
-import { defineVariantSetting } from '$lib/settings/variant-setting';
 
 import type { BeatFxKernel } from './beat-fx';
 import { onVariantChange } from './variant-prefs';
+import { PITCH_FX_WINDOW_VARIANT } from './pitch-fx-variants';
+
+export { PITCH_FX_WINDOW_VARIANT };
 
 export const PITCH_FX_MIN_PERCENT = -50;
 export const PITCH_FX_MAX_PERCENT = 100;
@@ -57,20 +59,6 @@ export function pitchRatio(percent: number | string): number {
 
 export const PITCH_FX_RAMP_SEC = 0.012;
 export const PITCH_FX_WINDOW_XFADE_SEC = 0.02;
-
-export const PITCH_FX_WINDOW_VARIANT = defineVariantSetting({
-	id: 'variant_fx_pitch_window',
-	label: 'PITCH FX window',
-	group: 'advanced',
-	keywords: ['variant', 'fx', 'pitch', 'window', 'beat fx'],
-	detail: 'Crossfade window of the beat FX PITCH shifter (issue #10222).',
-	variants: [
-		{ value: '20', label: '20 ms', summary: 'tight, more warble' },
-		{ value: '40', label: '40 ms', summary: 'balanced' },
-		{ value: '80', label: '80 ms', summary: 'smooth, smears transients' }
-	],
-	defaultValue: '40'
-});
 
 export const PITCH_FX_WINDOWS_MS = PITCH_FX_WINDOW_VARIANT.variants.map((v) =>
 	Number(v.value)

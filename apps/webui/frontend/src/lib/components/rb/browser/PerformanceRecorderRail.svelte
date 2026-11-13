@@ -11,11 +11,28 @@
 		source,
 		onspotify,
 		oncollection,
+		historyOpen = false,
+		onhistory = () => {},
+		tagListCount = null,
+		tagListOpen = false,
+		ontaglist = () => {},
+		explorerOpen = false,
+		onexplorer = () => {},
 		recordable = true
 	}: {
 		source: 'collection' | 'spotify';
 		onspotify: () => void;
 		oncollection?: () => void;
+		/** PLAYS-9745: the History list holds the tree slot; home closes it. */
+		historyOpen?: boolean;
+		onhistory?: () => void;
+		/** Issue #10028: the Tag List rail entry (badge count, lit state, open). */
+		tagListCount?: number | null;
+		tagListOpen?: boolean;
+		ontaglist?: () => void;
+		/** Issue #9747: the Explorer rail entry (lit state, open). */
+		explorerOpen?: boolean;
+		onexplorer?: () => void;
 		recordable?: boolean;
 	} = $props();
 
@@ -25,6 +42,7 @@
 
 	function showWholeCollection(event: MouseEvent): void {
 		if (source !== 'collection') oncollection?.();
+		else if (historyOpen) oncollection?.();
 		showWholeCollectionFromChrome(event.timeStamp);
 	}
 </script>
@@ -42,6 +60,13 @@
 	recordingStoppable={chrome.rail.stoppable}
 	onrecord={() => void chrome.togglePerformanceRecording()}
 	onusb={openUsbExport}
+	{historyOpen}
+	{onhistory}
+	{tagListCount}
+	{tagListOpen}
+	{ontaglist}
+	{explorerOpen}
+	{onexplorer}
 />
 
 {#if chrome.RecordInputPicker !== null}

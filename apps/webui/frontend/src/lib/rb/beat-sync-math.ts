@@ -1332,6 +1332,28 @@ export interface PhaseCompensatedReanchor {
  * [if] the compensated start falls before the track start [then ⛔️] - a
  * clamp would silently re-introduce the offset this exists to remove.
  */
+/**
+ * The owned tempo target for a follower re-anchor ramp. Refuses a plan outside
+ * the deck pitch range instead of clamping (hard bound).
+ *
+ * [if] targetRatio is outside [minRatio, maxRatio] [then ⛔️]
+ */
+export function ownedReanchorTempoTarget(
+	targetRatio: number,
+	minRatio: number,
+	maxRatio: number
+): number {
+	_assertFinitePositive('targetRatio', targetRatio);
+	_assertFinitePositive('minRatio', minRatio);
+	_assertFinitePositive('maxRatio', maxRatio);
+	if (targetRatio < minRatio || targetRatio > maxRatio) {
+		throw new TempoOutOfSyncRangeError(
+			`follower tempo ratio ${targetRatio} is outside owned pitch range [${minRatio}, ${maxRatio}]`
+		);
+	}
+	return targetRatio;
+}
+
 export function planPhaseCompensatedReanchor(
 	anchorPositionSec: number,
 	fromTempoRatio: number,

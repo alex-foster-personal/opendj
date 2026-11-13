@@ -23,7 +23,10 @@ from apps.lighting.show_map import (
     load_show_map,
 )
 
-pytestmark = [pytest.mark.requirement("LIGHT-10561b")]
+pytestmark = [
+    pytest.mark.requirement("LIGHT-10561b"),
+    pytest.mark.requirement("TESTINFRA-14255"),
+]
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -176,3 +179,69 @@ def test_autoloop_look_negative_raises() -> None:
     show_map = load_show_map()
     with pytest.raises(ValueError, match="non-negative"):
         show_map.autoloop_look(-1)
+
+
+def test_missing_show_map_names_source_path(tmp_path: Path) -> None:
+    """[if] the show-map file is absent [then] ShowMapError names that path."""
+    missing = tmp_path / "show_map.json"
+    with pytest.raises(ShowMapError, match="file not found") as exc:
+        load_show_map(missing)
+    assert str(missing) in str(exc.value)
+
+
+def test_invalid_json_show_map_names_source_path(tmp_path: Path) -> None:
+    """[if] the show-map file is invalid JSON [then] ShowMapError names that path."""
+    bad = tmp_path / "show_map.json"
+    bad.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ShowMapError, match="not valid JSON") as exc:
+        load_show_map(bad)
+    assert str(bad) in str(exc.value)
+
+
+def test_missing_looks_file_names_source_path(tmp_path: Path) -> None:
+    """[if] the look file is absent [then] ShowMapError names that path."""
+    data = copy.deepcopy(_load_json(DEFAULT_MAP_PATH))
+    map_path = tmp_path / "show_map.json"
+    map_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    looks_path = tmp_path / data["looks_file"]
+    with pytest.raises(ShowMapError, match="file not found") as exc:
+        load_show_map(map_path)
+    assert str(looks_path) in str(exc.value)
+
+
+def test_invalid_json_looks_file_names_source_path(tmp_path: Path) -> None:
+    """[if] the look file is invalid JSON [then] ShowMapError names that path."""
+    data = copy.deepcopy(_load_json(DEFAULT_MAP_PATH))
+    looks_name = data["looks_file"]
+    looks_path = tmp_path / looks_name
+    looks_path.write_text("not-json", encoding="utf-8")
+    map_path = tmp_path / "show_map.json"
+    map_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    with pytest.raises(ShowMapError, match="not valid JSON") as exc:
+        load_show_map(map_path)
+    assert str(looks_path) in str(exc.value)
+
+
+def test_autoloop_look_wraps_when_next_cycle_begins() -> None:
+    """[if] autoloop finishes a look cycle [then] the next bar picks the first look again."""
+    show_map = load_show_map()
+    cycle_len = len(show_map.autoloop)
+    step = show_map.autoloop_bars
+    last_bar_of_cycle = cycle_len * step - 1
+    first_bar_next_cycle = cycle_len * step
+    assert show_map.autoloop_look(last_bar_of_cycle) == show_map.autoloop[-1]
+    assert show_map.autoloop_look(first_bar_next_cycle) == show_map.autoloop[0]
+
+
+def test_autoloop_changes_empty_downbeats_raises() -> None:
+    """[if] downbeats are empty [then] autoloop_changes refuses."""
+    show_map = load_show_map()
+    with pytest.raises(ValueError, match="must not be empty"):
+        show_map.autoloop_changes([])
+
+
+def test_autoloop_changes_nonmonotonic_downbeats_raises() -> None:
+    """[if] downbeats are nonmonotonic [then] autoloop_changes refuses."""
+    show_map = load_show_map()
+    with pytest.raises(ValueError, match="strictly increasing"):
+        show_map.autoloop_changes([0.0, 500.0, 400.0])

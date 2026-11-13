@@ -79,7 +79,7 @@ _PX_D1: dict[str, list[int]] = {
     "d1-load-1": [915, 348, 975, 388],
 }
 
-# Multifunction pad grid (fig 2): shared physical targets for FX, loop, and hot-cue wires.
+# Multifunction pad grid (fig 2): one physical target per pad; hot-cue, loop and FX wires are pad layers.
 _PAD_D1 = {
     "1": [210, 168, 268, 218],
     "2": [278, 168, 336, 218],
@@ -88,10 +88,7 @@ _PAD_D1 = {
 }
 
 for slot, box in _PAD_D1.items():
-    _PX_D1[f"d1-color-fx-c1-note{slot}"] = box
-    _PX_D1[f"d1-hot-cue-{'abcd'[int(slot) - 1]}"] = box
-    loops = {1: "d1-beat-loop-1", 2: "d1-beat-loop-2", 3: "d1-beat-loop-4", 4: "d1-beat-loop-8"}
-    _PX_D1[loops[int(slot)]] = box
+    _PX_D1[f"d1-pad-{slot}"] = box
 
 _MIXER_CH1: dict[str, list[int]] = {
     "ch1-eq-high": [1048, 188, 1098, 238],
@@ -111,17 +108,10 @@ _D2_ID: dict[str, str] = {
     "d1-sync-toggle": "d2-sync-toggle",
     "d1-cue": "d2-cue",
     "d1-play-toggle": "d2-play-toggle",
-    "d1-color-fx-c1-note1": "d2-color-fx-c1-note27",
-    "d1-color-fx-c1-note2": "d2-color-fx-c1-note28",
-    "d1-color-fx-c1-note3": "d2-color-fx-c1-note29",
-    "d1-color-fx-c1-note4": "d2-color-fx-c1-note30",
-    "d1-hot-cue-a": "d2-hot-cue-a",
-    "d1-hot-cue-b": "d2-hot-cue-b",
-    "d1-hot-cue-c": "d2-hot-cue-c",
-    "d1-hot-cue-d": "d2-hot-cue-d",
-    "d1-beat-loop-1": "d2-beat-loop-1",
-    "d1-beat-loop-2": "d2-beat-loop-2",
-    "d1-beat-loop-4": "d2-beat-loop-4",
+    "d1-pad-1": "d2-pad-1",
+    "d1-pad-2": "d2-pad-2",
+    "d1-pad-3": "d2-pad-3",
+    "d1-pad-4": "d2-pad-4",
 }
 
 _PX_D2: dict[str, list[int]] = {d2: _mirror_box(_PX_D1[d1]) for d1, d2 in _D2_ID.items()}
@@ -139,7 +129,7 @@ _PX_REPEAT: dict[str, list[int]] = {
     "ch1-eq-high": [1049, 189, 1099, 239],
     "crossfader": [896, 593, 1066, 639],
     "d2-cue": [int(x) for x in _mirror_box([268, 598, 328, 652])],
-    "d1-color-fx-c1-note1": [211, 169, 269, 219],
+    "d1-pad-1": [211, 169, 269, 219],
     "d2-jog": _mirror_box([195, 295, 485, 585]),
     "ch2-fader": _mirror_box([1105, 215, 1145, 535]),
 }
@@ -207,8 +197,55 @@ def normalise(controls: list[Control]) -> list[Control]:
     return out
 
 
+PAD_LAYER_MODES: dict[str, str] = {"hot_cue": "HOT CUE", "beat_loop": "LOOP", "color_fx": "FX"}
+_FX_NAMES = ("filter", "space", "echo", "next")
+_LOOP_BARS = (1, 2, 4, 8)
+# (hot cue base, loop base, FX base) note per deck; deck 2 LOOP 8 has no published wire (note 38 is a
+# printed duplicate of CUE_KP4_DB, hinted not bound), so that layer stays unwired.
+_PAD_NOTES: dict[int, tuple[int, int, int]] = {1: (13, 9, 1), 2: (39, 35, 27)}
+
+
+def _pad_layers(deck: int, pad: int) -> dict[str, object]:
+    """Per-mode label, action and wire for one physical multifunction pad."""
+    cue, loop, fx = _PAD_NOTES[deck]
+    idx = pad - 1
+    bars = _LOOP_BARS[idx]
+    loop_wire = None if (deck, pad) == (2, 4) else asdict(Wire(1, "note", loop + idx))
+    return {
+        "hot_cue": {
+            "label": f"PAD {pad}",
+            "does": f"Hot cue {'ABCD'[idx]} (deck {deck})",
+            "midi": asdict(Wire(1, "note", cue + idx)),
+            "shift_midi": None,
+        },
+        "beat_loop": {
+            "label": f"LOOP {bars}",
+            "does": f"Beat loop {bars} bar{'s' if bars > 1 else ''} (deck {deck})",
+            "midi": loop_wire,
+            "shift_midi": None,
+        },
+        "color_fx": {
+            "label": f"FX {pad}",
+            "does": f"Colour FX {_FX_NAMES[idx]} (deck {deck})",
+            "midi": asdict(Wire(1, "note", fx + idx)),
+            "shift_midi": None,
+        },
+    }
+
+
+def _control_document(control: Control) -> dict[str, object]:
+    """Panel row for a control; pads carry their selectable layer group and layers."""
+    row: dict[str, object] = asdict(control)
+    if control.type == "pad":
+        deck = int(control.id[1])
+        pad = int(control.id.rsplit("-", 1)[1])
+        row["pad_layer_group"] = f"d{deck}"
+        row["pad_layers"] = _pad_layers(deck, pad)
+    return row
+
+
 def _controls() -> list[Control]:
-    """One row per binding from HERCULES_DJ_CONTROL_INSTINCT_MAP (48 controls)."""
+    """One row per physical control joined to HERCULES_DJ_CONTROL_INSTINCT_MAP (33 controls)."""
     rows: list[tuple[str, str, str, str, str, str, Wire]] = [
         ("16", "d1-sync-toggle", "button", "SYNC", "Beat sync on/off (deck 1)", "deck", Wire(1, "note", 23)),
         ("17", "d1-cue", "button", "CUE", "Cue point (deck 1)", "deck", Wire(1, "note", 21)),
@@ -238,21 +275,78 @@ def _controls() -> list[Control]:
             Wire(1, "note", 43),
         ),
         ("14", "d2-tempo-nudge-c1-note44", "button", "PITCH +", "Pitch bend up (deck 2)", "deck", Wire(1, "note", 44)),
-        ("2", "d1-hot-cue-a", "pad", "PAD 1", "Hot cue A (deck 1)", "performance", Wire(1, "note", 13)),
-        ("2", "d1-hot-cue-b", "pad", "PAD 2", "Hot cue B (deck 1)", "performance", Wire(1, "note", 14)),
-        ("2", "d1-hot-cue-c", "pad", "PAD 3", "Hot cue C (deck 1)", "performance", Wire(1, "note", 15)),
-        ("2", "d1-hot-cue-d", "pad", "PAD 4", "Hot cue D (deck 1)", "performance", Wire(1, "note", 16)),
-        ("2", "d1-beat-loop-1", "pad", "LOOP 1", "Beat loop 1 bar (deck 1)", "performance", Wire(1, "note", 9)),
-        ("2", "d1-beat-loop-2", "pad", "LOOP 2", "Beat loop 2 bars (deck 1)", "performance", Wire(1, "note", 10)),
-        ("2", "d1-beat-loop-4", "pad", "LOOP 4", "Beat loop 4 bars (deck 1)", "performance", Wire(1, "note", 11)),
-        ("2", "d1-beat-loop-8", "pad", "LOOP 8", "Beat loop 8 bars (deck 1)", "performance", Wire(1, "note", 12)),
-        ("2", "d2-hot-cue-a", "pad", "PAD 1", "Hot cue A (deck 2)", "performance", Wire(1, "note", 39)),
-        ("2", "d2-hot-cue-b", "pad", "PAD 2", "Hot cue B (deck 2)", "performance", Wire(1, "note", 40)),
-        ("2", "d2-hot-cue-c", "pad", "PAD 3", "Hot cue C (deck 2)", "performance", Wire(1, "note", 41)),
-        ("2", "d2-hot-cue-d", "pad", "PAD 4", "Hot cue D (deck 2)", "performance", Wire(1, "note", 42)),
-        ("2", "d2-beat-loop-1", "pad", "LOOP 1", "Beat loop 1 bar (deck 2)", "performance", Wire(1, "note", 35)),
-        ("2", "d2-beat-loop-2", "pad", "LOOP 2", "Beat loop 2 bars (deck 2)", "performance", Wire(1, "note", 36)),
-        ("2", "d2-beat-loop-4", "pad", "LOOP 4", "Beat loop 4 bars (deck 2)", "performance", Wire(1, "note", 37)),
+        (
+            "2",
+            "d1-pad-1",
+            "pad",
+            "PAD 1",
+            "Multifunction pad 1 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 13),
+        ),
+        (
+            "2",
+            "d1-pad-2",
+            "pad",
+            "PAD 2",
+            "Multifunction pad 2 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 14),
+        ),
+        (
+            "2",
+            "d1-pad-3",
+            "pad",
+            "PAD 3",
+            "Multifunction pad 3 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 15),
+        ),
+        (
+            "2",
+            "d1-pad-4",
+            "pad",
+            "PAD 4",
+            "Multifunction pad 4 (deck 1; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 16),
+        ),
+        (
+            "2",
+            "d2-pad-1",
+            "pad",
+            "PAD 1",
+            "Multifunction pad 1 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 39),
+        ),
+        (
+            "2",
+            "d2-pad-2",
+            "pad",
+            "PAD 2",
+            "Multifunction pad 2 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 40),
+        ),
+        (
+            "2",
+            "d2-pad-3",
+            "pad",
+            "PAD 3",
+            "Multifunction pad 3 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 41),
+        ),
+        (
+            "2",
+            "d2-pad-4",
+            "pad",
+            "PAD 4",
+            "Multifunction pad 4 (deck 2; pad layer selects HOT CUE/LOOP/FX)",
+            "performance",
+            Wire(1, "note", 42),
+        ),
         ("10", "ch1-ch-cue", "button", "PREVIEW", "Headphones preview deck 1", "mixer", Wire(1, "note", 24)),
         ("11", "ch1-fader", "fader", "VOLUME", "Channel 1 level", "mixer", Wire(1, "cc", 54)),
         ("7", "ch1-eq-high", "knob", "TREBLE", "Channel 1 treble EQ", "mixer", Wire(1, "cc", 55)),
@@ -264,14 +358,6 @@ def _controls() -> list[Control]:
         ("7", "ch2-eq-mid", "knob", "MID", "Channel 2 mid EQ", "mixer", Wire(1, "cc", 61)),
         ("7", "ch2-eq-low", "knob", "BASS", "Channel 2 bass EQ", "mixer", Wire(1, "cc", 62)),
         ("12", "crossfader", "crossfader", "CROSSFADER", "Blend decks 1 and 2", "mixer", Wire(1, "cc", 58)),
-        ("2", "d1-color-fx-c1-note1", "pad", "FX 1", "Colour FX filter (deck 1)", "effect", Wire(1, "note", 1)),
-        ("2", "d1-color-fx-c1-note2", "pad", "FX 2", "Colour FX space (deck 1)", "effect", Wire(1, "note", 2)),
-        ("2", "d1-color-fx-c1-note3", "pad", "FX 3", "Colour FX echo (deck 1)", "effect", Wire(1, "note", 3)),
-        ("2", "d1-color-fx-c1-note4", "pad", "FX 4", "Colour FX next (deck 1)", "effect", Wire(1, "note", 4)),
-        ("2", "d2-color-fx-c1-note27", "pad", "FX 1", "Colour FX filter (deck 2)", "effect", Wire(1, "note", 27)),
-        ("2", "d2-color-fx-c1-note28", "pad", "FX 2", "Colour FX space (deck 2)", "effect", Wire(1, "note", 28)),
-        ("2", "d2-color-fx-c1-note29", "pad", "FX 3", "Colour FX echo (deck 2)", "effect", Wire(1, "note", 29)),
-        ("2", "d2-color-fx-c1-note30", "pad", "FX 4", "Colour FX next (deck 2)", "effect", Wire(1, "note", 30)),
         ("9", "d1-load-1", "button", "LOAD A", "Load selected track on deck 1", "browse", Wire(1, "note", 25)),
         ("9", "d2-load-2", "button", "LOAD B", "Load selected track on deck 2", "browse", Wire(1, "note", 51)),
     ]
@@ -284,8 +370,8 @@ def _controls() -> list[Control]:
     extra = sorted(set(_PX) - known)
     if missing or extra:
         raise SystemExit(f"[ERROR] _PX mismatch: missing={missing} extra={extra}")
-    if len(out) != 48:
-        raise SystemExit(f"[ERROR] expected 48 controls, got {len(out)}")
+    if len(out) != 33:
+        raise SystemExit(f"[ERROR] expected 33 controls, got {len(out)}")
     return out
 
 
@@ -348,10 +434,19 @@ def build() -> dict[str, object]:
         "out_of_scope": [
             "map hints not placed as controls (24): browse arrows, pitch CC, samples, scratch, HP vol",
             "rear and front panel jacks (poster fig 19-23)",
-            "pad mode selector (fig 6) and mode display (fig 3): one physical pad bank",
+            "pad mode selector (fig 6) and mode display (fig 3): the practice pad layer selector stands in",
+            "deck 2 LOOP 8 pad layer: no published wire (note 38 is a printed duplicate), renders inert",
             "pitch faders (fig 13): incremental CC, hinted not bound",
         ],
-        "controls": [asdict(c) for c in controls],
+        "pad_layer_groups": {
+            f"d{deck}": {
+                "label": f"Deck {deck} pad layer",
+                "default_mode": "hot_cue",
+                "modes": [{"id": mode, "label": label} for mode, label in PAD_LAYER_MODES.items()],
+            }
+            for deck in (1, 2)
+        },
+        "controls": [_control_document(c) for c in controls],
     }
 
 

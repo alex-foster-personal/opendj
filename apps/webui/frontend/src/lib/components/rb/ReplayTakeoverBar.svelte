@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { ReplayLiveControl } from '$lib/rb/set-replay-takeover.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { bannerLeafSelId, bannerSelId } from './banner-selector-ids';
 
 	interface Props {
 		live: readonly ReplayLiveControl[];
@@ -10,11 +12,13 @@
 	let { live, takenOverAll, onTakeOverAll }: Props = $props();
 </script>
 
+<!-- #14559: a selector group while shown, one leaf per button, so Enter presses that button. -->
 <div
 	class="replay-takeover-root"
 	data-testid="replay-takeover-bar"
 	data-replay-taken-over-all={takenOverAll}
 	role="status"
+	use:selectorNode={{ id: bannerSelId('replay-takeover'), kind: 'group', enabled: true }}
 >
 	<span class="replay-takeover-label">REPLAY</span>
 	{#if takenOverAll}
@@ -25,14 +29,23 @@
 				{row.control} · {row.source}
 			</span>
 		{/each}
-		<button
-			type="button"
-			class="replay-takeover-all-btn"
-			data-testid="replay-takeover-all"
-			onclick={onTakeOverAll}
+		<div
+			class="sel-leaf"
+			use:selectorNode={{
+				id: bannerLeafSelId('replay-takeover', 'take-over-all'),
+				kind: 'leaf',
+				enabled: true
+			}}
 		>
-			Take over all
-		</button>
+			<button
+				type="button"
+				class="replay-takeover-all-btn"
+				data-testid="replay-takeover-all"
+				onclick={onTakeOverAll}
+			>
+				Take over all
+			</button>
+		</div>
 	{/if}
 </div>
 
@@ -61,6 +74,10 @@
 		padding: 2px 8px;
 		border-radius: 4px;
 		background: color-mix(in srgb, var(--rb-accent) 22%, transparent);
+	}
+	/* A selector leaf adds no box: the banner's flex row lays out its buttons as before. */
+	.sel-leaf {
+		display: contents;
 	}
 	.replay-takeover-all-btn {
 		padding: 2px 10px;

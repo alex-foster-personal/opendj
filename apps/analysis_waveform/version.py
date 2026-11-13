@@ -37,13 +37,18 @@ first, so filter overshoot on loud masters is not clipped in the column.
 MINOR: emitted detail and preview peak bytes change; ``DecodeProfile`` carries
 ``peak_headroom_db`` and ``PEAKS_GENERATION`` is ``tri-2``.
 
+WHAT 1.6.0 IS. The same peak bytes; the detail lane no longer clips them at
+1.0 (0 dBFS), so a column the headroom stored above full scale reaches the deck
+as its real value (up to +6 dBFS, about 2.0) instead of a pinned run (issue
+#9675). MINOR: emitted detail values change on tracks that overshoot.
+
 -Cursor
 """
 from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.5.0"
+PRODUCER_VERSION = "1.6.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name.
 PRODUCER: Literal["backfill"] = "backfill"

@@ -115,3 +115,37 @@ def test_song_position_past_the_pointer_limit_and_mixed_decks_are_refused() -> N
         song_position(4096)
     with pytest.raises(ValueError, match="one deck"):
         clocks_for_beats([_beat(0, deck="A"), _beat(1, deck="B")])
+
+
+@pytest.mark.requirement("TESTINFRA-14162")
+@pytest.mark.parametrize(
+    ("bpm", "field"),
+    [
+        (float("nan"), "bpm"),
+        (float("inf"), "bpm"),
+        (float("-inf"), "bpm"),
+    ],
+)
+def test_non_finite_bpm_refuses_scheduling(bpm: float, field: str) -> None:
+    """[if] a beat has non-finite BPM [then] clock scheduling refuses naming bpm, [else stop]."""
+    with pytest.raises(ValueError, match=field):
+        clocks_for_beats([_beat(0, bpm=bpm)])
+
+
+@pytest.mark.requirement("TESTINFRA-14162")
+def test_regressing_beat_host_times_refuse_scheduling() -> None:
+    """[if] followed-deck beats regress in host time [then] scheduling refuses with at_host_ns, [else stop]."""
+    beat_ns = 60_000_000_000 / 125.0
+    later = _beat(0, 125.0, HOST_NS + round(beat_ns))
+    earlier = _beat(1, 125.0, HOST_NS)
+    with pytest.raises(ValueError, match="at_host_ns"):
+        clocks_for_beats([later, earlier])
+
+
+@pytest.mark.requirement("TESTINFRA-14162")
+def test_stop_before_the_first_clock_keeps_stop_and_no_clocks() -> None:
+    """[if] stop is before the first generated clock [then] only Stop is returned with no clocks, [else stop]."""
+    stop_ns = HOST_NS - 1
+    schedule = schedule_followed_deck(_beats(2), starting=True, stop_at_host_ns=stop_ns)
+    assert schedule == [ClockMessage(stop_ns, bytes((STOP,)))]
+    assert not any(_is_clock(message) for message in schedule)

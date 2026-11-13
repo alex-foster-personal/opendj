@@ -187,11 +187,12 @@ export class ScheduledSteps {
 		return this.#states.get(stepId) ?? null;
 	}
 
-	/** A plain set on `key`: cancels its waiting steps and, when there were any, the param's automation. */
-	cancelPlain(key: string, param: AudioParam | null): void {
+	/** A plain set on `key`: cancels its waiting steps and, when there were any, the param's automation; true when any waited. */
+	cancelPlain(key: string, param: AudioParam | null): boolean {
 		const now = this.contextNowSec();
-		if (this.#writes.cancel(key) && param !== null && now !== null)
-			param.cancelScheduledValues(now);
+		const cancelled = this.#writes.cancel(key);
+		if (cancelled && param !== null && now !== null) param.cancelScheduledValues(now);
+		return cancelled;
 	}
 
 	/** The engine session ends (dispose or a graph rebuild): every waiting step is `lost`; finished states are kept, so a

@@ -7,8 +7,11 @@ from :mod:`apps.engine_core.app`.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sqlite3
+import tempfile
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,9 @@ from apps.shared.runtime_policy import (
 
 JOB_KIND: str = "anlz.cache_rebuild"
 WORKER_SCRIPT: str = "scripts/anlz_cache_rebuild_worker.py"
+# Payloads travel through a file, never argv: a library-wide rebuild names
+# thousands of stable IDs and one argv string that long hits E2BIG (#12155).
+PAYLOAD_DIR_NAME: str = "anlz-cache-jobs"
 
 
 class AnlzCacheRebuildPayloadError(ValueError):
@@ -139,20 +145,41 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
     crate_root = payload.get("mdt_crate_root")
     if isinstance(crate_root, str) and crate_root.strip():
         wire["mdt_crate_root"] = crate_root.strip()
+    payload_file = write_payload_file(data_dir, wire)
     return [
         sys.executable,
         str(Path(platform_paths.PROJECT_ROOT) / WORKER_SCRIPT),
-        "--payload",
-        json.dumps(wire, sort_keys=True),
+        "--payload-file",
+        str(payload_file),
     ]
+
+
+def write_payload_file(data_dir: Path, wire: dict[str, Any]) -> Path:
+    """Write the worker payload to a content-addressed file under the library state dir."""
+    text = json.dumps(wire, sort_keys=True)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+    directory = data_dir / "state" / PAYLOAD_DIR_NAME
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{digest}.json"
+    fd, tmp_name = tempfile.mkstemp(dir=str(directory), prefix=f".{target.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp_name, target)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    return target
 
 
 __all__ = [
     "JOB_KIND",
+    "PAYLOAD_DIR_NAME",
     "WORKER_SCRIPT",
     "AnlzCacheRebuildPayloadError",
     "build_argv",
     "canonical_payload",
     "list_targets",
     "parse_payload",
+    "write_payload_file",
 ]

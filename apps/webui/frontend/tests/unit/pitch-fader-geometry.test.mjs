@@ -413,7 +413,7 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 
 	it('feeds the fader meter from the same post-fader AudioNode that setFader changes', () => {
 		const graph = readFileSync(
-			fileURLToPath(new URL('../../src/lib/rb/deck-channel-graph.ts', import.meta.url)),
+			fileURLToPath(new URL('../../src/lib/rb/deck-channel-graph-core.ts', import.meta.url)),
 			'utf8'
 		);
 		const engine = readFileSync(
@@ -435,7 +435,7 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 			),
 			'utf8'
 		);
-		assert.match(artifact, /buildDeckChannelMeterHarnessGraph/);
+		assert.match(artifact, /buildDeckChannelGraphCore/);
 		assert.match(artifact, /readChannelMeterAtFaderGains/);
 		assert.match(artifact, /readChannelMeterFloorsOnNextObservation/);
 		assert.match(artifact, /issue #3529/);
@@ -470,24 +470,46 @@ describe('ChannelLevelMeter discrete live channel display', () => {
 	// click silences the whole output.
 	//
 	// Regression line: if the floor guard goes, M on a silent channel mutes the app.
-	it('a calibration capture at the meter floor is refused', () => {
+	it('a calibration capture at the meter floor is refused', async () => {
 		const stripSrc = readFileSync(
 			fileURLToPath(
 				new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)
 			),
 			'utf8'
 		);
-		// Transport state FIRST: the meter's PPM ballistics decay at ~11.8 dB/s,
-		// so for seconds after a pause the tap still reads a real-looking value
-		// on its way down. A numeric floor alone lets that be captured.
-		assert.match(stripSrc, /if \(!playing\) return;/);
-		assert.match(stripSrc, /if \(db <= METER_FLOOR_DBFS\) return;/);
-		assert.match(
-			stripSrc,
-			/import \{[^}]*\bMETER_FLOOR_DBFS\b[^}]*\} from '\$lib\/rb\/meter-math'/
-		);
-		// The refusal must be explained where the user can see it.
-		assert.match(stripSrc, /stopped or silent channel captures nothing/i);
+		// #5586 moved the capture into level-calibration-command.ts so the R/M
+		// click and the level_calibration command share one refusal. The strip
+		// must still route its click there and show the refusal in its title.
+		assert.match(stripSrc, /applyLevelCalibration\(deckId, kind, !enabled\)/);
+		assert.match(stripSrc, /\+\s*LEVEL_CALIBRATION_REFUSAL/);
+		assert.doesNotMatch(stripSrc, /setLevelCalibrationCapture/);
+
+		const cal = await loadTypeScriptModule('src/lib/rb/level-calibration-command.ts');
+		const { METER_FLOOR_DBFS } = await loadTypeScriptModule('src/lib/rb/meter-math.ts');
+		assert.match(cal.LEVEL_CALIBRATION_REFUSAL, /stopped or silent channel captures nothing/i);
+		const arm = (playing, db) => {
+			cal.setLevelCalibrationSourcesForTest({
+				playingOf: () => playing,
+				readingOf: () => ({ db, heardDb: db })
+			});
+			return cal.applyLevelCalibration(1, 'ceiling', true);
+		};
+		try {
+			// Transport state FIRST: the meter's PPM ballistics decay at ~11.8 dB/s,
+			// so for seconds after a pause the tap still reads a real-looking value
+			// on its way down. A numeric floor alone lets that be captured.
+			const stopped = arm(false, -6);
+			assert.equal(stopped.ok, false, 'a stopped deck mid-decay was captured');
+			assert.ok(stopped.reason.includes(cal.LEVEL_CALIBRATION_REFUSAL), stopped.reason);
+			// A playing deck at the floor is refused too: a -60 dBFS ceiling mutes the app.
+			const floor = arm(true, METER_FLOOR_DBFS);
+			assert.equal(floor.ok, false, 'a playing deck at the meter floor was captured');
+			assert.ok(floor.reason.includes(cal.LEVEL_CALIBRATION_REFUSAL), floor.reason);
+			// Just above the floor on a playing deck captures, so the floor is what refused.
+			assert.deepEqual(arm(true, METER_FLOOR_DBFS + 1), { ok: true });
+		} finally {
+			cal.setLevelCalibrationSourcesForTest(null);
+		}
 	});
 
 	it('accepts exactly the deck identifier type supported by the meter API', () => {

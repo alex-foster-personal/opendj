@@ -181,15 +181,107 @@ test('W/A/S/D map to the arrow keys; modifiers jump to the ends; never wraps', (
 	assert.equal(bs.nextNavIndex(2, 5, bs.navArrowKey('S'), true), 4);
 	assert.equal(bs.nextNavIndex(2, 5, bs.navArrowKey('A'), true), 0);
 	assert.equal(bs.nextNavIndex(-1, 5, 'ArrowDown', false), 0);
-	// A focused text field wins: the component bails on isTextEntryTarget first.
+	// The component routes every nav keydown through moveFocusAmong (exercised below).
 	const comp = readFileSync(
 		new URL('../../src/lib/shell/BackstageNav.svelte', import.meta.url),
 		'utf8'
 	);
 	assert.match(
 		comp,
-		/if \(isTextEntryTarget\(event\.target\)\) return;\s*const arrow = navArrowKey/
+		/moveFocusAmong\(\s*event,\s*Array\.from\(root\.querySelectorAll<HTMLAnchorElement>\('a\[data-nav-item\]'\)\),\s*document\.activeElement\s*\)/
 	);
+});
+
+/** Fake focusable links for the real non-inert nav items, plus a key event recorder. */
+function navHarness() {
+	const ids = allItems(bs.backstageNav(true))
+		.filter((i) => i.href !== null)
+		.map((i) => i.id);
+	const state = { focused: null };
+	const links = ids.map((id) => ({
+		id,
+		focus() {
+			state.focused = this;
+		}
+	}));
+	/** Press `key` on `target` with `mods`; returns whether focus moved and whether default was prevented. */
+	const press = (key, active, mods = {}, target = active) => {
+		let prevented = false;
+		const event = {
+			key,
+			target,
+			shiftKey: false,
+			ctrlKey: false,
+			altKey: false,
+			metaKey: false,
+			...mods,
+			preventDefault() {
+				prevented = true;
+			}
+		};
+		state.focused = active;
+		const moved = bs.moveFocusAmong(event, links, active);
+		return { moved, prevented, to: state.focused?.id ?? null };
+	};
+	return { links, press };
+}
+
+test('W/A on a backstage link step back one and stop at the first link', () => {
+	const { links, press } = navHarness();
+	for (const key of ['w', 'W', 'a', 'A']) {
+		assert.deepEqual(press(key, links[3]), { moved: true, prevented: true, to: links[2].id }, key);
+		assert.deepEqual(press(key, links[0]), { moved: true, prevented: true, to: links[0].id }, key);
+	}
+	assert.equal(links[0].id, 'gig');
+});
+
+test('S/D on a backstage link step forward one and stop at the last link', () => {
+	const { links, press } = navHarness();
+	const last = links.length - 1;
+	for (const key of ['s', 'S', 'd', 'D']) {
+		assert.deepEqual(press(key, links[3]), { moved: true, prevented: true, to: links[4].id }, key);
+		assert.deepEqual(
+			press(key, links[last]),
+			{ moved: true, prevented: true, to: links[last].id },
+			key
+		);
+	}
+	assert.equal(links[last].id, 'progress');
+	// Inert items are never visited: stepping from Library jumps the unbuilt Generate items.
+	const fromLib = links.findIndex((l) => l.id === 'dedup');
+	assert.equal(press('s', links[fromLib]).to, 'analysis');
+});
+
+test('a held modifier jumps W/A to the first link and S/D to the last', () => {
+	const { links, press } = navHarness();
+	const last = links[links.length - 1].id;
+	for (const mod of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey']) {
+		for (const key of ['w', 'a']) assert.equal(press(key, links[5], { [mod]: true }).to, 'gig');
+		for (const key of ['s', 'd']) assert.equal(press(key, links[5], { [mod]: true }).to, last);
+	}
+});
+
+test('a focused text field keeps W/A/S/D; other keys are ignored', () => {
+	const { links, press } = navHarness();
+	const fields = [
+		{ tagName: 'INPUT', type: 'text' },
+		{ tagName: 'INPUT', type: 'search' },
+		{ tagName: 'TEXTAREA' },
+		{ tagName: 'DIV', isContentEditable: true },
+		{ tagName: 'DIV', getAttribute: (n) => (n === 'role' ? 'textbox' : null) }
+	];
+	for (const field of fields) {
+		for (const key of ['w', 'a', 's', 'd', 'ArrowDown']) {
+			const r = press(key, links[3], {}, field);
+			assert.equal(r.moved, false, `${field.tagName} ${key}`);
+			assert.equal(r.prevented, false, `${field.tagName} ${key}`);
+			assert.equal(r.to, links[3].id);
+		}
+	}
+	assert.deepEqual(press('x', links[3]), { moved: false, prevented: false, to: links[3].id });
+	// Nothing focused yet: S lands on the first link, W on the last.
+	assert.equal(press('s', null).to, 'gig');
+	assert.equal(press('w', null).to, 'progress');
 });
 
 test('/admin?p=<id> picks one panel; unknown ids are refused; absent is the old page', () => {

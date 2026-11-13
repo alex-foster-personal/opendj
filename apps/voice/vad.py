@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from apps.voice.settings import coalesce_env
+from apps.voice.settings import coalesce_env, env_float, env_int
 
 FRAME_MS: int = 30
 # Default silence tail: 300 ms (configurable via $VOICE_VAD_TAIL_MS).
@@ -143,15 +143,7 @@ def make_vad(env: dict[str, str] | None = None) -> Vad:
     env = coalesce_env(env)
     backend = (env.get("VAD_BACKEND") or "webrtc").lower()
     if backend == "amplitude":
-        try:
-            threshold = float(env.get("VOICE_VAD_RMS_THRESHOLD", 300.0))
-        except ValueError:
-            threshold = 300.0
-        return AmplitudeVad(rms_threshold=threshold)
+        return AmplitudeVad(rms_threshold=env_float(env, "VOICE_VAD_RMS_THRESHOLD", 300.0))
     if backend == "webrtc":
-        try:
-            mode = int(env.get("VOICE_VAD_MODE", 2))
-        except ValueError:
-            mode = 2
-        return WebRtcVad(mode=mode)
+        return WebRtcVad(mode=env_int(env, "VOICE_VAD_MODE", 2))
     raise ValueError(f"Unknown VAD_BACKEND={backend!r}")

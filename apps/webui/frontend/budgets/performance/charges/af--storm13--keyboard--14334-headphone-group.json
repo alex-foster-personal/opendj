@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483213,
+  "measured_with_pr": 483382,
+  "sha": "f65bb94f34",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--14334-headphone-group grows the performance surface; measured +169 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

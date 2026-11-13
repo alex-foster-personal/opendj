@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483100,
+  "measured_with_pr": 483273,
+  "sha": "24a2a564f5",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--13703-waveform-library-nodes grows the performance surface; measured +173 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

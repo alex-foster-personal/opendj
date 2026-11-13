@@ -98,11 +98,15 @@ def test_build_fts_query_strips_embedded_quotes() -> None:
     assert search_index.build_fts_query('"dua"') == '"dua"*'
 
 
+@pytest.mark.requirement("SEARCH-NAV-14754")
 def test_build_fts_query_nul_only_returns_none() -> None:
+    """[if] build_fts_query gets NUL-only [then] None, [else stop]."""
     assert search_index.build_fts_query("\x00") is None
 
 
+@pytest.mark.requirement("SEARCH-NAV-14754")
 def test_build_fts_query_strips_nul_without_sqlite_error(fixture_db: Path) -> None:
+    """[if] build_fts_query gets mixed NUL [then] strip and search ok, [else stop]."""
     assert search_index.build_fts_query("a\x00b") is not None
     search_index.search(fixture_db, "a\x00b", limit=10)
 
@@ -128,7 +132,7 @@ def test_search_indexes_album_and_rebuilds_stale_schema_version(fixture_db: Path
         schema = int(conn.execute("SELECT schema FROM search_meta WHERE id = 1").fetchone()[0])
     finally:
         conn.close()
-    assert schema == 5
+    assert schema == 6
 
 
 def test_search_matches_title_prefix(fixture_db: Path) -> None:

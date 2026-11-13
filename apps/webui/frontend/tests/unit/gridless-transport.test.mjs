@@ -239,9 +239,16 @@ test('a sync failure lands on the deck as sync_error, which the deck renders', (
 		'if the catch stops stamping sync_error then a refused sync is visible only in ' +
 			'command_error, which is exactly the burial this change removes'
 	);
+	// The banner text is built in deck-effects (deckControlError), which the deck renders.
 	const deckSrc = readFileSync(`${SRC}/lib/components/rb/Deck.svelte`, 'utf8');
+	const effectsSrc = readFileSync(`${SRC}/lib/rb/deck-effects.svelte.ts`, 'utf8');
+	const controlErrorBody = effectsSrc.match(
+		/export function deckControlError\(deckId: DeckId\): string \| null \{([\s\S]*?)\n\}/
+	);
+	assert.ok(controlErrorBody, 'deckControlError not found in deck-effects.svelte.ts');
 	assert.ok(
-		deckSrc.includes('deck.sync_error'),
+		controlErrorBody[1].includes('deck.sync_error') &&
+			/const controlError[^;]*\$derived\(deckControlError\(deckId\)\);/.test(deckSrc),
 		'if Deck.svelte stops reading sync_error then the engine has nowhere visible to report'
 	);
 });

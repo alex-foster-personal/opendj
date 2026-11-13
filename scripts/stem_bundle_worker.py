@@ -8,6 +8,9 @@
 #   "soundfile>=0.13",
 #   "numpy<2",
 #   "tinytag>=2.3.2,<3",
+#   # apps.stems.artifacts, reached through apps.cloud.stem_index_sync after publish
+#   # (STEM-12745); same range as pyproject.toml.
+#   "pydantic>=2.0,<3",
 # ]
 # ///
 """Standalone htdemucs 4-stem bundle writer for the webui stems contract.

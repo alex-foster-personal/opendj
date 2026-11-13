@@ -140,3 +140,52 @@ def test_a_status_read_does_not_restart_a_failed_prepare(app: FastAPI, monkeypat
         "control: a plain call still retries"
     )
     assert started == ["prepare", "prepare"]
+
+
+PLAN = "/dj/transition/plan"
+
+
+def _looped_mirror(**loops: bool) -> dict[str, Any]:
+    """The mirror with trk-in cued on deck 2 and each named deck's loop (``d1``, ``d2``) engaged or released."""
+    mirror = _mirror()
+    mirror["decks"]["2"]["stable_id"] = "trk-in"
+    for name, engaged in loops.items():
+        mirror["decks"][name.removeprefix("d")]["loop"] = {"in_ms": 1000.0, "out_ms": 2875.0, "engaged": engaged}
+    return mirror
+
+
+@pytest.mark.requirement("AGENT-14710")
+def test_an_engaged_outgoing_loop_is_refused_before_planning(app: FastAPI) -> None:
+    """[if] the outgoing deck reports an engaged loop [then] no order is armed and the reason names that deck, [else stop]."""
+    app.state.ui_mirror = _looped_mirror(d1=True)
+    answer = TestClient(app).post(PLAN, json={"out_deck": 1, "in_deck": 2}).json()
+    assert answer["order"] is None, "if a looped outgoing deck gets an order then the plan waits forever, broken"
+    assert "outgoing deck 1 has an engaged loop" in answer["reason"], (
+        f"if the loop reason is lost then broken: {answer}"
+    )
+    assert answer["considered"] == 0, (
+        "if the planner ran before the refusal then the loop was not checked first, broken"
+    )
+
+
+@pytest.mark.requirement("AGENT-14710")
+def test_an_engaged_incoming_loop_is_refused_before_planning(app: FastAPI) -> None:
+    """[if] the incoming deck reports an engaged loop [then] no order is armed and the reason names that deck, [else stop]."""
+    app.state.ui_mirror = _looped_mirror(d2=True)
+    answer = TestClient(app).post(PLAN, json={"out_deck": 1, "in_deck": 2}).json()
+    assert answer["order"] is None, "if a looped incoming deck gets an order then it repeats loop bars, broken"
+    assert "incoming deck 2 has an engaged loop" in answer["reason"], (
+        f"if the loop reason is lost then broken: {answer}"
+    )
+    assert answer["considered"] == 0, (
+        "if the planner ran before the refusal then the loop was not checked first, broken"
+    )
+
+
+@pytest.mark.requirement("AGENT-14710")
+def test_released_loops_on_both_decks_still_plan(app: FastAPI) -> None:
+    """[if] both decks report released loops [then] the press plans an order as usual, [else stop]."""
+    app.state.ui_mirror = _looped_mirror(d1=False, d2=False)
+    answer = TestClient(app).post(PLAN, json={"out_deck": 1, "in_deck": 2}).json()
+    assert answer["order"] is not None, f"if a released loop blocks the press then broken: {answer['reason']}"
+    assert "engaged loop" not in answer["reason"]

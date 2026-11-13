@@ -1,0 +1,19 @@
+{
+  "method": "POST",
+  "path": "/tracks/search",
+  "status": 200,
+  "headers": {
+    "x-ratelimit-limit": "50",
+    "x-ratelimit-remaining": "48",
+    "retry-after": "0"
+  },
+  "body": {
+    "tracks": [
+      {
+        "id": "es-trk-semantic-1",
+        "title": "Neon Drive",
+        "score": 0.91
+      }
+    ]
+  }
+}

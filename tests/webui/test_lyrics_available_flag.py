@@ -94,10 +94,12 @@ def test_the_flag_never_reads_the_directory(cache: Path, tmp_path: Path, monkeyp
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("the lyrics flag listed the cache directory")
 
-    monkeypatch.setattr(os, "scandir", refuse)
-    monkeypatch.setattr(os, "listdir", refuse)
-    assert flags(tmp_path, "has-lyrics") == {"has-lyrics": True}
-    assert flags(tmp_path, "has-lyrics", "no-lyrics")["has-lyrics"] is True
+    # Scoped so pytest's tmp_path cleanup (os.scandir in rmtree) runs unpatched at teardown.
+    with monkeypatch.context() as m:
+        m.setattr(os, "scandir", refuse)
+        m.setattr(os, "listdir", refuse)
+        assert flags(tmp_path, "has-lyrics") == {"has-lyrics": True}
+        assert flags(tmp_path, "has-lyrics", "no-lyrics")["has-lyrics"] is True
 
 
 def test_letter_case_follows_the_volume_as_the_lyrics_read_does(cache: Path, tmp_path: Path) -> None:

@@ -213,8 +213,8 @@ def _summarize_operator(items: list[dict[str, Any]], fleet_issues: frozenset[Iss
     return PinOperatorBreakdownOut.model_validate(counts)
 
 
-def _load_fleet_issues() -> tuple[frozenset[IssueKey], FleetCorrelation]:
-    progress_file = progress_module.PROGRESS_FILE
+def _load_fleet_issues(request: Request | None = None) -> tuple[frozenset[IssueKey], FleetCorrelation]:
+    progress_file = progress_module.progress_file_for_request(request)
     if not progress_file.is_file():
         return frozenset(), "ledger_missing"
     try:
@@ -237,7 +237,7 @@ def _load_fleet_issues() -> tuple[frozenset[IssueKey], FleetCorrelation]:
 @router.get("/comments/summary", response_model=CommentSummaryOut)
 def comments_summary(request: Request) -> CommentSummaryOut:
     items = _load(_dir(request) / _COMMENTS_FILE, "comments")
-    fleet_issues, fleet_correlation = _load_fleet_issues()
+    fleet_issues, fleet_correlation = _load_fleet_issues(request)
     return CommentSummaryOut(
         operator=_summarize_operator(items, fleet_issues),
         lifecycle=_summarize_lifecycle(items),

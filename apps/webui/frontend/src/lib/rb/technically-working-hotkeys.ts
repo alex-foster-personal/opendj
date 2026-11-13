@@ -55,7 +55,9 @@ function _isModChord(e: KeyboardEvent, key: string): boolean {
 }
 
 function _isOptOnly(e: KeyboardEvent): boolean {
-	return e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'Alt';
+	return (
+		e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'Alt' && e.code !== 'AltRight'
+	);
 }
 
 function _pointerInRegion(edge: EdgeRegion, x: number, y: number): boolean {

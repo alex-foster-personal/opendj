@@ -10,6 +10,7 @@ and FILTER.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections.abc import Callable, Sequence
@@ -74,6 +75,20 @@ def number_value(key: str, raw: str) -> float:
     if not math.isfinite(parsed):
         raise ValueError(f"{key} must be a finite number, got {raw!r}")
     return parsed
+
+
+def fraction_enum_value(choices: Sequence[float]) -> Callable[[str, str], Any]:
+    """A number written as a decimal or ``a/b`` that lands within 1e-9 of one of ``choices`` (returns the choice)."""
+
+    def parse(key: str, raw: str) -> Any:
+        numerator, slash, denominator = raw.partition("/")
+        parsed = number_value(key, numerator) / number_value(key, denominator) if slash else number_value(key, raw)
+        for choice in choices:
+            if abs(parsed - choice) <= 1e-9:
+                return choice
+        raise ValueError(f"{key} must be one of {'|'.join(f'{choice:g}' for choice in choices)}, got {raw!r}")
+
+    return parse
 
 
 def beat_jump_beats_value(key: str, raw: str) -> int | float:
@@ -256,6 +271,17 @@ def text_value(key: str, raw: str) -> str:
     if raw == "":
         raise ValueError(f"{key} must not be empty")
     return raw
+
+
+def json_object_value(key: str, raw: str) -> dict[str, Any]:
+    """One JSON object token; the browser validates its fields (issue #10043 library_filter_set)."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{key} must be a JSON object, got {raw!r}: {error.msg}") from None
+    if not isinstance(value, dict):
+        raise ValueError(f"{key} must be a JSON object, got {raw!r}")
+    return value
 
 
 def bool_value(key: str, raw: str) -> bool:

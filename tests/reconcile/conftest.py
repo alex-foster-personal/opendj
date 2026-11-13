@@ -89,3 +89,5 @@ _REAL_TRACKS: int | None = _real_track_count(REAL_STATE_DB)
 # empty library; the row-dependent tests need real rows.
 HAS_REAL_SCHEMA: bool = _REAL_TRACKS is not None
 HAS_REAL_LIBRARY: bool = bool(_REAL_TRACKS)
+
+from tests.reconcile.relink_support import ambient_temp_neutral  # noqa: E402,F401

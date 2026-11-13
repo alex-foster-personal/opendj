@@ -100,6 +100,14 @@ helper_carried_paths:
   - "apps/cloud/stem_index.py"
   - "apps/cloud/stem_index_sync.py"
   - "apps/cloud/stem_upload_queue.py"
+  - "apps/genre_infer/__init__.py"
+  - "apps/genre_infer/claim_envelope.py"
+  - "apps/genre_infer/keystore.py"
+  - "apps/genre_infer/probability.py"
+  - "apps/genre_infer/providers.py"
+  - "apps/genre_infer/segment_claims.py"
+  - "apps/genre_infer/tag_map.py"
+  - "apps/genre_infer/taxonomy.py"
   - "apps/loudness/__init__.py"
   - "apps/loudness/scan.py"
   - "apps/shared/__init__.py"
@@ -163,11 +171,13 @@ helper_carried_paths:
   - "apps/shared/stable_id.py"
   - "apps/shared/state/__init__.py"
   - "apps/shared/state/agents_md_cache.py"
+  - "apps/shared/state/analysis_queue_ids.py"
   - "apps/shared/state/analysis_range.py"
   - "apps/shared/state/analysis_stale.py"
   - "apps/shared/state/availability_write.py"
   - "apps/shared/state/db.py"
   - "apps/shared/state/events.py"
+  - "apps/shared/state/grid_lock.py"
   - "apps/shared/state/ids.py"
   - "apps/shared/state/ingest/__init__.py"
   - "apps/shared/state/ingest/path_collisions.py"
@@ -231,6 +241,7 @@ helper_carried_paths:
   - "apps/smartlists/evaluator.py"
   - "apps/smartlists/order_by.py"
   - "apps/smartlists/repo.py"
+  - "apps/smartlists/text_fields.py"
   - "apps/stems/__init__.py"
   - "apps/stems/artifact_types.py"
   - "apps/stems/artifacts.py"
@@ -243,7 +254,11 @@ helper_carried_paths:
   - "apps/stems/mp3_scan.py"
   - "apps/stems/mp3_xing.py"
   - "apps/stems/recompress.py"
+  - "apps/stems/recompress_classify.py"
   - "apps/stems/recompress_cli.py"
+  - "apps/stems/recompress_encode.py"
+  - "apps/stems/recompress_paths.py"
+  - "apps/stems/recompress_snapshot.py"
   - "apps/stems/stem_encode.py"
   - "apps/stems/stem_size_policy.py"
   - "apps/stems/tiers.py"
@@ -261,6 +276,9 @@ helper_carried_paths:
   - "apps/sync_hub/protocol_common.py"
   - "apps/sync_hub/quarantine_log.py"
   - "apps/sync_hub/sync_set.py"
+  - "apps/sync_hub/sync_set_held.py"
+  - "apps/sync_hub/sync_set_identity.py"
+  - "apps/sync_hub/sync_set_reasons.py"
   - "tests/analysis/"
 
 # Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
@@ -269,6 +287,8 @@ always:
   - "tests/analysis_contract/"
   - "tests/controller_probe/"
   - "tests/data/"
+  # tools/deck-diagrams has no scope of its own; its catalog script tests sit here beside tests/skins/ (#13850).
+  - "tests/deck_diagrams/"
   - "tests/docs/"
   - "tests/integration/"
   - "tests/live/"
@@ -355,7 +375,7 @@ scopes:
     # B2B sync between laptops: the Link relay, its clock estimator and the continuity SLO scorer.
     sources: ["apps/b2b_sync/"]
     tests: ["tests/b2b_sync/"]
-    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "opendj_cli", "osc", "parity", "perf", "play_analytics", "plugins", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
+    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "opendj_cli", "osc", "parity", "perf", "play_analytics", "plugins", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
   - name: b2b_transport
     # Internet B2B: the relay client and door channel, and the relay Worker itself. The
     # Python suite runs the Worker in workerd (wrangler dev), so a relay change selects it.
@@ -391,7 +411,7 @@ scopes:
   - name: engine_core
     sources: ["apps/engine_core/"]
     tests: ["tests/engine_core/"]
-    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "opendj_cli", "osc", "parity", "perf", "play_analytics", "plugins", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
+    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "opendj_cli", "osc", "parity", "perf", "play_analytics", "plugins", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
   - name: entitlements
     sources: ["apps/entitlements/"]
     tests: ["tests/entitlements/"]
@@ -442,7 +462,7 @@ scopes:
   - name: opendj_cli
     sources: ["apps/opendj_cli/"]
     tests: ["tests/opendj_cli/"]
-    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "osc", "parity", "perf", "play_analytics", "plugins", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
+    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "osc", "parity", "perf", "play_analytics", "plugins", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
   - name: opendj_pins
     sources: ["apps/opendj_pins/"]
     tests: ["tests/opendj_pins/"]
@@ -467,7 +487,7 @@ scopes:
   - name: plugins
     sources: ["apps/plugins/"]
     tests: ["tests/plugins/"]
-    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "opendj_cli", "osc", "parity", "perf", "play_analytics", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
+    dependents: ["ableton_link", "agentic_testing", "ai_gateway_admin", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "autodj", "b2b_session", "bench_tryer_calibration", "cloud", "cloudsync", "database", "desktop_mcp", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "lighting", "lyrics", "mik", "now_playing", "onboarding", "opendj_cli", "osc", "parity", "perf", "play_analytics", "quality", "rekordbox_analyse", "scripts", "sets", "shared", "smartlists", "standalone", "stems", "sync_hub", "transition_score", "vocals", "webui"]
   - name: reconcile
     sources: ["apps/reconcile/"]
     tests: ["tests/reconcile/"]
@@ -601,7 +621,7 @@ scopes:
               ".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE.md",
               ".github/FUNDING.yml"]
     tests: []
-    dependents: ["agentic_testing", "analysis_bench", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "sync", "webui"]
+    dependents: ["agentic_testing", "analysis_bench", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "genre_infer", "lyrics", "mik", "open_dj", "perf", "plugins", "quality", "scripts", "shared", "stems", "sync", "webui"]
     mentions: ["docs", "specs", "app_docs", ".planning", "blog", "research",
                "CHANGELOG.md", "PARITY-TODO.md", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md",
                "ISSUE_TEMPLATE", "PULL_REQUEST_TEMPLATE", "FUNDING.yml"]
@@ -634,7 +654,7 @@ scopes:
     # the mention reader keeps a test that spawns or reads it by name as a consumer.
     mentions: ["scripts/perf", "scripts.perf"]
     tests: ["tests/perf/"]
-    dependents: ["quality", "scripts", "webui"]
+    dependents: ["cloudsync", "quality", "scripts", "webui"]
   - name: quality
     sources: ["ops/quality/", "scripts/quality/"]
     # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;

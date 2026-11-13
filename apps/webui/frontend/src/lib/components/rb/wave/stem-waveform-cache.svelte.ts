@@ -9,8 +9,7 @@ import { fetchRbJson, RbApiError } from '$lib/rb/api-rb-json';
 import { registerCapsConsumer } from '$lib/rb/cache-caps-registry';
 import { refuseStickRead } from '$lib/rb/track-source';
 import {
-	applyStemWaveformCaps,
-	bindStemWaveformCapCache,
+	applyStemWaveformCapsToCache,
 	nextStemWaveformTouch,
 	retouchStemWaveformReadyEntry
 } from './stem-waveform-cache-caps';
@@ -44,17 +43,29 @@ export type StemWaveformEntry =
 	| { status: 'ready'; envelope: readonly number[]; touched: number }
 	| { status: 'error'; code: string };
 
-const _cache = $state<Record<string, StemWaveformEntry>>({});
-bindStemWaveformCapCache(_cache);
-registerCapsConsumer('stem-waveform', applyStemWaveformCaps);
+// $state.raw (issue #10237): entries are replaced whole, never edited in
+// place, so the store holds the published objects as-is (no deep proxy).
+let _cache = $state.raw<Record<string, StemWaveformEntry>>({});
+
+function _put(key: string, entry: StemWaveformEntry): void {
+	_cache = { ..._cache, [key]: entry };
+}
+
+/** Evict on a copy, then publish the copy as the new whole value. */
+function _applyCaps(): void {
+	const next = { ..._cache };
+	applyStemWaveformCapsToCache(next, (entry) => entry.status === 'ready');
+	_cache = next;
+}
+registerCapsConsumer('stem-waveform', _applyCaps);
 
 function _cacheKey(stable_id: string, part: string): string {
 	return `${stable_id}:${part}`;
 }
 
 function _publishReady(key: string, envelope: readonly number[]): void {
-	_cache[key] = { status: 'ready', envelope, touched: nextStemWaveformTouch() };
-	applyStemWaveformCaps();
+	_put(key, { status: 'ready', envelope, touched: nextStemWaveformTouch() });
+	_applyCaps();
 }
 
 /** Untracked: callers run this inside `$effect`, and the LRU retouch below
@@ -68,25 +79,32 @@ function _ensureStemWaveform(stable_id: string, part: string): void {
 	const key = _cacheKey(stable_id, part);
 	const existing = _cache[key];
 	if (existing !== undefined) {
-		if (existing.status === 'ready') retouchStemWaveformReadyEntry(_cache, key);
+		if (existing.status === 'ready') {
+			const next = { ..._cache };
+			retouchStemWaveformReadyEntry(next, key);
+			_cache = next;
+		}
 		return;
 	}
-	_cache[key] = { status: 'loading' };
+	_put(key, { status: 'loading' });
 	void fetchStemWaveform(stable_id, part).then(
 		(data) => {
 			_publishReady(key, data.envelope);
 		},
 		(err: unknown) => {
 			if (err instanceof RbApiError) {
-				_cache[key] = { status: 'error', code: err.code };
+				_put(key, { status: 'error', code: err.code });
 				return;
 			}
-			_cache[key] = { status: 'error', code: 'FETCH_FAILED' };
+			_put(key, { status: 'error', code: 'FETCH_FAILED' });
 			throw err;
 		}
 	);
 }
 
-export function getStemWaveformEntry(stable_id: string, part: string): StemWaveformEntry | undefined {
+export function getStemWaveformEntry(
+	stable_id: string,
+	part: string
+): StemWaveformEntry | undefined {
 	return _cache[_cacheKey(stable_id, part)];
 }

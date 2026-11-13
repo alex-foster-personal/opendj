@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 1052,
+  "measured_with_pr": 1193,
+  "sha": "64858fe05e",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--cloud-12954--test-playlist-management-cover-loading-e--work grows the playlists-grid surface; measured +141 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

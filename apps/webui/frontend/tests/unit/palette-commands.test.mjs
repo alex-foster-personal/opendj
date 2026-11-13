@@ -199,7 +199,7 @@ test('paletteCommandRows respects target deck and query rules', () => {
 	const paused = actions.paletteCommandRows(ctx, 'play');
 	const playRow = paused.find((r) => r.label === 'Play/pause deck 2');
 	assert.ok(playRow);
-	assert.equal(playRow.hint, 'Space');
+	assert.equal(playRow.hint, 'Space / Cmd+Space');
 	assert.ok(playRow.id.endsWith('=true'));
 	const playingCtx = PALETTE_DECKS(
 		2,

@@ -89,9 +89,10 @@ test('root layout mounts the stage from the lazy loader, never a static import',
 	assert.match(layout, /prefetchStageOverlay\(reportStageOverlayLoadFailure\)/);
 });
 
-test('/performance takes the stage chunk with its own first paint', () => {
+test('/performance warms the stage chunk through prefetchStageOverlay, not a static import', () => {
 	const page = read('src/routes/performance/+page.svelte');
-	assert.match(page, /import '\$lib\/components\/lyrics\/StageOverlay\.svelte';/);
+	assert.doesNotMatch(page, /import '\$lib\/components\/lyrics\/StageOverlay\.svelte';/);
+	assert.match(page, /prefetchStageOverlay\(/);
 });
 
 test('if the chunk fails [then] it is reported and the stage closes', async () => {

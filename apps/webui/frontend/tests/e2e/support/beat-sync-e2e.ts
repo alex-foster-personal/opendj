@@ -82,9 +82,9 @@ export async function ownGridTrack(request: APIRequestContext, title: string): P
 	};
 }
 
-export async function gotoPerformance(page: Page): Promise<void> {
+export async function gotoPerformance(page: Page, search = ''): Promise<void> {
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.goto(`${UI_BASE}/performance`);
+	await page.goto(`${UI_BASE}/performance${search}`);
 	await waitForIpc(page);
 	await dispatch(page, { type: 'master_volume', value: 0.1 });
 }

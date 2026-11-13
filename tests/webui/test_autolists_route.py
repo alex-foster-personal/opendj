@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -183,6 +184,86 @@ def test_query_non_numeric_bpm_422(client: TestClient) -> None:
     detail = res.json()["detail"]
     assert detail["code"] == "AUTOLIST_SELECTION_INVALID"
     assert detail["field"] == "selection.bpm"
+
+
+def _query_selection(client: TestClient, *, genre: list[str], rating: list[str], bpm: list[str]) -> httpx.Response:
+    """POST one autolist selection to the query route and return the response."""
+    return client.post(
+        "/api/v1/autolists/query",
+        json={"selection": {"genre": genre, "rating": rating, "bpm": bpm}},
+    )
+
+
+def test_query_valid_rating_bucket_returns_matching_page(client: TestClient) -> None:
+    """Issue #13236: a known rating bucket id returns 200 with only its tracks."""
+    res = _query_selection(client, genre=[], rating=["5"], bpm=[])
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total"] == 1
+    assert body["items"] == ["al-001"]
+
+
+def test_query_valid_bpm_bucket_returns_matching_page(client: TestClient) -> None:
+    """Issue #13236: a known bpm range bucket id returns 200 with its tracks."""
+    res = _query_selection(client, genre=[], rating=[], bpm=["120-129"])
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total"] == 2
+    assert sorted(body["items"]) == ["al-001", "al-002"]
+
+
+def test_query_valid_bpm_sentinel_buckets_return_200(client: TestClient) -> None:
+    """Issue #13236: the lt60, ge200 and unspecified bpm sentinels are accepted."""
+    res = _query_selection(client, genre=[], rating=[], bpm=["lt60", "ge200", "unspecified"])
+    assert res.status_code == 200
+    assert res.json()["total"] == 0
+
+
+def test_query_arbitrary_genre_bucket_is_not_rejected(client: TestClient) -> None:
+    """Issue #13236: genre ids are free strings, so an unmatched one is 200, not 422."""
+    res = _query_selection(client, genre=["advtest"], rating=[], bpm=[])
+    assert res.status_code == 200
+    assert res.json()["total"] == 0
+
+
+@pytest.mark.parametrize("bad_id", ["abc-def", "12x-130", "-"])
+def test_query_malformed_bpm_range_422(client: TestClient, bad_id: str) -> None:
+    """Issue #13236: a bpm range id with non-numeric bounds is a 422 client error."""
+    res = _query_selection(client, genre=[], rating=[], bpm=[bad_id])
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert detail["code"] == "AUTOLIST_SELECTION_INVALID"
+    assert detail["field"] == "selection.bpm"
+    assert bad_id in detail["message"]
+
+
+@pytest.mark.parametrize("unknown_id", ["0", "6", "9", "-1", "4.5"])
+def test_query_unknown_rating_bucket_422(client: TestClient, unknown_id: str) -> None:
+    """Issue #13236: a well-formed but unknown rating bucket id is a 422, not a 500."""
+    res = _query_selection(client, genre=[], rating=[unknown_id], bpm=[])
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert detail["code"] == "AUTOLIST_SELECTION_INVALID"
+    assert detail["field"] == "selection.rating"
+    assert unknown_id in detail["message"]
+
+
+@pytest.mark.parametrize("unknown_id", ["65-74", "200-209", "50-59", "120"])
+def test_query_unknown_bpm_bucket_422(client: TestClient, unknown_id: str) -> None:
+    """Issue #13236: a well-formed but unknown bpm bucket id is a 422, not a 500."""
+    res = _query_selection(client, genre=[], rating=[], bpm=[unknown_id])
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert detail["code"] == "AUTOLIST_SELECTION_INVALID"
+    assert detail["field"] == "selection.bpm"
+    assert unknown_id in detail["message"]
+
+
+def test_query_invalid_bucket_among_valid_ones_still_422(client: TestClient) -> None:
+    """Issue #13236: one bad id rejects the whole query even beside valid ids."""
+    res = _query_selection(client, genre=["House"], rating=["5", "nope"], bpm=["120-129"])
+    assert res.status_code == 422
+    assert res.json()["detail"]["field"] == "selection.rating"
 
 
 def test_index_compact_keys(client: TestClient) -> None:

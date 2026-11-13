@@ -21,7 +21,7 @@ const chip =
 	read('../../src/lib/components/CloudSyncStatusChipView.svelte');
 
 function lessViewTopbarRule() {
-	const m = topbar.match(/((?:\t\.rb-topbar\.less-view [^\n]*,\n)+\t\.rb-topbar\.less-view [^\n]*\{ display: none; \})/);
+	const m = topbar.match(/((?:\t\.rb-topbar\.less-view [^\n]*,\n)+\t\.rb-topbar\.less-view [^\n]*\{\s*display: none;\s*\})/);
 	assert.ok(m, 'TopBar must carry one .rb-topbar.less-view display:none rule');
 	return m[1];
 }

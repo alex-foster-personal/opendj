@@ -21,6 +21,7 @@ tests/compatint
 tests/controller_probe
 tests/controllers
 tests/database
+tests/deck_diagrams
 tests/dedup
 (private path)
 tests/engine_core
@@ -66,8 +67,21 @@ tests/test_analysis_grid_quality_cli.py
 tests/test_analysis_run_classification.py
 tests/test_analysis_source.py
 tests/test_apply_analysis.py
+tests/test_apply_analysis_cli.py
+tests/test_apply_analysis_live_db_paths.py
+tests/test_apply_analysis_live_rails.py
+tests/test_apply_analysis_pqtz_live.py
+tests/test_apply_analysis_verify_scalars.py
+tests/test_apply_analysis_writeback_dry_run.py
+tests/test_apply_analysis_writeback_live.py
 tests/test_apply_cues.py
 tests/test_apply_ratings.py
+tests/test_apply_ratings_batch_commit.py
+tests/test_apply_ratings_djay_reversal.py
+tests/test_apply_ratings_duplicate_targets.py
+tests/test_apply_ratings_exit_code.py
+tests/test_apply_ratings_field_guard.py
+tests/test_apply_ratings_prefer.py
 tests/test_ci_cmdk_pick_race_gate.py
 tests/test_ci_cmdk_preview_cue_gate.py
 tests/test_ci_cost_billing_ledger.py
@@ -89,6 +103,7 @@ tests/test_equivalence_sources.py
 (private path)
 (private path)
 tests/test_fixtures_state.py
+tests/test_generate_frontend_anlz_deck_windows.py
 tests/test_host_mutation_opt_in.py
 tests/test_live_detect_cache.py
 tests/test_move_copy_between_playlists.py
@@ -109,6 +124,12 @@ tests/test_playlist_write_persistence.py
 (private path)
 tests/test_progress_file_lock.py
 tests/test_rb_writer.py
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
 (private path)
 (private path)
 (private path)

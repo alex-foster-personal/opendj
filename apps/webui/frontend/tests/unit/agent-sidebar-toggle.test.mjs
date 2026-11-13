@@ -311,7 +311,7 @@ const TOOL_ARGUMENTS = {
 	status: [],
 	app_state: [],
 	library_read: ['path'],
-	library_write: ['method', 'path', 'body'],
+	library_write: ['method', 'path', 'body', 'if_match'],
 	command: ['verb', 'order'],
 	system_volume_get: [],
 	system_volume_set: ['volume'],

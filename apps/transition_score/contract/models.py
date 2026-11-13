@@ -37,7 +37,13 @@ from pydantic import JsonValue
 #: 0.11.0 = #10182 (round 25): momentary_hole (400 ms series under its same-position neighbours, held 300 ms, free
 #: 1.5 LU, knee 3 LU, weight 0.1, not core); bass_overlap graded by depth (bass_overlap_depth_db, knee 3 dB-beats);
 #: seam_clicks also scans the whole overlap (overlap_clicks).
-SCORER_VERSION = "0.11.0"
+#: 0.12.0 = #12477: vocal_cut diagnostic (outgoing vocal active in the VOCAL_CUT_WINDOW_S before the outgoing deck
+#: falls VOCAL_CUT_GAIN_DB under its pre-overlap level); reported only, no factor, no veto; unknown without a vocal stem.
+SCORER_VERSION = "0.12.0"
+#: #12477 (spec 10 section 3): the window before the gain crossing that is checked for an active outgoing vocal.
+VOCAL_CUT_WINDOW_S = 0.5
+#: #12477: the outgoing deck counts as inaudible once its level is this far under its pre-overlap level.
+VOCAL_CUT_GAIN_DB = -20.0
 #: The core factors ``measured`` counts (k of n); a composite needs at least
 #: :data:`MIN_CORE_MEASURED` of them (spec 10 section 3).
 CORE_FACTORS: tuple[str, ...] = (

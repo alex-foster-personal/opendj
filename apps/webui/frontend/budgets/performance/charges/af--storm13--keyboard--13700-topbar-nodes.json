@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483100,
+  "measured_with_pr": 483723,
+  "sha": "548026c9ce",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--13700-topbar-nodes grows the performance surface; measured +623 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

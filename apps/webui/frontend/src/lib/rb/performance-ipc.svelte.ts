@@ -49,14 +49,20 @@
  *       error that includes QUANTIZED LAUNCH and the play button does not stay busy ⛔️
  */
 
+import { largeLibrary, toggleLargeLibrary } from '$lib/rb/large-library.svelte';
+import { deckLayoutChoiceFor, deckLayoutModeFor } from '$lib/rb/deck-layout-prefs';
 import { _parseCommand, _deck, _validatedPressStamp } from './performance-ipc-guards';
+import { trackTableFunnelStore } from '$lib/components/rb/browser/track-table-funnel-store.svelte';
+import type { TrackFilterState } from '$lib/components/rb/browser/track-filter-state';
+import { trackTypeAhead } from '$lib/components/rb/browser/track-table-type-ahead';
+import { runTagListAdd } from '$lib/tag-list/tag-list-ops.svelte';
 import {
 	controlShellWindow,
 	WINDOW_LABELS,
 	type WindowAction,
 	type WindowLabel
 } from '$lib/shell/native-shell';
-import { installTauriShellWindowReporter } from '$lib/shell/shell-window-report';
+import { installShellWindowReporter } from '$lib/shell/shell-window-report';
 import { postVerdict, type Verdict } from '$lib/rb/autoplay-why';
 import {
 	COMPATIBLE_KEY_SHIFT_MAX,
@@ -165,6 +171,7 @@ import { installDeckMoveRetireRunner, webAudioDeckMovePort } from '$lib/rb/deck-
 import { onPerformanceArmedContextReset } from '$lib/rb/performance-armed-context-reset';
 import { deckFacingMessage, reportFoldedLaunch } from '$lib/rb/deck-load-context';
 import { DECK_LOAD_ERROR_TOAST_MS, reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
+import { performanceRefusalCodes } from '$lib/rb/performance-refusal-code';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import {
@@ -174,7 +181,12 @@ import {
 	type CommandSource
 } from './deck-stop-log';
 import { replayDispatchGate, replayDispatchTakenOver } from './set-replay-takeover.svelte';
-import { captureHotCueTrigger, captureStemCommand } from '$lib/sets/control-event-recorder';
+import { assertPageCommandSource } from './performance-ipc-source';
+import {
+	captureFxCommand,
+	captureHotCueTrigger,
+	captureStemCommand
+} from '$lib/sets/control-event-recorder';
 import {
 	assertLoopGridBase,
 	loopIntervalChoices,
@@ -202,6 +214,9 @@ import {
 	setAutoCue,
 	setAutoPlayEnabled,
 	setLibraryPanelCollapsed,
+	setLibrarySingleColumn,
+	setLibrarySplitColumn,
+	setLibraryMyTagPane,
 	setShowStems,
 	setWaveEqReflect,
 	setMixerStems,
@@ -209,7 +224,9 @@ import {
 	setAutoPlayEarly,
 	setAutoPlayTwoDeck,
 	setPerfView,
+	setDeckLayoutMode,
 	setShowPads,
+	setLyricsGlobal,
 	setWaveformDesign,
 	setWaveHeight,
 	setDeckNumberArt,
@@ -246,6 +263,7 @@ import {
 	uiPrefs
 } from '$lib/rb/prefs.svelte';
 import { isLibraryPanelsCollapsed, setLibraryPanelsCollapsed } from '$lib/rb/library-panels.svelte';
+import { playlistTreeSearch, setPlaylistTreeSearch } from '$lib/rb/playlist-tree-search.svelte';
 import {
 	parseWaveformDesignPref,
 	type WaveformDesign,
@@ -299,7 +317,11 @@ import {
 	stemSeparationSnapshot
 } from '$lib/rb/stem-separation-port';
 import { refreshHeadphoneSignals } from '$lib/player/headphones';
-import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.svelte';
+import {
+	abortCueAlignment,
+	setCalibrationProbe,
+	startCueAlignment
+} from '$lib/rb/cue-align-session.svelte';
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import {
 	MUTED_MASTER_VOLUME,
@@ -307,7 +329,7 @@ import {
 } from '$lib/rb/performance-preset-constants';
 import { reloadResume, rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
 import { deckLoadErrors } from '$lib/player/state.svelte';
-import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
+import { midiSelectDeckPair, mixerSelection, onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { requestGenreInferOnAttention } from '$lib/rb/genre-infer-on-attention';
 import {
 	closeTrackInfo,
@@ -317,7 +339,9 @@ import {
 	trackInfoSnapshot,
 	type TrackInfoDeck
 } from '$lib/rb/track-info-state.svelte';
-import { toggleOjSidebar } from '$lib/assistant/oj-sidebar.svelte';
+import { ojSidebarSnapshot, toggleOjSidebar } from '$lib/assistant/oj-sidebar.svelte';
+import { runTransitionPresetFromBus, transitionPresetSnapshot } from '$lib/rb/performance-ipc-presets';
+import { applyHotkeysOverlayCommand, hotkeysOverlayOpenSnapshot } from '$lib/rb/hotkeys-overlay-command';
 import {
 	TRACK_LOAD_RESET_IDS,
 	applyTrackLoadChannelReset,
@@ -366,7 +390,11 @@ import {
 	readMidiLearn,
 	registerMidiLearnIpc
 } from '$lib/rb/midi/learn-ipc';
-import { midiTakeoverUi, setMidiTakeoverMode } from '$lib/rb/midi/takeover-ui.svelte';
+import {
+	midiTakeoverUi,
+	setMidiDisplacedWarning,
+	setMidiTakeoverMode
+} from '$lib/rb/midi/takeover-ui.svelte';
 import type { MidiTakeoverMode } from '$lib/rb/midi/takeover-policy';
 import {
 	COLOR_FX_ALL_DECKS,
@@ -374,7 +402,14 @@ import {
 	planColorFxSwitch
 } from '$lib/rb/color-fx';
 import { colorFxAllCommands } from '$lib/rb/color-fx-all';
-import { applyBeatFx, beatFxView } from '$lib/rb/beat-fx-live.svelte';
+import { applyLevelCalibration } from '$lib/rb/level-calibration-command';
+import {
+	applyBeatFx,
+	applyBeatFxRelease,
+	assertBeatFxRackOn,
+	beatFxView
+} from '$lib/rb/beat-fx-live.svelte';
+import { jobsStore } from '$lib/rb/jobs-store.svelte';
 
 import type {
 	AutoPlayNextController,
@@ -432,6 +467,7 @@ import {
 	restoreColorFx,
 	colorFx,
 	colorFxView,
+	reverbTailOnDeckEvent,
 	type ColorFxDeckView
 } from '$lib/rb/color-fx.svelte';
 
@@ -583,6 +619,12 @@ function _readBrowserPaneSnapshot(): PerformanceBrowserPaneSnapshot {
 		load: snapshot.load === null ? null : { ...snapshot.load },
 		related_active: snapshot.related_active
 	};
+}
+
+/** Issue #10043: the mounted pane's Track Filter bar state, a fresh copy; null with no table mounted. */
+function _readTrackFilterSnapshot(): TrackFilterState | null {
+	const pane = trackTableFunnelStore.activePane;
+	return pane === null ? null : $state.snapshot(trackTableFunnelStore.readState(pane));
 }
 
 function _recordPerformanceCommand(command: PerformanceCommand): void {
@@ -1255,6 +1297,10 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		last_load_latency_ms: deck.last_load_latency_ms,
 		load_generation: deck.load_generation,
 		last_load_stages: deck.last_load_stages === null ? null : { ...deck.last_load_stages },
+		last_load_blocking_stage_ms:
+			deck.last_load_stages === null ? null : { ...deck.last_load_stages },
+		last_load_stage_sources:
+			deck.last_load_stage_sources === null ? null : { ...deck.last_load_stage_sources },
 		stems: {
 			...deck.stems,
 			alignment: deck.stems.alignment === null ? null : { ...deck.stems.alignment },
@@ -1299,6 +1345,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		quantized_launch_armed: _quantizedLaunchArmedSnapshot(deckId),
 		loop_engaged: deck.loop !== null && deck.loop.engaged,
 		command_error: performanceCommandStatus.deck_errors[deckId],
+		command_error_code: performanceRefusalCodes.codeFor(performanceCommandStatus.deck_errors[deckId]),
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
 		last_command_id: _deckCommandIds[deckId]
 	};
@@ -1312,7 +1359,10 @@ export function queryPerformanceState(): PerformanceState {
 	const previewStats = previewCacheStats();
 	return {
 		version: 1,
-		midi_takeover: { mode: midiTakeoverUi.mode },
+		midi_takeover: {
+			mode: midiTakeoverUi.mode,
+			displaced_warning: midiTakeoverUi.displacedWarning
+		},
 		midi_learn: readMidiLearn(),
 		master_deck: masterDecks[0] ?? null,
 		master_mode: getMasterMode(),
@@ -1381,7 +1431,12 @@ export function queryPerformanceState(): PerformanceState {
 			}
 		},
 		master: { muted: isMasterMuted() },
-		browser: { active_playlist: _activeBrowserPlaylist, ..._readBrowserPaneSnapshot() },
+		browser: {
+			active_playlist: _activeBrowserPlaylist,
+			..._readBrowserPaneSnapshot(),
+			tree_query: playlistTreeSearch.query,
+			filter: _readTrackFilterSnapshot()
+		},
 		history: _commandHistory.map((event) => ({ ...event })),
 		preset: { ...performancePresetLifecycle },
 		rescue_restore: {
@@ -1417,6 +1472,7 @@ export function queryPerformanceState(): PerformanceState {
 			cache_budget_bytes: previewStats.budget_bytes
 		},
 		last_error: performanceCommandStatus.last_error,
+		last_error_code: performanceRefusalCodes.codeFor(performanceCommandStatus.last_error),
 		// _pairingSnapshot is a $state variable, so Svelte hands back a reactive
 		// Proxy wrapping the assigned object - and a Proxy, regardless of what
 		// it wraps, is never structured-cloneable (DataCloneError). Every other
@@ -1428,6 +1484,7 @@ export function queryPerformanceState(): PerformanceState {
 		pairing_snapshot:
 			_pairingSnapshot === null ? null : structuredClone($state.snapshot(_pairingSnapshot)),
 		cmdk: _cmdkAdapter === null ? null : structuredClone($state.snapshot(_cmdkAdapter.snapshot())),
+		hotkeys_overlay_open: hotkeysOverlayOpenSnapshot(),
 		windows: [..._openShellWindows],
 		technically_working: {
 			active: isTechModeActive(),
@@ -1437,11 +1494,21 @@ export function queryPerformanceState(): PerformanceState {
 			hovered_edges: hoveredEdgeList()
 		},
 		track_info: trackInfoSnapshot(_trackInfoDecks()),
+		oj: ojSidebarSnapshot(),
+		mixer_selection: {
+			selected: [...mixerSelection.selected],
+			clicked_deck: mixerSelection.clickedDeck
+		},
+		transition_preset: transitionPresetSnapshot(),
+		drawers: { jobs: { open: jobsStore.drawerOpen } },
 		waveform_stutter: { ...waveformStutterSnapshot() },
 		library_panels: {
 			collapsed: isLibraryPanelsCollapsed(),
 			next_collapsed: uiPrefs.next_panel_collapsed,
-			recommended_collapsed: uiPrefs.recommended_panel_collapsed
+			recommended_collapsed: uiPrefs.recommended_panel_collapsed,
+			single_column: uiPrefs.library_single_column,
+			split_column: uiPrefs.library_split_column,
+			mytag_pane: uiPrefs.library_mytag_pane
 		},
 		// Spread, not the live rune: this snapshot is structuredClone'd across
 		// the IPC boundary and a $state Proxy is never cloneable.
@@ -1463,7 +1530,10 @@ export function queryPerformanceState(): PerformanceState {
 			deck_autocue: uiPrefs.deck_autocue,
 			auto_play_two_deck: uiPrefs.auto_play_two_deck,
 			perf_view: uiPrefs.perf_view,
+			deck_layout: deckLayoutChoiceFor(uiPrefs.deck_layout),
 			show_pads: uiPrefs.show_pads,
+			large_library: largeLibrary.on,
+			lyrics_global: uiPrefs.lyrics_global,
 			track_load_reset: { ...readTrackLoadReset() },
 			key_nudge_step: readKeyNudgeStep(),
 			deck_number_art: uiPrefs.deck_number_art,
@@ -1663,6 +1733,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_calibrate' ||
 		command.type === 'head_delay_ms' ||
 		command.type === 'headphone_alignment_mode' ||
+		command.type === 'headphone_calibration_probe' ||
 		command.type === 'master_delay_ms'
 	) {
 		return ['headphone'];
@@ -1712,7 +1783,14 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_related' ||
 		command.type === 'browser_related_criteria' ||
 		command.type === 'browser_related_criteria_reset' ||
+		command.type === 'browser_tree_search' ||
+		command.type === 'browser_tree_search_clear' ||
+		command.type === 'browser_step_selection' ||
+		command.type === 'browser_type_ahead' ||
+		command.type === 'tag_list_add' ||
+		command.type === 'library_filter' ||
 		command.type === 'midi_takeover_mode' ||
+		command.type === 'midi_displaced_warning' ||
 		command.type === 'midi_learn_retry' ||
 		command.type === 'midi_learn_cancel' ||
 		command.type === 'headphone_mix' ||
@@ -1728,6 +1806,9 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		command.type === 'library_panels_toggle' ||
+		command.type === 'library_single_column' ||
+		command.type === 'library_split_column' ||
+		command.type === 'library_mytag_pane' ||
 		command.type === 'show_stems' ||
 		command.type === 'wave_eq_reflect' ||
 		command.type === 'mixer_stems' ||
@@ -1738,7 +1819,10 @@ export function performanceCommandQueueScopes(
 		command.type === 'auto_play_early' ||
 		// TOPVIEW: the view icons and the PAD button are preference writes with no deck.
 		command.type === 'set_perf_view' ||
+		command.type === 'set_deck_layout' ||
+		command.type === 'toggle_large_library' ||
 		command.type === 'show_pads' ||
+		command.type === 'set_lyrics_global' ||
 		command.type === 'track_load_reset' ||
 		command.type === 'key_nudge_step' ||
 		command.type === 'set_waveform_design' ||
@@ -1769,7 +1853,10 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'track_info_toggle'
 		|| command.type === 'track_info_open'
 		|| command.type === 'track_info_close'
+		|| command.type === 'mixer_deck_pair_select'
 		|| command.type === 'oj_toggle'
+		|| command.type === 'transition_preset'
+		|| command.type === 'hotkeys_overlay'
 		|| command.type === 'pairing_snapshot_open'
 		|| command.type === 'pairing_snapshot_remove_eq_adjuster'
 		|| command.type === 'pairing_snapshot_save'
@@ -1785,6 +1872,8 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'playlist_undo'
 		|| command.type === 'cmdk_open'
 		|| command.type === 'cmdk_close'
+		|| command.type === 'drawer_open'
+		|| command.type === 'drawer_close'
 		|| command.type === 'cmdk_pick'
 		|| command.type === 'cmdk_mode'
 		|| command.type === 'window'
@@ -1792,11 +1881,13 @@ export function performanceCommandQueueScopes(
 		|| command.type === 'playlist_history_jump'
 		|| command.type === 'feedback_mark'
 		|| command.type === 'deck_autocue'
+		// BEATFX-12: the unit writes only its own send and dry nodes, which no deck command touches.
+		|| command.type === 'beat_fx'
+		|| command.type === 'beat_fx_release'
 	) {
 		return null;
 	}
 	if (deck === null) throw new Error(`${command.type} has no command queue scope`);
-	// prettier-ignore
 	if (command.type === 'hot_cue_save' || command.type === 'hot_cue_clear' || command.type === 'hot_cue_restore') {
 		return [_persistenceScope(deck)];
 	}
@@ -1819,6 +1910,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'loop_out' ||
 		command.type === 'reloop' ||
 		command.type === 'grid_jump' ||
+		command.type === 'section_jump' ||
 		command.type === 'tempo' ||
 		command.type === 'beat_sync' ||
 		command.type === 'sync_mode' ||
@@ -1970,6 +2062,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	}
 	// OFFLOAD: an offloaded track comes back from the cloud before either engine loads it.
 	if (command.type === 'load') await ensureLocalBeforeLoad(command.deck, command.stable_id);
+	// FXVERB-05: an accepted load or eject cuts the deck's SPACE tail, on either engine.
+	if (command.type === 'load' || command.type === 'unload')
+		reverbTailOnDeckEvent(command.deck, command.type === 'load' ? 'track_load' : 'eject');
 	// Before either engine: the Rust dispatch below returns early, and a folded launch must be reported once on both paths.
 	if (command.type === 'beat_sync' && command.enabled && command.normalization !== undefined && command.master !== undefined) {
 		reportFoldedLaunch(command.deck, command.master, command.normalization);
@@ -2143,6 +2238,11 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// A refusal moves nothing and says why (DECKUX-6794 AC-13), the way a
 		// grid-inert control does, so a key press is never a silent no-op.
 		if (plan.kind === 'refused') pushToast(`Deck ${command.deck}: ${plan.reason}`, 'info');
+	} else if (command.type === 'section_jump') {
+		const plan = await engine.sectionJump(command.deck, command.direction);
+		// The UI path gets the refusal as a toast; an agent gets a failed step
+		// naming the reason, so a deck with no sections never reads as a jump.
+		if (plan.kind === 'refused') throw new Error(`Deck ${command.deck}: section_jump refused (${plan.reason})`);
 	} else if (command.type === 'beat_jump_size') {
 		setBeatJumpSize(command.deck, command.beats);
 	} else if (command.type === 'loop_interval_mode') {
@@ -2222,7 +2322,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		const expected = command.stable_id ?? getDeckState(command.deck).stable_id;
 		await separateLoadedDeck(command.deck, expected, () => getDeckState(command.deck));
 	} else if (command.type === 'stem_gain') {
-		engine.setStemGain(command.deck, command.stem, command.value);
+		// #14043: a plan step with `at_context_sec` sets the part's gain on that AudioContext time.
+		if (command.at_context_sec !== undefined) engine.scheduleStep(command.deck, { stem: command.stem }, command.value, command.at_context_sec, command.step_id!);
+		else engine.setStemGain(command.deck, command.stem, command.value);
 		void captureStemCommand(
 			command,
 			deckCommandSource(command.deck) ?? 'app-command',
@@ -2284,6 +2386,28 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await patchRelatedCriteria(patch);
 	} else if (command.type === 'browser_related_criteria_reset') {
 		await resetRelatedCriteria();
+	} else if (command.type === 'browser_tree_search') {
+		setPlaylistTreeSearch(command.query);
+	} else if (command.type === 'browser_tree_search_clear') {
+		setPlaylistTreeSearch('');
+	} else if (command.type === 'tag_list_add') {
+		await runTagListAdd(command.stable_ids);
+	} else if (command.type === 'browser_type_ahead') {
+		// LIBM-82b: selection only; the search box and the filters are untouched.
+		const target = trackTypeAhead.target;
+		if (target === null) throw new Error('browser_type_ahead requires a mounted track table');
+		if (target.jump(command.prefix) === null) {
+			throw new Error(`browser_type_ahead: no visible row starts with ${JSON.stringify(command.prefix)}`);
+		}
+	} else if (command.type === 'browser_step_selection') {
+		if (_browserAdapter === null)
+			throw new Error('browser_step_selection requires a mounted browser panel');
+		_browserAdapter.stepSelection(command.delta);
+	} else if (command.type === 'library_filter') {
+		// Issue #10043: get changes nothing (the returned state carries browser.filter); set replaces it.
+		const pane = trackTableFunnelStore.activePane;
+		if (pane === null) throw new Error('library_filter requires a mounted track table');
+		if (command.op === 'set') trackTableFunnelStore.replaceState(pane, command.state);
 	} else if (command.type === 'browser_select_playlist') {
 		if (_browserAdapter === null)
 			throw new Error('browser_select_playlist requires a mounted browser panel');
@@ -2331,6 +2455,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setHeadphoneOutputMode(command.mode);
 	} else if (command.type === 'headphone_alignment_mode') {
 		engine.setHeadphoneAlignmentMode(command.value);
+	} else if (command.type === 'headphone_calibration_probe') {
+		setCalibrationProbe(command.value);
 	} else if (command.type === 'master_delay_ms') {
 		engine.setMasterDelayMs(command.value);
 	} else if (command.type === 'headphone_calibrate') {
@@ -2343,12 +2469,21 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'library_panels_toggle') {
 		setLibraryPanelsCollapsed(command.collapsed ?? !isLibraryPanelsCollapsed());
+	} else if (command.type === 'library_single_column') {
+		setLibrarySingleColumn(command.enabled ?? !uiPrefs.library_single_column);
+	} else if (command.type === 'library_split_column') {
+		setLibrarySplitColumn(command.enabled ?? !uiPrefs.library_split_column);
+	} else if (command.type === 'library_mytag_pane') {
+		setLibraryMyTagPane(command.enabled ?? !uiPrefs.library_mytag_pane);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
 	} else if (command.type === 'wave_eq_reflect') {
 		setWaveEqReflect(command.enabled);
 	} else if (command.type === 'mixer_stems') {
 		setMixerStems(command.enabled);
+	} else if (command.type === 'level_calibration') {
+		const result = applyLevelCalibration(command.deck, command.kind, command.enabled);
+		if (!result.ok) throw new Error(result.reason);
 	} else if (command.type === 'mixer_placement') {
 		setMixerPlacement(command.placement);
 	} else if (command.type === 'deck_autocue') {
@@ -2363,6 +2498,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 			command.deck === COLOR_FX_ALL_DECKS
 				? (Object.values(colorFxAllCommands(command)) as (ColorFxCommand & { deck: DeckId })[])
 				: [command as ColorFxCommand & { deck: DeckId }];
+		const nowMs = pressT0Ms ?? performance.now();
 		for (const one of targets) {
 			const plan = planColorFxSwitch(
 				colorFx[one.deck].effect,
@@ -2391,9 +2527,15 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 				}
 				throw new Error(`Color FX deck ${one.deck}: ${_errorMessage(error)}`, { cause: error });
 			}
+			const fxSource = deckCommandSource(one.deck) ?? 'app-command';
+			void captureFxCommand(one, fxSource, plan, nowMs);
 		}
 	} else if (command.type === 'beat_fx') {
+		assertBeatFxRackOn();
 		applyBeatFx(command, 0);
+	} else if (command.type === 'beat_fx_release') {
+		assertBeatFxRackOn();
+		applyBeatFxRelease(command);
 	} else if (command.type === 'autoplay') {
 		setAutoPlayEnabled(command.enabled);
 	} else if (command.type === 'set_deck_number_art') {
@@ -2556,8 +2698,14 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setAutoPlayTwoDeck(command.enabled);
 	} else if (command.type === 'set_perf_view') {
 		setPerfView(command.view);
+	} else if (command.type === 'set_deck_layout') {
+		setDeckLayoutMode(deckLayoutModeFor(command.layout));
+	} else if (command.type === 'toggle_large_library') {
+		toggleLargeLibrary();
 	} else if (command.type === 'show_pads') {
 		setShowPads(command.enabled);
+	} else if (command.type === 'set_lyrics_global') {
+		setLyricsGlobal(command.enabled);
 	} else if (command.type === 'key_nudge_step') {
 		writeKeyNudgeStep(command.step);
 	} else if (command.type === 'reset_deck_now') {
@@ -2620,8 +2768,17 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		}
 	} else if (command.type === 'track_info_close') {
 		closeTrackInfo();
+	} else if (command.type === 'mixer_deck_pair_select') {
+		midiSelectDeckPair(command.pair, command.deck);
 	} else if (command.type === 'oj_toggle') {
 		toggleOjSidebar();
+	} else if (command.type === 'transition_preset') {
+		runTransitionPresetFromBus(command.preset, {
+			query: queryPerformanceState,
+			dispatch: dispatchPerformanceCommand
+		});
+	} else if (command.type === 'hotkeys_overlay') {
+		applyHotkeysOverlayCommand(command.open);
 	} else if (command.type === 'pairing_snapshot_open') {
 		_pairingSnapshot = _openPairingSnapshot();
 	} else if (command.type === 'pairing_snapshot_remove_eq_adjuster') {
@@ -2680,6 +2837,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await _cmdk(command.type).open(command.query ?? null);
 	} else if (command.type === 'cmdk_close') {
 		_cmdk(command.type).close();
+	} else if (command.type === 'drawer_open' || command.type === 'drawer_close') {
+		jobsStore.drawerOpen = command.type === 'drawer_open';
 	} else if (command.type === 'cmdk_pick') {
 		await _cmdk(command.type).pick(
 			command.index,
@@ -2725,6 +2884,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		_rescueRestoredDecks = [];
 	} else if (command.type === 'midi_takeover_mode') {
 		setMidiTakeoverMode(command.mode);
+	} else if (command.type === 'midi_displaced_warning') {
+		setMidiDisplacedWarning(command.enabled);
 	} else if (command.type === 'midi_learn_retry') {
 		await midiLearnIpc(command.type).retry();
 	} else if (command.type === 'midi_learn_cancel') {
@@ -2754,6 +2915,7 @@ function _persistCommandError(
 	command?: PerformanceCommand
 ): void {
 	const messageText = _errorMessage(error);
+	performanceRefusalCodes.note(messageText, error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
 	if (command?.type === 'load' && deck !== null && deckLoadErrors[deck] == null) {
@@ -3438,6 +3600,10 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	command = _autoPlayOffNeedsUser(_quantizeDefaultOn(command, caller), caller);
+	// SETREC-12067: the replay gate sits here, before any await, so every entry
+	// (dispatchPerformanceCommand and the browser IPC bridge alike) drops a
+	// taken-over replay command and marks a live touch (#12170).
+	if (replayDispatchGate(command, source) === 'drop') return queryPerformanceState();
 	// STEM-77: a stem_separate that names no track (the CLI verb, an agent)
 	// is bound HERE, on receipt and before any await, to the track the deck
 	// holds now. Read later, after the engine routing, it could name a track a
@@ -3607,7 +3773,8 @@ async function _dispatchUnknown(
  * executor `agent-command`, the UI boundary `user-ui`. Anything else is an
  * `app-command`. `replay` (SETREC-12067) is the replay player; a replay command for a
  * control someone has taken over is dropped here, and any other source touching a
- * control marks it live.
+ * control marks it live. An unsupported source is refused before any of that
+ * (#12602, performance-ipc-source.ts).
  */
 export async function dispatchPerformanceCommand(
 	command: PerformanceCommand,
@@ -3615,7 +3782,7 @@ export async function dispatchPerformanceCommand(
 	source: CommandSource = 'app-command',
 	hold?: CoordinatedHold
 ): Promise<PerformanceState> {
-	if (replayDispatchGate(command, source) === 'drop') return queryPerformanceState();
+	assertPageCommandSource(source);
 	return _dispatchUnknown(
 		command,
 		_currentCommandSession(),
@@ -3849,7 +4016,7 @@ export function installPerformanceBrowserIpc(): () => void {
 		dispatch: (command) => runPerformanceCommandFromUi(command)
 	});
 	_beatSyncMaxEnablerUninstalls.set(ipc, uninstallBeatSyncMaxEnabler);
-	const uninstallShellWindowReporter = installTauriShellWindowReporter(setOpenShellWindowLabels);
+	const uninstallShellWindowReporter = installShellWindowReporter(setOpenShellWindowLabels);
 	return () => {
 		uninstallShellWindowReporter();
 		if (_beatSyncMaxEnablerUninstalls.delete(ipc)) uninstallBeatSyncMaxEnabler();

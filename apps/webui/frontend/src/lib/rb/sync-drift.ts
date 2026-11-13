@@ -241,6 +241,16 @@ export function syncDriftFields(measure: SyncDriftMeasure): Record<string, SyncL
 	};
 }
 
+/**
+ * SYNCLOG-9924: one follower's `SYNC_RESNAP` outcome after a group resync, read
+ * from its own `sync_error`. The resync resolves on a partial failure with the
+ * rejected deck's error set, so a resolved call alone does not mean `snapped`.
+ */
+export function resnapOutcomeFields(syncError: string | null): Record<string, SyncLogValue> {
+	if (syncError === null) return { outcome: 'snapped' };
+	return { outcome: 'skipped', reason: syncError.trim().replace(/\s+/g, '_') || 'sync_error' };
+}
+
 /** `TAG key=value ...`, one line, values without spaces (null prints `null`). */
 export function formatSyncLogLine(tag: SyncLogTag, fields: Record<string, SyncLogValue>): string {
 	const parts = Object.entries(fields).map(([key, value]) => {

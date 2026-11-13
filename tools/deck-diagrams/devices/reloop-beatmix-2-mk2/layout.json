@@ -1,0 +1,1350 @@
+{
+  "device": "Reloop Beatmix 2 MK2",
+  "vendor": "Reloop",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 484,
+    "height": 310
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "led_return_messages",
+    "pad_modes_red_violet",
+    "deck_3_4_rows_beatmix_4_only"
+  ],
+  "controls": [
+    {
+      "id": "bm2-l_pad1",
+      "fig": "l_pad1",
+      "label": "L PAD 1",
+      "kind": "pad",
+      "x": 11.2,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad1",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": "l_pad1_shift"
+      },
+      "notes": "L-PAD1 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad2",
+      "fig": "l_pad2",
+      "label": "L PAD 2",
+      "kind": "pad",
+      "x": 18.4,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad2",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": "l_pad2_shift"
+      },
+      "notes": "L-PAD2 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad3",
+      "fig": "l_pad3",
+      "label": "L PAD 3",
+      "kind": "pad",
+      "x": 25.2,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad3",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": "l_pad3_shift"
+      },
+      "notes": "L-PAD3 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad4",
+      "fig": "l_pad4",
+      "label": "L PAD 4",
+      "kind": "pad",
+      "x": 32.0,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad4",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": "l_pad4_shift"
+      },
+      "notes": "L-PAD4 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad5",
+      "fig": "l_pad5",
+      "label": "L PAD 5",
+      "kind": "pad",
+      "x": 11.2,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad5",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": "l_pad5_shift"
+      },
+      "notes": "L-PAD5 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad6",
+      "fig": "l_pad6",
+      "label": "L PAD 6",
+      "kind": "pad",
+      "x": 18.4,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad6",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": "l_pad6_shift"
+      },
+      "notes": "L-PAD6 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad7",
+      "fig": "l_pad7",
+      "label": "L PAD 7",
+      "kind": "pad",
+      "x": 25.2,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad7",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": "l_pad7_shift"
+      },
+      "notes": "L-PAD7 (Blue) note"
+    },
+    {
+      "id": "bm2-l_pad8",
+      "fig": "l_pad8",
+      "label": "L PAD 8",
+      "kind": "pad",
+      "x": 32.0,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad8",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": "l_pad8_shift"
+      },
+      "notes": "L-PAD8 (Blue) note"
+    },
+    {
+      "id": "bm2-l_shift",
+      "fig": "l_shift",
+      "label": "L SHIFT",
+      "kind": "button",
+      "x": 7.2,
+      "y": 89.0,
+      "w": 3.7,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_shift",
+        "type": "note",
+        "ch": 2,
+        "code": 32
+      },
+      "notes": "L-SHIFT note"
+    },
+    {
+      "id": "bm2-l_sync",
+      "fig": "l_sync",
+      "label": "L SYNC",
+      "kind": "button",
+      "x": 13.0,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_sync",
+        "type": "note",
+        "ch": 2,
+        "code": 33,
+        "shift_name": "l_sync_shift"
+      },
+      "notes": "L-SYNC note"
+    },
+    {
+      "id": "bm2-l_cup",
+      "fig": "l_cup",
+      "label": "L CUP",
+      "kind": "button",
+      "x": 19.8,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_cup",
+        "type": "note",
+        "ch": 2,
+        "code": 34,
+        "shift_name": "l_cup_shift"
+      },
+      "notes": "L-CUP note"
+    },
+    {
+      "id": "bm2-l_cue",
+      "fig": "l_cue",
+      "label": "L CUE",
+      "kind": "button",
+      "x": 26.2,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_cue",
+        "type": "note",
+        "ch": 2,
+        "code": 35,
+        "shift_name": "l_cue_shift"
+      },
+      "notes": "L-CUE note"
+    },
+    {
+      "id": "bm2-l_play",
+      "fig": "l_play",
+      "label": "L PLAY/PAUSE",
+      "kind": "button",
+      "x": 32.9,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_play",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "shift_name": "l_play_shift"
+      },
+      "notes": "L-PLAY/PAUSE note"
+    },
+    {
+      "id": "bm2-l_beats",
+      "fig": "l_beats",
+      "label": "L BEATS",
+      "kind": "encoder",
+      "x": 29.5,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_beats",
+        "type": "cc",
+        "ch": 2,
+        "code": 97,
+        "shift_name": "l_beats_shift"
+      },
+      "notes": "L-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65)"
+    },
+    {
+      "id": "bm2-l_bend_minus",
+      "fig": "l_bend_minus",
+      "label": "L PITCH -",
+      "kind": "button",
+      "x": 4.4,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pitch_bend_minus",
+        "type": "note",
+        "ch": 2,
+        "code": 38,
+        "shift_name": "l_pitch_bend_minus_shift"
+      },
+      "notes": "L-PITCH BEND- note"
+    },
+    {
+      "id": "bm2-l_bend_plus",
+      "fig": "l_bend_plus",
+      "label": "L PITCH +",
+      "kind": "button",
+      "x": 7.1,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pitch_bend_plus",
+        "type": "note",
+        "ch": 2,
+        "code": 39,
+        "shift_name": "l_pitch_bend_plus_shift"
+      },
+      "notes": "L-PITCH BEND+ note"
+    },
+    {
+      "id": "bm2-l_padmode1",
+      "fig": "l_padmode1",
+      "label": "L PAD MODE1",
+      "kind": "button",
+      "x": 31.9,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad_mode1",
+        "type": "note",
+        "ch": 2,
+        "code": 41
+      },
+      "notes": "L-PAD MODE1 note"
+    },
+    {
+      "id": "bm2-l_padmode2",
+      "fig": "l_padmode2",
+      "label": "L PAD MODE2",
+      "kind": "button",
+      "x": 34.8,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad_mode2",
+        "type": "note",
+        "ch": 2,
+        "code": 42
+      },
+      "notes": "L-PAD MODE2 note"
+    },
+    {
+      "id": "bm2-l_jog",
+      "fig": "l_jog",
+      "label": "L JOG",
+      "kind": "jog",
+      "x": 6.6,
+      "y": 16.1,
+      "w": 22.7,
+      "h": 35.5,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_wheel",
+        "type": "cc",
+        "ch": 2,
+        "code": 96,
+        "shift_name": "l_wheel_shift"
+      },
+      "notes": "L-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F)"
+    },
+    {
+      "id": "bm2-l_fx1",
+      "fig": "l_fx1",
+      "label": "L FX1",
+      "kind": "knob",
+      "x": 8.5,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_fx1",
+        "type": "cc",
+        "ch": 2,
+        "code": 1,
+        "shift_name": "l_fx1_shift"
+      },
+      "notes": "L-FX1 absolute CC"
+    },
+    {
+      "id": "bm2-l_fx2",
+      "fig": "l_fx2",
+      "label": "L FX2",
+      "kind": "knob",
+      "x": 15.1,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_fx2",
+        "type": "cc",
+        "ch": 2,
+        "code": 2,
+        "shift_name": "l_fx2_shift"
+      },
+      "notes": "L-FX2 absolute CC"
+    },
+    {
+      "id": "bm2-l_fx3",
+      "fig": "l_fx3",
+      "label": "L FX3",
+      "kind": "knob",
+      "x": 21.9,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_fx3",
+        "type": "cc",
+        "ch": 2,
+        "code": 3,
+        "shift_name": "l_fx3_shift"
+      },
+      "notes": "L-FX3 absolute CC"
+    },
+    {
+      "id": "bm2-l_pitch",
+      "fig": "l_pitch",
+      "label": "L PITCH",
+      "kind": "fader",
+      "x": 5.2,
+      "y": 66.1,
+      "w": 2.9,
+      "h": 19.4,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pitch",
+        "type": "pitchbend",
+        "ch": 2,
+        "code": null
+      },
+      "notes": "14-bit pitch bend"
+    },
+    {
+      "id": "bm2-ch1_gain",
+      "fig": "ch1_gain",
+      "label": "CH1 GAIN",
+      "kind": "knob",
+      "x": 40.3,
+      "y": 7.4,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_gain",
+        "type": "cc",
+        "ch": 2,
+        "code": 16,
+        "shift_name": "ch1_gain_shift"
+      },
+      "notes": "GAIN1 absolute CC"
+    },
+    {
+      "id": "bm2-ch1_high",
+      "fig": "ch1_high",
+      "label": "CH1 HIGH",
+      "kind": "knob",
+      "x": 40.3,
+      "y": 16.1,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_high",
+        "type": "cc",
+        "ch": 2,
+        "code": 17,
+        "shift_name": "ch1_high_shift"
+      },
+      "notes": "HIGH1 absolute CC"
+    },
+    {
+      "id": "bm2-ch1_mid",
+      "fig": "ch1_mid",
+      "label": "CH1 MID",
+      "kind": "knob",
+      "x": 40.3,
+      "y": 25.2,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_mid",
+        "type": "cc",
+        "ch": 2,
+        "code": 18,
+        "shift_name": "ch1_mid_shift"
+      },
+      "notes": "MID1 absolute CC"
+    },
+    {
+      "id": "bm2-ch1_low",
+      "fig": "ch1_low",
+      "label": "CH1 LOW",
+      "kind": "knob",
+      "x": 40.3,
+      "y": 33.5,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_low",
+        "type": "cc",
+        "ch": 2,
+        "code": 19,
+        "shift_name": "ch1_low_shift"
+      },
+      "notes": "LOW1 absolute CC"
+    },
+    {
+      "id": "bm2-ch1_fader",
+      "fig": "ch1_fader",
+      "label": "CH1 FADER",
+      "kind": "fader",
+      "x": 40.7,
+      "y": 66.9,
+      "w": 3.3,
+      "h": 17.7,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_fader",
+        "type": "cc",
+        "ch": 2,
+        "code": 20,
+        "shift_name": "ch1_fader_shift"
+      },
+      "notes": "CH1 line fader absolute CC"
+    },
+    {
+      "id": "bm2-ch1_load",
+      "fig": "ch1_load",
+      "label": "LOAD 1",
+      "kind": "button",
+      "x": 40.7,
+      "y": 45.8,
+      "w": 3.3,
+      "h": 3.9,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_load",
+        "type": "note",
+        "ch": 2,
+        "code": 80,
+        "shift_name": "ch1_load_shift"
+      },
+      "notes": "M-LOAD1 note"
+    },
+    {
+      "id": "bm2-ch1_cue",
+      "fig": "ch1_cue",
+      "label": "CUE 1",
+      "kind": "button",
+      "x": 40.7,
+      "y": 54.5,
+      "w": 3.3,
+      "h": 3.9,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_cue",
+        "type": "note",
+        "ch": 2,
+        "code": 82,
+        "shift_name": "ch1_cue_shift"
+      },
+      "notes": "M-CUE1 (headphone cue) note"
+    },
+    {
+      "id": "bm2-r_pad1",
+      "fig": "r_pad1",
+      "label": "R PAD 1",
+      "kind": "pad",
+      "x": 61.0,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad1",
+        "type": "note",
+        "ch": 3,
+        "code": 0,
+        "shift_name": "r_pad1_shift"
+      },
+      "notes": "R-PAD1 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad2",
+      "fig": "r_pad2",
+      "label": "R PAD 2",
+      "kind": "pad",
+      "x": 68.0,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad2",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": "r_pad2_shift"
+      },
+      "notes": "R-PAD2 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad3",
+      "fig": "r_pad3",
+      "label": "R PAD 3",
+      "kind": "pad",
+      "x": 74.8,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad3",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": "r_pad3_shift"
+      },
+      "notes": "R-PAD3 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad4",
+      "fig": "r_pad4",
+      "label": "R PAD 4",
+      "kind": "pad",
+      "x": 81.6,
+      "y": 63.9,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad4",
+        "type": "note",
+        "ch": 3,
+        "code": 3,
+        "shift_name": "r_pad4_shift"
+      },
+      "notes": "R-PAD4 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad5",
+      "fig": "r_pad5",
+      "label": "R PAD 5",
+      "kind": "pad",
+      "x": 61.0,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad5",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": "r_pad5_shift"
+      },
+      "notes": "R-PAD5 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad6",
+      "fig": "r_pad6",
+      "label": "R PAD 6",
+      "kind": "pad",
+      "x": 68.0,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad6",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": "r_pad6_shift"
+      },
+      "notes": "R-PAD6 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad7",
+      "fig": "r_pad7",
+      "label": "R PAD 7",
+      "kind": "pad",
+      "x": 74.8,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad7",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": "r_pad7_shift"
+      },
+      "notes": "R-PAD7 (Blue) note"
+    },
+    {
+      "id": "bm2-r_pad8",
+      "fig": "r_pad8",
+      "label": "R PAD 8",
+      "kind": "pad",
+      "x": 81.6,
+      "y": 74.5,
+      "w": 6.2,
+      "h": 9.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad8",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": "r_pad8_shift"
+      },
+      "notes": "R-PAD8 (Blue) note"
+    },
+    {
+      "id": "bm2-r_shift",
+      "fig": "r_shift",
+      "label": "R SHIFT",
+      "kind": "button",
+      "x": 88.2,
+      "y": 89.0,
+      "w": 3.7,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_shift",
+        "type": "note",
+        "ch": 3,
+        "code": 32
+      },
+      "notes": "R-SHIFT note"
+    },
+    {
+      "id": "bm2-r_sync",
+      "fig": "r_sync",
+      "label": "R SYNC",
+      "kind": "button",
+      "x": 62.4,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_sync",
+        "type": "note",
+        "ch": 3,
+        "code": 33,
+        "shift_name": "r_sync_shift"
+      },
+      "notes": "R-SYNC note"
+    },
+    {
+      "id": "bm2-r_cup",
+      "fig": "r_cup",
+      "label": "R CUP",
+      "kind": "button",
+      "x": 68.8,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_cup",
+        "type": "note",
+        "ch": 3,
+        "code": 34,
+        "shift_name": "r_cup_shift"
+      },
+      "notes": "R-CUP note"
+    },
+    {
+      "id": "bm2-r_cue",
+      "fig": "r_cue",
+      "label": "R CUE",
+      "kind": "button",
+      "x": 75.4,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_cue",
+        "type": "note",
+        "ch": 3,
+        "code": 35,
+        "shift_name": "r_cue_shift"
+      },
+      "notes": "R-CUE note"
+    },
+    {
+      "id": "bm2-r_play",
+      "fig": "r_play",
+      "label": "R PLAY/PAUSE",
+      "kind": "button",
+      "x": 81.2,
+      "y": 88.9,
+      "w": 5.4,
+      "h": 4.8,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_play",
+        "type": "note",
+        "ch": 3,
+        "code": 36,
+        "shift_name": "r_play_shift"
+      },
+      "notes": "R-PLAY/PAUSE note"
+    },
+    {
+      "id": "bm2-r_beats",
+      "fig": "r_beats",
+      "label": "R BEATS",
+      "kind": "encoder",
+      "x": 65.1,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_beats",
+        "type": "cc",
+        "ch": 3,
+        "code": 97,
+        "shift_name": "r_beats_shift"
+      },
+      "notes": "R-BEATS relative encoder (CW 0x01.., CCW 0x7F..); push note 0x25 (shift 0x65)"
+    },
+    {
+      "id": "bm2-r_bend_minus",
+      "fig": "r_bend_minus",
+      "label": "R PITCH -",
+      "kind": "button",
+      "x": 89.8,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pitch_bend_minus",
+        "type": "note",
+        "ch": 3,
+        "code": 38,
+        "shift_name": "r_pitch_bend_minus_shift"
+      },
+      "notes": "R-PITCH BEND- note"
+    },
+    {
+      "id": "bm2-r_bend_plus",
+      "fig": "r_bend_plus",
+      "label": "R PITCH +",
+      "kind": "button",
+      "x": 92.5,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pitch_bend_plus",
+        "type": "note",
+        "ch": 3,
+        "code": 39,
+        "shift_name": "r_pitch_bend_plus_shift"
+      },
+      "notes": "R-PITCH BEND+ note"
+    },
+    {
+      "id": "bm2-r_padmode1",
+      "fig": "r_padmode1",
+      "label": "R PAD MODE1",
+      "kind": "button",
+      "x": 62.1,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad_mode1",
+        "type": "note",
+        "ch": 3,
+        "code": 41
+      },
+      "notes": "R-PAD MODE1 note"
+    },
+    {
+      "id": "bm2-r_padmode2",
+      "fig": "r_padmode2",
+      "label": "R PAD MODE2",
+      "kind": "button",
+      "x": 65.0,
+      "y": 57.6,
+      "w": 2.3,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad_mode2",
+        "type": "note",
+        "ch": 3,
+        "code": 42
+      },
+      "notes": "R-PAD MODE2 note"
+    },
+    {
+      "id": "bm2-r_jog",
+      "fig": "r_jog",
+      "label": "R JOG",
+      "kind": "jog",
+      "x": 69.8,
+      "y": 16.1,
+      "w": 22.7,
+      "h": 35.5,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_wheel",
+        "type": "cc",
+        "ch": 3,
+        "code": 96,
+        "shift_name": "r_wheel_shift"
+      },
+      "notes": "R-WHEEL relative (CW 0x01.., CCW 0x7F..); touch note 0x3F (shift 0x7F)"
+    },
+    {
+      "id": "bm2-r_fx1",
+      "fig": "r_fx1",
+      "label": "R FX1",
+      "kind": "knob",
+      "x": 72.7,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_fx1",
+        "type": "cc",
+        "ch": 3,
+        "code": 1,
+        "shift_name": "r_fx1_shift"
+      },
+      "notes": "R-FX1 absolute CC"
+    },
+    {
+      "id": "bm2-r_fx2",
+      "fig": "r_fx2",
+      "label": "R FX2",
+      "kind": "knob",
+      "x": 79.5,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_fx2",
+        "type": "cc",
+        "ch": 3,
+        "code": 2,
+        "shift_name": "r_fx2_shift"
+      },
+      "notes": "R-FX2 absolute CC"
+    },
+    {
+      "id": "bm2-r_fx3",
+      "fig": "r_fx3",
+      "label": "R FX3",
+      "kind": "knob",
+      "x": 86.2,
+      "y": 5.5,
+      "w": 4.5,
+      "h": 7.1,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_fx3",
+        "type": "cc",
+        "ch": 3,
+        "code": 3,
+        "shift_name": "r_fx3_shift"
+      },
+      "notes": "R-FX3 absolute CC"
+    },
+    {
+      "id": "bm2-r_pitch",
+      "fig": "r_pitch",
+      "label": "R PITCH",
+      "kind": "fader",
+      "x": 91.1,
+      "y": 66.1,
+      "w": 2.9,
+      "h": 19.4,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pitch",
+        "type": "pitchbend",
+        "ch": 3,
+        "code": null
+      },
+      "notes": "14-bit pitch bend"
+    },
+    {
+      "id": "bm2-ch2_gain",
+      "fig": "ch2_gain",
+      "label": "CH2 GAIN",
+      "kind": "knob",
+      "x": 54.3,
+      "y": 7.4,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_gain",
+        "type": "cc",
+        "ch": 3,
+        "code": 16,
+        "shift_name": "ch2_gain_shift"
+      },
+      "notes": "GAIN2 absolute CC"
+    },
+    {
+      "id": "bm2-ch2_high",
+      "fig": "ch2_high",
+      "label": "CH2 HIGH",
+      "kind": "knob",
+      "x": 54.3,
+      "y": 16.1,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_high",
+        "type": "cc",
+        "ch": 3,
+        "code": 17,
+        "shift_name": "ch2_high_shift"
+      },
+      "notes": "HIGH2 absolute CC"
+    },
+    {
+      "id": "bm2-ch2_mid",
+      "fig": "ch2_mid",
+      "label": "CH2 MID",
+      "kind": "knob",
+      "x": 54.3,
+      "y": 25.2,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_mid",
+        "type": "cc",
+        "ch": 3,
+        "code": 18,
+        "shift_name": "ch2_mid_shift"
+      },
+      "notes": "MID2 absolute CC"
+    },
+    {
+      "id": "bm2-ch2_low",
+      "fig": "ch2_low",
+      "label": "CH2 LOW",
+      "kind": "knob",
+      "x": 54.3,
+      "y": 33.5,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_low",
+        "type": "cc",
+        "ch": 3,
+        "code": 19,
+        "shift_name": "ch2_low_shift"
+      },
+      "notes": "LOW2 absolute CC"
+    },
+    {
+      "id": "bm2-ch2_fader",
+      "fig": "ch2_fader",
+      "label": "CH2 FADER",
+      "kind": "fader",
+      "x": 54.8,
+      "y": 66.9,
+      "w": 3.3,
+      "h": 17.7,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_fader",
+        "type": "cc",
+        "ch": 3,
+        "code": 20,
+        "shift_name": "ch2_fader_shift"
+      },
+      "notes": "CH2 line fader absolute CC"
+    },
+    {
+      "id": "bm2-ch2_load",
+      "fig": "ch2_load",
+      "label": "LOAD 2",
+      "kind": "button",
+      "x": 54.8,
+      "y": 45.8,
+      "w": 3.3,
+      "h": 3.9,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_load",
+        "type": "note",
+        "ch": 3,
+        "code": 80,
+        "shift_name": "ch2_load_shift"
+      },
+      "notes": "M-LOAD2 note"
+    },
+    {
+      "id": "bm2-ch2_cue",
+      "fig": "ch2_cue",
+      "label": "CUE 2",
+      "kind": "button",
+      "x": 54.8,
+      "y": 54.5,
+      "w": 3.3,
+      "h": 3.9,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_cue",
+        "type": "note",
+        "ch": 3,
+        "code": 82,
+        "shift_name": "ch2_cue_shift"
+      },
+      "notes": "M-CUE2 (headphone cue) note"
+    },
+    {
+      "id": "bm2-master",
+      "fig": "master",
+      "label": "MASTER",
+      "kind": "knob",
+      "x": 47.5,
+      "y": 8.1,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master",
+        "type": "cc",
+        "ch": 6,
+        "code": 0
+      },
+      "notes": "M-MASTER absolute CC"
+    },
+    {
+      "id": "bm2-phones",
+      "fig": "phones",
+      "label": "PHONES",
+      "kind": "knob",
+      "x": 47.5,
+      "y": 16.8,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "phones",
+        "type": "cc",
+        "ch": 6,
+        "code": 1
+      },
+      "notes": "M-PHONES absolute CC"
+    },
+    {
+      "id": "bm2-cue_mix",
+      "fig": "cue_mix",
+      "label": "CUE MIX",
+      "kind": "knob",
+      "x": 47.5,
+      "y": 25.8,
+      "w": 4.1,
+      "h": 6.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "cue_mix",
+        "type": "cc",
+        "ch": 6,
+        "code": 2,
+        "shift_name": "cue_mix_shift"
+      },
+      "notes": "M-CUE MIX absolute CC"
+    },
+    {
+      "id": "bm2-sampler",
+      "fig": "sampler",
+      "label": "SAMPLER",
+      "kind": "fader",
+      "x": 48.1,
+      "y": 67.7,
+      "w": 2.9,
+      "h": 12.9,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "sampler",
+        "type": "cc",
+        "ch": 6,
+        "code": 3,
+        "shift_name": "sampler_shift"
+      },
+      "notes": "M-SAMPLER absolute CC"
+    },
+    {
+      "id": "bm2-xfader",
+      "fig": "xfader",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 44.4,
+      "y": 86.5,
+      "w": 10.3,
+      "h": 4.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 6,
+        "code": 47,
+        "shift_name": "crossfader_shift"
+      },
+      "notes": "M-FADER absolute CC"
+    },
+    {
+      "id": "bm2-browse",
+      "fig": "browse",
+      "label": "TRAX",
+      "kind": "encoder",
+      "x": 47.1,
+      "y": 43.9,
+      "w": 5.0,
+      "h": 7.7,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "browse",
+        "type": "cc",
+        "ch": 6,
+        "code": 96,
+        "shift_name": "browse_shift"
+      },
+      "notes": "M-Browser (TRAX) relative (CW 0x01.., CCW 0x7F..); push note 0x09 (shift 0x49)"
+    },
+    {
+      "id": "bm2-back",
+      "fig": "back",
+      "label": "BACK",
+      "kind": "button",
+      "x": 48.3,
+      "y": 54.5,
+      "w": 2.5,
+      "h": 3.9,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 6,
+        "code": 8,
+        "shift_name": "back_shift"
+      },
+      "notes": "M-BACK note"
+    }
+  ]
+}

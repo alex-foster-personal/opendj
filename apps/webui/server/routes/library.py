@@ -16,7 +16,7 @@ from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared import paths as shared_paths
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
-from apps.webui.server import rb_vendor
+from apps.webui.server import rb_vendor, search_gaps_store
 from apps.webui.server.analysis_overlay import lane_owned_fields
 from apps.webui.server.backend import StateBackend
 from apps.webui.server.deps import get_library_data_dir, get_library_state_db, get_read_state
@@ -131,6 +131,7 @@ def post_preview_strips(body: PreviewStripsIn, request: Request) -> PreviewStrip
 def _present_ids(request: Request) -> list[str]:
     from apps.webui.server.routes import ingest as ingest_routes
 
+    # snapshot.on_disk uses library_playable.scan_playability / bulk_local_audio_paths (#13300).
     snapshot = ingest_routes.build_snapshot(request.app)
     return list(dict.fromkeys(sid for sid, _path in snapshot.on_disk))
 
@@ -195,6 +196,28 @@ def get_library_strip_coverage(request: Request) -> StripCoverageOut:
         mapped_missing=mapped_missing,
         strip_coverage=ratio,
     )
+
+
+class AnlzPrewarmOut(BaseModel):
+    """Answer of ``GET /library/anlz-prewarm``: the ANLZ cache prewarm's progress (PERF-UI-9702)."""
+
+    cached: int | None = Field(description="Mapped tracks with a current ANLZ cache entry at the last pass")
+    missing: int | None = Field(description="Mapped tracks still waiting for a cache entry")
+    last_batch_ms: float | None = Field(description="Wall time of the last batch that warmed anything")
+    state: str = Field(description="not_run, ran, green or yielded; off when the drain is not armed")
+
+
+@router.get("/anlz-prewarm", response_model=AnlzPrewarmOut, operation_id="get_library_anlz_prewarm")
+def get_library_anlz_prewarm(request: Request) -> AnlzPrewarmOut:
+    """The ANLZ cache prewarm's counts as of its last pass; never runs a pass itself.
+
+    Requirements (mini-PRD):
+      [if] the ahead drain is not armed [then] every count is null and state is off
+    """
+    prewarm = getattr(request.app.state, "anlz_prewarm", None)
+    if prewarm is None:
+        return AnlzPrewarmOut(cached=None, missing=None, last_batch_ms=None, state="off")
+    return AnlzPrewarmOut(**prewarm.status())
 
 
 @router.get("/export.xml", response_class=StreamingResponse, operation_id="get_library_export_xml")
@@ -332,6 +355,43 @@ def get_library_readiness(
     """
     return query_library_readiness(
         open_ro, _stem_roots(request), limit=limit, axis=axis
+    )
+
+
+class SearchGapOut(BaseModel):
+    """One library search that returned zero tracks."""
+
+    query: str
+    normalized_query: str
+    hit_count: int
+    first_searched_at: str
+    last_searched_at: str
+
+
+class SearchGapsOut(BaseModel):
+    """Answer of ``GET /library/search-gaps`` (LIBM-12321)."""
+
+    items: list[SearchGapOut]
+
+
+@router.get("/search-gaps", response_model=SearchGapsOut, operation_id="get_library_search_gaps")
+def get_library_search_gaps(
+    state_db: Annotated[Path, Depends(get_library_state_db)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+) -> SearchGapsOut:
+    """Deduplicated zero-result searches, most recent first, as a gaps-in-the-library list."""
+    gaps = search_gaps_store.list_gaps(state_db, limit=limit)
+    return SearchGapsOut(
+        items=[
+            SearchGapOut(
+                query=g.query,
+                normalized_query=g.normalized_query,
+                hit_count=g.hit_count,
+                first_searched_at=g.first_searched_at,
+                last_searched_at=g.last_searched_at,
+            )
+            for g in gaps
+        ]
     )
 
 

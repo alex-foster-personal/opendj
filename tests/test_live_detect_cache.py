@@ -1,4 +1,4 @@
-"""Regression tests for scripts/live_detect.py cache compaction.
+"""Regression tests for scripts/live_detect.py cache compaction and verdict thresholds.
 
 - if cache file missing then _compact_cache returns empty set without creating file
 - if ok rows present then retained; missing/decode_error omitted for retry
@@ -9,15 +9,24 @@
 - if invalid row shape then raises and bytes unchanged
 - if status is not a string then raises with path:line before cache rewrite
 - if compaction rewrites cache then file uses LF-only JSONL bytes
+- if edge share equals LIVE_EDGE then verdict is live
+- if edge share equals LIKELY_EDGE below LIVE_EDGE then verdict is likely
+- if only middle share equals LIKELY_MID then verdict is likely
+- if both shares are below likely thresholds then verdict is studio
+- if duration is shorter than EDGE_S then every edge window has start >= 0 and start + length <= duration
+- if duration is shorter than MID_S then every middle window has start >= 0 and start + length <= duration
+- if duration is long enough for baseline windows then edge and mid tuples match the pre-fix unclamped geometry
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -37,6 +46,17 @@ def live_detect_mod():
     sys.modules["live_detect_cache_test"] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _assert_windows_within_duration(
+    edge: list[tuple[float, float]],
+    mid: list[tuple[float, float]],
+    duration: float,
+) -> None:
+    for start, length in edge + mid:
+        assert 0.0 <= start <= duration
+        assert length >= 0.0
+        assert start + length <= duration + 1e-9
 
 
 def _ok_line(path: str) -> str:
@@ -142,6 +162,44 @@ def test_unhashable_status_reports_path_line(tmp_path, live_detect_mod):
     assert cache.read_bytes() == before.encode("utf-8")
 
 
+@pytest.mark.requirement("TESTINFRA-13648")
+@pytest.mark.parametrize("duration", [5.0, 12.0, 19.9])
+def test_windows_short_edge_bounded(live_detect_mod, duration: float):
+    """[if] duration is shorter than EDGE_S [then] every edge window lies inside [0, duration], [else stop]."""
+    edge_s = live_detect_mod.CFG.EDGE_S
+    assert duration < edge_s
+    edge, mid = live_detect_mod._windows(duration)
+    _assert_windows_within_duration(edge, mid, duration)
+    for start, length in edge:
+        assert start + length <= duration + 1e-9
+
+
+@pytest.mark.requirement("TESTINFRA-13648")
+@pytest.mark.parametrize("duration", [3.0, 8.0, 9.5])
+def test_windows_short_mid_bounded(live_detect_mod, duration: float):
+    """[if] duration is shorter than MID_S [then] every middle window lies inside [0, duration], [else stop]."""
+    mid_s = live_detect_mod.CFG.MID_S
+    assert duration < mid_s
+    edge, mid = live_detect_mod._windows(duration)
+    _assert_windows_within_duration(edge, mid, duration)
+
+
+@pytest.mark.requirement("TESTINFRA-13648")
+def test_windows_long_track_geometry_unchanged(live_detect_mod):
+    """[if] the track is long enough for the baseline windows [then] edge and mid tuples keep the pre-fix geometry, [else stop]."""
+    duration = 120.0
+    edge_s = live_detect_mod.CFG.EDGE_S
+    mid_s = live_detect_mod.CFG.MID_S
+    edge, mid = live_detect_mod._windows(duration)
+    assert edge == [(0.0, edge_s), (duration - edge_s, edge_s)]
+    half = mid_s / 2
+    assert mid == [
+        (duration * 0.3 - half, mid_s),
+        (duration * 0.5 - half, mid_s),
+        (duration * 0.7 - half, mid_s),
+    ]
+
+
 def test_compacted_rewrite_is_lf_jsonl(tmp_path, live_detect_mod):
     cache = tmp_path / "cache.jsonl"
     lines = [
@@ -154,3 +212,82 @@ def test_compacted_rewrite_is_lf_jsonl(tmp_path, live_detect_mod):
     assert b"\r" not in raw
     assert raw.endswith(b"\n")
     assert raw.count(b"\n") == 1
+
+
+@pytest.mark.requirement("TESTINFRA-14279")
+def test_verdict_live_at_live_edge_threshold(live_detect_mod):
+    """[if] edge share equals LIVE_EDGE [then] verdict is live, [else stop]."""
+    cfg = live_detect_mod.CFG
+    assert live_detect_mod._verdict(cfg.LIVE_EDGE, 0.0) == "live"
+
+
+@pytest.mark.requirement("TESTINFRA-14279")
+def test_verdict_likely_at_likely_edge_below_live_edge(live_detect_mod):
+    """[if] edge share equals LIKELY_EDGE below LIVE_EDGE [then] verdict is likely, [else stop]."""
+    cfg = live_detect_mod.CFG
+    assert cfg.LIKELY_EDGE < cfg.LIVE_EDGE
+    assert live_detect_mod._verdict(cfg.LIKELY_EDGE, 0.0) == "likely"
+
+
+@pytest.mark.requirement("TESTINFRA-14279")
+def test_verdict_likely_when_only_mid_share_hits_likely_mid(live_detect_mod):
+    """[if] only middle share equals LIKELY_MID [then] verdict is likely, [else stop]."""
+    cfg = live_detect_mod.CFG
+    below_likely_edge = max(0.0, cfg.LIKELY_EDGE - 0.01)
+    assert live_detect_mod._verdict(below_likely_edge, cfg.LIKELY_MID) == "likely"
+
+
+@pytest.mark.requirement("TESTINFRA-14279")
+def test_verdict_studio_when_both_shares_below_likely_thresholds(live_detect_mod):
+    """[if] both shares are below likely thresholds [then] verdict is studio, [else stop]."""
+    cfg = live_detect_mod.CFG
+    edge = max(0.0, cfg.LIKELY_EDGE - 0.01)
+    mid = max(0.0, cfg.LIKELY_MID - 0.01)
+    assert edge < cfg.LIKELY_EDGE
+    assert mid < cfg.LIKELY_MID
+    assert live_detect_mod._verdict(edge, mid) == "studio"
+
+
+def test_score_file_ffprobe_failure_is_decode_error_without_verdict(tmp_path, live_detect_mod, monkeypatch):
+    """[if] ffprobe fails for an existing path [then] decode_error row has no verdict, [else stop]."""
+    audio = tmp_path / "exists.mp3"
+    audio.write_bytes(b"\x00")
+    monkeypatch.setattr(
+        live_detect_mod,
+        "_probe_duration",
+        lambda _path: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "ffprobe")),
+    )
+    result = live_detect_mod.score_file(MagicMock(), str(audio))
+    assert result.status == "decode_error"
+    assert result.verdict is None
+
+
+def test_score_file_decode_window_failure_is_decode_error_without_verdict(tmp_path, live_detect_mod, monkeypatch):
+    """[if] one decode window fails [then] decode_error row has no verdict, [else stop]."""
+    audio = tmp_path / "exists.mp3"
+    audio.write_bytes(b"\x00")
+    monkeypatch.setattr(live_detect_mod, "_probe_duration", lambda _path: 120.0)
+    monkeypatch.setattr(
+        live_detect_mod,
+        "_decode_window",
+        lambda _path, _start, _length: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "ffmpeg")),
+    )
+    result = live_detect_mod.score_file(MagicMock(), str(audio))
+    assert result.status == "decode_error"
+    assert result.verdict is None
+
+
+def test_score_file_decode_error_text_is_bounded(tmp_path, live_detect_mod, monkeypatch):
+    """[if] decode failure includes tool output [then] stored error text is bounded, [else stop]."""
+    audio = tmp_path / "exists.mp3"
+    audio.write_bytes(b"\x00")
+    long_tail = "x" * 500
+
+    def fail_probe(_path: str) -> float:
+        raise subprocess.CalledProcessError(1, "ffprobe", stderr=long_tail)
+
+    monkeypatch.setattr(live_detect_mod, "_probe_duration", fail_probe)
+    result = live_detect_mod.score_file(MagicMock(), str(audio))
+    assert result.status == "decode_error"
+    assert result.error is not None
+    assert len(result.error) <= 200

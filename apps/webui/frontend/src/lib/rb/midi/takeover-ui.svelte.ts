@@ -19,8 +19,17 @@
  */
 
 import type { MidiTakeoverMode, TakeoverGhost } from './takeover-policy';
+import {
+	readDisplacedWarningEnabled,
+	writeDisplacedWarningEnabled,
+	type DisplacedWarningStorage
+} from './displaced-control-warning';
 
 const TAKEOVER_MODE_KEY = 'opendj.midi.takeover-mode';
+
+function _storage(): DisplacedWarningStorage | null {
+	return typeof window === 'undefined' ? null : (window.localStorage ?? null);
+}
 
 function initialMode(): MidiTakeoverMode {
 	if (typeof document === 'undefined') return 'pickup';
@@ -31,9 +40,16 @@ function initialMode(): MidiTakeoverMode {
 export const midiTakeoverUi: {
 	mode: MidiTakeoverMode;
 	ghosts: Record<string, TakeoverGhost | null>;
-} = $state({ mode: initialMode(), ghosts: {} });
+	/** PVPIN-12193: whether a displaced control raises the orange warning. */
+	displacedWarning: boolean;
+} = $state({
+	mode: initialMode(),
+	ghosts: {},
+	displacedWarning: readDisplacedWarningEnabled(_storage())
+});
 
 let _modeListener: ((mode: MidiTakeoverMode) => void) | null = null;
+let _displacedWarningListener: ((enabled: boolean) => void) | null = null;
 
 /** Register THE policy owner's mode listener. takeover-state registers at
  * import and seeds its policy from midiTakeoverUi.mode, so a mode chosen
@@ -46,6 +62,18 @@ export function setMidiTakeoverMode(mode: MidiTakeoverMode): void {
 	midiTakeoverUi.mode = mode;
 	if (typeof document !== 'undefined') window.localStorage.setItem(TAKEOVER_MODE_KEY, mode);
 	_modeListener?.(mode);
+}
+
+/** THE policy owner's listener for the displaced-control warning switch (as for the mode). */
+export function onMidiDisplacedWarningChange(listener: (enabled: boolean) => void): void {
+	_displacedWarningListener = listener;
+}
+
+/** PVPIN-12193: turn the displaced-control warning on or off (MIDI panel, bus, toast). */
+export function setMidiDisplacedWarning(enabled: boolean): void {
+	midiTakeoverUi.displacedWarning = enabled;
+	writeDisplacedWarningEnabled(_storage(), enabled);
+	_displacedWarningListener?.(enabled);
 }
 
 /** Reusable mixer chrome queries this by function id; no control invents a

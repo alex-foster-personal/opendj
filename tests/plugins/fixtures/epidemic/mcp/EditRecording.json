@@ -1,0 +1,15 @@
+{
+  "tool": "EditRecording",
+  "status": 200,
+  "headers": {
+    "x-ratelimit-limit": "20",
+    "x-ratelimit-remaining": "19",
+    "retry-after": "5"
+  },
+  "result": {
+    "jobId": "job-es-1",
+    "editId": "edit-es-1",
+    "targetDurationMs": 47000,
+    "status": "COMPLETED"
+  }
+}

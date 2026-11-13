@@ -1,3 +1,5 @@
+// requirement: TRACKIFY-13653
+// [if] Trackify mounts [then] autoplay is on by default
 /**
  * Tests for `trackify-session.svelte.ts`'s teardown, run against the REAL
  * performance dispatcher (only the engine's audio transport is faked),
@@ -119,6 +121,22 @@ describe('trackify session teardown vs a concurrent Gig mount (PERFMODE-15)', { 
 		assert.equal(mountedCap, entry.TRACKIFY_ANLZ_ENTRY_CAP);
 		// Overshoot control: Gig and Library get their tier cap back.
 		assert.equal(entry.effectiveAnlzEntryCap(), tierCap);
+	});
+
+	it('arms autoplay on by default for the session mount', () => {
+		installFakeEngine();
+		const priorAutoPlay = entry.uiPrefs.auto_play_enabled;
+		const uninstall = entry.installTrackifySession();
+		try {
+			assert.equal(
+				entry.uiPrefs.auto_play_enabled,
+				true,
+				'Trackify must mount with autoplay on'
+			);
+		} finally {
+			void uninstall();
+			entry.uiPrefs.auto_play_enabled = priorAutoPlay;
+		}
 	});
 
 	it('stamps uiPrefs app_mode to music-player for the session mount', () => {

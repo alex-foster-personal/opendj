@@ -11,12 +11,20 @@ from pathlib import Path
 from typing import BinaryIO, cast
 from urllib.parse import quote
 
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from apps.engine_core.plugins_api_store import (
     _SIDELOAD_STATUS,
     API_PREFIX,
+    CyaniteEnrichIn,
+    CyaniteEnrichOut,
+    CyaniteFactsOut,
+    CyaniteReadyOut,
+    EpidemicEnrichIn,
+    EpidemicEnrichOut,
+    EpidemicReadyOut,
+    ProviderQuotaOut,
     SideloadPreviewIn,
     SideloadPreviewOut,
     UiSlotOut,
@@ -27,6 +35,8 @@ from apps.engine_core.plugins_api_store import (
     _runtime,
     router,
 )
+from apps.plugins import cyanite as cyanite_plugin
+from apps.plugins import epidemic_sound as epidemic_sound_plugin
 from apps.plugins.catalog import (
     CatalogEntry,
     CatalogError,
@@ -170,3 +180,101 @@ def listing_media(request: Request, plugin_id: str, sha256: str) -> Response:
             raise _refuse(502, exc.code, str(exc)) from exc
         return Response(content=data, media_type=shot.media_type, headers={"Cache-Control": "max-age=86400, immutable"})
     raise _refuse(404, "not-listed", f"{sha256} is not a screenshot of {plugin_id} in a visible listing")
+
+
+@router.get("/cyanite/facts", response_model=CyaniteFactsOut)
+def cyanite_facts() -> CyaniteFactsOut:
+    """Published Cyanite pricing and limit facts; no credential required."""
+    facts = cyanite_plugin.documented_facts()
+    return CyaniteFactsOut(**facts.as_dict())
+
+
+@router.get("/cyanite/ready", response_model=CyaniteReadyOut)
+def cyanite_ready(request: Request) -> CyaniteReadyOut:
+    """Whether the optional Cyanite provider has a user credential (never blocks core)."""
+    runtime = _runtime(request)
+    client = cyanite_plugin.cyanite_optional(runtime.providers)
+    quota = None
+    if client is not None:
+        surface = runtime.providers.surface(cyanite_plugin.PLUGIN_ID)
+        if surface is not None and surface.quota is not None:
+            quota = ProviderQuotaOut(**surface.quota.to_wire())
+    return CyaniteReadyOut(
+        plugin_id=cyanite_plugin.PLUGIN_ID,
+        configured=client is not None,
+        quota=quota,
+    )
+
+
+@router.post("/cyanite/enrich", response_model=CyaniteEnrichOut)
+def cyanite_enrich(request: Request, body: CyaniteEnrichIn) -> CyaniteEnrichOut:
+    """Map recorded or live Cyanite responses into V2 claim-envelope wire JSON."""
+    runtime = _runtime(request)
+    client = cyanite_plugin.CyaniteClient.from_environ(registry=runtime.providers)
+    if not client.configured() and not os.environ.get(cyanite_plugin.CYANITE_FIXTURE_ROOT_ENV, "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "cyanite-unconfigured",
+                "message": f"{cyanite_plugin.CYANITE_API_KEY_ENV} is not set and no fixture root is configured",
+            },
+        )
+    try:
+        claims, quota = cyanite_plugin.enrich_from_fixtures(
+            client,
+            stable_id=body.stable_id,
+            library_track_id=body.library_track_id,
+            input_fingerprint=body.input_fingerprint,
+            observed_at=body.observed_at,
+        )
+    except cyanite_plugin.CyaniteError as exc:
+        raise HTTPException(status_code=502, detail={"code": "cyanite-error", "message": str(exc)}) from exc
+    quota_out = ProviderQuotaOut(**quota.to_wire()) if quota is not None else None
+    return CyaniteEnrichOut(claims=claims, quota=quota_out)
+
+
+@router.get("/epidemic-sound/ready", response_model=EpidemicReadyOut)
+def epidemic_sound_ready(request: Request) -> EpidemicReadyOut:
+    """Whether the optional Epidemic Sound provider has credentials (never blocks core)."""
+    runtime = _runtime(request)
+    client = epidemic_sound_plugin.epidemic_optional(runtime.providers)
+    quota = None
+    if client is not None:
+        surface = runtime.providers.surface(epidemic_sound_plugin.PLUGIN_ID)
+        if surface is not None and surface.quota is not None:
+            quota = ProviderQuotaOut(**surface.quota.to_wire())
+    return EpidemicReadyOut(
+        plugin_id=epidemic_sound_plugin.PLUGIN_ID,
+        configured=client is not None,
+        quota=quota,
+    )
+
+
+@router.post("/epidemic-sound/enrich", response_model=EpidemicEnrichOut)
+def epidemic_sound_enrich(request: Request, body: EpidemicEnrichIn) -> EpidemicEnrichOut:
+    """Map recorded or live Epidemic partner-API and MCP responses into claim-envelope wire JSON."""
+    runtime = _runtime(request)
+    client = epidemic_sound_plugin.EpidemicClient.from_environ(registry=runtime.providers)
+    if not client.configured():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "epidemic-unconfigured",
+                "message": (
+                    f"{epidemic_sound_plugin.EPIDEMIC_API_KEY_ENV} / "
+                    f"{epidemic_sound_plugin.EPIDEMIC_MCP_KEY_ENV} are not set and no fixture root is configured"
+                ),
+            },
+        )
+    try:
+        claims, quota = epidemic_sound_plugin.enrich_from_fixtures(
+            client,
+            stable_id=body.stable_id,
+            reference_track_id=body.reference_track_id,
+            input_fingerprint=body.input_fingerprint,
+            observed_at=body.observed_at,
+        )
+    except epidemic_sound_plugin.EpidemicError as exc:
+        raise HTTPException(status_code=502, detail={"code": "epidemic-error", "message": str(exc)}) from exc
+    quota_out = ProviderQuotaOut(**quota.to_wire()) if quota is not None else None
+    return EpidemicEnrichOut(claims=claims, quota=quota_out)

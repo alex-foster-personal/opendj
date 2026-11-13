@@ -39,6 +39,8 @@ def _http_error(exc: RbDjaySyncError) -> HTTPException:
         status = 403
     elif exc.code == "FINGERPRINT_UNAVAILABLE":
         status = 503
+    elif exc.code == "SAFETY_ABORT":
+        status = 409
     return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
 
 

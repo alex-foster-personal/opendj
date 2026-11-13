@@ -48,12 +48,21 @@ from apps.engine_core.assistant.agent_contract import (
     AGENT_ROUTE,
     AgentIn,
     ChooseTier,
+    ProviderCatalogHit,
+    ProviderCatalogHitLabel,
     ToolContext,
     ToolFailure,
     ToolSpec,
 )
+from apps.engine_core.assistant.agent import PROVIDER_CATALOG_PROMPT
+from apps.engine_core.assistant.core_tools import (
+    ASSISTANT_PROVIDER_FIXTURE_TRANSCRIPTS,
+    label_catalog_constrained_hit,
+)
+from apps.plugins.providers import PARENT_REVIEW_REQUIRED_IDS
 from apps.engine_core.assistant.core_tools import CORE_TOOLS, read_audible
 from apps.engine_core.assistant.machine_tools import MACHINE_TOOLS
+from apps.engine_core.assistant.oj_tools import OJ_TOOLS
 from apps.engine_core.assistant.tiers import (
     DEFAULT_MODEL,
     MODEL_ENV,
@@ -67,8 +76,9 @@ from apps.engine_core.assistant.upstream import Upstream, UpstreamMode, Upstream
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 # ----- configuration ------------------------------------------------------
-#: Every tool the agent may call: engine tools, then machine tools.
-ALL_TOOLS: tuple[ToolSpec, ...] = CORE_TOOLS + MACHINE_TOOLS
+#: Every tool the agent may call: engine tools, machine tools, then the typed
+#: OJ tools (one module per domain under oj_tools/, collected there).
+ALL_TOOLS: tuple[ToolSpec, ...] = CORE_TOOLS + MACHINE_TOOLS + OJ_TOOLS
 
 #: Refusal codes. The frontend branches on these, so they are values, not
 #: prose: `{"detail": {"code", "message"}}` is this repo's error envelope.
@@ -138,6 +148,12 @@ class InstantPreviewOut(BaseModel):
     reason: str | None = None
 
 
+class ProviderPolicyOut(BaseModel):
+    catalog_prompt: str
+    parent_review_required: list[str]
+    fixture_transcripts: list[dict[str, str]]
+
+
 # ----- helpers ------------------------------------------------------------
 def _model() -> str:
     return os.environ.get(MODEL_ENV, "").strip() or DEFAULT_MODEL
@@ -203,6 +219,28 @@ async def assistant_status() -> AssistantStatusOut:
     except UpstreamUnconfigured as exc:
         return AssistantStatusOut(configured=False, model=_model(), code=exc.code)
     return AssistantStatusOut(configured=True, model=_model(), mode=upstream.mode)
+
+
+@router.get("/provider-policy", response_model=ProviderPolicyOut)
+async def assistant_provider_policy() -> ProviderPolicyOut:
+    """Catalog-constraint rules and fixture transcripts for the agent sidebar."""
+    return ProviderPolicyOut(
+        catalog_prompt=PROVIDER_CATALOG_PROMPT,
+        parent_review_required=sorted(PARENT_REVIEW_REQUIRED_IDS),
+        fixture_transcripts=[dict(row) for row in ASSISTANT_PROVIDER_FIXTURE_TRANSCRIPTS],
+    )
+
+
+@router.post("/label-provider-hit", response_model=ProviderCatalogHitLabel)
+async def assistant_label_provider_hit(payload: ProviderCatalogHit) -> ProviderCatalogHitLabel:
+    """Label a production-library or intelligence hit for assistant presentation."""
+    try:
+        return label_catalog_constrained_hit(payload.model_dump())
+    except ToolFailure as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 
 @router.post("/instant/preview", response_model=InstantPreviewOut)

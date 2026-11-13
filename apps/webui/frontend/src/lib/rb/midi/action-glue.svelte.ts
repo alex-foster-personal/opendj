@@ -38,6 +38,11 @@
 
 import { untrack } from 'svelte';
 import { pushToast } from '$lib/stores.svelte';
+import {
+	DISPLACED_WARNING_MESSAGE,
+	DISPLACED_WARNING_SHOW_MS
+} from '$lib/rb/midi/displaced-control-warning';
+import { registerDisplacedWarningSink } from '$lib/rb/midi/takeover-state.svelte';
 import { stemPartGains } from '$lib/rb/stem-graph';
 import { controllerStemPadsAvailable } from '$lib/rb/midi/controller-stem-pads';
 import {
@@ -89,7 +94,6 @@ import {
 	stemKnobRole
 } from '$lib/rb/knob-control.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
-import { midiSelectDeckPair } from '$lib/rb/mixer-selection.svelte';
 
 export {
 	controllerPadMode,
@@ -130,7 +134,7 @@ function _pressed(value: MidiInputValue): boolean {
 }
 
 /** Glue-local overlay while MASTER CUE is engaged (no IPC command). */
-let _masterCue: { savedMix: number } | null = null;
+let _masterCue: { savedMix: number } | null = $state(null);
 
 /** Test-only reset for master_cue latch/hold state. */
 export function _resetMasterCueForTests(): void {
@@ -746,7 +750,11 @@ function _routeMidiAction(
 			return;
 		case 'mixer_deck_pair_select':
 			if (!_pressed(value)) return;
-			midiSelectDeckPair(action.pair, action.deck);
+			void dispatchPerformanceCommand(
+				action.deck === undefined
+					? { type: 'mixer_deck_pair_select', pair: action.pair }
+					: { type: 'mixer_deck_pair_select', pair: action.pair, deck: action.deck }
+			);
 			return;
 		case 'shift_modifier':
 			// Consumed inside webmidi.svelte.ts; reaching the glue is a bug.
@@ -828,6 +836,12 @@ export function ledTriggerActive(trigger: LedTrigger, deviceId?: string): boolea
 		);
 	} else if (trigger.kind === 'channel_cue_enabled') {
 		return mixerState.channels[trigger.deck].cue_enabled;
+	} else if (trigger.kind === 'shift_held') {
+		return deviceId !== undefined && midiState.shiftHeldByDevice[deviceId] === true;
+	} else if (trigger.kind === 'master_cue_active') {
+		return _masterCue !== null;
+	} else if (trigger.kind === 'sync_master') {
+		return beatSyncMasterDeck() === trigger.deck;
 	}
 	const _exhaustive: never = trigger;
 	throw new Error(`Unhandled LedTrigger: ${JSON.stringify(_exhaustive)}`);
@@ -843,6 +857,7 @@ export function midiLedFeedback(
 	for (const rule of map.leds ?? []) {
 		if (
 			rule.padMode !== undefined &&
+			'deck' in rule.trigger &&
 			controllerPadMode(deviceId, rule.trigger.deck) !== rule.padMode
 		)
 			continue;
@@ -938,3 +953,17 @@ export function attachMidiGlue(): () => void {
 		_attached = false;
 	};
 }
+
+// PVPIN-12193: the small orange toast for a control left displaced; its
+// Turn off action persists the warning off in config.
+registerDisplacedWarningSink((disable) =>
+	pushToast(
+		DISPLACED_WARNING_MESSAGE,
+		'warn',
+		DISPLACED_WARNING_SHOW_MS,
+		undefined,
+		{},
+		'midi-displaced-control',
+		{ label: 'Turn off', handler: disable }
+	)
+);

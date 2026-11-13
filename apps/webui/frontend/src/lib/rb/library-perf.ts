@@ -229,6 +229,7 @@ export function recordFilterTiming(args: {
 		null,
 		undefined,
 		undefined,
+		undefined,
 		{ keystroke_ms: [...args.keystrokeMs] }
 	);
 }
@@ -267,6 +268,7 @@ export function recordFilterDropped(keystrokes: number): void {
 		'library-filter',
 		{ keystrokes, dropped: keystrokes },
 		null,
+		undefined,
 		undefined,
 		undefined,
 		{

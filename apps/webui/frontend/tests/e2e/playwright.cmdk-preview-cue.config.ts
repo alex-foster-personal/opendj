@@ -60,7 +60,7 @@ export default defineConfig({
 		{
 			command: guardedWebServerCommand('cmdk-preview-cue-engine', [
 				// The fixture builder (Python) also creates the sandbox HOME: no shell-specific step here.
-				`${shellArgument(UV)} run --no-sync python -m ${FIXTURE_BUILDER_MODULE} --data-dir ${shellArgument(FIXTURE_DATA_DIR)} --home ${shellArgument(SANDBOX_HOME)}`,
+				`${shellArgument(UV)} run --no-sync --extra analysis python -m ${FIXTURE_BUILDER_MODULE} --data-dir ${shellArgument(FIXTURE_DATA_DIR)} --home ${shellArgument(SANDBOX_HOME)}`,
 				'&&',
 				// The engine, not apps.webui.server: it serves /api/v1/flags, which turns the v2 bar on.
 				`${shellArgument(UV)} run --no-sync python -m apps.engine_core serve --data-dir ${shellArgument(FIXTURE_DATA_DIR)}`,
@@ -81,6 +81,7 @@ export default defineConfig({
 				MDT_FEATURE_FLAGS_FILE: '',
 				HOME: SANDBOX_HOME,
 				WEB_CONCURRENCY: '',
+				MUSIC_DJ_AUTO_ANALYZE: 'off',
 				MUSIC_DJ_FRONTEND_PORT: String(CMDK_PREVIEW_CUE_FRONTEND_PORT),
 				MUSIC_DJ_BACKEND_PORT: String(CMDK_PREVIEW_CUE_API_PORT)
 			}

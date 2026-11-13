@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Export blind A/B pairs for the FILTER fast-turn and resonance voicing (#9829, FXFILT-9829).
+ * Export blind A/B pairs for the FILTER fast-turn and resonance voicing (#9829, FXFILT-9829), plus the beat FX
+ * LFO FILTER shape and direction default (#10014).
  *
  * Spec: (private path) section 6, features B (resonance) and C (fast-turn).
  *
@@ -20,13 +21,16 @@
  *     [if] any real-path dependency file is missing [then ⛔️ unless the CLI exits 2 with [UNAVAILABLE] naming each missing issue and path]
  *     [if] UNAVAILABLE [then ⛔️ if --out was created or written]
  *     [if] exportFilterRatingPairs gets a renderer with realPath !== true and no allowTestDouble [then ⛔️ unless it throws]
- *   ✔︎ ✅ R1 writes 8 pairs (glide hz/octave, glide 5/20 ms, Q 2/4 and 4/8 at the winning glide, 12/24 dB/oct once)
+ *   ✔︎ ✅ R1 writes 10 pairs (glide hz/octave, glide 5/20 ms, Q 2/4 and 4/8 at the winning glide, 12/24 dB/oct once,
+ *     LFO FILTER sine/triangle and down/up at one division)
  *     [if] same seed twice [then ⛔️ if manifests differ]
  *     [if] a candidate label shows in an id, clip path or question [then ⛔️]
  *   ✔︎ ✅ R2 each side records octave span at gesture end, HP residual at 100/160/250 Hz, corner peak and RMS change
  *     [if] a proxy is missing or non-finite [then ⛔️]
  *   ✔︎ ✅ R3 every render passes the finite and peak vetoes before any file is written
  *     [if] a clip exceeds 0 dBFS [then ⛔️ unless VetoError peak naming pair, side and sample, and nothing written]
+ *   ✔︎ ✅ 🎯 R4 a render that resolves after the caller replaced the export (aborted its signal) is discarded, never written
+ *     [if] signal aborts while a render is in flight and that render then resolves valid [then ⛔️ unless the export rejects and nothing is written]
  *   (R1-R3 are exercised under a test double only; they carry no real-path evidence yet.)
  */
 import { mkdirSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -36,7 +40,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 /**
  * @typedef {{t_ms: number, value: number}[]} Automation  knob points relative to clip start, linear between, held after the last
  * @typedef {{ sampleRate: number, input: Float32Array[], direction: 'hp'|'lp', automation: Automation,
- *   glide_domain: 'hz'|'octave', glide_ms: number, resonance_q_linear: number|null, slope_db_oct: 12|24 }} RenderRequest
+ *   glide_domain: 'hz'|'octave', glide_ms: number, resonance_q_linear: number|null, slope_db_oct: 12|24,
+ *   lfo_shape?: 'sine'|'triangle'|'saw_decay', lfo_direction?: 'down'|'up', lfo_beats?: number, lfo_bpm?: number }} RenderRequest
+ *   a request carrying lfo_shape renders the #9792 LFO FILTER kernel at full level, knob held at the dry detent
  * @typedef {{ channels: Float32Array[], cornerHz: Float32Array, quantum: number }} RenderResult
  *   cornerHz is the corner frequency the real graph applied, one value per render quantum of `quantum` frames
  * @typedef {{ id: string, realPath: boolean, render(req: RenderRequest): Promise<RenderResult> }} Renderer
@@ -69,7 +75,12 @@ export const LP_FLOOR_HZ = 130;
 export const RESIDUAL_HZ = [100, 160, 250];
 export const PROBE_TONE_DBFS = -20;
 export const STATIC_PROBE_KNOB = Object.freeze({ hp: 0.75, lp: 0.25 });
-export const MAX_PAIRS = 8;
+export const MAX_PAIRS = 10;
+// LFO FILTER pairs (#10014): the kernel default every LFO arm departs from, at one division on the fixture tempo.
+export const LFO_SHIPPED = Object.freeze({ lfo_shape: 'sine', lfo_direction: 'down', lfo_beats: 1 });
+export const FIXTURE_BPM = Object.freeze({ 'four-on-the-floor': 128, 'vocal-led': 124 });
+export const LFO_QUESTION = 'Which filter movement sits better in the groove?';
+const LFO_AXES = ['lfo_shape', 'lfo_direction'];
 export const REAL_PATH_DEPENDENCIES = Object.freeze([
 	{ issue: '#9774', what: 'fx render harness', path: 'apps/webui/frontend/tests/e2e/support/fx-render-harness.ts' },
 	{ issue: '#9826', what: 'filter resonance ceiling', path: 'apps/webui/frontend/src/lib/rb/filter-resonance.ts' },
@@ -85,14 +96,18 @@ export const AXES = Object.freeze([
 	{ axis: 'glide_domain', values: ['hz', 'octave'] },
 	{ axis: 'glide_time', values: ['5ms', '20ms'] },
 	{ axis: 'resonance_q', values: ['q2', 'q4', 'q8'] },
-	{ axis: 'slope', values: ['12db', '24db'] }
+	{ axis: 'slope', values: ['12db', '24db'] },
+	{ axis: 'lfo_shape', values: ['sine', 'triangle'] },
+	{ axis: 'lfo_direction', values: ['down', 'up'] }
 ]);
 export const REQUIRED_COMPARISONS = Object.freeze([
 	{ axis: 'glide_domain', a: 'hz', b: 'octave' },
 	{ axis: 'glide_time', a: '5ms', b: '20ms' },
 	{ axis: 'resonance_q', a: 'q2', b: 'q4' },
 	{ axis: 'resonance_q', a: 'q4', b: 'q8' },
-	{ axis: 'slope', a: '12db', b: '24db' }
+	{ axis: 'slope', a: '12db', b: '24db' },
+	{ axis: 'lfo_shape', a: 'sine', b: 'triangle' },
+	{ axis: 'lfo_direction', a: 'down', b: 'up' }
 ]);
 // Request overrides per candidate label. `winning` candidates sit on the winning glide, the rest on SHIPPED.
 const CANDIDATES = {
@@ -104,7 +119,11 @@ const CANDIDATES = {
 	q4: { winning: true, set: { resonance_q_linear: 4 } },
 	q8: { winning: true, set: { resonance_q_linear: 8 } },
 	'12db': { winning: true, set: { slope_db_oct: 12 } },
-	'24db': { winning: true, set: { slope_db_oct: 24 } }
+	'24db': { winning: true, set: { slope_db_oct: 24 } },
+	sine: { winning: false, set: { lfo_shape: 'sine' } },
+	triangle: { winning: false, set: { lfo_shape: 'triangle' } },
+	down: { winning: false, set: { lfo_direction: 'down' } },
+	up: { winning: false, set: { lfo_direction: 'up' } }
 };
 export const PAIRS = Object.freeze([
 	{ key: 'p1', axis: 'glide_domain', a: 'hz', b: 'octave', direction: 'hp', gesture: 'flick', fixture: 'four-on-the-floor' },
@@ -114,7 +133,9 @@ export const PAIRS = Object.freeze([
 	{ key: 'p5', axis: 'resonance_q', a: 'q2', b: 'q4', direction: 'hp', gesture: 'ride', fixture: 'four-on-the-floor' },
 	{ key: 'p6', axis: 'resonance_q', a: 'q4', b: 'q8', direction: 'lp', gesture: 'ride', fixture: 'vocal-led' },
 	{ key: 'p7', axis: 'resonance_q', a: 'q4', b: 'q8', direction: 'hp', gesture: 'flick', fixture: 'vocal-led' },
-	{ key: 'p8', axis: 'slope', a: '12db', b: '24db', direction: 'lp', gesture: 'ride', fixture: 'four-on-the-floor' }
+	{ key: 'p8', axis: 'slope', a: '12db', b: '24db', direction: 'lp', gesture: 'ride', fixture: 'four-on-the-floor' },
+	{ key: 'p9', axis: 'lfo_shape', a: 'sine', b: 'triangle', direction: 'lp', gesture: 'ride', fixture: 'four-on-the-floor' },
+	{ key: 'p10', axis: 'lfo_direction', a: 'down', b: 'up', direction: 'lp', gesture: 'ride', fixture: 'vocal-led' }
 ].map(Object.freeze));
 const GESTURE_MS = { flick: FLICK_MS, ride: RIDE_MS };
 
@@ -125,7 +146,8 @@ const PROXY_METHOD = {
 	octave_span_fraction: 'octave_span_at_gesture_end over the full knob travel (HP 30 to 6300 Hz, LP 20000 to 130 Hz)',
 	residual_hz_db: 'HP only: Goertzel level of a 100/160/250 Hz tone probe through the same gesture over [gesture end, +100 ms], output minus input, floor -120 dB',
 	corner_peak_db: 'static noise probe at knob 0.75 HP / 0.25 LP, last 1 s: max output/input ratio over [fc/2, 2fc] in 1/12-octave steps minus the passband median',
-	integrated_rms_change_db: '20 log10 of static-probe output RMS over the same probe at the shipped Q, last 1 s'
+	integrated_rms_change_db: '20 log10 of static-probe output RMS over the same probe at the shipped Q (LFO pairs: the shipped sine down LFO), last 1 s',
+	lfo_pairs: 'LFO pairs hold the knob at the dry detent for the clip and the probes; the corner trace is the LFO lowpass'
 };
 
 export class VetoError extends Error {
@@ -156,7 +178,7 @@ export function resolveRealRenderer(repoRoot = REPO_ROOT) {
 		const names = missing.map((d) => `${d.issue} ${d.what} (${d.path})`).join(', ');
 		throw new UnavailableError(`UNAVAILABLE: filter calibration renders only through the real web graph; missing ${names}`, missing);
 	}
-	throw new UnavailableError('UNAVAILABLE: the #9774 harness, #9826 and #9828 are present but this script has no adapter to them yet; wire the #9774 render entry on buildDeckChannelGraph with the resonance and glide params', []);
+	throw new UnavailableError('UNAVAILABLE: the #9774 harness, #9826 and #9828 are present but this script has no adapter to them yet; wire the #9774 render entry on buildDeckChannelGraph with the resonance and glide params, and on buildBeatFxFilterKernel with lfo_shape and lfo_direction', []);
 }
 
 //----------------------------------------------------------------------------- helpers
@@ -430,20 +452,23 @@ function _encodeWav(channels, sr) {
 }
 
 //----------------------------------------------------------------------------- export
-const _params = (r) => ({ glide_domain: r.glide_domain, glide_ms: r.glide_ms, resonance_q_linear: r.resonance_q_linear, slope_db_oct: r.slope_db_oct });
-function _request(label, winningGlide) {
+const _lfoParams = (r) => ('lfo_shape' in r ? { lfo_shape: r.lfo_shape, lfo_direction: r.lfo_direction, lfo_beats: r.lfo_beats, lfo_bpm: r.lfo_bpm } : {});
+const _params = (r) => ({ glide_domain: r.glide_domain, glide_ms: r.glide_ms, resonance_q_linear: r.resonance_q_linear, slope_db_oct: r.slope_db_oct, ..._lfoParams(r) });
+function _request(label, winningGlide, lfoBpm) {
 	const c = CANDIDATES[label];
-	return { ...SHIPPED, ...(c.winning ? winningGlide : {}), ...c.set };
+	const lfo = lfoBpm === null ? {} : { ...LFO_SHIPPED, lfo_bpm: lfoBpm };
+	return { ...SHIPPED, ...lfo, ...(c.winning ? winningGlide : {}), ...c.set };
 }
 
 /**
- * @param {{outDir:string, renderer:Renderer, allowTestDouble?:boolean, seed?:number, seconds?:number, sampleRate?:number, winningGlide?:{glide_domain:'hz'|'octave',glide_ms:number}}} opts
+ * @param {{outDir:string, renderer:Renderer, allowTestDouble?:boolean, seed?:number, seconds?:number, sampleRate?:number, winningGlide?:{glide_domain:'hz'|'octave',glide_ms:number}, signal?:AbortSignal}} opts  abort signal = the caller replaced this export
  * @returns {Promise<{manifest:any, outDir:string}>}
  */
-export async function exportFilterRatingPairs({ outDir, renderer, allowTestDouble = false, seed = DEFAULT_SEED, seconds = CLIP_SECONDS, sampleRate = SAMPLE_RATE, winningGlide = WINNING_GLIDE }) {
+export async function exportFilterRatingPairs({ outDir, renderer, allowTestDouble = false, seed = DEFAULT_SEED, seconds = CLIP_SECONDS, sampleRate = SAMPLE_RATE, winningGlide = WINNING_GLIDE, signal }) {
 	if (typeof renderer?.id !== 'string' || typeof renderer.realPath !== 'boolean' || typeof renderer.render !== 'function') throw new Error('renderer {id, realPath, render} is required');
 	if (renderer.realPath !== true && !allowTestDouble) throw new Error(`renderer ${renderer.id} is not a real-path renderer; a calibration export needs the #9774 harness (pass allowTestDouble only from tests)`);
 	if (!outDir) throw new Error('--out <dir> is required');
+	if (signal !== undefined && !(signal instanceof AbortSignal)) throw new Error('signal must be an AbortSignal');
 	if (existsSync(outDir) && readdirSync(outDir).length > 0) throw new Error(`--out ${outDir} is not empty; refusing to overwrite an earlier rating round`);
 	const minSeconds = GESTURE_START_S + RIDE_MS / 1000 + 0.5;
 	if (!(seconds >= minSeconds)) throw new Error(`--seconds ${seconds} is shorter than ${minSeconds} s (gesture start, 2 s ride and settle)`);
@@ -467,6 +492,7 @@ export async function exportFilterRatingPairs({ outDir, renderer, allowTestDoubl
 	const references = new Map();
 	const render = async (req, input, automation, label) => {
 		const res = await renderer.render({ sampleRate: sr, input, automation, ...req });
+		if (signal?.aborted) throw new Error(`renderer ${renderer.id} resolved ${label} after the export was replaced; stale result discarded`);
 		_checkResult(res, n, renderer, label);
 		return res;
 	};
@@ -477,11 +503,12 @@ export async function exportFilterRatingPairs({ outDir, renderer, allowTestDoubl
 		const gestureMs = GESTURE_MS[c.gesture];
 		const fixture = fx.find((f) => f.name === c.fixture);
 		const [aCand, bCand] = c.swap ? [c.b, c.a] : [c.a, c.b];
+		const isLfo = LFO_AXES.includes(c.axis);
 		const sides = {};
 		for (const [side, candidate] of [['a', aCand], ['b', bCand]]) {
-			const req = { direction: c.direction, ..._request(candidate, winningGlide) };
+			const req = { direction: c.direction, ..._request(candidate, winningGlide, isLfo ? FIXTURE_BPM[c.fixture] : null) };
 			const ctx = { pair: c.key, side, candidate, direction: c.direction, gesture: c.gesture, fixture: c.fixture };
-			const auto = gesturePoints(c.direction, gestureMs);
+			const auto = isLfo ? _held(0.5) : gesturePoints(c.direction, gestureMs);
 			const clip = await render(req, fixture.channels, auto, `${c.key} ${side} clip`);
 			_checkFinite(clip.channels, { ...ctx, render: 'clip' });
 			_checkPeak(clip.channels, { ...ctx, render: 'clip' });
@@ -490,10 +517,10 @@ export async function exportFilterRatingPairs({ outDir, renderer, allowTestDoubl
 				tone = await render(req, toneIn, auto, `${c.key} ${side} tone probe`);
 				_checkFinite(tone.channels, { ...ctx, render: 'tone probe' });
 			}
-			const held = _held(STATIC_PROBE_KNOB[c.direction]);
+			const held = isLfo ? _held(0.5) : _held(STATIC_PROBE_KNOB[c.direction]);
 			const probe = await render(req, noiseIn, held, `${c.key} ${side} noise probe`);
 			_checkFinite(probe.channels, { ...ctx, render: 'noise probe' });
-			const refReq = { ...req, resonance_q_linear: SHIPPED.resonance_q_linear };
+			const refReq = { ...req, resonance_q_linear: SHIPPED.resonance_q_linear, ...(isLfo ? LFO_SHIPPED : {}) };
 			const refKey = JSON.stringify(refReq);
 			if (!references.has(refKey)) {
 				const ref = await render(refReq, noiseIn, held, `${c.key} ${side} reference probe`);
@@ -505,7 +532,7 @@ export async function exportFilterRatingPairs({ outDir, renderer, allowTestDoubl
 			clips.push([sides[side].path, clip.channels]);
 		}
 		pairs.push({
-			id, a: sides.a.path, b: sides.b.path, question: QUESTION,
+			id, a: sides.a.path, b: sides.b.path, question: isLfo ? LFO_QUESTION : QUESTION,
 			meta: {
 				key: c.key, axis: c.axis, fixture: c.fixture, direction: c.direction, gesture_ms: gestureMs,
 				a_candidate: aCand, b_candidate: bCand, a_request: sides.a.request, b_request: sides.b.request,
@@ -520,7 +547,7 @@ export async function exportFilterRatingPairs({ outDir, renderer, allowTestDoubl
 		sample_rate: sr, clip_seconds: seconds,
 		fixtures: fx.map(({ name, rms_dbfs, peak_dbfs }) => ({ name, rms_dbfs, peak_dbfs })),
 		axes: AXES,
-		baseline: { shipped: SHIPPED, winning_glide: { ...winningGlide }, winning_glide_source: winningGlide === WINNING_GLIDE ? 'CFG' : 'cli' },
+		baseline: { shipped: SHIPPED, winning_glide: { ...winningGlide }, winning_glide_source: winningGlide === WINNING_GLIDE ? 'CFG' : 'cli', lfo_shipped: LFO_SHIPPED },
 		proxy_method: PROXY_METHOD,
 		vetoes_applied: ['finite', 'peak'],
 		vetoes_not_applied: VETOES_NOT_APPLIED,

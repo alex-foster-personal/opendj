@@ -43,7 +43,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { readFrontendSource } from './engine-source.mjs';
+import { engineBlockAfter, readFrontendSource } from './engine-source.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 function synchronizeFollowersBody() {
 	const source = readFrontendSource('src/lib/rb/audio-engine.svelte.ts');
@@ -136,4 +137,55 @@ test('pending membership is cleared only once the master beatgrid precondition i
 		clearFollowersLoop > requirePhaseCall,
 		'the followers clearPendingMembership loop must also run AFTER requirePhaseCapableBeatGrid(masterState, ...) succeeds'
 	);
+});
+
+/** The two follower lines a master re-enable writes after `_synchronizeFollowers` resolves. */
+function resnapLines(drift, syncErrors) {
+	return Object.entries(syncErrors).map(([follower, syncError]) =>
+		drift.formatSyncLogLine(drift.SYNC_RESNAP_TAG, {
+			...drift.resnapOutcomeFields(syncError),
+			trigger: 'master_reenable',
+			follower: Number(follower),
+			master: 1
+		})
+	);
+}
+
+test('[SYNCLOG-9924] a follower the group resync rejected logs skipped with its sync_error, the other snapped', async () => {
+	const drift = await loadTypeScriptModule('src/lib/rb/sync-drift.ts');
+	const [rejected, snapped] = resnapLines(drift, { 2: 'Tempo out of sync range', 3: null });
+	assert.equal(
+		rejected,
+		'SYNC_RESNAP outcome=skipped reason=Tempo_out_of_sync_range trigger=master_reenable follower=2 master=1'
+	);
+	assert.equal(snapped, 'SYNC_RESNAP outcome=snapped trigger=master_reenable follower=3 master=1');
+});
+
+test('[SYNCLOG-9924] every follower snaps: one snapped line per follower, no reason', async () => {
+	const drift = await loadTypeScriptModule('src/lib/rb/sync-drift.ts');
+	const lines = resnapLines(drift, { 2: null, 3: null });
+	assert.deepEqual(lines, [
+		'SYNC_RESNAP outcome=snapped trigger=master_reenable follower=2 master=1',
+		'SYNC_RESNAP outcome=snapped trigger=master_reenable follower=3 master=1'
+	]);
+});
+
+test('[SYNCLOG-9924] both engines name the SYNC_RESNAP fields alike, and Web Audio reads each sync_error', () => {
+	const webAudio = engineBlockAfter('async function _resnapFollowersOfMaster(master: DeckId): Promise<void> {');
+	assert.match(
+		webAudio,
+		/\.\.\.resnapOutcomeFields\(deckStates\[f\]\.sync_error\), trigger: 'master_reenable'/,
+		'if the resolved branch logs a fixed outcome then a rejected follower reads as snapped'
+	);
+	assert.doesNotMatch(webAudio, /outcome: 'snapped', trigger: 'master_reenable'/);
+	const syncLogFields = engineBlockAfter("function _syncLogFields(master: DeckId, follower: DeckId, measure: SyncDriftMeasure | null, prefix = ''): Record<string, SyncLogValue> {");
+	const rust = readFrontendSource('src/lib/audio-engine/rust-transport.ts');
+	const failedJoin = rust.match(/emitSyncLog\(SYNC_RESNAP_TAG, deck, \{ outcome: 'failed', trigger: 'follower_reenable'[^}]*\}/);
+	assert.ok(failedJoin, "the Rust transport's failed-join SYNC_RESNAP line was not found");
+	for (const key of ['outcome', 'trigger', 'follower', 'master']) {
+		assert.match(failedJoin[0], new RegExp(`\\b${key}:`), `Rust failed join must carry ${key}`);
+		assert.match(webAudio + syncLogFields, new RegExp(`\\b${key}[,:]`), `Web Audio resnap must carry ${key}`);
+	}
+	const drift = readFrontendSource('src/lib/rb/sync-drift.ts');
+	assert.match(drift, /outcome: 'skipped', reason: /, 'a rejected follower uses the shared outcome/reason names');
 });

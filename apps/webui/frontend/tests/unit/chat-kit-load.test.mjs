@@ -16,8 +16,10 @@ const KIT_PATHS = [
 	'src/lib/chat-kit/load.ts',
 	'src/lib/components/chat-kit/CitationPill.svelte',
 	'src/lib/components/chat-kit/StreamingBubble.svelte',
+	'src/lib/components/chat-kit/ToolTrace.svelte',
 	'src/lib/components/chat-kit/CitationPill.stories.ts',
-	'src/lib/components/chat-kit/StreamingBubble.stories.ts'
+	'src/lib/components/chat-kit/StreamingBubble.stories.ts',
+	'src/lib/components/chat-kit/ToolTrace.stories.ts'
 ];
 
 const staticImportOf = (file) => new RegExp(`import\\s+\\w+\\s+from\\s+['"][^'"]*${file}['"]`);
@@ -34,6 +36,7 @@ before(async () => {
 		[
 			"export { default as CitationPill } from '$lib/components/chat-kit/CitationPill.svelte';",
 			"export { default as StreamingBubble } from '$lib/components/chat-kit/StreamingBubble.svelte';",
+			"export { default as ToolTrace } from '$lib/components/chat-kit/ToolTrace.svelte';",
 			"export { render } from 'svelte/server';"
 		].join('\n')
 	);
@@ -68,12 +71,15 @@ test('[if] a unit test static-imports only $lib/chat-kit/load [then] components 
 	const loader = read('src/lib/chat-kit/load.ts');
 	assert.doesNotMatch(loader, staticImportOf('CitationPill\\.svelte'));
 	assert.doesNotMatch(loader, staticImportOf('StreamingBubble\\.svelte'));
+	assert.doesNotMatch(loader, staticImportOf('ToolTrace\\.svelte'));
 	assert.match(loader, dynamicImportOf('CitationPill\\.svelte'));
 	assert.match(loader, dynamicImportOf('StreamingBubble\\.svelte'));
+	assert.match(loader, dynamicImportOf('ToolTrace\\.svelte'));
 	load.resetChatKitLoadForTests();
 	const kit = await load.loadChatKit();
 	assert.equal(typeof kit.CitationPill, 'function');
 	assert.equal(typeof kit.StreamingBubble, 'function');
+	assert.equal(typeof kit.ToolTrace, 'function');
 });
 
 test('[if] apps/webui/frontend/src/routes/performance/+page.svelte is parsed [then] it never static-imports chat-kit', () => {
@@ -95,7 +101,10 @@ test('app.css declares chat-kit citation tokens on :root', () => {
 		'--chat-citation-verified-bg',
 		'--chat-citation-warn-bg',
 		'--chat-citation-fail-bg',
-		'--chat-bubble-cursor'
+		'--chat-bubble-cursor',
+		'--chat-tool-running-fg',
+		'--chat-tool-ok-fg',
+		'--chat-tool-failed-fg'
 	]) {
 		assert.match(css, new RegExp(`${token}:`));
 	}

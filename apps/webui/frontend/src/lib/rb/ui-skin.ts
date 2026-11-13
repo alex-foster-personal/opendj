@@ -45,7 +45,7 @@ export const UI_SKIN_CHOICES: readonly UiSkin[] = [
 	'practice-ddj-flx4'
 ];
 
-/** First-wave packs in view-registry.ts (default, Gothic, Light). */
+/** Pack row in view-registry.ts; every ui_skin has one. */
 export function skinPackRegistryEntry(skin: RegisteredSkinPackId): SkinPackRegistryEntry {
 	return SKIN_PACK_REGISTRY[skin];
 }

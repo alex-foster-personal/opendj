@@ -89,7 +89,14 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 		// A count taken behind a permission wall is a count of nothing: never quoted.
 		await expect(dialog.getByText(/\b0 audio files\b/)).toHaveCount(0);
 		await expect(dialog.getByRole('button', { name: 'Import this folder' })).toBeDisabled();
-		await expect(dialog.getByText('macOS is blocking that folder', { exact: false })).toBeVisible();
+		// The refusal is written under the buttons AND spoken by the polite
+		// announcer (PR #12020): assert each place on its own.
+		await expect(
+			dialog.getByText(/^Import is not available yet\. .*macOS is blocking that folder/)
+		).toBeVisible();
+		await expect(dialog.getByTestId('setup-announcer')).toContainText(
+			'macOS is blocking that folder'
+		);
 		await expectFolderEscapesEnabled(page);
 		expect(imports()).toBe(0);
 		expect((await readSetupStatus(engine.origin)).library_empty).toBe(true);

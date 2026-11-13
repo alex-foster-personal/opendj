@@ -75,7 +75,8 @@ export function refreshChartedAutoPlayOrder(input: {
 		played_ids: input.playedIds,
 		follower_deck: follower,
 		follower_pitch_range: followerPitchRange,
-		key_shift_max: keyShiftMax
+		key_shift_max: keyShiftMax,
+		prefer_beatgrid: uiPrefs.beat_sync_max
 	});
 	if (key === input.chartKey.current) return;
 	input.chartKey.current = key;
@@ -94,7 +95,8 @@ export function refreshChartedAutoPlayOrder(input: {
 		played_ids: input.playedIds,
 		max_chain_length: CHARTED_ORDER_HORIZON + 1,
 		key_shift_max: keyShiftMax,
-		exclude_identities: deckSongIdentities()
+		exclude_identities: deckSongIdentities(),
+		prefer_beatgrid: uiPrefs.beat_sync_max
 	});
 	publishAutoPlayOrder(full.slice(1));
 }

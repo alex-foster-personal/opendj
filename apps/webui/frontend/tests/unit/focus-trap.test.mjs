@@ -258,6 +258,128 @@ test('stacked traps: newest handles Tab until destroyed', async () => {
 	globalThis.document = realDocument;
 });
 
+//----- KEYB (#12271): a removed opener hands focus to its nearest surviving control
+// A fake tree with the slice destroy reads: isConnected, parentElement, focus,
+// closest('[aria-modal="true"]'), contains and querySelectorAll over controls.
+
+function treeDocument() {
+	const doc = {
+		activeElement: null,
+		body: null,
+		addEventListener() {},
+		removeEventListener() {}
+	};
+	const root = treeNode(null, { control: false });
+	function treeNode(parent, { control = true, modal = false, label = 'node' } = {}) {
+		const n = {
+			label,
+			parentElement: parent,
+			children: [],
+			control,
+			modal,
+			tabIndex: control ? 0 : -1,
+			get isConnected() {
+				return n === root || (n.parentElement !== null && n.parentElement.isConnected);
+			},
+			focus() {
+				if ((n.control || n.modal) && n.isConnected) doc.activeElement = n;
+			},
+			blur() {
+				if (doc.activeElement === n) doc.activeElement = doc.body;
+			},
+			closest(selector) {
+				assert.equal(selector, '[aria-modal="true"]');
+				for (let at = n; at !== null; at = at.parentElement) if (at.modal) return at;
+				return null;
+			},
+			contains(el) {
+				for (let at = el; at !== null && at !== undefined; at = at.parentElement)
+					if (at === n) return true;
+				return false;
+			},
+			querySelector: () => null,
+			querySelectorAll() {
+				const out = [];
+				const walk = (c) => c.children.forEach((k) => (k.control && out.push(k), walk(k)));
+				walk(n);
+				return out;
+			},
+			remove() {
+				n.parentElement.children.splice(n.parentElement.children.indexOf(n), 1);
+				n.parentElement = null;
+			}
+		};
+		parent?.children.push(n);
+		return n;
+	}
+	const body = treeNode(root, { control: false, label: 'body' });
+	doc.body = body;
+	const header = treeNode(body, { control: false });
+	const headerButton = treeNode(header, { label: 'headerButton' });
+	const main = treeNode(body, { control: false });
+	const list = treeNode(main, { control: false, label: 'list' });
+	const opener = treeNode(list, { label: 'opener' });
+	const sibling = treeNode(list, { label: 'sibling' });
+	opener.focus();
+	const dialog = treeNode(body, { control: false, modal: true, label: 'dialog' });
+	const search = treeNode(dialog, { label: 'search' });
+	return { doc, body, headerButton, list, opener, sibling, dialog, search };
+}
+
+async function withTreeDocument(run) {
+	const saved = globalThis.document;
+	const tree = treeDocument();
+	globalThis.document = tree.doc;
+	try {
+		await run(tree);
+	} finally {
+		if (saved === undefined) delete globalThis.document;
+		else globalThis.document = saved;
+	}
+}
+
+test('if the opener is still connected at destroy [then] focus returns to it, [else stop].', async () => {
+	await withTreeDocument(async (t) => {
+		const trap = mod.focusTrap(t.dialog, { initialFocus: 'self' });
+		await Promise.resolve();
+		t.search.focus();
+		trap.destroy();
+		assert.equal(t.doc.activeElement, t.opener);
+	});
+});
+
+test('if the opener was removed before destroy [then] focus goes to the first control in its nearest surviving ancestor, not body, [else stop].', async () => {
+	await withTreeDocument(async (t) => {
+		const trap = mod.focusTrap(t.dialog, { initialFocus: 'self' });
+		await Promise.resolve();
+		t.search.focus();
+		t.opener.remove();
+		assert.doesNotThrow(() => trap.destroy());
+		assert.equal(t.doc.activeElement, t.sibling, 'the opener list keeps focus');
+	});
+	await withTreeDocument(async (t) => {
+		const trap = mod.focusTrap(t.dialog, { initialFocus: 'self' });
+		await Promise.resolve();
+		t.search.focus();
+		t.list.remove();
+		trap.destroy();
+		assert.notEqual(t.doc.activeElement, t.body, 'focus fell to the page body');
+		assert.equal(t.doc.activeElement, t.headerButton, 'next page control, not the modal');
+	});
+});
+
+test('if nothing outside a modal takes focus after the opener is removed [then] destroy blurs as before, [else stop].', async () => {
+	await withTreeDocument(async (t) => {
+		const trap = mod.focusTrap(t.dialog, { initialFocus: 'self' });
+		await Promise.resolve();
+		t.search.focus();
+		t.headerButton.remove();
+		t.list.remove();
+		trap.destroy();
+		assert.equal(t.doc.activeElement, t.body, 'only the closing modal had controls left');
+	});
+});
+
 test('source contract: four overlays use focusTrap', () => {
 	const files = [
 		'src/lib/components/settings/SettingsOverlay.svelte',

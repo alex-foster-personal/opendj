@@ -27,7 +27,7 @@ test('if any skin lacks a library layout, or a skin other than Green Room bends,
 });
 
 test('if a skin declares the wrong performance preset, or the deck-grid spec drifts from the /performance grid, then the manifest is wrong', () => {
-	assert.deepEqual([...L.PERFORMANCE_LAYOUTS], ['deck-grid', 'replica-desk']);
+	assert.deepEqual([...L.PERFORMANCE_LAYOUTS], ['deck-grid', 'replica-desk', 'library-first']);
 	for (const s of ['default', 'mono-dev', 'light', 'green-room'])
 		assert.equal(L.performanceLayoutFor(s), 'deck-grid', s);
 	assert.equal(L.performanceLayoutFor('practice-ddj-flx4'), 'replica-desk');
@@ -36,7 +36,7 @@ test('if a skin declares the wrong performance preset, or the deck-grid spec dri
 	assert.throws(() => L.performanceLayoutFor('no-such-skin'), /no layout declared for skin/);
 	assert.throws(
 		() => L.parsePerformanceLayout('sidebar-left'),
-		/performance layout must be deck-grid\|replica-desk, got sidebar-left/
+		/performance layout must be deck-grid\|replica-desk\|library-first, got sidebar-left/
 	);
 	assert.equal(L.parsePerformanceLayout('replica-desk'), 'replica-desk');
 	assert.deepEqual(
@@ -45,7 +45,7 @@ test('if a skin declares the wrong performance preset, or the deck-grid spec dri
 	);
 	assert.throws(
 		() => L.parsePerformanceLayout('four-across'),
-		/performance layout must be deck-grid\|replica-desk/
+		/performance layout must be deck-grid\|replica-desk\|library-first/
 	);
 	assert.equal(L.parsePerformanceLayout('deck-grid'), 'deck-grid');
 

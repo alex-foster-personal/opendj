@@ -42,6 +42,7 @@
 	<div
 		class="brand-launch"
 		class:brand-launch--pinned={pinned}
+		role="img"
 		aria-label="Open DJ launch animation"
 		style="
 			--brand-slide-ms: {BRAND_LAUNCH_SLIDE_MS}ms;

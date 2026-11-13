@@ -31,6 +31,7 @@
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
 	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	const FEEDBACK_UNAVAILABLE =
 		'Review todos - this daemon does not serve /api/v1/feedback, so in-app review is unavailable';
@@ -123,7 +124,7 @@
 	}
 </script>
 
-<span class="fb-cluster">
+<span class="fb-cluster" use:topbarSelectorNode={{ name: 'feedback', disabled: unavailable }}>
 	<button
 		type="button"
 		class="fb-btn"

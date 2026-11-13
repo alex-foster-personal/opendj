@@ -56,6 +56,11 @@
   --chat-bubble-border: var(--border);
   --chat-bubble-bg: var(--surface-raised);
   --chat-bubble-cursor: var(--accent);
+  --chat-tool-border: var(--border);
+  --chat-tool-bg: var(--surface-raised);
+  --chat-tool-running-fg: var(--accent);
+  --chat-tool-ok-fg: var(--success);
+  --chat-tool-failed-fg: var(--danger);
   /* Left inset of /performance's bottom bar (BrowserPanel's `.bottom-bar`
      reads this as its `padding-left`). It used to reserve 232px for a fixed
      link strip that sat over the bar's left end; the strip is gone

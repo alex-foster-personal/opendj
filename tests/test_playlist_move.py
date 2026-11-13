@@ -447,3 +447,76 @@ def test_undo_restores_order_keys(
             pre[2],
             pre[3],
         )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_status"),
+    [("missing_revision", 428), ("stale_revision", 409), ("unknown_track", 422)],
+)
+def test_rejected_full_replace_keeps_membership_sequence(
+    client: TestClient, db_path: Path, case: str, expected_status: int
+) -> None:
+    """Each refused PUT /tracks leaves the stored membership rows, order and events untouched."""
+    body, created_etag = _create(client)
+    pid = body["playlist_id"]
+    etag = _put_tracks(client, pid, created_etag, ["t-001", "t-002", "t-003"])
+    before_rows = dump_members(db_path, pid)
+    before_order = _live_order_keys(db_path, pid)
+    before_items = _live_item_ids(client, pid)
+    before_events = _event_kinds(db_path)
+    url = f"/api/v1/playlists/{pid}/tracks"
+    if case == "missing_revision":
+        r = client.put(url, json={"stable_ids": ["t-004"]})
+    elif case == "stale_revision":
+        r = client.put(url, json={"stable_ids": ["t-004"]}, headers={"If-Match": created_etag})
+    else:
+        r = client.put(url, json={"stable_ids": ["t-003", "t-ghost"]}, headers={"If-Match": etag})
+    assert r.status_code == expected_status, r.text
+    assert dump_members(db_path, pid) == before_rows
+    assert _live_order_keys(db_path, pid) == before_order
+    assert _live_item_ids(client, pid) == before_items
+    assert _event_kinds(db_path) == before_events
+    detail = client.get(f"/api/v1/playlists/{pid}")
+    assert detail.json()["items"] == ["t-001", "t-002", "t-003"]
+    assert detail.headers["ETag"] == etag
+
+
+@pytest.mark.requirement("LIBM-13778")
+def test_move_without_anchor_rejected_before_store(client: TestClient) -> None:
+    """[if] items:move omits both before_item_id and after_item_id [then] 422 invalid_patch even for an unknown playlist, [else stop]."""
+    r = _move(client, "pl-missing", '"any-etag"', {"range_start": "item-1", "range_length": 1})
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "invalid_patch"
+    assert "before_item_id or after_item_id" in r.json()["message"]
+
+
+@pytest.mark.requirement("LIBM-13778")
+def test_move_with_both_anchors_rejected_before_store(client: TestClient, db_path: Path) -> None:
+    """[if] items:move sends both destination anchors with a stale etag [then] 422 invalid_patch, not 409, rows untouched, [else stop]."""
+    body, etag = _create(client)
+    pid = body["playlist_id"]
+    _put_tracks(client, pid, etag, ["t-001", "t-002", "t-003", "t-004"])
+    before = dump_members(db_path, pid)
+    ids = _live_item_ids(client, pid)
+    r = _move(
+        client,
+        pid,
+        '"stale-etag"',
+        {"range_start": ids[0], "range_length": 1, "before_item_id": ids[3], "after_item_id": ids[2]},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "invalid_patch"
+    assert "exactly one" in r.json()["message"]
+    assert dump_members(db_path, pid) == before
+
+
+@pytest.mark.requirement("LIBM-13778")
+def test_move_with_one_before_anchor_succeeds(client: TestClient, db_path: Path) -> None:
+    """[if] items:move sends only a valid before_item_id [then] the slice lands right before that item, [else stop]."""
+    body, etag = _create(client)
+    pid = body["playlist_id"]
+    etag = _put_tracks(client, pid, etag, ["t-001", "t-002", "t-003", "t-004"])
+    ids = _live_item_ids(client, pid)
+    r = _move(client, pid, etag, {"range_start": ids[3], "range_length": 1, "before_item_id": ids[0]})
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == ["t-004", "t-001", "t-002", "t-003"]

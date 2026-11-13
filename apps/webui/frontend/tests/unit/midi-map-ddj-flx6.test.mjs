@@ -13,6 +13,12 @@
 //   if each deck's FILTER (colour FX) isn't bound to mixer_channel filter then broken
 //   if a source is both bound and hinted then broken
 //   if device-maps.json differs from the export script output then broken
+//   if DEVICE_MAP_ENTRIES is not the live FLX6_MAP key then broken
+//   if DEVICE_MAP_REGISTRY omits FLX6_MAP then broken
+//   if two bindings share the same MIDI wire then broken
+//   if validateDeviceMap(FLX6_MAP) throws then broken
+//   if SHIFT/tempo/trim/EQ/CH CUE/pads or global browse-mixer wires are unbound then broken
+//   if binding count drifts from the shipped P0 total then broken
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -26,6 +32,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const DECKS = [1, 2, 3, 4];
 const range = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+const PAD_CH = { 1: 8, 2: 10, 3: 12, 4: 14 };
+// Total bindings after P0 completeness (4 decks x deck/mixer/pad helpers + global ch7).
+const FLX6_EXPECTED_BINDING_COUNT = 143;
 
 // [PDF] rows, copied from the chart: 1-1..1-17, 3-5..3-9 (decks, ch 1-4),
 // 5-5 pads (ch 8/10/12/14), 3-2/3-3/3-7/3-10/3-12/3-13/4-1/4-4..4-7 (ch 7).
@@ -43,11 +52,23 @@ const CHART = new Set([
 
 let vite;
 let webmidi;
+let mapModule;
+let registry;
 let map;
 
 const key = (s) => `${s.ch}:${s.kind}:${s.id}`;
 const bindingsAt = (ch, kind, id) =>
 	map.bindings.filter((b) => b.source.ch === ch && b.source.kind === kind && b.source.id === id);
+
+function findBindings(pred) {
+	return map.bindings.filter(pred);
+}
+
+function theBinding(pred) {
+	const hits = findBindings(pred);
+	assert.equal(hits.length, 1, `expected exactly 1 binding, got ${hits.length}`);
+	return hits[0];
+}
 
 before(async () => {
 	vite = await createServer({
@@ -63,7 +84,9 @@ before(async () => {
 		}
 	});
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
-	map = (await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx6.ts')).FLX6_MAP;
+	mapModule = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx6.ts');
+	registry = await vite.ssrLoadModule('/src/lib/rb/midi/maps/index.ts');
+	map = mapModule.FLX6_MAP;
 });
 
 after(async () => {
@@ -74,6 +97,25 @@ test('FLX6 map registers without throwing', () => {
 	webmidi._resetMidiForTests();
 	webmidi.registerDeviceMap(map);
 	webmidi._resetMidiForTests();
+});
+
+test('DEVICE_MAP_ENTRIES is the live FLX6 map and the registry includes it', () => {
+	assert.deepEqual(
+		mapModule.DEVICE_MAP_ENTRIES.map((e) => ({ key: e.key, live: e.live })),
+		[{ key: 'FLX6_MAP', live: true }]
+	);
+	assert.equal(mapModule.DEVICE_MAP_ENTRIES[0].map, mapModule.FLX6_MAP);
+	assert.ok(registry.DEVICE_MAP_REGISTRY.includes(mapModule.FLX6_MAP));
+});
+
+test('no MIDI wire is duplicated across bindings', () => {
+	const keys = map.bindings.map((b) => key(b.source));
+	assert.equal(
+		new Set(keys).size,
+		keys.length,
+		`duplicate wire: ${keys.filter((k, i) => keys.indexOf(k) !== i).join(', ')}`
+	);
+	webmidi.validateDeviceMap(map);
 });
 
 test('nameMatch matches the FLX6 USB names only', () => {
@@ -110,6 +152,88 @@ test('play, cue, sync, fader and jog are bound per deck; crossfader bound', () =
 	assert.ok(bindingsAt(7, 'cc', 0x1f).some((b) => b.action.target === 'crossfader'));
 });
 
+test('SHIFT and tempo per deck; trim, EQ, CH CUE per deck', () => {
+	for (const deck of DECKS) {
+		const shift = theBinding((b) => b.action.type === 'shift_modifier' && b.source.ch === deck);
+		assert.deepEqual(shift.source, { ch: deck, kind: 'note', id: 0x3f });
+		const pitch = theBinding((b) => b.action.type === 'deck_pitch' && b.action.deck === deck);
+		assert.deepEqual(pitch.source, { ch: deck, kind: 'cc', id: 0x00 });
+		assert.equal(pitch.action.lsbOffset, 32);
+		const cases = [
+			[(a) => a.target === 'trim', 0x04],
+			[(a) => a.target === 'eq' && a.band === 'high', 0x07],
+			[(a) => a.target === 'eq' && a.band === 'mid', 0x0b],
+			[(a) => a.target === 'eq' && a.band === 'low', 0x0f]
+		];
+		for (const [match, cc] of cases) {
+			const b = theBinding(
+				(x) => x.action.type === 'mixer_channel' && x.action.deck === deck && match(x.action)
+			);
+			assert.deepEqual(b.source, { ch: deck, kind: 'cc', id: cc });
+		}
+		const cue = theBinding((b) => b.action.type === 'channel_cue' && b.action.deck === deck);
+		assert.deepEqual(cue.source, { ch: deck, kind: 'note', id: 0x54 });
+	}
+});
+
+test('hot-cue and beat-loop pads per deck on pad channels', () => {
+	assert.deepEqual(mapModule.FLX6_BEAT_LOOP_PAD_BEATS, [0.25, 0.5, 1, 2, 4, 8, 16, 32]);
+	const slots = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+	for (const deck of DECKS) {
+		for (let pad = 0; pad < 8; pad++) {
+			const hot = theBinding(
+				(x) =>
+					x.action.type === 'deck_hot_cue' && x.action.deck === deck && x.action.slot === slots[pad]
+			);
+			assert.deepEqual(hot.source, { ch: PAD_CH[deck], kind: 'note', id: pad });
+			const loop = theBinding(
+				(x) =>
+					x.action.type === 'deck_beat_loop' &&
+					x.action.deck === deck &&
+					x.source.ch === PAD_CH[deck] &&
+					x.source.id === 0x60 + pad
+			);
+			assert.equal(loop.action.beats, mapModule.FLX6_BEAT_LOOP_PAD_BEATS[pad]);
+		}
+	}
+	assert.equal(findBindings((b) => b.action.type === 'deck_hot_cue').length, 32);
+	for (const deck of DECKS) {
+		assert.equal(
+			findBindings((b) => b.action.type === 'deck_beat_loop' && b.source.ch === PAD_CH[deck])
+				.length,
+			8
+		);
+		// [PDF] 1-7 IN/-4BEAT long press on the deck channel.
+		theBinding(
+			(x) => x.action.type === 'deck_beat_loop' && x.action.deck === deck && x.source.ch === deck
+		);
+	}
+});
+
+test('browse encoder, LOAD, master, headphone and master cue on channel 7', () => {
+	const browse = theBinding((b) => b.action.type === 'browse_encoder' && b.source.id === 0x40);
+	assert.deepEqual(browse.source, { ch: 7, kind: 'cc', id: 0x40 });
+	assert.equal(browse.relative, true);
+	const browseShift = theBinding((b) => b.action.type === 'browse_encoder' && b.source.id === 0x64);
+	assert.deepEqual(browseShift.source, { ch: 7, kind: 'cc', id: 0x64 });
+	assert.equal(browseShift.relative, true);
+	for (const deck of DECKS) {
+		const load = theBinding((b) => b.action.type === 'browse_load' && b.action.deck === deck);
+		assert.deepEqual(load.source, { ch: 7, kind: 'note', id: 0x45 + deck });
+	}
+	const master = theBinding(
+		(b) => b.action.type === 'mixer_global' && b.action.target === 'master'
+	);
+	assert.deepEqual(master.source, { ch: 7, kind: 'cc', id: 0x08 });
+	const hpMix = theBinding((b) => b.action.type === 'headphone_mix');
+	assert.deepEqual(hpMix.source, { ch: 7, kind: 'cc', id: 0x0c });
+	const hpLevel = theBinding((b) => b.action.type === 'headphone_level');
+	assert.deepEqual(hpLevel.source, { ch: 7, kind: 'cc', id: 0x0d });
+	const masterCue = theBinding((b) => b.action.type === 'master_cue');
+	assert.deepEqual(masterCue.source, { ch: 7, kind: 'note', id: 0x63 });
+	assert.equal(masterCue.action.mode, 'latch');
+});
+
 test('FILTER colour FX bound per deck; Beat FX stays a hint until a beat-FX action exists', () => {
 	for (const deck of DECKS) {
 		const filter = bindingsAt(7, 'cc', 0x16 + deck);
@@ -134,6 +258,10 @@ test('no source is both bound and hinted', () => {
 		map.hints.map((h) => key(h.source)).filter((k) => bound.has(k)),
 		[]
 	);
+});
+
+test('binding count matches the shipped P0 total', () => {
+	assert.equal(map.bindings.length, FLX6_EXPECTED_BINDING_COUNT);
 });
 
 test('device-maps.json matches the export script output', () => {

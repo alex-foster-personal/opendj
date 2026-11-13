@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557710,
+  "measured_with_pr": 557857,
+  "sha": "f665776195",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--13938-oj-typed-tool-labels-2 grows the other-lazy surface; measured +147 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -21,6 +21,10 @@ from pathlib import Path
 from apps.shared import engine_decode, platform_paths
 from apps.shared.ffmpeg import FfmpegUnavailable, probe_duration_s, resolve_ffmpeg
 from apps.shared.state import locations as track_locations
+from apps.shared.state.ingest.path_collisions import (
+    AmbiguousAnalysisPathError,
+    assert_unambiguous_analysis_paths,
+)
 
 from . import admission
 from .queue import QueueError, TargetResolver
@@ -151,6 +155,10 @@ def candidates_from_state(
     queue, the drain and playback cannot disagree about which copy is the
     track.
 
+    Two live tracks whose resolved paths share one NFC/case-folded key are
+    ambiguous: the request raises ``QueueError`` (caused by
+    :class:`AmbiguousAnalysisPathError`) naming both ids and both paths.
+
     The read filters ``deleted_at``: nothing hard-deletes a synced row here,
     so a removed track is a tombstone that is still selectable. Asking for
     one raises ``QueueError`` alongside the ids that never existed, because
@@ -171,6 +179,12 @@ def candidates_from_state(
         )
     path_map = platform_paths.load_path_map()
     resolved_rows = _resolved_rows(conn, rows, path_map=path_map)
+    # Two tracks on one normalized path would write one file's analysis
+    # under two ids; refuse the whole request loudly instead of guessing.
+    try:
+        assert_unambiguous_analysis_paths((sid, path) for sid, path, _ms in resolved_rows)
+    except AmbiguousAnalysisPathError as exc:
+        raise QueueError(str(exc)) from exc
     measured = _measured_durations(
         {sid: path for sid, path, ms in resolved_rows if path is not None and not ms}
     )

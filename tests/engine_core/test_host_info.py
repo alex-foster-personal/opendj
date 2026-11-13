@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 from apps.engine_core.host_info import (
     CODE_HOST_INFO_UNAVAILABLE,
     HOST_INFO_PATH,
+    HOST_INFO_STATE_ATTR,
+    HostIdentity,
     HostInfoUnavailable,
     add_host_info_route,
     main,
@@ -89,6 +91,31 @@ def test_route_200_has_measured_fields(tmp_path: Path, monkeypatch: pytest.Monke
     assert body["logical_cpus"] == 10
     assert body["ram_bytes"] == 32 * 1024**3
     assert body["canary_hashes_per_second"] is not None
+
+
+@pytest.mark.requirement("PERFMODE-01")
+def test_host_info_failure_state_has_no_fabricated_capacity(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """
+    [if] host facts fail at construction [then] identity has no fabricated capacity, [else stop].
+    """
+    psutil = MagicMock()
+    psutil.cpu_count.return_value = None
+    monkeypatch.setitem(__import__("sys").modules, "psutil", psutil)
+    app = FastAPI()
+    add_host_info_route(app, data_dir=tmp_path)
+    identity = getattr(app.state, HOST_INFO_STATE_ATTR)
+    assert isinstance(identity, HostIdentity)
+    assert identity.info is None
+    assert identity.failure
+    assert "None" in identity.failure
+    assert identity.logical_cpus is None
+    assert identity.ram_bytes is None
+    client = TestClient(app)
+    response = client.get(HOST_INFO_PATH)
+    assert response.status_code == 503
+    body = response.json()
+    assert "logical_cpus" not in body
+    assert "ram_bytes" not in body
 
 
 @pytest.mark.requirement("PERFMODE-01")

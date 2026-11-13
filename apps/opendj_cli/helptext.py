@@ -27,7 +27,10 @@ MyTag edits (same undoable routes as the library modal):
   opendj track mytag-delete NAME --confirm [--undo-session SESSION] [--json]
   Delete removes the tag from every track. Server refusals return a nonzero exit code.
 
-play history delete (PLAYS-10523; Open DJ play log only, not rekordbox DJPlayCount):
+play history (PLAYS-10523, issue #9745; Open DJ play log only, one list per night from 06:00 local):
+  opendj history list [tz=ZONE]
+  opendj history show <YYYY-MM-DD> [tz=ZONE]
+  opendj history save-playlist <YYYY-MM-DD> [name=NAME] [tz=ZONE]
   opendj history delete-play <stable_id> <play_id>
   opendj history delete-day <YYYY-MM-DD> [IANA_ZONE]
 
@@ -39,8 +42,11 @@ audio output health (AUDIO-DEVICE-01, issue #923):
   opendj audio_switch_output --confirm
   opendj audio_reconnect_speaker --confirm
 
+top-bar performance card rows (PERFREADOUT-12579, read-only):
+  opendj perf_readouts
+
 ingest drop staging (sync export):
-  opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh]
+  opendj ingest stage PATH [PATH ...] [--batch B] [--force] [--no-refresh] [--dry-run]
 
 ingest enrichment (ENRICH-09):
   opendj enrichment status [--batch B]
@@ -56,6 +62,10 @@ lighting tools (LIGHT-70, LIGHT-10573):
   opendj lighting replay FILE [--at S] [--json]  (same StageQuery as window.musicDjToolsLightingStage)
   opendj lighting scenes [--json]  (GET /api/v1/lighting/scenes)
   opendj lighting look [--json]  (GET /api/v1/lighting/look)
+  opendj lighting set palette cool|warm|vivid|contrast [--json]  (PUT /api/v1/lighting/settings/KEY)
+
+hotkeys overlay rows (#12287; id, chord, description; rows behind an off build flag say unavailable):
+  opendj hotkeys [--platform mac|other] [--json]
 
 MIDI monitor (each incoming message with its mapped action or unmapped, then fader direction):
   opendj midi monitor --device <name-match> [--seconds N]
@@ -81,6 +91,9 @@ phone remote LAN listener (REMOTE-CTL; pairing code and paired devices):
 playlist art thumbnail (ARTTHUMB-8728b) and tab-separated text track list (LIBORG-10314):
   opendj playlist thumbnail <playlist-id> [--size 64|232] [--out FILE]
   opendj playlist export <playlist-id> --format txt [--out FILE]
+
+Tag List prep list (issue #10028; up to 100 tracks, rekordbox Tag List):
+  opendj taglist list | add <stable_id>... | remove <stable_id> | clear | save <name>
 
 cloud offload (OFFLOAD: free disk, keep the row, get it back any time):
   opendj offload tracks <stable_id>... [--wait] | playlist <playlist_id> [--wait]
@@ -128,8 +141,11 @@ AutoDJ (AGENT-29, JSON out; plans continue a playing set, never start one):
   opendj dj set-show <set.mix> [--as grid|json]         # set score / one grid per transition
   opendj dj set-next <set.mix>                          # perform the transition due now
   opendj dj try --out <id> --in <id> [-n 6] [--context-bars 4] [--json]  # render + rank candidates
-  opendj dj try pick <job_id> <cand> --etag <etag>     # record the chosen transition
-  opendj dj try undo <job_id> --etag <etag>             # remove that pick
+  opendj dj try show <job_id>                           # the job, its pick and its current etag
+  opendj dj try pick <job_id> <cand> --etag <etag>      # record the chosen transition (etag from try show)
+  opendj dj try undo <job_id> --etag <etag>             # remove that pick (etag from try show)
+  opendj dj try lanes <job_id> <cand> [--columns 800]   # the panel's lane document
+  opendj dj try save-wav <job_id> <cand> --out <new.wav> # the WAV the panel auditions
 
 installed app UPDATE (AGENT-13, issue #2942; exits 0 only for current or
 update-available, and for an apply that relaunched into the announced build):

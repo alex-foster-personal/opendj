@@ -5,7 +5,7 @@ Supersedes: definitions in models.py; that module re-exports these classes.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class TempoPrefOut(BaseModel):
@@ -22,6 +22,9 @@ class TempoPrefOut(BaseModel):
 
 
 class TempoPrefPatch(BaseModel):
+    # PREF-2163: NaN/Infinity (e.g. an overflowing 1e400) is a 422, never persisted.
+    model_config = ConfigDict(allow_inf_nan=False)
+
     regular: float | None = None
     min: float | None = None
     max: float | None = None

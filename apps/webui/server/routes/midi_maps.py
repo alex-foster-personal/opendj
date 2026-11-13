@@ -4,6 +4,7 @@ GET    /api/v1/midi/maps            - installed maps, summary rows
 GET    /api/v1/midi/maps/{map_id}   - one full document
 PUT    /api/v1/midi/maps/{map_id}   - install or replace, validated
 DELETE /api/v1/midi/maps/{map_id}   - uninstall
+POST   /api/v1/midi/maps/{map_id}/learned-binding - MIDI Learn: add one binding to a user map
 GET    /api/v1/midi/catalog?q=      - search the offline device store
 
 The document is the SAME shape the browser registers at runtime (camelCase,
@@ -30,6 +31,7 @@ Errors, by code:
   404 MIDI_MAP_NOT_FOUND         no installed map with that id
   422 MIDI_MAP_INVALID           document rejected; message names the binding or rule
   422 MIDI_MAP_ID_MISMATCH       body id does not match the path id
+  409 MIDI_LEARN_CONFLICT        learned control already drives another command; resend with replace
   503 MIDI_CATALOG_UNAVAILABLE   the device store is not bundled or not on disk
 """
 
@@ -564,10 +566,24 @@ class LedChannelCueEnabled(_Strict):
     deck: DeckId
 
 
+class LedShiftHeld(_Strict):
+    kind: Literal["shift_held"]
+
+
+class LedMasterCueActive(_Strict):
+    kind: Literal["master_cue_active"]
+
+
+class LedSyncMaster(_Strict):
+    kind: Literal["sync_master"]
+    deck: DeckId
+
+
 _LED_TRIGGER_MODELS: tuple[type[_Strict], ...] = (
     LedDeckPlaying, LedDeckLoaded, LedLoopEngaged, LedLoopBeatsEngaged,
     LedBeatSyncEnabled, LedBeatSyncEffective, LedStemEqEnabled, LedStemActive, LedStemSolo,
     LedPadModeSelected, LedHotCuePresent, LedChannelCueEnabled,
+    LedShiftHeld, LedMasterCueActive, LedSyncMaster,
 )
 
 LedTriggerModel = Annotated[
@@ -582,7 +598,10 @@ LedTriggerModel = Annotated[
     | LedStemSolo
     | LedPadModeSelected
     | LedHotCuePresent
-    | LedChannelCueEnabled,
+    | LedChannelCueEnabled
+    | LedShiftHeld
+    | LedMasterCueActive
+    | LedSyncMaster,
     Field(discriminator="kind"),
 ]
 
@@ -720,6 +739,17 @@ class MidiMapDoc(_Strict):
                     "lsbIndex before the shift-aware binding index, so this control can never fire"
                 )
         return self
+
+
+class LearnedBindingIn(_Strict):
+    """MIDI Learn save (#9781): one learned binding (no provenance, the route
+    stamps tier 'learned') for a user map. ``template`` seeds a user map copy
+    when ``map_id`` is not installed yet, so a shipped built-in map is copied,
+    never written."""
+
+    binding: dict[str, Any]
+    replace: bool = False
+    template: dict[str, Any] | None = None
 
 
 class MidiMapSummary(BaseModel):
@@ -1041,3 +1071,66 @@ def delete_midi_map(
     path.unlink()
     publish("library.changed", {"kind": "midi_maps", "ids": [map_id]})
     return Response(status_code=204)
+
+
+_LEARNED_PROVENANCE: dict[str, Any] = {"tier": "learned", "cite": "MIDI Learn", "verified": True}
+
+
+def _learn_conflict(existing: Binding) -> HTTPException:
+    """409 naming the command the learned control already drives."""
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "MIDI_LEARN_CONFLICT",
+            "message": "this control is already bound; resend with replace to rebind it",
+            "existing": existing.model_dump(by_alias=True, exclude={"provenance"}),
+        },
+    )
+
+
+@router.post(
+    "/maps/{map_id}/learned-binding",
+    response_model=MidiMapDoc,
+    response_model_by_alias=True,
+)
+def post_learned_binding(
+    map_id: str,
+    body: LearnedBindingIn,
+    request: Request,
+    _backend: WriteGate,
+) -> MidiMapDoc:
+    """Save one MIDI Learn binding into a user map (agent parity for the panel's Learn)."""
+    _require_slug(map_id)
+    path = _maps_dir(request) / f"{map_id}.json"
+    if path.is_file():
+        raw: dict[str, Any] = _read(path).model_dump(by_alias=True)
+    elif body.template is not None:
+        raw = {**body.template, "id": map_id}
+    else:
+        raise _not_found(map_id)
+    try:
+        learned = Binding.model_validate({**body.binding, "provenance": _LEARNED_PROVENANCE})
+    except ValidationError as exc:
+        raise _invalid(f"binding: {_describe(exc)}") from exc
+    bindings: list[Any] = list(raw.get("bindings") or [])
+    learned_raw = learned.model_dump(by_alias=True)
+    for at, existing_raw in enumerate(bindings):
+        try:
+            existing = Binding.model_validate(existing_raw)
+        except ValidationError as exc:
+            raise _invalid(f"bindings[{at}]: {_describe(exc)}") from exc
+        if existing.shift != learned.shift or existing.source != learned.source:
+            continue
+        if existing.action != learned.action and not body.replace:
+            raise _learn_conflict(existing)
+        bindings[at] = learned_raw
+        break
+    else:
+        bindings.append(learned_raw)
+    doc = _parse({**raw, "bindings": bindings}, whose="document")
+    clash = _installed_name_match_clash(request, name_match=doc.name_match, exclude_id=map_id)
+    if clash is not None:
+        raise _invalid(f"nameMatch {doc.name_match!r} is already used by installed map {clash!r}")
+    _write_atomic(path, doc)
+    publish("library.changed", {"kind": "midi_maps", "ids": [map_id]})
+    return doc

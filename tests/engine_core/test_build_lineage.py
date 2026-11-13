@@ -168,3 +168,24 @@ def test_lineage_resolves_git_to_an_absolute_path() -> None:
     git = _git_executable()
     assert Path(git).is_absolute(), git
     assert Path(git).name.lower().startswith("git"), git
+
+
+@pytest.mark.requirement("INSTALL-44")
+@pytest.mark.usefixtures("fresh_git_executable")
+def test_lineage_resolves_git_once_across_many_commands(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] lineage invokes multiple git commands [then] git is resolved once and reused, [else stop]."""
+    import apps.engine_core.build_lineage as build_lineage
+
+    real_which = build_lineage.shutil.which
+    calls: list[str] = []
+
+    def counting_which(name: str, *args: object, **kwargs: object) -> str | None:
+        """Record each git lookup, then defer to the real resolver."""
+        calls.append(name)
+        return real_which(name)
+
+    monkeypatch.setattr(build_lineage.shutil, "which", counting_which)
+    previous = _git(repo, "rev-parse", "main")
+    stamp = _stamp(repo, "af--set-rc", previous=previous)
+    assert stamp["lines"], stamp
+    assert calls == ["git"], calls

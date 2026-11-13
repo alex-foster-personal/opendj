@@ -25,9 +25,13 @@ import type {
 	CueAlignProbe
 } from '$lib/player/cue-align.svelte';
 import type { HeadphoneCalibrationProbe } from '$lib/rb/mixer-types';
-import { calibrationProbeDiagnostics } from '$lib/player/cue-latency';
+import {
+	assertCalibrationProbe,
+	calibrationProbeDiagnostics,
+	type CalibrationProbeKind
+} from '$lib/player/cue-latency';
 import { recordHeadphoneFailureDiagnostic } from '$lib/player/headphones';
-import { loadMixerConfig } from '$lib/player/mixer-config';
+import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import { engine } from '$lib/rb/audio-engine.svelte';
 
@@ -195,4 +199,28 @@ export function continueCueAlignment(): void {
 export function abortCueAlignment(): void {
 	if (_run.active && _controller === null) _abortRequested = true;
 	_controller?.abort();
+}
+
+/**
+ * CUEOUT-12692: choose the calibration stimulus (IPC `headphone_calibration_probe`).
+ *
+ * The I/O panel select, the CLI verb and browser agents all land here, so the
+ * persisted choice and the serialized `calibration.diagnostics` agree. Refused
+ * while a run is in flight: the run already built its reference from the old probe.
+ */
+export function setCalibrationProbe(probe: CalibrationProbeKind): void {
+	assertCalibrationProbe(probe);
+	if (cueAlignmentRunning()) {
+		throw new Error('cue alignment calibration is running; change the stimulus after it ends');
+	}
+	persistMixerConfig({ calibration_probe: probe });
+	const calibration = mixerState.headphones.calibration;
+	const prior = calibration.diagnostics;
+	calibration.diagnostics = {
+		...calibrationProbeDiagnostics(probe),
+		failure: prior.failure,
+		master_measurements_ms: prior.master_measurements_ms,
+		cue_measurements_ms: prior.cue_measurements_ms,
+		spread_ms: prior.spread_ms
+	};
 }

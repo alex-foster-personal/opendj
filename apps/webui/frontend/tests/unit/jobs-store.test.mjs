@@ -621,12 +621,12 @@ test('a null timestamp renders blank rather than Invalid Date', () => {
 	assert.notEqual(mod.formatJobTime('2026-08-19T10:00:00.000Z'), '');
 });
 
-test('the drawer toggle returns to its initial state after two toggles', () => {
+test('the drawer toggle asks to open a closed drawer and close an open one', () => {
 	assert.equal(store.drawerOpen, false);
-	mod.toggleJobsDrawer();
-	assert.equal(store.drawerOpen, true);
-	mod.toggleJobsDrawer();
-	assert.equal(store.drawerOpen, false);
+	assert.deepEqual(mod.jobsDrawerToggleCommand(), { type: 'drawer_open', drawer: 'jobs' });
+	store.drawerOpen = true;
+	assert.deepEqual(mod.jobsDrawerToggleCommand(), { type: 'drawer_close', drawer: 'jobs' });
+	store.drawerOpen = false;
 });
 
 // requirement: ADMIN-12083

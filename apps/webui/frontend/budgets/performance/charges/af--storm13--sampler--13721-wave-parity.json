@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483140,
+  "measured_with_pr": 483614,
+  "sha": "73e19ada4e",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--13721-wave-parity grows the performance surface; measured +474 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

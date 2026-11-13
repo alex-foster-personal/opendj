@@ -14,6 +14,9 @@
 	import TreeCurrentFold from './TreeCurrentFold.svelte';
 	import MissingTracksFolder from './MissingTracksFolder.svelte';
 	import { MISSING_TRACKS_ID } from './missing-tracks-id';
+	import { SYSTEM_SECTION_LABEL } from './system-tree-nodes';
+	import { SMARTLIST_DROP_REFUSAL } from '$lib/rb/track-drag.svelte';
+	import { createEdgeAutoscroll } from '$lib/rb/drag-edge-autoscroll';
 	import { isInboxPlaylistId } from './inbox-id';
 	import PlaylistFolderStates from './PlaylistFolderStates.svelte';
 	import PlaylistHiddenBrokenNotice from './PlaylistHiddenBrokenNotice.svelte';
@@ -24,7 +27,16 @@
 
 	let {
 		nodes,
+		unfilteredCount = undefined,
 		mode = 'tree',
+		searchable = false,
+		searchQuery = '',
+		searchNoMatches = false,
+		listOpen = undefined,
+		onsearch = undefined,
+		pinnedNodes = [],
+		pinnedIds = new Set(),
+		ontogglepin = undefined,
 		playlistsLoading,
 		playlistsError,
 		hiddenBrokenPlaylistCount,
@@ -38,6 +50,7 @@
 		tintOf,
 		columnMounted,
 		dropTargetId,
+		refusedDropId = null,
 		folderDropActive,
 		playlistsOpen = $bindable(true),
 		foldCurrent,
@@ -79,7 +92,23 @@
 		onrowdragend = undefined
 	}: {
 		nodes: PlaylistNode[];
+		/** LIBM-87: rows before the name search, for the empty-library state. */
+		unfilteredCount?: number;
 		mode?: PlaylistTreeViewMode;
+		/** LIBM-87: draw the name search box over the tree. */
+		searchable?: boolean;
+		searchQuery?: string;
+		/** LIBM-87: a query is active and no playlist or folder name matched. */
+		searchNoMatches?: boolean;
+		/** Whether the Playlists section draws open (forced open while searching). */
+		listOpen?: boolean;
+		onsearch?: ((query: string) => void) | undefined;
+		/** LIBM-87 (issue #12320): pinned shortcut rows, drawn above the Playlists section. */
+		pinnedNodes?: PlaylistNode[];
+		/** LIBM-87: ids currently pinned, for each row's pin button state. */
+		pinnedIds?: ReadonlySet<string>;
+		/** LIBM-87: pin or unpin one playlist (the row's pin button). */
+		ontogglepin?: ((node: PlaylistNode) => void) | undefined;
 		playlistsLoading: boolean;
 		playlistsError: string | null;
 		hiddenBrokenPlaylistCount: number;
@@ -99,6 +128,8 @@
 		columnMounted: boolean;
 		/** playlist_id currently under a track drag, for the drop outline. */
 		dropTargetId: string | null;
+		/** LIBM-84 (issue #12307): smartlist row a track drag is over, drawn as refused. */
+		refusedDropId?: string | null;
 		folderDropActive: boolean;
 		playlistsOpen?: boolean;
 		foldCurrent: 'above' | 'below' | null;
@@ -161,13 +192,79 @@
 		return `${node.track_count - node.broken_count} non-broken tracks, ${node.broken_count} broken tracks`;
 	}
 
+	const sectionOpen = $derived(listOpen ?? playlistsOpen);
+	const libraryCount = $derived(unfilteredCount ?? nodes.length);
+
+	function _searchKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Escape' || searchQuery === '') return;
+		event.stopPropagation();
+		onsearch?.('');
+	}
+
+	/** A pushpin, for the pinned section and each row's pin button. */
+	const PIN_PATH = 'M9.5 1.5l5 5-2 .5-2.7 2.7.2 3.3-1.5 1.5-3-3L2 15l-1-1 3.5-3.5-3-3L3 6l3.3.2L9 3.5z';
+
+	function _pinnable(node: PlaylistNode): boolean {
+		return ontogglepin !== undefined && node.kind === 'playlist' && !isInboxPlaylistId(node.playlist_id);
+	}
+
+	/** LIBM-84: smartlist gear, the same glyph the Smartlists section draws. */
+	const GEAR_PATH =
+		'M8 5.2A2.8 2.8 0 1 0 8 10.8 2.8 2.8 0 0 0 8 5.2zm0 4.3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm6-.5.1-1-1.5-.6-.2-.6.8-1.4-.7-.7-1.4.8-.6-.3L9.9 3.7h-1L8.3 5.2l-.6.3-1.4-.8-.7.7.8 1.4-.3.6-1.5.5v1l1.5.6.3.6-.8 1.4.7.7 1.4-.8.6.3.6 1.5h1l.6-1.5.6-.3 1.4.8.7-.7-.8-1.4.3-.6z';
+
+	function _rowTitle(node: PlaylistNode): string | undefined {
+		if (refusedDropId === node.playlist_id) return SMARTLIST_DROP_REFUSAL;
+		if (node.mostly_broken) return mostlyBrokenTitle;
+		if (node.kind === 'smartlist') return `${node.name}, smartlist: fills from its rules`;
+		return undefined;
+	}
+
+	// LIBM-96 (issue #13731): edge auto-scroll while any drag hovers the tree,
+	// so a playlist scrolled out of view can still take a dropped track.
+	// The component owns the frame clock (AUDIOLIVE-11): the loop only paints scroll.
+	const autoscroll = createEdgeAutoscroll(() => scrollEl, {
+		request: (cb) => requestAnimationFrame(cb),
+		cancel: (h) => cancelAnimationFrame(h)
+	});
+
+	function _treeDragOver(event: DragEvent): void {
+		autoscroll.update(event.clientY);
+		onfolderdragover(event);
+	}
+
+	function _treeDragLeave(event: DragEvent): void {
+		const into = event.relatedTarget;
+		if (!(into instanceof Node) || scrollEl === null || !scrollEl.contains(into)) autoscroll.stop();
+		onfolderdragleave(event);
+	}
+
+	function _treeDrop(event: DragEvent): void {
+		autoscroll.stop();
+		onfolderdrop(event);
+	}
+
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
 		if (event.key === 'Enter') onselect(node);
 	}
 </script>
 
+<svelte:window ondragend={() => autoscroll.stop()} ondrop={() => autoscroll.stop()} />
+
 <div class="tree-root" data-testid="playlist-tree-panel">
 	{@render contextMenu()}
+	{#if searchable}
+		<input
+			class="tree-search"
+			class:hidden={mode === 'column'}
+			type="search"
+			placeholder="Search playlists"
+			aria-label="Search playlists and folders by name"
+			data-testid="playlist-tree-search"
+			value={searchQuery}
+			oninput={(e) => onsearch?.(e.currentTarget.value)}
+			onkeydown={_searchKeydown}
+		/>
+	{/if}
 	{#if columnMounted}
 		<div
 			class="tree-scroll column-mode"
@@ -185,9 +282,9 @@
 		bind:this={scrollEl}
 		bind:clientHeight={viewportHeight}
 		{onscroll}
-		ondragover={onfolderdragover}
-		ondragleave={onfolderdragleave}
-		ondrop={onfolderdrop}
+		ondragover={_treeDragOver}
+		ondragleave={_treeDragLeave}
+		ondrop={_treeDrop}
 	>
 		<TreeCurrentFold fold={foldCurrent} {onjump} />
 		<div
@@ -208,6 +305,40 @@
 			<span class="name">All Tracks</span>
 			<span class="count" title={_allTracksCountTitle()}>{allTracksError === null && allBadge.error === null ? allBadge.count ?? '...' : '!'}</span>
 		</div>
+		{#if pinnedNodes.length > 0}
+			<div class="pinned" role="group" aria-label="Pinned playlists" data-testid="playlist-pinned-section">
+				{#each pinnedNodes as node (node.playlist_id)}
+					<div
+						class="row pinned-row"
+						data-testid="playlist-pinned-row"
+						data-pinned-id={node.playlist_id}
+						class:selected={selectedId === node.playlist_id}
+						role="button"
+						tabindex="0"
+						title={`${node.name}, pinned shortcut`}
+						onpointerenter={() => onprefetch(node.playlist_id)}
+						onclick={(e) => onselect(node, { newTab: e.metaKey || e.ctrlKey })}
+						onkeydown={(e) => _rowKeydown(e, node)}
+					>
+						<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d={PIN_PATH} fill="currentColor" /></svg>
+						<span class="name">{node.name}</span>
+						<button
+							type="button"
+							class="pl-action dim"
+							title="Unpin playlist"
+							aria-label={`Unpin ${node.name}`}
+							onclick={(e) => {
+								e.stopPropagation();
+								ontogglepin?.(node);
+							}}
+						>
+							×
+						</button>
+						<span class="count" title={_playlistCountTitle(node)}>{node.track_count - node.broken_count}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
 		<div
 			class="row folder"
 			data-testid="playlist-folder"
@@ -220,7 +351,7 @@
 			}}
 			oncontextmenu={(e) => onmenu(e, 'folder')}
 		>
-			<span class="disclosure" class:open={playlistsOpen}>&#9656;</span>
+			<span class="disclosure" class:open={sectionOpen}>&#9656;</span>
 			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
 			</svg>
@@ -251,11 +382,11 @@
 				</button>
 			{/if}
 		</div>
-		{#if playlistsOpen}
+		{#if sectionOpen}
 			<div class="collapse" in:collapse out:collapse>
 				<div class="collapse-inner">
 					<PlaylistFolderStates
-						nodeCount={nodes.length}
+						nodeCount={libraryCount}
 						{playlistsLoading}
 						{playlistsError}
 						{hiddenBrokenPlaylistCount}
@@ -268,8 +399,11 @@
 							data-playlist-id={node.playlist_id}
 							class:selected={selectedId === node.playlist_id}
 							class:broken={node.mostly_broken}
-							title={node.mostly_broken ? mostlyBrokenTitle : undefined}
+							title={_rowTitle(node)}
 							class:drop-target={dropTargetId === node.playlist_id}
+							class:drop-refused={refusedDropId === node.playlist_id}
+							class:smartlist={node.kind === 'smartlist'}
+							data-node-kind={node.kind}
 							class:drop-before={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'before'}
 							class:drop-after={reorderTarget?.id === node.playlist_id && reorderTarget.place === 'after'}
 							class:moving={movingPlaylistId === node.playlist_id}
@@ -307,10 +441,17 @@
 									alt=""
 									title={`Playlist art for ${node.name}: the first four different covers, one cover, or a note when it has none`}
 								/>
+							{:else if node.kind === 'smartlist'}
+								<svg class="gear" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" data-testid="smartlist-icon">
+									<path d={GEAR_PATH} fill="currentColor" />
+								</svg>
 							{:else}
 								<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 									<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
 								</svg>
+							{/if}
+							{#if node.kind === 'smartlist'}
+								<span class="sr-only">Smartlist, fills from its rules:</span>
 							{/if}
 							{#if editingId === node.playlist_id}
 								<input
@@ -335,7 +476,24 @@
 									<span class="name" title={node.mostly_broken ? mostlyBrokenTitle : node.name}>{node.name}</span>
 								{/if}
 							{/if}
-							{#if canrename && !isInboxPlaylistId(node.playlist_id)}
+							{#if _pinnable(node)}
+								<button
+									type="button"
+									class="pl-action"
+									class:dim={!pinnedIds.has(node.playlist_id)}
+									data-testid="playlist-pin-toggle"
+									title={pinnedIds.has(node.playlist_id) ? 'Unpin playlist' : 'Pin playlist as a shortcut'}
+									aria-label={pinnedIds.has(node.playlist_id) ? `Unpin ${node.name}` : `Pin ${node.name}`}
+									aria-pressed={pinnedIds.has(node.playlist_id)}
+									onclick={(e) => {
+										e.stopPropagation();
+										ontogglepin?.(node);
+									}}
+								>
+									<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d={PIN_PATH} fill="currentColor" /></svg>
+								</button>
+							{/if}
+							{#if canrename && node.kind !== 'smartlist' && !isInboxPlaylistId(node.playlist_id)}
 								<button
 									type="button"
 									class="pl-action dim"
@@ -351,7 +509,7 @@
 									</svg>
 								</button>
 							{/if}
-							{#if ondeleteplaylist && !isInboxPlaylistId(node.playlist_id)}
+							{#if ondeleteplaylist && node.kind !== 'smartlist' && !isInboxPlaylistId(node.playlist_id)}
 								<button
 									type="button"
 									class="pl-action dim"
@@ -375,18 +533,32 @@
 							</div>
 						{/if}
 					{/each}
+					{#if searchNoMatches}
+						<div class="row child hint" role="status" data-testid="playlist-tree-search-empty">
+							No playlists match "{searchQuery.trim()}"
+						</div>
+					{/if}
 					<PlaylistHiddenBrokenNotice {hiddenBrokenPlaylistCount} />
 				</div>
 			</div>
 		{/if}
-		{@render recentlyDeleted()}
-		<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
-		<MissingTracksFolder
-			brokenCount={allTracksBrokenCount}
-			error={allTracksError}
-			selected={selectedId === MISSING_TRACKS_ID}
-			onselect={onselectmissing}
-		/>
+		<!-- LIBM-104: system nodes in their own section, ruled off above. -->
+		<div
+			class="system-section"
+			role="group"
+			aria-labelledby="playlist-system-section-label"
+			data-testid="playlist-system-section"
+		>
+			<div class="section-label" id="playlist-system-section-label">{SYSTEM_SECTION_LABEL}</div>
+			{@render recentlyDeleted()}
+			<!-- data-testid="playlist-missing-tracks" is on MissingTracksFolder -->
+			<MissingTracksFolder
+				brokenCount={allTracksBrokenCount}
+				error={allTracksError}
+				selected={selectedId === MISSING_TRACKS_ID}
+				onselect={onselectmissing}
+			/>
+		</div>
 	</div>
 </div>
 
@@ -441,8 +613,23 @@
 	 * activated (see columnMounted) - toggling visibility this way instead
 	 * of {#if}/{:else} keeps ColumnBrowser's fetched rows/selection alive
 	 * across repeated view switches. */
-	.tree-scroll.hidden {
+	.tree-scroll.hidden,
+	.tree-search.hidden {
 		display: none;
+	}
+	.tree-search {
+		flex: none;
+		margin: 4px 6px;
+		padding: 2px 6px;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		background: var(--rb-bg);
+		color: var(--rb-text);
+		font: inherit;
+	}
+	.tree-search:focus-visible {
+		outline: 2px solid var(--rb-focus-ring);
+		outline-offset: 1px;
 	}
 	.row {
 		display: flex;
@@ -466,6 +653,23 @@
 	.row.drop-target {
 		box-shadow: inset 0 0 0 1px var(--rb-accent);
 	}
+	/* LIBM-84: a track drag over a smartlist is refused, not outlined. */
+	.row.drop-refused {
+		cursor: no-drop;
+		box-shadow: inset 0 0 0 1px var(--rb-text-dim);
+		opacity: 0.6;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
+	}
 	/* LIBTREE-01: where a dragged playlist will land. */
 	.row.drop-before {
 		box-shadow: inset 0 2px 0 var(--rb-accent);
@@ -485,6 +689,25 @@
 	}
 	.row.child {
 		padding-left: 22px;
+	}
+	/* LIBM-87: pinned shortcuts sit between All Tracks and Playlists, ruled off below. */
+	.pinned {
+		border-bottom: 1px solid var(--rb-border);
+		margin-bottom: 2px;
+		padding-bottom: 2px;
+	}
+	/* LIBM-104: the system section is ruled off from the user's playlists. */
+	.system-section {
+		border-top: 1px solid var(--rb-border);
+		margin-top: 2px;
+		padding-top: 2px;
+	}
+	.section-label {
+		padding: 2px 6px 0;
+		color: var(--rb-text-dim);
+		font-size: 0.8em;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
 	}
 	/* ARTTHUMB-8728c variant A: 48 px tile, 4 px corners, two-line by-line. The
 	 * tile has fixed width and height so a late image never shifts a row. */

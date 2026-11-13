@@ -27,6 +27,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from apps.autodj.plan import (
+    KEYLOCK_BYPASS_PCT,
     PlanEvent,
     TransitionPlan,
     _value_at,
@@ -39,6 +40,7 @@ from apps.autodj.plan import (
     live_outgoing_fader,
     prelaunch_synced_tempo_moves,
     read_live_channels,
+    resolve_glide,
     sync_tempo_fold,
     sync_tempo_ratio,
 )
@@ -46,6 +48,8 @@ from apps.autodj.profile import TrackProfile, trim_knob
 
 _EQ_BANDS = {"eq_low": "low", "eq_mid": "mid", "eq_high": "high"}
 #: How far the incoming deck's live tempo (at pitch 1) may sit from its profile's before the mirror counts as stale.
+#: Plan stem control to the bus ``stem_gain`` stem name (``rb/stem-types.ts`` StemControl).
+_STEM_BUS = {"stem_vocals": "vocal", "stem_drums": "drums", "stem_bass": "bass", "stem_other": "other"}
 IN_TEMPO_AGREEMENT = 0.005
 
 
@@ -61,6 +65,8 @@ def control_command(deck: int | None, control: str, value: float) -> dict[str, A
         return {"type": "tempo", "deck": deck, "ratio": value}
     if control in ("fader", "trim", "filter"):
         return {"type": control, "deck": deck, "value": value}
+    if control in _STEM_BUS:
+        return {"type": "stem_gain", "deck": deck, "stem": _STEM_BUS[control], "value": value}
     raise ValueError(f"no bus command for control {control!r}")
 
 
@@ -375,6 +381,45 @@ def _refreshes_before_launch(
     return _launch_tempo_refreshes(plan, in_profile, live, min(play_bars)) if play_bars else []
 
 
+def _glide_resolved(plan: TransitionPlan, live: Mapping[str, Any] | None) -> tuple[TransitionPlan, str | None]:
+    """#10148: a glide_to_in plan as its synced plan plus the incoming ramp to rate 1.0 the leader carries. Without live
+    decks there are no tempos for the leader math, so it runs synced with no glide, and the note says so."""
+    if plan.tempo_mode != "glide_to_in":
+        return plan, None
+    if live is None or not live.get("decks"):
+        note = "no live decks in the mirror: the glide to the incoming tempo is not compiled, the plan runs synced"
+        return replace(plan, tempo_mode="sync_to_out", tempo_over_bars=None), note
+    return resolve_glide(plan), None
+
+
+def _deck_pitch(live: Mapping[str, Any] | None, deck: int) -> float | None:
+    state = ((live or {}).get("decks") or {}).get(str(deck))
+    pitch = state.get("pitch") if isinstance(state, Mapping) else None
+    return float(pitch) if isinstance(pitch, (int, float)) and not isinstance(pitch, bool) and pitch > 0 else None
+
+
+def keylock_decisions(
+    plan: TransitionPlan, led: TransitionPlan, launch: float | None, live: Mapping[str, Any] | None
+) -> tuple[dict[str, bool], list[str]]:
+    """#10148: master_tempo (key lock) per deck: off only when the deck stays within KEYLOCK_BYPASS_PCT of rate 1.0 for
+    the whole plan (the stretcher is bypassed), else on, and on when a rate is unknown; with one note per deck."""
+    decisions: dict[str, bool] = {}
+    notes: list[str] = []
+    for deck, source in ((plan.out.deck, led), (plan.in_.deck, plan)):
+        start = launch if deck == plan.in_.deck and launch is not None else _deck_pitch(live, deck)
+        targets = [e.target() for e in source.events if e.deck == deck and e.name == "tempo" and e.kind != "do"]
+        if start is None:
+            decisions[str(deck)] = True  # unknown rate: the live default (on) stands, nothing to note
+            continue
+        move = max(abs(rate - 1.0) * 100.0 for rate in [start, *targets])
+        decisions[str(deck)] = move > KEYLOCK_BYPASS_PCT + 1e-9
+        notes.append(
+            f"deck {deck} key lock {'on' if decisions[str(deck)] else 'off'}: it moves up to {move:.2f}% from rate 1.0"
+            f" ({'past' if decisions[str(deck)] else 'within'} {KEYLOCK_BYPASS_PCT:g}%)"
+        )
+    return decisions, notes
+
+
 def compile_plan(
     plan: TransitionPlan,
     in_profile: TrackProfile,
@@ -383,6 +428,10 @@ def compile_plan(
     live: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The ``{"plan": {...}}`` order the page executes."""
+    notes: list[str] = []
+    plan, glide_note = _glide_resolved(plan, live)
+    if glide_note is not None:
+        notes.append(glide_note)
     prepare: list[dict[str, Any]] = []
     if live is not None and live.get("master_deck") != plan.out.deck:
         # A quantized launch aligns to the MASTER's downbeat, and the plan's
@@ -406,7 +455,6 @@ def compile_plan(
     # either deck refuses the order (Sol P1 #7595), then caps the outgoing fader; without a live fader, say so.
     read_live_channels(plan, live)
     ceiling = live_outgoing_fader(plan, live)
-    notes: list[str] = []
     if ceiling is None:
         notes.append("no live outgoing fader in the mirror: outgoing fader levels are used as planned, uncapped")
     # Sol P1 #7595: the levels are checked on every path; with no live fader the ceiling is unity, which caps nothing.
@@ -422,6 +470,8 @@ def compile_plan(
             last_transport[event.deck] = event.at_bar
     events.extend(_refreshes_before_launch(plan, in_profile, live, events))
     events.sort(key=lambda row: row["at_bar"])
+    master_tempo, keylock_notes = keylock_decisions(plan, led, ratio, live)
+    notes.extend(keylock_notes)
     return {
         "plan": {
             "id": plan_id,
@@ -433,5 +483,6 @@ def compile_plan(
             "prepare": prepare,
             "events": events,
             "notes": notes,
+            "master_tempo": master_tempo,
         }
     }

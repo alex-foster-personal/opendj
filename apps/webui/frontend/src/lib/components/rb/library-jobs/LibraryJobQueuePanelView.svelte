@@ -8,6 +8,7 @@
 		open,
 		lane,
 		error,
+		refusal = null,
 		running,
 		pending,
 		onSelectLane,
@@ -20,6 +21,8 @@
 		lane: LibraryJobLane;
 		/** Last cancel or reorder failure, or null. */
 		error: string | null;
+		/** Why the queue is inert (daemon does not serve the routes), or null. */
+		refusal?: string | null;
 		running: LibraryJobItem[];
 		/** Queued jobs in queue order. */
 		pending: LibraryJobItem[];
@@ -68,47 +71,51 @@
 				aria-label="Close job queue">x</button
 			>
 		</header>
-		{#if error}<p class="err">{error}</p>{/if}
-		<ul>
-			{#each running as item (item.stable_id)}
-				<li data-testid="library-job-row" data-stable-id={item.stable_id}>
-					<span class="chip run" title={chipTitle(item)}>{item.stable_id} running</span>
-					<button
-						type="button"
-						onclick={() => onCancel(item)}
-						title="Cancel running job at the next safe point">Cancel</button
+		{#if refusal}
+			<p class="err" data-testid="library-job-refusal" title={refusal}>{refusal}</p>
+		{:else}
+			{#if error}<p class="err">{error}</p>{/if}
+			<ul>
+				{#each running as item (item.stable_id)}
+					<li data-testid="library-job-row" data-stable-id={item.stable_id}>
+						<span class="chip run" title={chipTitle(item)}>{item.stable_id} running</span>
+						<button
+							type="button"
+							onclick={() => onCancel(item)}
+							title="Cancel running job at the next safe point">Cancel</button
+						>
+					</li>
+				{/each}
+				{#each pending as item, i (item.stable_id)}
+					<li
+						data-testid="library-job-row"
+						data-stable-id={item.stable_id}
+						draggable="true"
+						ondragstart={() => onDragStart(item.stable_id)}
+						ondragover={(e) => e.preventDefault()}
+						ondrop={() => onDrop(item.stable_id)}
 					>
-				</li>
-			{/each}
-			{#each pending as item, i (item.stable_id)}
-				<li
-					data-testid="library-job-row"
-					data-stable-id={item.stable_id}
-					draggable="true"
-					ondragstart={() => onDragStart(item.stable_id)}
-					ondragover={(e) => e.preventDefault()}
-					ondrop={() => onDrop(item.stable_id)}
-				>
-					<span class="chip q" title={chipTitle(item)}>{i + 1}. {item.stable_id} queued</span>
-					<button
-						type="button"
-						onclick={() => onCancel(item)}
-						title="Cancel queued job; it leaves the queue">Cancel</button
-					>
-				</li>
-			{/each}
-			{#if pending.length === 0 && running.length === 0}
-				<li class="empty" title="No queued or running jobs in this lane">No jobs</li>
-			{/if}
-		</ul>
-		<div
-			class="tail"
-			ondragover={(e) => e.preventDefault()}
-			ondrop={() => onDrop(null)}
-			title="Drop here to move a queued job to the end"
-		>
-			end
-		</div>
+						<span class="chip q" title={chipTitle(item)}>{i + 1}. {item.stable_id} queued</span>
+						<button
+							type="button"
+							onclick={() => onCancel(item)}
+							title="Cancel queued job; it leaves the queue">Cancel</button
+						>
+					</li>
+				{/each}
+				{#if pending.length === 0 && running.length === 0}
+					<li class="empty" title="No queued or running jobs in this lane">No jobs</li>
+				{/if}
+			</ul>
+			<div
+				class="tail"
+				ondragover={(e) => e.preventDefault()}
+				ondrop={() => onDrop(null)}
+				title="Drop here to move a queued job to the end"
+			>
+				end
+			</div>
+		{/if}
 	</section>
 {/if}
 

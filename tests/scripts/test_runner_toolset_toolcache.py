@@ -63,6 +63,8 @@ def _layout(entry: dict) -> tuple[str, str]:
             return f"node/{version}/x64", "bin/node"
         case "toolcache-uv":
             return "uv/*/x86_64", "uv"
+        case "toolcache-uvx":
+            return "uv/*/x86_64", "uvx"
         case "toolcache-sccache":
             return f"sccache/{version}/x64", "sccache"
         case other:

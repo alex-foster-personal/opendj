@@ -133,3 +133,28 @@ export function stemWaveRowClickCommand(
 		? { type: 'stem_mute', deck: deck.deck_id, stem, muted: !current.muted }
 		: { type: 'stem_solo', deck: deck.deck_id, stem, solo: !current.solo, exclusive: true };
 }
+
+/**
+ * The one stem the listener hears alone (one exclusive, unmuted solo, or one
+ * part left audible by muting the rest, as ACA does), else null: several
+ * audible parts, several solos, a muted solo, or a held original (STEMPERF).
+ */
+export function soleAudibleStem(
+	controls: StemControls,
+	playback: 'original' | 'stems' | undefined,
+	layout: StemLayout = 'demucs4'
+): StemControl | null {
+	if (playback === 'original') return null;
+	const owned = STEM_LAYOUT_CONTROLS[layout];
+	const soloed = owned.filter((s) => controls[s].solo);
+	if (soloed.length === 1) {
+		const stem = soloed[0];
+		return stemRowAudibility(controls, stem, playback, layout) === 'audible' ? stem : null;
+	}
+	if (soloed.length > 1) return null;
+	// No solo: the others muted (ACA quick mode) leave one audible part.
+	const audible = owned.filter(
+		(s) => stemRowAudibility(controls, s, playback, layout) === 'audible'
+	);
+	return audible.length === 1 ? audible[0] : null;
+}

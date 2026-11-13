@@ -67,6 +67,7 @@ _FFMPEG_HOMEWRAPPED = (
 _FFMPEG_TASKPOLICY = (
     "/usr/sbin/taskpolicy -b /Applications/Open DJ.app/Contents/Resources/payload/bin/ffmpeg -nostdin -i x -"
 )
+_FFMPEG_NICE = "/usr/bin/nice -n 10 /Applications/Open DJ.app/Contents/Resources/payload/bin/ffmpeg -nostdin -i x -"
 _FFMPEG_BUNDLED = "/Applications/Open DJ.app/Contents/Resources/payload/bin/ffmpeg -nostdin -i x -"
 _LANE_QUEUE_CLI = (
     "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 "
@@ -319,7 +320,10 @@ def test_another_apps_electron_helper_is_other() -> None:
 
 
 @pytest.mark.requirement("PERFMODE-05")
-@pytest.mark.parametrize("command", [_FFMPEG_HOMEWRAPPED, _FFMPEG_TASKPOLICY, _FFMPEG_BUNDLED])
+@pytest.mark.parametrize(
+    "command",
+    [_FFMPEG_HOMEWRAPPED, _FFMPEG_TASKPOLICY, _FFMPEG_NICE, _FFMPEG_BUNDLED],
+)
 def test_an_ffmpeg_child_of_the_engine_is_ffmpeg(command: str) -> None:
     """[if] ffmpeg decodes under the engine [then] role is ffmpeg, [else stop]."""
     row = ProcessRow(pid=203, ppid=100, pgid=100, command=command)
@@ -378,6 +382,7 @@ def test_role_spellings_agree_across_probe_register_and_live_walk() -> None:
         _CLAUDE_RENDERER,
         _FFMPEG_HOMEWRAPPED,
         _FFMPEG_TASKPOLICY,
+        _FFMPEG_NICE,
         _FFMPEG_BUNDLED,
         _LANE_QUEUE_CLI,
         _LANE_RUN,

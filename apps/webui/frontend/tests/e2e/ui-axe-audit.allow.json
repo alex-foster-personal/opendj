@@ -26,15 +26,21 @@
 		},
 		{
 			"rule": "nested-interactive",
-			"selector": ".tab[role=\"tab\"][draggable=\"true\"]",
+			"selector": ".tab[draggable=\"true\"][role=\"tab\"]",
 			"surfaces": ["performance-more", "performance-less"],
 			"reason": "Active pane tab is a draggable tabpanel chrome with lock, stepper and close buttons; redesign is deferred to multi-pane browser a11y work in #10346."
 		},
 		{
 			"rule": "nested-interactive",
-			"selector": ".tab.active[role=\"tab\"]",
+			"selector": ".tab.active[draggable=\"true\"]",
 			"surfaces": ["library-context-menu"],
 			"reason": "Active pane tab is a draggable tabpanel chrome with lock, stepper and close buttons; redesign is deferred to multi-pane browser a11y work in #10346."
+		},
+		{
+			"rule": "nested-interactive",
+			"selector": ".icon-cluster",
+			"surfaces": ["performance-more", "performance-less"],
+			"reason": "TopBar feature-icon cluster is one hit target that expands into phase icons; flattening it is deferred to the browser/topbar a11y pass in #10346."
 		}
 	]
 }

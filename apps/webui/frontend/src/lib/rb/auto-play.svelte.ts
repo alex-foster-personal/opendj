@@ -443,7 +443,8 @@ function _pickNext(
 		min_tempo_ratio: bounds.min,
 		max_tempo_ratio: bounds.max,
 		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
-		exclude_identities: deckSongIdentities()
+		exclude_identities: deckSongIdentities(),
+		prefer_beatgrid: uiPrefs.beat_sync_max
 	});
 }
 
@@ -874,6 +875,11 @@ function _stopPoll(): void {
  * $effect.root because this is module-level reactive state with an explicit
  * lifecycle, not a component's - the same shape as attachMidiGlue's LED root.
  */
+/** Whether the performance AutoPlay controller is armed from ui prefs (issue #11216). */
+export function readAutoPlayControllerArmedFromUiPrefs(): boolean {
+	return uiPrefs.auto_play_enabled;
+}
+
 export function installAutoPlay(): () => void {
 	if (_stopArmWatcher !== null) {
 		throw new Error('auto-play already installed');

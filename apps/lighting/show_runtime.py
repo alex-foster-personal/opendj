@@ -3,7 +3,9 @@
 Pure, no I/O. Each playing deck shows the plan cue at its beat; layer intensity is the deck weight.
 Colour and position come from one owner deck, which changes only on the heavier deck's downbeat and
 is held at least one bar so colour never flips within 4 beats. In ``master_only`` the followed deck
-hands over at the incoming track's next phrase boundary. No playing deck means ambient (L55).
+hands over at the incoming track's next phrase boundary. ``phrase_switch`` hard-switches to the
+incoming deck at its first phrase boundary after its weight passes 0.5, with a one-beat fade, and only
+switches back if the outgoing deck holds weight above 0.5 for 4 beats. No playing deck means ambient (L55).
 
 The input types are local stand-ins for L61 (show plan) and L04 (deck weights); the output layers
 feed L53's compositor.
@@ -20,12 +22,15 @@ from apps.lighting.beat_clock import BEATS_PER_BAR
 
 MIN_OWNER_HOLD_BEATS = 4
 MAX_EFFECT_LEVEL = 2
+PHRASE_SWITCH_WEIGHT = 0.5
+SWITCH_BACK_HOLD_BEATS = 4
 
 
 class HandoverMode(StrEnum):
     BLEND = "blend"
     UPFADER_ONLY = "upfader_only"
     MASTER_ONLY = "master_only"
+    PHRASE_SWITCH = "phrase_switch"
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,8 @@ class ShowState:
     owner: str | None = None
     owner_since_beat: int | None = None
     last_beat: Mapping[str, int] = field(default_factory=dict)
+    switched_from: str | None = None
+    contest_since: int | None = None
 
 
 AMBIENT_FRAME = ShowFrame(ambient=True, layers=(), colour_deck=None, position_deck=None)
@@ -153,9 +160,38 @@ def _next_owner(state: ShowState, playing: Sequence[DeckState], mode: HandoverMo
         )
     elif mode == HandoverMode.MASTER_ONLY:
         switch = _crossed_phrase(candidate, state)
+    elif mode == HandoverMode.PHRASE_SWITCH:
+        switch = _phrase_switch_due(state, current, candidate)
     else:
         raise ValueError(f"unknown handover mode {mode}")
     return candidate if switch else current
+
+
+def _phrase_switch_due(state: ShowState, current: DeckState, candidate: DeckState) -> bool:
+    if candidate.weight <= PHRASE_SWITCH_WEIGHT:
+        return False
+    if candidate.deck == state.switched_from:
+        since = state.contest_since if state.contest_since is not None else current.beat_index
+        return current.beat_index - since >= SWITCH_BACK_HOLD_BEATS
+    return _crossed_phrase(candidate, state)
+
+
+def _contest_since(state: ShowState, owner: DeckState, playing: Sequence[DeckState], switched: bool) -> int | None:
+    if switched or state.switched_from is None:
+        return None
+    outgoing = next((d for d in playing if d.deck == state.switched_from), None)
+    if outgoing is None or outgoing.weight <= PHRASE_SWITCH_WEIGHT:
+        return None
+    return state.contest_since if state.contest_since is not None else owner.beat_index
+
+
+def _phrase_switch_layers(state: ShowState, owner: DeckState, playing: Sequence[DeckState]) -> tuple[DeckLayer, ...]:
+    by_id = {d.deck: d for d in playing}
+    previous = by_id.get(state.switched_from) if state.switched_from is not None else None
+    fading = previous is not None and owner.beat_index - (state.owner_since_beat or 0) < 1
+    if not fading or previous is None:
+        return (_layer(owner, 1.0),)
+    return tuple(sorted((_layer(owner, 0.5), _layer(previous, 0.5)), key=lambda layer: layer.deck))
 
 
 # ----------------------------------------------------------------------------- public
@@ -174,12 +210,26 @@ def step(state: ShowState, decks: Sequence[DeckState], mode: HandoverMode) -> tu
     if not playing:
         return ShowState(), AMBIENT_FRAME
     owner = _next_owner(state, playing, mode)
-    since = state.owner_since_beat if owner.deck == state.owner else owner.beat_index
+    switched = state.owner is not None and owner.deck != state.owner
+    since = owner.beat_index if owner.deck != state.owner else state.owner_since_beat
+    switched_from = state.owner if switched else state.switched_from
+    if switched_from is not None and all(d.deck != switched_from for d in playing):
+        switched_from = None
+    contest = _contest_since(state, owner, playing, switched) if mode == HandoverMode.PHRASE_SWITCH else None
     if mode in (HandoverMode.BLEND, HandoverMode.UPFADER_ONLY):
         layers = tuple(_layer(d, d.weight) for d in sorted(playing, key=lambda d: d.deck) if d.weight > 0)
     elif mode == HandoverMode.MASTER_ONLY:
         layers = (_layer(owner, 1.0),)
+    elif mode == HandoverMode.PHRASE_SWITCH:
+        fade_state = ShowState(owner=owner.deck, owner_since_beat=since, switched_from=switched_from)
+        layers = _phrase_switch_layers(fade_state, owner, playing)
     else:
         raise ValueError(f"unknown handover mode {mode}")
-    new_state = ShowState(owner=owner.deck, owner_since_beat=since, last_beat={d.deck: d.beat_index for d in playing})
+    new_state = ShowState(
+        owner=owner.deck,
+        owner_since_beat=since,
+        last_beat={d.deck: d.beat_index for d in playing},
+        switched_from=switched_from,
+        contest_since=contest,
+    )
     return new_state, ShowFrame(ambient=False, layers=layers, colour_deck=owner.deck, position_deck=owner.deck)

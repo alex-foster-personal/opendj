@@ -266,6 +266,55 @@ def nudged(edit: GridEdit, *, offset_ms: float = 0.0, beats: int = 0) -> GridEdi
     )
 
 
+#: How close (ms) the edited grid must put a line to the asked time.
+AT_TOLERANCE_MS: Final = 1.0
+
+
+def _no_beat_near(t_s: float) -> GridEditError:
+    return GridEditError(
+        409, "GRID_EDIT_NO_BEAT_NEAR", f"no grid line within the offset limit of {t_s:g} s; the grid needs re-analysis"
+    )
+
+
+def edit_for_beat_at(beats: Sequence[Mapping[str, Any]], edit: GridEdit, t_s: float) -> GridEdit:
+    """``edit`` with its offset moved so the served beat nearest ``t_s`` lands on ``t_s`` (GRIDEDIT-10115).
+
+    ``beats`` is the MEASURED grid; the nearest line is found in the grid
+    ``edit`` serves now, so the result composes with the stored edit. A move
+    past ``MAX_OFFSET_MS`` (or a grid with no beats) means no line is near:
+    409 ``GRID_EDIT_NO_BEAT_NEAR``.
+    """
+    if not math.isfinite(t_s) or t_s < 0:
+        raise GridEditError(422, "GRID_EDIT_INVALID", f"t_s must be a finite time >= 0, got {t_s!r}")
+    served = apply_to_beats(beats, edit)
+    if not served:
+        raise _no_beat_near(t_s)
+    nearest = served[_nearest_beat_index(served, t_s)]
+    delta_ms = (t_s - float(nearest["t"])) * 1000.0
+    if abs(edit.offset_ms + delta_ms) > MAX_OFFSET_MS:
+        raise _no_beat_near(t_s)
+    moved = make_edit(
+        edit.offset_ms + delta_ms, edit.beat_shift, anchors=edit.anchors, bpm=edit.bpm, anchor_t=edit.anchor_t
+    )
+    regrid = apply_to_beats(beats, moved)
+    if not regrid or abs(float(regrid[_nearest_beat_index(regrid, t_s)]["t"]) - t_s) * 1000.0 > AT_TOLERANCE_MS:
+        # A BPM override or anchor re-spaces lines from a fixed time, so the offset alone cannot move them.
+        raise _no_beat_near(t_s)
+    return moved
+
+
+def edit_for_downbeat_at(beats: Sequence[Mapping[str, Any]], edit: GridEdit, t_s: float) -> GridEdit:
+    """``edit_for_beat_at`` plus the smallest bar shift that makes the line at ``t_s`` read ``n=1``."""
+    moved = edit_for_beat_at(beats, edit, t_s)
+    regrid = apply_to_beats(beats, moved)
+    n_now = regrid[_nearest_beat_index(regrid, t_s)].get("n")
+    if not isinstance(n_now, int) or not 1 <= n_now <= BEATS_PER_BAR:
+        raise GridEditError(409, "GRID_EDIT_NO_BAR_POSITION", f"the grid line at {t_s:g} s has no bar position")
+    return make_edit(
+        moved.offset_ms, moved.beat_shift + (n_now - 1), anchors=moved.anchors, bpm=moved.bpm, anchor_t=moved.anchor_t
+    )
+
+
 def relabel_beat_number(n: int, beat_shift: int) -> int:
     """Bar position of a beat once bar 1 has moved ``beat_shift`` beats later.
 
@@ -751,6 +800,8 @@ __all__ = [
     "apply_to_beats",
     "apply_to_payload",
     "blob",
+    "edit_for_beat_at",
+    "edit_for_downbeat_at",
     "make_edit",
     "normalize_beat_shift",
     "nudged",

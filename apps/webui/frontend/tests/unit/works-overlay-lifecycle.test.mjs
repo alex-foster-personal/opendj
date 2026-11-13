@@ -17,3 +17,11 @@ test('startWorksOverlay fail returns when isPageGoingAway before pushToast', () 
 	assert.match(slice, /if \(isPageGoingAway\(\)\) return;/);
 	assert.match(slice, /works did not load/);
 });
+
+test('refreshSuggestionFlags catch returns when isPageGoingAway before pushToast', () => {
+	const fnStart = WORKS_OVERLAY.indexOf('export function refreshSuggestionFlags');
+	assert.ok(fnStart >= 0);
+	const slice = WORKS_OVERLAY.slice(fnStart, fnStart + 650);
+	assert.match(slice, /version suggestions failed/);
+	assert.match(slice, /if \(isPageGoingAway\(\)\) return;/);
+});

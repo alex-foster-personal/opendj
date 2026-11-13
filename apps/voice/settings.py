@@ -48,6 +48,32 @@ def coalesce_env(env: dict[str, str] | None) -> dict[str, str]:
     return env if env is not None else dict(os.environ)
 
 
+def _optional_float(raw: str | None, default: float | None) -> float | None:
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def env_float(env: dict[str, str], key: str, default: float) -> float:
+    """Parse ``env[key]`` as float, falling back to ``default`` when missing or invalid."""
+    parsed = _optional_float(env.get(key), None)
+    return default if parsed is None else parsed
+
+
+def env_int(env: dict[str, str], key: str, default: int) -> int:
+    """Parse ``env[key]`` as int, falling back to ``default`` when missing or invalid."""
+    parsed = _optional_float(env.get(key), None)
+    if parsed is None:
+        return default
+    try:
+        return int(parsed)
+    except ValueError:
+        return default
+
+
 def voice_data_dir() -> Path:
     """``<data dir>/voice``, read at call time: every voice file lives here."""
     return Path(platform_paths.DATA_DIR) / "voice"
@@ -145,20 +171,14 @@ class SettingsStore:
     # ----- typed helpers --------------------------------------------------
 
     def get_float(self, key: str, default: float | None = None) -> float | None:
-        raw = self.get(key)
-        if raw is None:
-            return default
-        try:
-            return float(raw)
-        except ValueError:
-            return default
+        return _optional_float(self.get(key), default)
 
     def get_int(self, key: str, default: int | None = None) -> int | None:
-        raw = self.get(key)
-        if raw is None:
+        parsed = _optional_float(self.get(key), None)
+        if parsed is None:
             return default
         try:
-            return int(float(raw))
+            return int(parsed)
         except ValueError:
             return default
 

@@ -49,6 +49,11 @@ REQUIREMENTS
        and so does a started backend whose /api/v1/health stays down past
        BACKEND_DOWN_GRACE_S, the uvicorn reload worker having died under a
        still-running reloader]
+  R-8 The window is in the perf monitor's process family.            [done, test]
+      [the window's pid is written to .engine.parent (mode 0600) in the
+       backend's data dir after each start or relaunch and removed on exit,
+       only for a backend this run owns; the backend never gets
+       OPENDJ_PARENT_PID, which would stop it whenever the window exits]
 """
 
 from __future__ import annotations
@@ -75,6 +80,7 @@ from typing import Any
 
 import psutil
 
+from apps.engine_core.parent_watch import PARENT_ENV, PARENT_FILE_NAME
 from apps.shared.process_groups import (
     GROUPS_SUPPORTED,
     group_alive,
@@ -357,6 +363,61 @@ class ShellBuild:
     shell_dir: Path
     stamp: frozenset[tuple[str, float]]
     env: dict[str, str]
+
+
+def shell_registration_dir(reported_db: str | None) -> Path | None:
+    """The data dir a backend reporting `reported_db` reads `.engine.parent` from, or None when it names none."""
+    if reported_db is None:
+        return None
+    state_db = Path(reported_db)
+    # As the backend's data_dir_from_state_db: <data>/state/state.db, else the db's own dir.
+    return state_db.parent.parent if state_db.parent.name == "state" else state_db.parent
+
+
+def write_shell_registration(data_dir: Path, pid: int) -> Path:
+    """Register `pid` as the shell in `data_dir` exactly as writeParentFile does: the pid, a newline, mode 0600."""
+    path = data_dir / PARENT_FILE_NAME
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(f"{pid}\n")
+    os.chmod(path, 0o600)
+    return path
+
+
+class ShellRegistrar:
+    """Keeps `.engine.parent` naming the live dev window, so the perf monitor counts its tree (PERF-DIAG-9545).
+
+    The window is a sibling of the backend, not its descendant, so only the
+    registration brings it into the process family. `data_dir` is None for a
+    run that does not own the backend: such a run writes nothing. The pid is
+    never stamped as OPENDJ_PARENT_PID, which would arm the backend's parent
+    watch and stop it with the window.
+    """
+
+    def __init__(self, data_dir: Path | None) -> None:
+        self.data_dir = data_dir
+        self._written: int | None = None
+
+    def record(self, pid: int) -> None:
+        """Point the registration at `pid`, a window already started (the check rejects a pid younger than the file)."""
+        if self.data_dir is None:
+            return
+        try:
+            write_shell_registration(self.data_dir, pid)
+        except OSError as err:
+            print(f"[WARN] could not register the window in {self.data_dir}: {err}", flush=True)
+            return
+        self._written = pid
+
+    def clear(self) -> None:
+        """Remove the registration this run wrote, unless something has since rewritten it."""
+        if self.data_dir is None or self._written is None:
+            return
+        path = self.data_dir / PARENT_FILE_NAME
+        with contextlib.suppress(OSError, ValueError):
+            if int(path.read_text(encoding="utf-8").strip()) == self._written:
+                path.unlink()
+        self._written = None
 
 
 def shell_build_argv(pnpm: str) -> list[str]:
@@ -890,6 +951,9 @@ def _backend_env(
 ) -> dict[str, str]:
     """The environment a backend this run starts gets: the claimed ports, the library named and, off macOS, its mode."""
     env = with_ports(dict(os.environ), backend=backend_port, frontend=frontend_port)
+    # The window registers through .engine.parent instead: this pid would arm the
+    # backend's parent watch, and the backend would exit with every relaunch.
+    env.pop(PARENT_ENV, None)
     if args.fixture:
         env["MDT_DATA_DIR"] = str(_fixture_data_dir(frontend_port, dict(env)))
     elif args.data_dir is not None:
@@ -967,6 +1031,7 @@ def _watch_shell(
     no_watch: bool,
     started: list[tuple[subprocess.Popen[bytes], str]],
     backend_health: str | None = None,
+    registrar: ShellRegistrar | None = None,
 ) -> int:
     """Relaunch the window on shell edits until it closes; `windows` holds the live one.
 
@@ -1011,6 +1076,8 @@ def _watch_shell(
             _stop(windows.pop(), "Electron")
         _spawn(plan.argv, env=plan.env, service="electron", register=windows.append)
         _wait_for(f"{cdp}/json/version", "Electron", windows[0])
+        if registrar is not None:
+            registrar.record(windows[0].pid)
         print(f"[OK] relaunched in {time.monotonic() - relaunch_started:.1f} s", flush=True)
 
 
@@ -1045,6 +1112,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # One slot, so the cleanup below stops whichever window a relaunch left running.
     windows: list[subprocess.Popen[bytes]] = []
+    registrar = ShellRegistrar(None)
     try:
         if backend_up:
             _refuse_unless_ours("backend", backend_origin, _expected_state_db(), ports.backend)
@@ -1059,6 +1127,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             _wait_for(f"{backend_origin}/api/v1/health", "backend", backend)
             print(f"[OK] backend (reloading) on {backend_origin}", flush=True)
+        # The backend is ours from here (started, or verified above), so the window may register with it.
+        registrar = ShellRegistrar(shell_registration_dir(_health_db(backend_origin)))
 
         if _answers(vite_origin):
             # Through Vite's /api proxy: it must reach the backend this run uses.
@@ -1099,6 +1169,7 @@ def main(argv: list[str] | None = None) -> int:
         window = _spawn(plan.argv, env=plan.env, service="electron", register=windows.append)
         cdp = f"http://127.0.0.1:{plan.cdp_port}"
         _wait_for(f"{cdp}/json/version", "Electron", window)
+        registrar.record(window.pid)
         print(
             "\n[OK] Electron is up. Edit the web UI and it hot-reloads; edit apps/desktop/electron/src and it relaunches.\n"
             f"  window origin  {vite_origin}  (backend {backend_origin})\n"
@@ -1120,6 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
             started=started,
             # Only a backend this run started: a reused one is not ours to stop.
             backend_health=None if backend_up else f"{backend_origin}/api/v1/health",
+            registrar=registrar,
         )
     except KeyboardInterrupt:
         return 0
@@ -1130,6 +1202,7 @@ def main(argv: list[str] | None = None) -> int:
             signal.signal(sig, signal.SIG_IGN)
         for window in windows:
             _stop(window, "Electron")
+        registrar.clear()
         for process, what in reversed(started):
             _stop(process, what)
 

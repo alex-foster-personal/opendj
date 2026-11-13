@@ -45,7 +45,8 @@ test('constructor lists with open default false', async () => {
 			vendor_pl_id: 'gone',
 			deleted_at: '2026-09-13T00:00:00Z',
 			updated_at: '2026-09-13T00:00:01Z',
-			track_count: 1
+			track_count: 1,
+			etag: '"etag-1"'
 		}
 	];
 	const store = new TreeRecentlyDeleted(
@@ -95,11 +96,12 @@ test('restore calls undelete and drops the row locally', async () => {
 				vendor_pl_id: 'gone',
 				deleted_at: '2026-09-13T00:00:00Z',
 				updated_at: '2026-09-13T00:00:01Z',
-				track_count: 1
+				track_count: 1,
+				etag: '"etag-1"'
 			}
 		],
-		async (id) => {
-			restored.push(id);
+		async (id, etag) => {
+			restored.push([id, etag]);
 			return {};
 		},
 		subscriptions.subscribeKind,
@@ -107,7 +109,7 @@ test('restore calls undelete and drops the row locally', async () => {
 	);
 	await flush();
 	await store.restore('pl-1');
-	assert.deepEqual(restored, ['pl-1']);
+	assert.deepEqual(restored, [['pl-1', '"etag-1"']]);
 	assert.deepEqual(store.rows, []);
 	store.destroy();
 });
@@ -164,7 +166,8 @@ test('restore rejects unknown playlist and keeps local rows', async () => {
 		vendor_pl_id: 'gone',
 		deleted_at: '2026-09-13T00:00:00Z',
 		updated_at: '2026-09-13T00:00:01Z',
-		track_count: 1
+		track_count: 1,
+		etag: '"etag-1"'
 	};
 	const store = new TreeRecentlyDeleted(
 		async () => [row],
@@ -196,7 +199,8 @@ test('playlist event reload after restore omits restored id', async () => {
 						vendor_pl_id: 'gone',
 						deleted_at: '2026-09-13T00:00:00Z',
 						updated_at: '2026-09-13T00:00:01Z',
-						track_count: 1
+						track_count: 1,
+						etag: '"etag-1"'
 					}
 				];
 			}

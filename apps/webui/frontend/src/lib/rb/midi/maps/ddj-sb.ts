@@ -31,8 +31,8 @@
  *
  * ANALOG / LOCAL LED (no MIDI-IN row, or "LED are lit by DDJ-SB"): MASTER
  * LEVEL (fig 16), HEADPHONES VOL (fig 18), FILTER FADE (fig 19). The replica
- * draws them with unique channel-16 placeholder hints so resolveLayout can
- * join them. Those wires are not a claim about what the hardware sends.
+ * draws them with `midi: null` (wire unavailable, unwired and inert); this map
+ * neither binds nor hints them, so no number is invented for them.
  *
  * LED rules exist only for rows whose [PDF] MIDI-OUT column prints
  * "Same as MIDI-IN" AND whose control is bound: PLAY, CUE, SYNC, CH CUE,
@@ -75,9 +75,6 @@ export const DDJ_SB_PAD_ON = 0x7f;
 export const DDJ_SB_PAD_OFF = 0x00;
 
 const HOT_CUE_SLOTS: readonly HotCueSlot[] = ['A', 'B', 'C', 'D'];
-
-/** Channel-16 placeholders for analog / local-LED controls the replica draws. */
-export const DDJ_SB_PLACEHOLDER_CH = 16;
 
 function _deckBindings(deck: Deck): MidiBinding[] {
 	const ch = pioneerDeckChannel(deck);
@@ -258,14 +255,7 @@ function _globalHints(): ControlHint[] {
 		{ source: pioneerNote(ch, 0x59), label: 'LOAD deck 2 + SHIFT' },
 		// [PDF] fig 30 BACK: note 101 (0x65); +SHIFT note 102 (0x66).
 		{ source: pioneerNote(ch, 0x65), label: 'BACK' },
-		{ source: pioneerNote(ch, 0x66), label: 'BACK + SHIFT' },
-		// Analog / local-LED controls the replica draws (no MIDI-IN row).
-		{ source: pioneerCc(DDJ_SB_PLACEHOLDER_CH, 0x00), label: 'MASTER LEVEL (analog, no MIDI)' },
-		{ source: pioneerCc(DDJ_SB_PLACEHOLDER_CH, 0x01), label: 'HEADPHONES VOL (analog, no MIDI)' },
-		{
-			source: pioneerNote(DDJ_SB_PLACEHOLDER_CH, 0x00),
-			label: 'FILTER FADE (local LED, no MIDI)'
-		}
+		{ source: pioneerNote(ch, 0x66), label: 'BACK + SHIFT' }
 	];
 }
 

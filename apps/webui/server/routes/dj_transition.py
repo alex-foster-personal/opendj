@@ -4,7 +4,8 @@
 a track is loaded on the idle deck, and it answers at once with how far that has got. ``POST /api/v1/dj/transition/plan``
 is the press: it never renders, and the page runs the returned order on its own plan runner. ``order`` null is an
 answer, not a failure: ``reason`` says why and the page runs its fallback. 409 ``no_performance_page``: no page has
-published a mirror. 422 ``deck_empty``: a named deck holds no track.
+published a mirror. 422 ``deck_empty``: a named deck holds no track. A deck with an engaged loop is refused before any
+planning, as a null ``order`` whose ``reason`` names the deck: a loop wraps the playhead, so no plan could reach its window.
 
 ``POST /api/v1/dj/transition/decide`` (AUTOPLAN-03) is AutoPlay's early decision: the mix-out window ahead in the master and
 which shortlisted track to bring in. It renders nothing. ``track`` null is an answer with a ``reason``, as with ``order``.
@@ -31,6 +32,7 @@ from apps.autodj.http import (
     decide,
     get_pair_transition,
     heard_profile,
+    loop_engaged,
     save_decision,
 )
 from apps.shared.state import db as state_db_module
@@ -270,6 +272,16 @@ def _published_mirror(request: Request) -> Mapping[str, Any] | None:
     return mirror if isinstance(mirror, dict) else None
 
 
+def _looped_deck_reason(mirror: Mapping[str, Any] | None, out_deck: int, in_deck: int) -> str | None:
+    """Why the pair cannot be armed when either deck reports an engaged loop (the rule plan validation applies), or None."""
+    if mirror is None:
+        return None
+    for deck, role in ((out_deck, "outgoing"), (in_deck, "incoming")):
+        if loop_engaged(_deck_state(mirror, deck)):
+            return f"{role} deck {deck} has an engaged loop; release it so a transition can be armed"
+    return None
+
+
 @router.post(
     "/plan",
     response_model=TransitionPlanOut,
@@ -284,6 +296,9 @@ def plan_transition(
     if body.out_deck == body.in_deck:
         return _refusal(422, "same_deck", f"out_deck and in_deck are both {body.out_deck}")
     autodj = build_service()
+    looped = _looped_deck_reason(_published_mirror(request), body.out_deck, body.in_deck)
+    if looped is not None:
+        return _document(LiveAnswer(None, looped, autodj.parse_intent(body.intent)))
     source = ServingTrackSource(data_dir, autodj, origin=_serving_origin(request, state_db), state_db=state_db)
     live = LiveRequest(
         body.out_deck, body.in_deck, body.intent, tuple(body.recent_styles), body.from_ms, body.take_incoming

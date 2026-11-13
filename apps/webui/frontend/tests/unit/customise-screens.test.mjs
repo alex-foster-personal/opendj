@@ -15,6 +15,7 @@
 // [if] an implemented catalog id is in no screen and not in SETTINGS_ONLY [then] this fails, [else stop].
 // [if] an id appears in two screens, or in a screen and SETTINGS_ONLY [then] this fails, [else stop].
 // [if] a SETTINGS_ONLY row has an empty reason or names an id not in the catalog [then] this fails, [else stop].
+// [if] deck_needle_lock leaves SETTINGS_ONLY, gains a second bucket row or lands on the Decks screen (or any screen) [then] this fails, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
@@ -227,7 +228,8 @@ test('registry: screen ids (waveform prepends when #9439 lands)', () => {
 		'decks',
 		'library',
 		'layout',
-		'mixer'
+		'mixer',
+		'colours'
 	]);
 });
 
@@ -631,7 +633,8 @@ test('layout: stub catalog missing variant keys still resolves Presets and Modes
 	assert.deepEqual(customiseScreens.customiseSettingIds(def), [
 		'layout_override.performance',
 		'layout_override.library',
-		'deck_layout'
+		'deck_layout',
+		'feature_icon_single_click'
 	]);
 	const [resolved] = customiseScreens.defineCustomiseScreens(stub, [def]);
 	assert.equal(resolved.id, 'layout');
@@ -745,6 +748,18 @@ test('CUSTSCR-10206 SETTINGS_ONLY seeds the spike 19 rows', () => {
 	}
 });
 
+/** Needle Lock (#9767) has exactly one Settings-only placement and no customise screen row (#13082). */
+test('CUSTSCR-10206 deck_needle_lock sits only in SETTINGS_ONLY, not on the Decks screen', () => {
+	const rows = customiseScreens.SETTINGS_ONLY.filter((r) => r.id === 'deck_needle_lock');
+	assert.equal(rows.length, 1, 'deck_needle_lock has exactly one SETTINGS_ONLY row');
+	assert.ok(rows[0].reason.trim().length > 0, 'deck_needle_lock bucket row carries a reason');
+	const decksIds = customiseScreens.customiseSettingIds(customiseScreens.DECKS_SCREEN);
+	assert.ok(!decksIds.includes('deck_needle_lock'), 'deck_needle_lock is not on the Decks screen');
+	const places = buildCatalogCoveragePlaces(customiseScreens, waveQs);
+	const onScreens = places.filter((p) => p.ids.includes('deck_needle_lock')).map((p) => p.name);
+	assert.deepEqual(onScreens, [], 'deck_needle_lock is in no customise screen');
+});
+
 test('CUSTSCR-10206 coverage checker negative controls', () => {
 	const syntheticCatalog = [
 		{ id: 'a', implemented: true },
@@ -819,4 +834,59 @@ test('CUSTSCR-10206 coverage checker negative controls', () => {
 		[{ id: 'c', reason: 'settings only' }]
 	);
 	assert.deepEqual(clean, []);
+});
+
+// [if] a SETTINGS_ONLY reason awaits a screen whose label exists [then] this fails naming id and screen.
+test('CUSTSCR-13879 no SETTINGS_ONLY row awaits a screen that exists', () => {
+	const labels = new Set(customiseScreens.CUSTOMISE_SCREENS.map((s) => s.label));
+	const stale = [];
+	for (const row of customiseScreens.SETTINGS_ONLY) {
+		const m = row.reason.match(/Awaiting the (.+?) screen/);
+		if (m && labels.has(m[1])) stale.push(`${row.id}: awaits ${m[1]} screen, which exists`);
+	}
+	assert.deepEqual(stale, []);
+});
+
+// [if] feature_icon_single_click is not on the Layout screen Modes group [then] this fails.
+test('CUSTSCR-13879 feature_icon_single_click sits in Layout Modes', () => {
+	const layout = customiseScreens.customiseScreen('layout');
+	const modes = layout.groups.find((g) => g.id === 'modes');
+	assert.ok(modes, 'layout has no modes group');
+	assert.ok(modes.rows.some((r) => r.row.id === 'feature_icon_single_click'));
+});
+
+// requirement: CUSTSCR-14149
+// [if] customiseScreen('colours') throws [then] this fails.
+test('CUSTSCR-14149 colours screen resolves with theme and reduce_motion in Appearance', () => {
+	const colours = customiseScreens.customiseScreen('colours');
+	assert.equal(colours.label, 'Colours');
+	const appearance = colours.groups.find((g) => g.id === 'appearance');
+	assert.ok(appearance, 'colours has no appearance group');
+	assert.deepEqual(appearance.rows.map((r) => r.row.id), ['theme', 'reduce_motion']);
+});
+
+// [if] theme or reduce_motion is in both the Colours screen and SETTINGS_ONLY [then] this fails.
+test('CUSTSCR-14149 theme and reduce_motion are not in SETTINGS_ONLY', () => {
+	const bucket = new Set(customiseScreens.SETTINGS_ONLY.map((r) => r.id));
+	assert.ok(!bucket.has('theme'));
+	assert.ok(!bucket.has('reduce_motion'));
+});
+
+// [if] the Colours screen holds a row that is not a boolean or enum control [then] module import throws.
+test('CUSTSCR-14149 colours screen refuses a non boolean/enum row', () => {
+	const { defineCustomiseScreens, COLOURS_SCREEN } = customiseScreens;
+	assert.throws(() =>
+		defineCustomiseScreens(catalog.SETTINGS_CATALOG, [
+			{
+				...COLOURS_SCREEN,
+				groups: [
+					{
+						id: 'appearance',
+						label: 'Appearance',
+						rows: [{ kind: 'setting', id: 'library_watcher_folders' }]
+					}
+				]
+			}
+		])
+	);
 });

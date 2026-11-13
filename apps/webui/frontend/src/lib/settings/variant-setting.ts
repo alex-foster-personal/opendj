@@ -7,7 +7,7 @@
  * row. Hygiene values stay mimicked, never variants.
  *
  * A family registers by being imported: the owner imports its def and calls
- * `readVariant(DEF.id)`; `catalog.ts` imports the family module so the row
+ * `readVariant(DEF.id)`; `variant-families.ts` imports the family module so the row
  * shows. This module must not import prefs (prefs imports it).
  */
 import type { SettingDef, SettingGroupId } from './catalog-types';

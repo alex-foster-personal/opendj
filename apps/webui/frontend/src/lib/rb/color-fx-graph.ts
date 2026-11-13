@@ -46,6 +46,7 @@
  *   high -+-> filterDry / filterLp / filterHp -> colorBus
  *         +-> crush worklet -> highpass -> crushWet -> colorBus
  */
+import { filterSideCorners } from './filter-slope';
 import {
 	COLOR_FX_ECHO_BEATS,
 	COLOR_FX_MIN_BPM,
@@ -120,6 +121,7 @@ export const COLOR_FX_RAMP_SEC = 0.01;
 
 /** Voicing overrides, for the blind A/B page's variants. The shipped voicing is the defaults. */
 export interface ColorFxGraphOptions {
+	/** Checked by the kernel's setFeedback law: a value outside [0, 0.95] throws. */
 	echoFeedback?: number;
 	spaceSeconds?: number;
 	echoWet?: number;
@@ -151,7 +153,8 @@ export interface ColorFxGraph {
 
 type GraphContext = Pick<
 	BaseAudioContext,
-	'createGain' | 'createDelay' | 'createBiquadFilter' | 'createWaveShaper' | 'createConvolver' | 'createBuffer' | 'sampleRate'
+	| 'createGain' | 'createDelay' | 'createBiquadFilter' | 'createWaveShaper' | 'createChannelMerger' | 'createConvolver'
+	| 'createBuffer' | 'sampleRate'
 >;
 
 function _gain(ctx: GraphContext, value: number): GainNode {
@@ -194,6 +197,7 @@ export function buildColorFxGraph(
 	const fxIn = _gain(ctx, 1);
 	const echoIn = _gain(ctx, 0);
 	const echo = buildEchoKernel(ctx, {
+		mode: 'echo',
 		maxDelaySec: COLOR_FX_ECHO_MAX_DELAY_SEC,
 		feedback: options.echoFeedback ?? ECHO_FEEDBACK,
 		loopHpHz: ECHO_LOOP_HP_HZ,
@@ -252,6 +256,9 @@ function _ramp(param: AudioParam, value: number, now: number, tau: number): void
 export interface ColorFilterNodes {
 	filterLp: BiquadFilterNode;
 	filterHp: BiquadFilterNode;
+	/** FXFILT-09: second sections at 24 dB/oct; absent or null at 12. */
+	filterLp2?: BiquadFilterNode | null;
+	filterHp2?: BiquadFilterNode | null;
 	filterDry: GainNode;
 	filterLpWet: GainNode;
 	filterHpWet: GainNode;
@@ -265,8 +272,10 @@ export function applyColorFilterTargets(
 	sampleRate: number
 ): void {
 	const f = targets.filter;
-	glideCorner(nodes.filterLp.frequency, f.lpHz, now, sampleRate, FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S);
-	glideCorner(nodes.filterHp.frequency, f.hpHz, now, sampleRate, FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S);
+	for (const p of filterSideCorners(nodes.filterLp, nodes.filterLp2))
+		glideCorner(p, f.lpHz, now, sampleRate, FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S);
+	for (const p of filterSideCorners(nodes.filterHp, nodes.filterHp2))
+		glideCorner(p, f.hpHz, now, sampleRate, FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S);
 	_ramp(nodes.filterDry.gain, f.dryGain, now, COLOR_FX_RAMP_SEC);
 	_ramp(nodes.filterLpWet.gain, f.lpWetGain, now, COLOR_FX_RAMP_SEC);
 	_ramp(nodes.filterHpWet.gain, f.hpWetGain, now, COLOR_FX_RAMP_SEC);

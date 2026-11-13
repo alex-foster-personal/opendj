@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import apps.transition_score.tryer as _tryer
 from apps.autodj.contract import AutoDjService
 from apps.transition_score.contract import TransitionScoreService, TryResult
-from apps.transition_score.lanes import MAX_COLUMNS, LaneError, Lanes, build_lanes
+from apps.transition_score.lanes import MAX_COLUMNS, LaneEnergy, LaneError, Lanes, build_lanes, lane_energy
 from apps.transition_score.live import (
     DeckNotPlannable,
     LiveAnswer,
@@ -109,6 +109,7 @@ __all__ = [
     "DeckNotPlannable",
     "EngineProfiles",
     "EngineTrackSource",
+    "LaneEnergy",
     "LaneError",
     "Lanes",
     "LiveAnswer",
@@ -126,6 +127,7 @@ __all__ = [
     "deck_bar_now",
     "deck_track",
     "incoming_on_render_clock",
+    "lane_energy",
     "loudness_checks",
     "mono",
     "outgoing_natural",

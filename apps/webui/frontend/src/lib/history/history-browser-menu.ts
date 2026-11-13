@@ -1,8 +1,8 @@
 /**
  * History delete UI wiring for BrowserPanel (PLAYS-10523).
  *
- * The History list that hosts these targets lands with #9745; until then agents
- * reach the same capability through the HTTP routes and `opendj history`.
+ * The History panel (HistorySourcePanel.svelte, PLAYS-9745) hosts these targets;
+ * agents reach the same capability through the HTTP routes and `opendj history`.
  */
 import type { MenuRunners } from '$lib/context-menu/bind';
 import { confirmAndDeletePlay, deleteHistoryDay, deleteHistoryPlay } from './history-delete';
@@ -69,7 +69,7 @@ export async function deleteHistoryDayUi(day: HistoryDayRow): Promise<void> {
 	void ok;
 }
 
-/** Runners for #9745's History view to pass to `bindMenuItems`. */
+/** Runners for the History panel's play rows, passed to `bindMenuItems`. */
 export function historyMenuRunnersForPlay(row: HistoryPlayRow): MenuRunners {
 	return { 'delete-play': () => void deleteHistoryPlayUi(row) };
 }

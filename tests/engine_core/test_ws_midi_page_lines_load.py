@@ -20,10 +20,11 @@ PARALLEL_RUNS = 12
 
 
 def _cargo_env() -> dict[str, str]:
+    """Cargo env with GNU compiler defaults on Linux only, so MSVC and Apple hosts keep their own toolchain."""
     env = bindgen_env(os.environ)
-    env.setdefault("CXX", "g++")
-    env.setdefault("CC", "gcc")
     if sys.platform == "linux":
+        env.setdefault("CXX", "g++")
+        env.setdefault("CC", "gcc")
         env.setdefault("RUSTFLAGS", "-C link-arg=-L/usr/lib/gcc/x86_64-linux-gnu/13")
     return env
 
@@ -96,3 +97,26 @@ def test_midi_page_lines_sender_isolation_stays_on_hot_id() -> None:
     assert 'v["id"] != "hot"' in text
     assert 'b_kept.iter().all(|v| v["id"] != "hot")' in text
     _run_midi_page_lines()
+
+
+@pytest.mark.parametrize("platform", ["win32", "darwin"])
+def test_cargo_env_leaves_compiler_choice_to_cargo_off_linux(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
+    """[if] the host is not Linux and CC/CXX are unset [then] no GNU compiler is forced on cargo, [else stop]."""
+    monkeypatch.delenv("CC", raising=False)
+    monkeypatch.delenv("CXX", raising=False)
+    monkeypatch.delenv("RUSTFLAGS", raising=False)
+    monkeypatch.setattr(sys, "platform", platform)
+    env = _cargo_env()
+    assert "CC" not in env
+    assert "CXX" not in env
+    assert "RUSTFLAGS" not in env
+
+
+def test_cargo_env_sets_gnu_defaults_on_linux(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the host is Linux and CC/CXX are unset [then] gcc/g++ defaults are set, [else stop]."""
+    monkeypatch.delenv("CC", raising=False)
+    monkeypatch.delenv("CXX", raising=False)
+    monkeypatch.setattr(sys, "platform", "linux")
+    env = _cargo_env()
+    assert env["CC"] == "gcc"
+    assert env["CXX"] == "g++"

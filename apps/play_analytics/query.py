@@ -96,15 +96,14 @@ def _decode_value_json(value_json: str | None) -> dict[str, Any] | None:
     return value
 
 
-def _event_audible_s(value_json: str | None) -> float | None:
-    """Audible dwell recorded on this play row, or None if it carries none.
+def _audible_s_from_value(value: dict[str, Any] | None) -> float | None:
+    """Audible dwell on a decoded play payload, or None if it carries none.
 
     None is NOT zero. A row without ``audible_s`` came from a source whose
     upstream app already made the played/not-played call (rekordbox
     HISTORY, djay history), so the read-time dwell filter must let it
     through untouched rather than treat a missing value as "never heard".
     """
-    value = _decode_value_json(value_json)
     if value is None:
         return None
     audible = value.get("audible_s")
@@ -115,8 +114,7 @@ def _event_audible_s(value_json: str | None) -> float | None:
     return float(audible)
 
 
-def _event_metadata(value_json: str | None) -> tuple[str | None, str | None]:
-    value = _decode_value_json(value_json)
+def _title_artist_from_value(value: dict[str, Any] | None) -> tuple[str | None, str | None]:
     if value is None:
         return None, None
     title = value.get("title")
@@ -187,9 +185,11 @@ def query_play_analytics(
             """,
             parameters,
         ).fetchall()
-        session_rows.sort(key=lambda row: str(row["session_id"]), reverse=True)
         session_rows.sort(
-            key=lambda row: _parse_timestamp(str(row["started_at"]), "sets.started_at"),
+            key=lambda row: (
+                _parse_timestamp(str(row["started_at"]), "sets.started_at"),
+                str(row["session_id"]),
+            ),
             reverse=True,
         )
         session_ids = [str(row["session_id"]) for row in session_rows]
@@ -215,7 +215,8 @@ def query_play_analytics(
                 session_ids,
             ).fetchall()
             for row in play_rows:
-                audible_s = _event_audible_s(row["value_json"])
+                value = _decode_value_json(row["value_json"])
+                audible_s = _audible_s_from_value(value)
                 if audible_s is not None and audible_s < min_audible_s:
                     filtered_short += 1
                     continue
@@ -223,7 +224,7 @@ def query_play_analytics(
                 stable_id = str(row["track_stable_id"])
                 wall_clock = str(row["wall_clock"])
                 played_at = _parse_timestamp(wall_clock, f"{events_table}.wall_clock")
-                title, artist = _event_metadata(row["value_json"])
+                title, artist = _title_artist_from_value(value)
                 plays_by_session[session_id] += 1
                 unique_by_session[session_id].add(stable_id)
                 track_counts[stable_id] += 1
@@ -254,16 +255,13 @@ def query_play_analytics(
                 }
             )
 
-        top_track_ids = sorted(track_counts)
-        top_track_ids.sort(
+        top_track_ids = sorted(
+            track_counts,
             key=lambda stable_id: (
+                track_counts[stable_id],
                 track_latest[stable_id][0],
                 track_latest[stable_id][3],
             ),
-            reverse=True,
-        )
-        top_track_ids.sort(
-            key=lambda stable_id: track_counts[stable_id],
             reverse=True,
         )
         top_tracks = [

@@ -658,6 +658,20 @@ test('master_cue latch forces mix to 1 then restores on second press', async () 
 	_restoreCueGlueState();
 });
 
+test('master_cue_active LED is lit while the MASTER CUE latch is engaged (#10114)', async () => {
+	_restoreCueGlueState();
+	const press = { kind: 'button', pressed: true, velocity: 127 };
+	const trigger = { kind: 'master_cue_active' };
+	assert.equal(glue.ledTriggerActive(trigger), false);
+	glue.handleMidiAction({ type: 'master_cue', mode: 'latch' }, press);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(glue.ledTriggerActive(trigger), true);
+	glue.handleMidiAction({ type: 'master_cue', mode: 'latch' }, press);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(glue.ledTriggerActive(trigger), false);
+	_restoreCueGlueState();
+});
+
 test('master_cue hold engages on press and restores on release', async () => {
 	_restoreCueGlueState();
 	audioEngine.mixerState.headphones.mix = 0.4;

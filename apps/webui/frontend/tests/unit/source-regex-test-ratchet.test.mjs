@@ -346,8 +346,12 @@ function rendersScanned(scanned) {
     ]) ||
     (calledFrom(scanned, unitPaths(["mount-svelte-client.mjs"]), [
       "bundlePreflightCheckRowClient",
+      "bundlePerformanceBannersClient",
       "bundleStemWaveRowViewClient",
+      "bundlePerformanceModalsClient",
       "bundleRecorderStatusRetryClient",
+      "bundleWaveQuickSettingsClient",
+      "bundleStemRowClient",
     ]) && scanned.memberCalls.has("mount")) ||
     calledFrom(scanned, ["svelte/server"], ["render"]) ||
     calledFrom(scanned, ["svelte"], ["mount"])

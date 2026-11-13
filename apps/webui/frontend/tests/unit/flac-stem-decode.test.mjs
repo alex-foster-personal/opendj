@@ -32,9 +32,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  * - if a refusal is silent then a load that lost its 1.7x looks like a slow
  *   machine instead of saying so
  *
- * This file also hosts the PERFBATCH-06 contract that a fresh precomputed stem
- * bundle wins before any live-generation fallback (`resolveStemLoadPolicy` in
- * stem-graph.ts).
+ * PERFBATCH-06 policy contract tests live in stem-load-policy.test.mjs (lean module).
+ * This file also exercises the same envelope via stem-graph re-exports of
+ * `resolveStemLoadPolicy`, so the public stem graph entry keeps the contract.
  */
 
 let decode;

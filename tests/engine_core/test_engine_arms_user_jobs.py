@@ -191,4 +191,5 @@ def test_invalid_library_jobs_value_refuses_to_boot(tmp_path: Path) -> None:
     """[if] MUSIC_DJ_LIBRARY_JOBS is invalid [then] the engine refuses to boot, [else stop]."""
     result = _run_probe(tmp_path, {"MUSIC_DJ_LIBRARY_JOBS": "maybe"})
     assert result.returncode != 0
-    assert "MUSIC_DJ_LIBRARY_JOBS='maybe' is not a member of" in result.stderr
+    # Wording from the shared on/off reader (apps/shared/env_on_off.py) since 6f3265801a (Fri 6 Nov 2026).
+    assert "MUSIC_DJ_LIBRARY_JOBS='maybe' is not valid; expected one of ['on', 'off']" in result.stderr

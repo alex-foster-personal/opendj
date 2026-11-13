@@ -11,11 +11,15 @@ import bisect
 import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from apps.lighting.beat_clock import BEATS_PER_BAR, NS_PER_MS, DeckSample, GridBeat, predict_beats
-from apps.lighting.contract import CONTRACT_VERSION, LIGHTING_FLAG_ID
+from apps.lighting.clock_source import can_publish_sections, select_frame_clock
+from apps.lighting.contract import CONTRACT_VERSION, LIGHTING_FLAG_ID, ClockSnapshot
 from apps.lighting.sections import SectionSpan, section_events
+from apps.lighting.settings import HANDOVER_KEY, PALETTE_KEY, LightingSettings
+from apps.lighting.show_map import Palette, load_palette
 from apps.lighting.show_runtime import DeckPlan, DeckState, HandoverMode, ShowFrame, ShowState, step
 
 FrameSink = Callable[[ShowFrame], None]
@@ -53,6 +57,7 @@ class DeckFeed:
     grid: Sequence[GridBeat] = ()
     sections: Sequence[SectionSpan] = ()
     plan: DeckPlan | None = None
+    profile: Any = None
 
 
 @dataclass(frozen=True)
@@ -197,12 +202,19 @@ def _bpm_at(grid: Sequence[GridBeat], position_ms: float, rate: float) -> float 
     return last_bpm
 
 
-def _beat_message(event: Any) -> dict[str, Any]:
+def _bar_of(grid: Sequence[GridBeat], beat_index: int) -> int:
+    last = len(grid) - 1
+    n = int(grid[beat_index]["n"]) if beat_index <= last else int(grid[last]["n"]) + beat_index - last
+    return (n - 1) // BEATS_PER_BAR + 1
+
+
+def _beat_message(event: Any, bar: int) -> dict[str, Any]:
     return {
         "type": "beat",
         "deck": event.deck,
         "beat_index": event.beat_index,
         "bar_beat": event.bar_beat,
+        "bar": bar,
         "is_downbeat": event.is_downbeat,
         "bpm": event.bpm,
         "at_host_ns": event.at_host_ns,
@@ -218,8 +230,16 @@ class LightingRuntime:
         lookahead_ms: float = DEFAULT_LOOKAHEAD_MS,
         show_mode: HandoverMode = HandoverMode.BLEND,
         frame_sinks: Sequence[FrameSink] = (),
+        pick_log: Path | None = None,
+        message_sinks: Sequence[Callable[[dict[str, Any]], None]] = (),
+        clock_provider: Callable[[], ClockSnapshot] = ClockSnapshot,
     ) -> None:
         self.hub = EventHub()
+        self.clock_provider = clock_provider
+        self._effective_clock_deck: str | None = None
+        self._message_sinks = list(message_sinks)
+        self._profile_sinks: list[Callable[[str, Any], None]] = []
+        self._deck_profile: dict[str, Any] = {}
         self._feed = feed
         self._lookahead_ms = lookahead_ms
         self.feed_connected = False
@@ -232,6 +252,24 @@ class LightingRuntime:
         self._frame_host_ns = 0
         self._last_show_frame: ShowFrame | None = None
         self.show = ShowLoop(show_mode, [self._publish_show_frame, *frame_sinks])
+        self.settings = LightingSettings(pick_log)
+        self.palette = load_palette(self.settings.get(PALETTE_KEY))
+        self._pending_palette: Palette | None = None
+        self._pending_handover: HandoverMode | None = None
+
+    def set_palette(self, name: str) -> None:
+        """Validate and log a palette pick; frames switch to it on the next downbeat."""
+        playing = sum(1 for state in self._deck_state.values() if state.get("playing"))
+        self.settings.set(PALETTE_KEY, name, decks_playing=playing)
+        pending = load_palette(name)
+        self._pending_palette = pending if pending.name != self.palette.name else None
+
+    def set_handover(self, mode: str) -> None:
+        """Validate and log a handover mode pick; the show loop switches to it on the next downbeat."""
+        playing = sum(1 for state in self._deck_state.values() if state.get("playing"))
+        self.settings.set(HANDOVER_KEY, mode, decks_playing=playing)
+        pending = HandoverMode(mode)
+        self._pending_handover = pending if pending != self.show.mode else None
 
     @property
     def feed(self) -> FeedSource | None:
@@ -298,14 +336,27 @@ class LightingRuntime:
             "decks": decks,
             "weights": dict(self._last_weights or {}),
             "subscribers": self.hub.subscriber_count,
+            "palette": self.settings.get(PALETTE_KEY),
         }
 
     def ingest(self, frame: FeedFrame) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = []
+        snapshot = self.clock_provider()
+        present_decks = {deck_feed.sample.deck for deck_feed in frame.decks}
+        effective_deck = select_frame_clock(snapshot, present_decks)
+        handover = effective_deck != self._effective_clock_deck
+        self._effective_clock_deck = effective_deck
+        # An unload or vanished feed entry must not leave a previous track's cursors.
+        for deck in set(self._deck_state) - (present_decks & snapshot.loaded_decks):
+            self._last_position_ms.pop(deck, None)
+            self._last_beat_index.pop(deck, None)
+            self._last_grid_id.pop(deck, None)
+            self._deck_state.pop(deck, None)
         for deck_feed in frame.decks:
             sample = deck_feed.sample
             deck = sample.deck
             position = sample.position_ms
+            selected = deck == effective_deck
             previous = self._last_position_ms.get(deck)
 
             grid_id = id(deck_feed.grid)
@@ -315,14 +366,12 @@ class LightingRuntime:
 
             if previous is not None and position < previous:
                 self._last_beat_index[deck] = None
-            elif previous is not None and position >= previous:
+            elif previous is not None and can_publish_sections(sample, previous, selected=selected, handover=handover):
                 for change in section_events(deck_feed.sections, previous, position):
                     if sample.rate <= 0:
                         at_host_ns = sample.host_time_ns
                     else:
-                        at_host_ns = sample.host_time_ns + round(
-                            (change.at_ms - position) / sample.rate * NS_PER_MS
-                        )
+                        at_host_ns = sample.host_time_ns + round((change.at_ms - position) / sample.rate * NS_PER_MS)
                     messages.append(
                         {
                             "type": "section_change",
@@ -338,10 +387,11 @@ class LightingRuntime:
             self._last_position_ms[deck] = position
 
             last_idx = self._last_beat_index.get(deck)
-            for event in predict_beats(deck_feed.grid, sample, self._lookahead_ms):
+            events = predict_beats(deck_feed.grid, sample, self._lookahead_ms) if selected else ()
+            for event in events:
                 if last_idx is not None and event.beat_index <= last_idx:
                     continue
-                messages.append(_beat_message(event))
+                messages.append(_beat_message(event, _bar_of(deck_feed.grid, event.beat_index)))
                 last_idx = event.beat_index
             if last_idx is not None:
                 self._last_beat_index[deck] = last_idx
@@ -375,9 +425,7 @@ class LightingRuntime:
                 continue
             seen.add(deck)
             beat = _beat_at(deck_feed.grid, deck_feed.sample.position_ms)
-            playing = (
-                deck_feed.sample.playing and deck_feed.plan is not None and beat is not None
-            )
+            playing = deck_feed.sample.playing and deck_feed.plan is not None and beat is not None
             beat_index, bar_beat = beat or (0, 1)
             weight = min(1.0, max(0.0, float(frame.weights.get(deck, 0.0))))
             decks.append(
@@ -408,17 +456,43 @@ class LightingRuntime:
                         "effect_level": layer.effect_level,
                         "intensity": layer.intensity,
                         "hit": layer.hit,
+                        "rgb": [list(c) for c in self.palette.colours.get(layer.look, ())],
                     }
                     for layer in frame.layers
                 ],
+                "palette": self.palette.name,
                 "at_host_ns": self._frame_host_ns,
             }
         )
         self._last_show_frame = frame
 
+    def attach_os2l(self, client: Any) -> None:
+        """Feed runtime messages and per-deck track profiles to an OS2L client."""
+        self._message_sinks.append(client.on_message)
+        self._profile_sinks.append(client.set_profile)
+        for deck, profile in self._deck_profile.items():
+            client.set_profile(deck, profile)
+
+    def _sync_profiles(self, frame: FeedFrame) -> None:
+        for deck_feed in frame.decks:
+            deck = deck_feed.sample.deck
+            if deck in self._deck_profile and self._deck_profile[deck] is deck_feed.profile:
+                continue
+            self._deck_profile[deck] = deck_feed.profile
+            for sink in self._profile_sinks:
+                sink(deck, deck_feed.profile)
+
     def process(self, frame: FeedFrame) -> ShowFrame:
+        self._sync_profiles(frame)
         for message in self.ingest(frame):
             self.hub.publish(message)
+            if self._pending_palette is not None and message.get("is_downbeat"):
+                self.palette, self._pending_palette = self._pending_palette, None
+                self._last_show_frame = None
+            if self._pending_handover is not None and message.get("is_downbeat"):
+                self.show.mode, self._pending_handover = self._pending_handover, None
+            for sink in self._message_sinks:
+                sink(message)
         self._frame_host_ns = frame.host_time_ns
         return self.show.tick(self.show_decks(frame))
 

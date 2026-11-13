@@ -158,3 +158,9 @@ def closed_gate_env() -> dict[str, str]:
 def naive_home_env(home: Path) -> dict[str, str]:
     """A HOME with no engine lock, and the destructive gate explicitly closed."""
     return {**closed_gate_env(), "HOME": str(home)}
+
+
+def persona_stdio_env(*, allow_destructive: bool) -> dict[str, str]:
+    """Environment for one persona cli-mcp subprocess invocation."""
+    base = destructive_env() if allow_destructive else closed_gate_env()
+    return {**base, "OPENDJ_AGENT_AUDIO": "muted"}

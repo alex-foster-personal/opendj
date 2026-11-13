@@ -61,6 +61,23 @@ export function tempoWritesFromTargetBpm(input: {
 	return writes;
 }
 
+/** DECKUX-13420: why the engine refuses every tempo write on this deck right
+ * now, or null when it takes them. Mirrors setTempoRatio in both engines: a
+ * PLAYING Beat Sync follower of a playing master is held to the master's
+ * tempo (spec f1345d8c, "Beat Sync followers": the DJ turns Beat Sync off and
+ * retries). A stopped follower changes tempo, and widens its pitch range, like
+ * any other deck. `syncMaster` is the playing master the engine locks to. */
+export function followerTempoLock(input: {
+	deck: DeckId;
+	playing: boolean;
+	beatSync: boolean;
+	syncMaster: DeckId | null;
+}): string | null {
+	const { deck, syncMaster } = input;
+	if (!input.playing || !input.beatSync || syncMaster === null || syncMaster === deck) return null;
+	return `Tempo locked while CH${deck} follows CH${syncMaster} with Beat Sync: disable Beat Sync before changing follower deck ${deck}`;
+}
+
 /** Send `writes` in order through `run`; true only when every one was taken.
  * The first refused write (a preset owns the controls, the deck unloaded)
  * stops the rest, so a tempo is never sent against a range that was refused. */

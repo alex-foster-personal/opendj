@@ -20,10 +20,22 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictStr,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from pydantic.json_schema import SkipJsonSchema
 
 from apps.analysis.backlog import AutoLane
+from apps.lighting.contract import ClockSourceError, parse_clock_source
+from apps.lighting.http import bind_lighting_runtime, lighting_refusal
 from apps.shared.events import publish
 from apps.shared.harmonic import CAMELOT_RULE_IDS, DEFAULT_CAMELOT_RULE_IDS, camelot_rules_allow
 from apps.shared.paths import DATA_DIR
@@ -43,6 +55,7 @@ from ..library_tabs_prefs import (
     merge_library_tabs,
     parse_library_tabs,
 )
+from ..lighting_clock import LightingClockController, clock_snapshot
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
 MOUNT_UNDER_API_PREFIX = True
@@ -71,6 +84,8 @@ _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
 _DEFAULT_SHOW_STEMS = False
+# STEMPERF: main waveform follows the sole audible stem (rekordbox ACTIVE STEM, mimicked).
+_DEFAULT_WAVE_STEM_FOLLOW = False
 # A11Y-11811: Appearance > Reduce motion; OR'd with the OS media query in the browser.
 _DEFAULT_REDUCE_MOTION = False
 _DEFAULT_DECK_HOVER_LINK = True
@@ -158,7 +173,7 @@ _DEFAULT_WAVE_GRID_LINES: WaveGridLines = "beats_bars"
 SpeakerAutoRecover = Literal["auto", "on", "off"]
 _DEFAULT_SPEAKER_AUTO_RECOVER: SpeakerAutoRecover = "auto"
 LightingProtocol = Literal["off", "artnet", "sacn", "osc"]
-_DEFAULT_LIGHTING: dict[str, Any] = {"enabled": False, "protocol": "off"}
+_DEFAULT_LIGHTING: dict[str, Any] = {"enabled": False, "protocol": "off", "clock_source": "master"}
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
@@ -173,6 +188,7 @@ LibraryHideableColumn = Literal[
     "preview",
     "art",
     "artist",
+    "album",
     "key",
     "bpm",
     "tempostab",
@@ -188,9 +204,13 @@ LibraryHideableColumn = Literal[
     "tags",
     "filename",
     "location",
+    "date_added",
+    "bitrate",
+    "kind",
+    "last_played",
 ]
 _LIBRARY_HIDEABLE_COLUMNS: tuple[str, ...] = get_args(LibraryHideableColumn)
-_DEFAULT_LIBRARY_HIDDEN_COLUMNS: list[str] = ["filename", "location"]
+_DEFAULT_LIBRARY_HIDDEN_COLUMNS: list[str] = ["album", "filename", "location", "date_added", "bitrate", "kind", "last_played"]
 # Off by default, so "hidden" cannot express them. Table order, mirrored by
 # OPTIONAL_COLUMNS in frontend/src/lib/rb/library-works.ts.
 LibraryOptionalColumn = Literal["work", "composer", "ensemble", "label", "year"]
@@ -611,6 +631,14 @@ def _parse_lighting(raw: Any) -> dict[str, Any]:
                 },
             )
         out["protocol"] = value
+    if "clock_source" in raw:
+        try:
+            out["clock_source"] = parse_clock_source(raw["clock_source"])
+        except ClockSourceError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "UI_PREFS_INVALID", "message": str(exc)},
+            ) from exc
     _assert_lighting_enabled_requires_protocol(out)
     return out
 
@@ -1297,6 +1325,7 @@ def _load(path: Path) -> dict[str, Any]:
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
             "show_stems": _DEFAULT_SHOW_STEMS,
+            "wave_stem_follow": _DEFAULT_WAVE_STEM_FOLLOW,
             "reduce_motion": _DEFAULT_REDUCE_MOTION,
             "deck_hover_link": _DEFAULT_DECK_HOVER_LINK,
             "compact_decks": _DEFAULT_COMPACT_DECKS,
@@ -1405,6 +1434,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "show_stems must be a boolean",
             },
         )
+    wave_stem_follow = raw.get("wave_stem_follow", _DEFAULT_WAVE_STEM_FOLLOW)
+    if not isinstance(wave_stem_follow, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "wave_stem_follow must be a boolean",
+            },
+        )
     reduce_motion = raw.get("reduce_motion", _DEFAULT_REDUCE_MOTION)
     if not isinstance(reduce_motion, bool):
         raise HTTPException(
@@ -1441,6 +1479,7 @@ def _load(path: Path) -> dict[str, Any]:
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
         "show_stems": show_stems,
+        "wave_stem_follow": wave_stem_follow,
         "reduce_motion": reduce_motion,
         "deck_hover_link": deck_hover_link,
         "compact_decks": compact_decks,
@@ -1548,12 +1587,21 @@ class BeatJumpSizesOut(BaseModel):
 
 
 class LightingOut(BaseModel):
-    """Lighting output prefs on ui-prefs (issue #11774): storage only, no UDP loop."""
+    """Lighting prefs on ui-prefs: output wire (#11774) and beat clock source (LIGHT-12848)."""
 
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
     protocol: LightingProtocol = "off"
+    clock_source: StrictStr = "master"
+
+    @model_serializer(mode="plain")
+    def _wire_minimal_when_output_off(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"clock_source": self.clock_source}
+        if self.enabled or self.protocol != "off":
+            out["enabled"] = self.enabled
+            out["protocol"] = self.protocol
+        return out
 
 
 class LightingPatch(BaseModel):
@@ -1561,6 +1609,13 @@ class LightingPatch(BaseModel):
 
     enabled: bool | None = None
     protocol: LightingProtocol | None = None
+    clock_source: StrictStr | SkipJsonSchema[None] = None
+
+    @model_validator(mode="after")
+    def refuse_null_clock_source(self) -> LightingPatch:
+        if "clock_source" in self.model_fields_set and self.clock_source is None:
+            raise ValueError("clock_source must not be null")
+        return self
 
 
 class CompatibleFilterOut(BaseModel):
@@ -1626,6 +1681,7 @@ class UiPrefsOut(BaseModel):
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
     show_stems: bool = _DEFAULT_SHOW_STEMS
+    wave_stem_follow: bool = _DEFAULT_WAVE_STEM_FOLLOW
     reduce_motion: bool = _DEFAULT_REDUCE_MOTION
     deck_hover_link: bool = _DEFAULT_DECK_HOVER_LINK
     compact_decks: bool = _DEFAULT_COMPACT_DECKS
@@ -1714,6 +1770,7 @@ class UiPrefsPatch(BaseModel):
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
     show_stems: bool | None = None
+    wave_stem_follow: bool | None = None
     reduce_motion: StrictBool | SkipJsonSchema[None] = None
     deck_hover_link: bool | None = None
     compact_decks: bool | None = None
@@ -1809,6 +1866,8 @@ class UiPrefsPatch(BaseModel):
         for key in _NON_NULL_VIEW_PREF_KEYS:
             if key in self.model_fields_set and getattr(self, key) is None:
                 raise ValueError(f"{key} must not be null")
+        if "lighting" in self.model_fields_set and self.lighting is None:
+            raise ValueError("lighting must not be null")
         return self
 
 
@@ -1918,13 +1977,60 @@ def get_ui_prefs(request: Request) -> UiPrefsOut:
 
 @router.put("", response_model=UiPrefsOut)
 def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
-    path = _path(request)
+    return _persist_ui_prefs(request.app, body)
+
+
+def _persist_ui_prefs(app: FastAPI, body: UiPrefsPatch) -> UiPrefsOut:
+    path = _path_for_app(app)
     with _write_lock:
         current = _load(path)
+        if body.lighting is not None and body.lighting.clock_source is not None:
+            _validate_lighting_source(app, body.lighting.clock_source)
         current = _merge_ui_prefs_patch(current, body)
         _write_atomic(path, json.dumps(current, indent=2) + "\n")
+        app.state.lighting_clock_cache = (path, current["lighting"]["clock_source"])
     publish("library.changed", {"kind": "ui_prefs", "ids": []})
     return UiPrefsOut.model_validate(current)
+
+
+def _validate_lighting_source(app: FastAPI, source: str) -> None:
+    refusal = lighting_refusal(app)
+    if refusal is not None:
+        raise HTTPException(status_code=409, detail=refusal)
+    try:
+        parse_clock_source(source)
+    except ClockSourceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": str(exc)}) from exc
+    if source != "master" and clock_snapshot(app, source).resolve().effective_deck is None:
+        raise HTTPException(409, detail={"code": "lighting_clock_deck_empty", "message": "selected deck is not loaded"})
+
+
+def read_lighting_clock_source(app: FastAPI) -> str:
+    """Cache only the preference; every frame still resolves the current mirror."""
+    path = _path_for_app(app)
+    with _write_lock:
+        cached = getattr(app.state, "lighting_clock_cache", None)
+        if cached is None or cached[0] != path:
+            cached = (path, _load(path)["lighting"]["clock_source"])
+            app.state.lighting_clock_cache = cached
+        return str(cached[1])
+
+
+def _persist_lighting_clock_source(app: FastAPI, source: str) -> None:
+    _persist_ui_prefs(app, UiPrefsPatch(lighting=LightingPatch(clock_source=source)))
+
+
+def lighting_clock_for_app(app: FastAPI) -> LightingClockController:
+    controller = getattr(app.state, "lighting_clock", None)
+    if controller is None:
+        controller = LightingClockController(
+            app,
+            lambda: read_lighting_clock_source(app),
+            lambda source: _persist_lighting_clock_source(app, source),
+        )
+        app.state.lighting_clock = controller
+    bind_lighting_runtime(app).clock_provider = controller.snapshot
+    return controller
 
 
 LibraryKeyFilterAction = Literal["toggle", "compatible", "reset", "set"]
@@ -2060,6 +2166,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["show_agent_pins"] = body.show_agent_pins
     if body.show_stems is not None:
         current["show_stems"] = body.show_stems
+    if body.wave_stem_follow is not None:
+        current["wave_stem_follow"] = body.wave_stem_follow
     if body.reduce_motion is not None:
         current["reduce_motion"] = body.reduce_motion
     if body.deck_hover_link is not None:

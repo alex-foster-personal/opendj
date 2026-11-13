@@ -55,7 +55,13 @@ test('[if] ui_skin values default, mono-dev, light are absent from the registry 
 		assert.ok(R.SKIN_PACK_REGISTRY[id], id);
 		assert.equal(R.getSkinPackEntry(id).cssPack, id);
 	}
-	assert.deepEqual(R.SKIN_PACK_IDS, ['default', 'mono-dev', 'light']);
+	assert.deepEqual(R.SKIN_PACK_IDS, [
+		'default',
+		'mono-dev',
+		'light',
+		'green-room',
+		'practice-ddj-flx4'
+	]);
 });
 
 test('[if] selecting a registered view does not unmount or skip the waveform stack only for waveform [then] stop', () => {
@@ -77,5 +83,5 @@ test('[if] an unknown view id is accepted by the registry parser [then] stop', (
 	assert.throws(() => R.parsePerfViewId('grid'), /perf_view must be one of/);
 	assert.throws(() => R.parsePerfViewId(null), /perf_view must be one of/);
 	assert.equal(R.parsePerfViewId('phase-meter'), 'phase-meter');
-	assert.throws(() => R.parseSkinPackId('green-room'), /ui_skin pack must be one of/);
+	assert.throws(() => R.parseSkinPackId('macintosh'), /ui_skin pack must be one of/);
 });

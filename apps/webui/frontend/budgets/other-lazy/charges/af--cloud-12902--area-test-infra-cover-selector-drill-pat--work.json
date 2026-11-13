@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557494,
+  "measured_with_pr": 557625,
+  "sha": "344426a25c",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--cloud-12902--area-test-infra-cover-selector-drill-pat--work grows the other-lazy surface; measured +131 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -43,6 +43,7 @@ export type { TransitionIntent } from '$lib/rb/auto-play-next-plan';
 import { pickSourceDeck, type AutoPlayDeckSnap } from '$lib/rb/auto-play';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { pushToast } from '$lib/stores.svelte';
+import { createSaveQueue } from '$lib/rb/auto-play-save-queue';
 import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
@@ -75,7 +76,34 @@ export const autoPlayNextState = $state<{
 	run: AutoPlayNextRun | null;
 	/** How the last plan left the runner: done, failed, aborted, cancelled, or gone when the runner dropped it. */
 	ended: string | null;
-}>({ armed: false, outgoing: null, incoming: null, phase: 'idle', intent: 'smooth', run: null, ended: null });
+	/** Pair saves still being retried, and the last save error (issue #9674). */
+	pendingSaves: number;
+	lastSaveError: string | null;
+}>({
+	armed: false,
+	outgoing: null,
+	incoming: null,
+	phase: 'idle',
+	intent: 'smooth',
+	run: null,
+	ended: null,
+	pendingSaves: 0,
+	lastSaveError: null
+});
+
+const _saveQueue = createSaveQueue<Parameters<typeof reportPlayed>[0]>({
+	save: (played) => reportPlayed(played),
+	schedule: (fn, ms) => setTimeout(fn, ms),
+	onGiveUp: (message, retry) =>
+		pushToast(message, 'error', undefined, undefined, {}, undefined, {
+			label: 'Retry',
+			handler: retry
+		}),
+	onChange: (pending, lastError) => {
+		autoPlayNextState.pendingSaves = pending;
+		autoPlayNextState.lastSaveError = lastError;
+	}
+});
 
 /** The status API's copy of the state above (`auto_play_next` on the UI mirror). */
 export function readAutoPlayNextMirror(): {
@@ -83,9 +111,18 @@ export function readAutoPlayNextMirror(): {
 	phase: Phase;
 	intent: TransitionIntent;
 	run: AutoPlayNextRun | null;
+	pendingSaves: number;
+	lastSaveError: string | null;
 } {
-	const { armed, phase, intent, run } = autoPlayNextState;
-	return { armed, phase, intent, run: run === null ? null : { ...run } };
+	const { armed, phase, intent, run, pendingSaves, lastSaveError } = autoPlayNextState;
+	return {
+		armed,
+		phase,
+		intent,
+		run: run === null ? null : { ...run },
+		pendingSaves,
+		lastSaveError
+	};
 }
 
 /** The runner's current plan, for AutoPlay's early decision. */
@@ -108,7 +145,13 @@ let _armGeneration = 0;
 let _plannerAbort: AbortController | null = null;
 let _planId: string | null = null;
 /** AGENT-49: what to report when the running plan completes. */
-let _playing: { out: string; in: string; saved: boolean; plan: Record<string, unknown> | null; style: string } | null = null;
+let _playing: {
+	out: string;
+	in: string;
+	saved: boolean;
+	plan: Record<string, unknown> | null;
+	style: string;
+} | null = null;
 /** Styles the planner path has played this page session, oldest first: the chooser's variety memory. */
 const _recentStyles: string[] = [];
 
@@ -156,11 +199,19 @@ async function _releaseOutgoing(deck: DeckId | null, restoreEq: boolean): Promis
 	}
 	_releaseInFlight = (async () => {
 		if (_loopEngaged) {
-			await dispatchPerformanceCommand({ type: 'loop', deck, loop: null }, undefined, 'autoplay-handoff');
+			await dispatchPerformanceCommand(
+				{ type: 'loop', deck, loop: null },
+				undefined,
+				'autoplay-handoff'
+			);
 			_loopEngaged = false;
 		}
 		if (restoreEq && _eqDucked) {
-			await dispatchPerformanceCommand({ type: 'eq', deck, band: 'low', value: 0.5 }, undefined, 'autoplay-handoff');
+			await dispatchPerformanceCommand(
+				{ type: 'eq', deck, band: 'low', value: 0.5 },
+				undefined,
+				'autoplay-handoff'
+			);
 			_eqDucked = false;
 		}
 	})();
@@ -208,21 +259,34 @@ export interface AutoPlayNextRequest {
 export function transitionTargetOk(deck: DeckId): boolean {
 	const state = deckStates[deck];
 	if (state.stable_id === null) return false;
-	const ended = state.duration_ms !== null && !state.playing && state.position_ms >= state.duration_ms - 500;
+	const ended =
+		state.duration_ms !== null && !state.playing && state.position_ms >= state.duration_ms - 500;
 	return !ended;
 }
 
 function _chosenPair(request: AutoPlayNextRequest): NextPair | null {
 	if (request.outDeck === undefined && request.inDeck === undefined) return _nextPair();
-	if (request.outDeck === undefined || request.inDeck === undefined || request.outDeck === request.inDeck) {
+	if (
+		request.outDeck === undefined ||
+		request.inDeck === undefined ||
+		request.outDeck === request.inDeck
+	) {
 		pushToast('transition: name two different decks', 'error');
 		return null;
 	}
 	if (deckStates[request.outDeck].stable_id === null || !transitionTargetOk(request.inDeck)) {
-		pushToast(`transition: CH${request.outDeck} or CH${request.inDeck} holds no track to mix`, 'info');
+		pushToast(
+			`transition: CH${request.outDeck} or CH${request.inDeck} holds no track to mix`,
+			'info'
+		);
 		return null;
 	}
-	return { outgoing: request.outDeck, incoming: request.inDeck, fromMs: request.fromMs, mayTakeIncoming: true };
+	return {
+		outgoing: request.outDeck,
+		incoming: request.inDeck,
+		fromMs: request.fromMs,
+		mayTakeIncoming: true
+	};
 }
 
 function _nextPair(): NextPair | null {
@@ -252,7 +316,9 @@ async function _askPlanner(pair: NextPair): Promise<TransitionChoice> {
 				intent: autoPlayNextState.intent,
 				recent_styles: [..._recentStyles],
 				...(pair.fromMs === undefined ? {} : { from_ms: pair.fromMs }),
-				...(pair.mayTakeIncoming && deckStates[pair.incoming].playing ? { take_incoming: true } : {})
+				...(pair.mayTakeIncoming && deckStates[pair.incoming].playing
+					? { take_incoming: true }
+					: {})
 			},
 			_plannerAbort.signal
 		);
@@ -263,24 +329,42 @@ async function _askPlanner(pair: NextPair): Promise<TransitionChoice> {
 }
 
 /** Hand the order to the plan runner, or say why it would not take it. */
-async function _startPlan(plan: Record<string, unknown>, generation: number, pair: NextPair): Promise<string | null> {
+async function _startPlan(
+	plan: Record<string, unknown>,
+	generation: number,
+	pair: NextPair
+): Promise<string | null> {
 	if (_planRunner === null) return 'the plan runner left this page';
 	const runner = _planRunner;
 	const taken = pair.mayTakeIncoming && deckStates[pair.incoming].playing;
 	if (taken) {
 		// AGENT-50: the user chose a deck that is playing; the transition takes it over, stopped and re-cued by the plan.
-		await dispatchPerformanceCommand({ type: 'play', deck: pair.incoming, playing: false }, undefined, 'autoplay-handoff');
+		await dispatchPerformanceCommand(
+			{ type: 'play', deck: pair.incoming, playing: false },
+			undefined,
+			'autoplay-handoff'
+		);
 	}
 	const { failed } = await runner.schedule(plan);
 	if (failed !== null) {
 		// The plan never started, so the deck it took goes back to playing.
-		if (taken) await dispatchPerformanceCommand({ type: 'play', deck: pair.incoming, playing: true }, undefined, 'autoplay-handoff');
+		if (taken)
+			await dispatchPerformanceCommand(
+				{ type: 'play', deck: pair.incoming, playing: true },
+				undefined,
+				'autoplay-handoff'
+			);
 		return failed;
 	}
 	if (generation !== _armGeneration) {
 		// Cancelled while the runner was taking it: the plan is armed now and nothing here owns it, so abort it.
 		await runner.abort(String(plan.id));
-		if (taken) await dispatchPerformanceCommand({ type: 'play', deck: pair.incoming, playing: true }, undefined, 'autoplay-handoff');
+		if (taken)
+			await dispatchPerformanceCommand(
+				{ type: 'play', deck: pair.incoming, playing: true },
+				undefined,
+				'autoplay-handoff'
+			);
 		return 'cancelled';
 	}
 	_planId = String(plan.id);
@@ -303,9 +387,7 @@ function _watchPlan(): void {
 		_recentStyles.push(style);
 		_recentStyles.splice(0, Math.max(0, _recentStyles.length - VARIETY_WINDOW));
 		if (_playing !== null) {
-			reportPlayed(_playing).catch((error: unknown) => {
-				console.warn('auto-play next: could not save the transition for this pair', error);
-			});
+			void _saveQueue.enqueue(_playing);
 		}
 	}
 	if (plan.status === 'failed') pushToast(`auto-play next: planned transition failed`, 'error');
@@ -348,7 +430,13 @@ export async function armAutoPlayNext(
 		if (generation !== _armGeneration) return false;
 		if (refused === null) {
 			if (out !== null && incoming !== null) {
-				_playing = { out, in: incoming, saved: choice.saved, plan: choice.document, style: choice.pick.style };
+				_playing = {
+					out,
+					in: incoming,
+					saved: choice.saved,
+					plan: choice.document,
+					style: choice.pick.style
+				};
 			}
 			return true;
 		}
@@ -356,7 +444,11 @@ export async function armAutoPlayNext(
 	}
 	if (pair.fromMs !== undefined) {
 		// AGENT-50: the user named a point; the fixed loop leaves from the track's end, which is not what was asked.
-		autoPlayNextState.run = { ...autoPlayNextState.run, path: 'none', reason: `no planned transition here: ${autoPlayNextState.run.reason}` };
+		autoPlayNextState.run = {
+			...autoPlayNextState.run,
+			path: 'none',
+			reason: `no planned transition here: ${autoPlayNextState.run.reason}`
+		};
 		_reset();
 		return false;
 	}
@@ -406,12 +498,16 @@ async function _armFeaturette(
 		return false;
 	}
 	try {
-		await dispatchPerformanceCommand({
-			type: 'beat_loop',
-			deck: pair.outgoing,
-			beats: plan.beats,
-			start_ms: plan.start_ms
-		}, undefined, 'autoplay-handoff');
+		await dispatchPerformanceCommand(
+			{
+				type: 'beat_loop',
+				deck: pair.outgoing,
+				beats: plan.beats,
+				start_ms: plan.start_ms
+			},
+			undefined,
+			'autoplay-handoff'
+		);
 	} catch {
 		pushToast('auto-play next: loop engage failed', 'error');
 		return false;
@@ -455,7 +551,10 @@ export function installAutoPlayNextPrepare(): () => void {
 		if (_prepareHeld) return;
 		const snaps = _snaps();
 		const outgoing = pickSourceDeck(snaps);
-		const incoming = outgoing === null ? null : snaps.find((s) => s.id !== outgoing.id && s.stable_id !== null && !s.playing);
+		const incoming =
+			outgoing === null
+				? null
+				: snaps.find((s) => s.id !== outgoing.id && s.stable_id !== null && !s.playing);
 		if (outgoing === null || incoming === null || incoming === undefined) {
 			prepared = null;
 			return;
@@ -464,11 +563,13 @@ export function installAutoPlayNextPrepare(): () => void {
 		const key = `${outgoing.stable_id}|${incoming.stable_id}|${outgoing.id}|${incoming.id}|${intent}`;
 		if (key === prepared) return;
 		prepared = key;
-		requestPrepare({ out_deck: outgoing.id, in_deck: incoming.id, intent }).catch((error: unknown) => {
-			// Asked again on the next watch: a refused request has prepared nothing.
-			if (prepared === key) prepared = null;
-			console.warn('auto-play next: prepare request failed', error);
-		});
+		requestPrepare({ out_deck: outgoing.id, in_deck: incoming.id, intent }).catch(
+			(error: unknown) => {
+				// Asked again on the next watch: a refused request has prepared nothing.
+				if (prepared === key) prepared = null;
+				console.warn('auto-play next: prepare request failed', error);
+			}
+		);
 	}, PREPARE_WATCH_MS);
 	return () => clearInterval(timer);
 }
@@ -521,12 +622,16 @@ async function _tick(config: AutoPlayNextConfig): Promise<void> {
 			config
 		);
 		if (enteredMs === null) return;
-		await dispatchPerformanceCommand({
-			type: 'eq',
-			deck: outgoing,
-			band: 'low',
-			value: duckedLowEqKnob(config.lowEqDuckFraction)
-		}, undefined, 'autoplay-handoff');
+		await dispatchPerformanceCommand(
+			{
+				type: 'eq',
+				deck: outgoing,
+				band: 'low',
+				value: duckedLowEqKnob(config.lowEqDuckFraction)
+			},
+			undefined,
+			'autoplay-handoff'
+		);
 		_eqDucked = true;
 		_dropMs = approximateDropMs(beats, enteredMs, config);
 		if (_dropMs === null) {

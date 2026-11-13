@@ -15,6 +15,7 @@ import pytest
 from apps.autodj.compile import compile_plan
 from apps.autodj.contract.models import CONFIDENCE_FACTOR_NAMES, INTENTS, PROPOSE_GATES, KeySegment
 from apps.autodj.plan import (
+    DECK_CONTROLS,
     LOAD_TRIM,
     PLAY_LEAD_BARS,
     ChannelStart,
@@ -50,11 +51,11 @@ from apps.autodj.propose import (
     propose_transition,
 )
 from apps.autodj.render_plan import TRANSITION_FX_REFUSAL, RenderPlanError, compile_render_plan
-from apps.autodj.scoring import _key_term, score_pair, score_windows
+from apps.autodj.scoring import PairScore, _key_term, score_pair, score_windows
 from apps.autodj.styles import KILL, PRE_HIT_LOW, STYLES, StyleParams, exit_bar, list_styles, parametric_builder, style
-from apps.autodj.windows import MixWindow, mix_windows
+from apps.autodj.windows import MixWindow, mix_windows, window_at
 from apps.shared.harmonic import key_compat
-from tests.autodj.fixtures import CHORUS, DEFAULT_ARRANGEMENT, INTRO, OUTRO, anlz_payload, profile, track_row
+from tests.autodj.fixtures import CHORUS, DEFAULT_ARRANGEMENT, DOWN, INTRO, OUTRO, anlz_payload, profile, track_row
 
 OUT, IN = profile("trk-out"), profile("trk-in", key="9A")
 
@@ -190,7 +191,7 @@ def test_bass_placement_rechecks_forward_mixability_at_the_entered_bar() -> None
 
 
 def _outgoing_with_expired_top_six() -> TrackProfile:
-    """Six early mix-out outros plus one back-half drop so the seventh-ranked out window is past bar 70."""
+    """Six early mix-out outros, a back-half drop, and a tail phrase for playhead-filter probes."""
     return profile(
         "trk-out-expired-six",
         key="8A",
@@ -203,6 +204,7 @@ def _outgoing_with_expired_top_six() -> TrackProfile:
             (OUTRO, 8, 0.4, 0.8, False),
             (INTRO, 48, 0.4, 0.2, False),
             (CHORUS, 32, 1.0, 1.0, False),
+            (DOWN, 8, 0.3, 0.2, False),
         ),
     )
 
@@ -265,16 +267,16 @@ def test_an_overlap_skip_is_listed_in_not_offered() -> None:
 @pytest.mark.requirement("AGENT-29")
 @pytest.mark.requirement("AUTODJ-12873")
 def test_propose_considers_later_out_window_when_top_six_are_before_min_out_bar() -> None:
-    """[if] the six highest-ranked outgoing windows sit at or before min_out_bar and a later window remains [then] propose_transition still considers that later window (expired windows are dropped before the six-window cap), [else stop]."""
+    """[if] the top-ranked out window is past min_out_bar [then] propose drops it and uses the next valid window, [else stop]."""
     outgoing = _outgoing_with_expired_top_six()
     top_six = mix_windows(outgoing, "out", limit=6)
-    assert [w.start_bar for w in top_six] == [41, 33, 25, 17, 9, 1]
-    assert mix_windows(outgoing, "out", limit=7)[-1].start_bar == 97
-    result = propose_transition(outgoing, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=70)
-    assert mix_windows(outgoing, "out", limit=6, min_start_bar=70)[0].start_bar == 97
+    assert [w.start_bar for w in top_six][:2] == [129, 97]
+    assert all(w.start_bar <= 105 for w in top_six[2:])
+    assert mix_windows(outgoing, "out", limit=6, min_start_bar=105) == [top_six[0]]
+    result = propose_transition(outgoing, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=105)
     assert result["considered"] >= 1
     assert result["proposals"]
-    assert all(row["plan"]["out"]["window"]["start_bar"] == 97 for row in result["proposals"])
+    assert all(row["plan"]["out"]["window"]["start_bar"] == 129 for row in result["proposals"])
     assert all(row["validation"]["ok"] for row in result["proposals"])
 
 
@@ -283,13 +285,12 @@ def test_propose_min_out_bar_none_keeps_same_top_six_out_windows() -> None:
     """[if] min_out_bar is None [then] the ranked outgoing windows are unchanged from before the playhead filter, [else stop]."""
     outgoing = _outgoing_with_expired_top_six()
     ranked = mix_windows(outgoing, "out", limit=6)
-    assert [w.start_bar for w in ranked] == [41, 33, 25, 17, 9, 1]
+    assert [w.start_bar for w in ranked] == [129, 97, 41, 33, 25, 17]
     assert mix_windows(outgoing, "out", limit=6, min_start_bar=None) == ranked
     result = propose_transition(outgoing, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=None, top=None)
     starts = {row["plan"]["out"]["window"]["start_bar"] for row in result["proposals"]}
     # propose_transition only expands the top three ranked out windows (see out_windows[:3] in propose.py).
-    assert starts == {25, 33, 41}
-    assert 97 not in starts
+    assert starts == {129, 97, 41}
 
 
 def _live(**out: Any) -> dict[str, Any]:
@@ -435,6 +436,10 @@ _GOLDEN_STYLE_EVENTS_SHA256: dict[tuple[str, int], str] = {
     ("bass_swap_blend", 32): "6d0f8a149228f8558b82452c3ae7e81df74c93f30faffdf44ae62885b9ceb6cc",
     ("long_blend", 32): "4a71f8ae72f999e8fd56335bbf9872bddbad56394b18799123b7cbe7a18353cc",
     ("long_blend", 64): "d25f2091dd271c6255f21f083f6ed71616cfd7cf88d851dddf2c41e6e92930aa",
+    # Provenance (issue #12883): #11834 (924b5b6f2d4d) switched the crossfade catalog entry to
+    # fade_shape="smooth" without refreshing these rows; 8805767772e3 (landed inside #12873)
+    # recaptured them from that builder. Acceptance impact: none, the builder and event
+    # contract are unchanged since #11834. test_crossfade_golden_rows_follow_the_smooth_fade_shape pins this.
     ("crossfade", 12): "8bf6f6fdd8c735503c94c6cd40262bad62919da4f9fe7e6c1983540e80074489",
     ("crossfade", 15): "1efd0aafaedf832f38f151583f6eb90e4be92a5de343c0ab5974e8eacde7d03a",
     ("crossfade", 16): "2a91eaab5e4d2ef54d3c8462f123010804a89c70f9fe50dac2f5e1765f964a74",
@@ -487,6 +492,14 @@ def test_no_other_style_changes_its_events() -> None:
         got = hashlib.sha256(doc.encode()).hexdigest()
         assert got == expected, f"regenerate golden from origin/main for ({name!r}, {bars})"
 
+
+
+def test_crossfade_golden_rows_follow_the_smooth_fade_shape() -> None:
+    """[if] the crossfade golden rows were recaptured for #11834 [then] crossfade still uses the smooth fade shape, [else stop]."""
+    crossfade = STYLES["crossfade"]
+    assert crossfade.params is not None
+    assert crossfade.params.volume == "crossfade"
+    assert crossfade.params.fade_shape == "smooth"
 
 # Captured from the checked-out pre-implementation base e75a9e8adf. These existing
 # styles postdate the immutable table above, so preserve their event output too.
@@ -642,6 +655,28 @@ def test_filtered_incoming_low_is_prepared_and_opens_at_the_hit(
         assert row["at_bar"] == event.at_bar
         assert row["ramp"]["over_bars"] == event.over_bars
         assert row["ramp"]["command"]["value"] == event.target()
+
+
+@pytest.mark.requirement("INTELLIGENCE-13053")
+@pytest.mark.parametrize(("out_deck", "in_deck"), [(1, 2), (2, 1)])
+def test_outgoing_only_low_pass_sweeps_the_outgoing_deck_and_leaves_incoming_open(out_deck: int, in_deck: int) -> None:
+    """[if] lp_out compiles [then] only the outgoing filter closes to cutoff, [else stop]."""
+    from apps.autodj.styles import FLAT, LOWPASS_SWEEP
+
+    bars, hit = 16, 4.0
+    document = _plan("crossfade", bars=bars, out_start=97)
+    document["out"]["deck"], document["in"]["deck"] = out_deck, in_deck
+    document["events"] = parametric_builder(StyleParams(volume="overlap", filter="lp_out"))(bars, out_deck, in_deck, hit)
+    plan = parse_plan(json.loads(json.dumps(document)))
+    assert validate_plan(plan, OUT, IN).errors == []
+    compiled = compile_plan(plan, IN, plan_id="lp-out")["plan"]
+    assert not [command for command in compiled["prepare"] if command.get("type") == "filter"]
+    ramps = [row for row in compiled["events"] if row.get("ramp", {}).get("command", {}).get("type") == "filter"]
+    assert [(row["ramp"]["command"]["deck"], row["ramp"]["to"]) for row in ramps] == [(out_deck, LOWPASS_SWEEP)]
+    assert ramps[0]["at_bar"] == hit and ramps[0]["at_bar"] + ramps[0]["ramp"]["over_bars"] == bars
+    sets = [row for row in compiled["events"] if row.get("command", {}).get("type") == "filter"]
+    assert all(row["at_bar"] == bars for row in sets)
+    assert {(row["command"]["deck"], row["command"]["value"]) for row in sets} == {(out_deck, FLAT), (in_deck, FLAT)}
 
 
 @pytest.mark.requirement("TRANSAI-12185")
@@ -1150,6 +1185,20 @@ def test_style_fit_penalizes_clash_relations_not_lift_moves() -> None:
     assert _style_fit(long_blend, pay_attention, "smooth") == 0.0
     assert _style_fit(long_blend, tritone, "smooth") == -0.2
     assert _style_fit(long_blend, boost, ENERGY_UP) == pytest.approx(0.05)
+
+
+@pytest.mark.requirement("AUTODJ-14377")
+def test_style_fit_ignores_measured_vocal_clash_on_long_styles() -> None:
+    """[if] long styles score measured vocal clash [then] style fit stays zero, [else stop]."""
+    out_window, in_window = _overlap_windows()
+    clash_out = replace(OUT, bar_vocals=tuple(1.0 for _ in range(OUT.bars)))
+    clash_in = replace(IN, bar_vocals=tuple(1.0 for _ in range(IN.bars)))
+    pair = score_windows(clash_out, clash_in, out_window, in_window, overlap_bars=16)
+    assert pair.vocal_clash_bars is not None and pair.vocal_clash_bars > 0
+    for name in ("long_blend", "bass_swap_blend", "filter_sweep"):
+        style_def = STYLES[name]
+        assert style_def.default_bars >= 16
+        assert _style_fit(style_def, pair, "smooth") == 0.0
 
 
 @pytest.mark.requirement("TRANSAI-10674")
@@ -3361,10 +3410,195 @@ def test_propose_ranking_unchanged_when_confidence_fields_stripped() -> None:
     """[if] smooth propose at bar 60 runs [then] score/style/bars match the pre-confidence golden top three, [else stop]."""
     result = propose_transition(OUT, IN, out_deck=1, in_deck=2, intent="smooth", min_out_bar=60, top=3)
     slim = [{"score": row["score"], "style": row["style"], "bars": row["bars"]} for row in result["proposals"]]
+    # Re-pinned for the Bittner position priors (AUTODJ-11849): out windows at bars 65 and 81 sit before the
+    # last quarter of the 128-bar grid and are scaled down, so the drop at bar 97 takes third from bar 81.
+    # Confidence fields still change none of these numbers.
     assert slim == [
-        {"score": 1.133, "style": "long_blend", "bars": 32},
-        {"score": 1.073, "style": "bass_swap_blend", "bars": 32},
-        {"score": 0.944, "style": "long_blend", "bars": 32},
+        {"score": 1.104, "style": "long_blend", "bars": 32},
+        {"score": 1.044, "style": "bass_swap_blend", "bars": 32},
+        {"score": 1.038, "style": "bass_swap_blend", "bars": 31},
     ]
     assert all("confidence" in row for row in result["proposals"])
     assert [proposal_golden_body(row) for row in result["proposals"]]
+
+
+def _stem_errors(stems_out: bool | None, stems_in: bool | None, style_name: str = "stem_swap") -> list[str]:
+    document = _plan()
+    document["style"] = style_name
+    plan = parse_plan(document)
+    out_profile = replace(OUT, stems_available=stems_out)
+    in_profile = replace(IN, stems_available=stems_in)
+    return [error for error in validate_plan(plan, out_profile, in_profile).errors if "needs stems" in error]
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-13854")
+def test_a_stem_plan_on_decks_with_ready_stems_passes_the_stem_check() -> None:
+    """[if] a stem-dependent plan addresses decks with ready stems [then] no stem-status refusal, [else stop]."""
+    assert _stem_errors(True, True) == []
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-13854")
+def test_a_stem_plan_on_a_deck_with_unavailable_stems_is_refused() -> None:
+    """[if] a stem-dependent plan addresses a deck with unavailable stems [then] refused naming deck and status, [else stop]."""
+    errors = _stem_errors(True, False)
+    assert len(errors) == 1 and "incoming deck 2 stem-set is unavailable" in errors[0]
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-13854")
+def test_a_stem_plan_on_a_deck_with_unresolved_stems_is_refused() -> None:
+    """[if] a stem-dependent plan addresses a deck with unresolved stem status [then] refused as unresolved, [else stop]."""
+    errors = _stem_errors(None, True)
+    assert len(errors) == 1 and "outgoing deck 1 stem-set is unresolved" in errors[0]
+
+
+@pytest.mark.requirement("RB-PERFORMANCE-13854")
+def test_a_non_stem_plan_on_decks_without_stems_is_accepted() -> None:
+    """[if] a non-stem plan addresses decks without stems [then] it validates with no errors, [else stop]."""
+    plan = parse_plan(_plan())
+    assert validate_plan(plan, replace(OUT, stems_available=False), replace(IN, stems_available=None)).errors == []
+
+
+def _stem_plan(kind: str = "set") -> Any:
+    document = _plan()
+    stem_event: dict[str, Any] = {"at_bar": 4, "deck": 2, kind: {"stem_drums": 0.0}}
+    if kind == "ramp":
+        stem_event["over_bars"] = 2
+    document["events"] = [*document["events"], stem_event]
+    return parse_plan(document)
+
+
+@pytest.mark.requirement("TRANSAI-14006")
+def test_stem_controls_are_deck_controls_and_a_missing_part_is_refused_by_layout() -> None:
+    """[if] stem_drums targets a vocals+instrumental deck [then] validate_plan names the deck layout, [else stop]."""
+    assert {"stem_vocals", "stem_drums", "stem_bass", "stem_other"} <= DECK_CONTROLS
+    ready = {"stems_available": True}
+    out_profile = replace(OUT, **ready, stem_layout=("vocals", "drums", "bass", "other"))
+    two_part = replace(IN, **ready, stem_layout=("vocals", "instrumental"))
+    assert "stem_drums: deck 2 layout is vocals+instrumental" in validate_plan(_stem_plan(), out_profile, two_part).errors
+    four_part = replace(IN, **ready, stem_layout=("vocals", "drums", "bass", "other"))
+    assert validate_plan(_stem_plan(), out_profile, four_part).errors == []
+
+
+@pytest.mark.requirement("TRANSAI-14006")
+@pytest.mark.parametrize("kind", ["set", "ramp"])
+def test_stem_controls_compile_to_stem_gain_page_commands(kind: str) -> None:
+    """[if] a plan sets or ramps stem_drums [then] the compiled plan carries a stem_gain drums command, [else stop]."""
+    events = compile_plan(_stem_plan(kind), IN, plan_id="stems")["plan"]["events"]
+    command = {"type": "stem_gain", "deck": 2, "stem": "drums", "value": 0.0}
+    found = [row for row in events if row.get("command") == command or (row.get("ramp") or {}).get("command") == command]
+    assert len(found) == 1 and ("ramp" in found[0]) == (kind == "ramp")
+
+
+@pytest.mark.requirement("TRANSAI-14006")
+def test_compile_render_plan_refuses_a_stem_control_by_name() -> None:
+    """[if] a plan with stem_drums is compiled for render [then] refused naming the control and plan 20-04, [else stop]."""
+    stub = Path(Path.cwd().anchor) / "a.wav"
+    with pytest.raises(RenderPlanError, match="stem_drums") as caught:
+        compile_render_plan(_stem_plan(), OUT, IN, out_audio=stub, in_audio=stub)
+    assert "stems are not in the offline renderer (plan 20-04)" in str(caught.value)
+
+
+@pytest.mark.requirement("TRANSAI-14006")
+def test_a_plan_without_stem_controls_compiles_byte_identically() -> None:
+    """[if] a no-stem plan compiles [then] its JSON hash matches the pre-stem-controls golden, [else stop]."""
+    compiled = compile_plan(parse_plan(_plan()), IN, plan_id="p")["plan"]
+    # #10148 (PR #14071) adds only the master_tempo key: with no live rate known, key lock stays on for both decks.
+    # Pin that key exactly, then compare the remaining bytes with the immutable pre-stem-controls golden.
+    assert compiled.pop("master_tempo") == {"1": True, "2": True}
+    digest = hashlib.sha256(json.dumps(compiled, sort_keys=True).encode()).hexdigest()
+    assert digest == "73abe574aa81f006173094f72ab6e754623ee416dfe9da1f7a4cec9a81ef48d9"
+
+
+_VOCAL_CLASH_FALLBACK_OUT_BAR, _VOCAL_CLASH_FALLBACK_IN_BAR = 113, 33
+
+
+def _vocal_clash_fallback_profiles() -> tuple[TrackProfile, TrackProfile]:
+    """Pinned drop entry and wide outgoing vocals so long blends clash at around_bar 113 (#13343)."""
+    out = profile("trk-vc-out")
+    incoming = replace(profile("trk-vc-in", key="9A"), transition_in_bar=_VOCAL_CLASH_FALLBACK_IN_BAR)
+    out2 = replace(
+        out,
+        bar_vocals=tuple(0.25 if 97 <= bar <= 128 else 0.0 for bar in range(1, out.bars + 1)),
+    )
+    in2 = replace(incoming, bar_vocals=tuple(0.25 for _ in range(incoming.bars)))
+    return out2, in2
+
+
+def _vocal_clash_fallback_propose(intent: str) -> dict[str, Any]:
+    out2, in2 = _vocal_clash_fallback_profiles()
+    return propose_transition(
+        out2,
+        in2,
+        out_deck=1,
+        in_deck=2,
+        intent=intent,
+        top=None,
+        around_bar=_VOCAL_CLASH_FALLBACK_OUT_BAR,
+    )
+
+
+def _vocal_clash_fallback_pair_score(
+    out2: TrackProfile, in2: TrackProfile, *, overlap_bars: int
+) -> PairScore:
+    return score_windows(
+        out2,
+        in2,
+        window_at(out2, "out", _VOCAL_CLASH_FALLBACK_OUT_BAR),
+        window_at(in2, "in", _VOCAL_CLASH_FALLBACK_IN_BAR),
+        overlap_bars=overlap_bars,
+    )
+
+
+def _assert_measured_vocal_refusal_of_long_blend(result: dict[str, Any], style_name: str) -> None:
+    rows = [
+        row
+        for row in result["not_offered"]
+        if row["style"] == style_name
+        and "vocal clash" in row["reason"]
+        and "limit 0" in row["reason"]
+    ]
+    assert rows
+
+
+@pytest.mark.requirement("AGENT-29")
+@pytest.mark.requirement("AUTODJ-14406")
+def test_measured_vocal_overlap_refuses_long_blend_but_cut_survives() -> None:
+    """[if] a long blend has measured vocal overlap [then] not_offered refuses it and cut is offered, [else stop]."""
+    out2, in2 = _vocal_clash_fallback_profiles()
+    pair = _vocal_clash_fallback_pair_score(out2, in2, overlap_bars=2)
+    assert pair.vocal_clash_bars == 2
+    assert style("bass_swap_blend").default_bars >= 8
+    result = _vocal_clash_fallback_propose("smooth")
+    assert not [row for row in result["proposals"] if row["style"] == "bass_swap_blend"]
+    _assert_measured_vocal_refusal_of_long_blend(result, "bass_swap_blend")
+    cuts = [row for row in result["proposals"] if row["style"] == "cut" and row["validation"]["ok"]]
+    assert cuts and all("cut fallback" in row["rationale"] for row in cuts)
+    assert all("no preferred blend was eligible" in row["rationale"] for row in cuts)
+
+
+@pytest.mark.requirement("AGENT-29")
+@pytest.mark.requirement("AUTODJ-14406")
+def test_drop_swap_survives_vocal_refusal_of_long_blends() -> None:
+    """[if] long blends are vocally refused [then] drop_swap still validates, [else stop]."""
+    out2, in2 = _vocal_clash_fallback_profiles()
+    pair = _vocal_clash_fallback_pair_score(out2, in2, overlap_bars=2)
+    assert pair.vocal_clash_bars == 2
+    result = _vocal_clash_fallback_propose("energy_up")
+    shorts = [row for row in result["proposals"] if row["style"] in {"cut", "drop_swap"}]
+    assert shorts and all(row["validation"]["ok"] for row in shorts)
+    assert any(row["style"] == "cut" for row in shorts)
+    assert any(row["style"] == "drop_swap" for row in shorts)
+    _assert_measured_vocal_refusal_of_long_blend(result, "bass_swap_blend")
+
+
+@pytest.mark.requirement("AGENT-29")
+@pytest.mark.requirement("AUTODJ-14406")
+def test_smooth_returns_cut_fallback_proposal_after_vocal_refusals() -> None:
+    """[if] smooth loses every preferred blend to vocal clash [then] a cut fallback is proposed, [else stop]."""
+    result = _vocal_clash_fallback_propose("smooth")
+    assert result["proposals"]
+    cuts = [row for row in result["proposals"] if row["style"] == "cut"]
+    assert cuts and all(row["validation"]["ok"] for row in cuts)
+    assert all("cut fallback" in row["rationale"] for row in cuts)
+    assert all("no preferred blend was eligible" in row["rationale"] for row in cuts)
+    _assert_measured_vocal_refusal_of_long_blend(result, "bass_swap_blend")

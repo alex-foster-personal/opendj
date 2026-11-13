@@ -3,6 +3,8 @@
 	// deleted-playlist list and the restore call (null rows = still loading).
 	import type { DeletedPlaylistOut } from '$lib/rb/playlist-deleted';
 	import { collapse } from '$lib/motion/collapse';
+	import SystemNodeActions from './SystemNodeActions.svelte';
+	import { RECENTLY_DELETED_ICON_PATH } from './system-tree-nodes';
 
 	let {
 		open,
@@ -39,6 +41,7 @@
 	<div
 		class="row folder"
 		data-testid="playlist-recently-deleted"
+		data-system-node="recently-deleted"
 		role="button"
 		tabindex="0"
 		onclick={() => ontoggle()}
@@ -47,10 +50,17 @@
 		}}
 	>
 		<span class="disclosure" class:open>&#9656;</span>
-		<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-			<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
+		<svg
+			viewBox="0 0 16 16"
+			width="12"
+			height="12"
+			aria-hidden="true"
+			data-testid="system-node-icon"
+		>
+			<path d={RECENTLY_DELETED_ICON_PATH} fill="currentColor" />
 		</svg>
 		<span class="name">Recently deleted</span>
+		<SystemNodeActions name="Recently deleted" nodeId="recently-deleted" />
 		<span class="count" title={_countTitle()}>{_countText()}</span>
 	</div>
 	{#if open}

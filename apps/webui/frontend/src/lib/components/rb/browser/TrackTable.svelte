@@ -117,7 +117,18 @@
 		VersionStackPanel,
 		WorksModals,
 		applyTrackTableColumnFilters,
+		columnFiltersActiveCount,
+		BpmColumnFunnelPopover,
 		ColourColumnFunnelPopover,
+		GenreColumnFunnelPopover,
+		KeyColumnFunnelPopover,
+		MyTagColumnFunnelPopover,
+		TrackFilterBar,
+		TRACK_FILTER_FUNNEL_TRIGGERS,
+		effectiveColumnFilters,
+		type TrackFilterColumn,
+		RatingColumnFunnelPopover,
+		trackColourName,
 		trackColourSwatch,
 		trackTableFunnelStore,
 		classicalArtist,
@@ -138,8 +149,14 @@
 		yearOf,
 		type OptionalColumn
 	} from './track-table-support';
-	import { tagsCellFor } from '$lib/rb/library-tags.svelte';
+	import { tagsCellFor, tagState } from '$lib/rb/library-tags.svelte';
 	import { filePathCellsFor } from '$lib/rb/file-path-cells';
+	import { albumCellText } from '$lib/rb/album-cell';
+	import { dateAddedCellText } from '$lib/rb/date-added-cell';
+	import { bitrateCellText, kindCellText } from '$lib/rb/bitrate-kind-cells';
+	import { lastPlayedCellText } from '$lib/rb/last-played-day-cell';
+	import { playedAtCellText, rowsArePlays } from '$lib/history/history-night-pane';
+	import { sortCycleHint } from './browser-sort-ipc';
 	import { revealTrack } from '$lib/rb/api-track-reveal';
 	import { isStreamingAvailability } from './streaming-availability';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
@@ -261,6 +278,7 @@
 		trackTableRangeSpan,
 		type TrackTableNavKey
 	} from './track-table-keyboard';
+	import { trackTypeAhead, typeAheadMatchIndex } from './track-table-type-ahead';
 	import { dragEndIsCollapsingClick, markRowPress, type RowPressMark } from './row-click-intent';
 
 	type DeckId = (typeof DECK_IDS)[number];
@@ -727,6 +745,7 @@
 	let {
 		provider,
 		libraryMode = false,
+		passive = false,
 		selectedIds,
 		selectedOrders,
 		loadedIds,
@@ -973,6 +992,8 @@
 		compatibleReferenceKey?: string | null;
 		/** LIBWS-03: mounted in the Library workspace, which has no decks. */
 		libraryMode?: boolean;
+		/** LIBUX-9754: the split view's second table; the agent type-ahead stays bound to the active one. */
+		passive?: boolean;
 		/** A key hover card that fails to load is reported here, never only logged. */
 		/** Required: a failed key-card chunk load must reach the user (fail-fast). */
 		onkeycardfailed: (message: string) => void;
@@ -1317,7 +1338,28 @@
 	}
 
 	const paneColumnFilters = $derived(trackTableFunnelStore.get(String(restoreKey)));
-	const rows = $derived(applyTrackTableColumnFilters(provider.rows, paneColumnFilters));
+	// Issue #10043: the Track Filter bar's state; its off switch keeps the criteria but applies none.
+	const paneFilterState = $derived(trackTableFunnelStore.readState(String(restoreKey)));
+	const paneFilterChipCount = $derived(columnFiltersActiveCount(paneColumnFilters));
+	$effect(() => {
+		const paneKey = String(restoreKey);
+		trackTableFunnelStore.activePane = paneKey;
+		return () => {
+			if (trackTableFunnelStore.activePane === paneKey) trackTableFunnelStore.activePane = null;
+		};
+	});
+	/** Issue #10043: a chip click opens that column's own funnel, when its column is on screen. */
+	function openColumnFunnel(column: TrackFilterColumn): void {
+		wrapEl?.querySelector<HTMLButtonElement>(TRACK_FILTER_FUNNEL_TRIGGERS[column])?.click();
+	}
+	// Issue #9742: the My Tag funnel matches the live tag assignments, the same source as the Tags column.
+	const rows = $derived(
+		applyTrackTableColumnFilters(
+			provider.rows,
+			effectiveColumnFilters(paneFilterState),
+			(row) => tagState.assignments[row.stable_id] ?? []
+		)
+	);
 	const maxRowOrder = $derived(rows.reduce((max, row) => Math.max(max, row.order), 0));
 	$effect(() => {
 		const compact = compactUtilityWidths(maxRowOrder);
@@ -1369,6 +1411,14 @@
 			void setTargetState.toggleSkip(
 				selectedOrders.includes(row.order) ? [...selectedIds] : [row.stable_id]
 			);
+			return;
+		}
+		// LIBM-82b: a printable key jumps the selection by title prefix; the search stays as it is.
+		const typed = trackTypeAhead.charFor(event);
+		if (typed !== null) {
+			event.preventDefault();
+			event.stopPropagation();
+			_typeAheadJump(trackTypeAhead.push(typed, event.timeStamp));
 			return;
 		}
 		const action = trackTableKeyAction(event);
@@ -1475,6 +1525,24 @@
 		_revealAndFocusRow(target);
 	}
 
+	/** LIBM-82b: select and reveal the visible row `prefix` jumps to; its stable_id, null on no match. */
+	function _typeAheadJump(prefix: string): string | null {
+		const list = rows;
+		const target = typeAheadMatchIndex(
+			list.map((row) => row.title),
+			prefix,
+			activeRowIndex
+		);
+		if (target < 0) return null;
+		const targetRow = list[target];
+		onselectrow(targetRow);
+		anchorRowKey = trackRowKey(targetRow);
+		activeRowKey = anchorRowKey;
+		_revealAndFocusRow(target);
+		return targetRow.stable_id;
+	}
+	$effect(() => (passive ? undefined : trackTypeAhead.register({ jump: _typeAheadJump })));
+
 	/** LIBUX-8626: the focused row left the DOM with the removal; hand roving
 	 * focus to the newly selected row so the next Backspace keeps working. */
 	async function _focusRowAfterRemoval(): Promise<void> {
@@ -1511,11 +1579,14 @@
 	let hoveredApId = $state<string | null>(null);
 	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
 	const showLyricsCol = $derived(uiPrefs.lyrics_library_col && uiPrefs.lyrics_global);
+	/** PLAYS-9745: Played at shows only while the rows are a History night's plays. */
+	const showPlayedAtCol = $derived(rowsArePlays(rows));
 	/** R-TT-1: columns come from tag type rows, so a new type needs no code here. */
 	const typeCols = $derived(tagTypeColumns());
 	const colCount = $derived(
 		(autoPlayMode === 'off' ? AUTOPLAY_COL_COUNT - 1 : AUTOPLAY_COL_COUNT) +
 			(showLyricsCol ? 1 : 0) +
+			(showPlayedAtCol ? 1 : 0) +
 			typeCols.length -
 			uiPrefs.library_hidden_columns.length
 	);
@@ -1584,7 +1655,9 @@
 	 * right, same as any wrap wider than its content. */
 	const tableWidthPx = $derived(
 		Object.entries(shownWidths).reduce(
-			(sum, [id, w]) => sum + (id === 'lyrics' && !showLyricsCol ? 0 : w),
+			(sum, [id, w]) =>
+				sum +
+				((id === 'lyrics' && !showLyricsCol) || (id === 'played_at' && !showPlayedAtCol) ? 0 : w),
 			typeCols.reduce((sum, col) => sum + col.width, 0)
 		)
 	);
@@ -1789,7 +1862,12 @@
 		// LIBM-172: one batch settles strip, vocals and cover verdict; lazy so it
 		// stays off the /performance chunk.
 		fetchBatch: async (ids) =>
-			fetchRowAssetsLazily(ids, () => untrack(() => rows), rowAssetsSettled),
+			fetchRowAssetsLazily(ids, () => untrack(() => rows), rowAssetsSettled, (id, map) => {
+				if (onpatchrow === undefined) {
+					throw new Error('TrackTable: row assets landed but no onpatchrow host publishes them');
+				}
+				onpatchrow(id, map);
+			}),
 		onStrip: (id, wire) => {
 			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
 		},
@@ -2225,9 +2303,9 @@
 			case 'ensemble':
 				return performerOf(overlay, row.stable_id);
 			case 'label':
-				return labelOf(overlay, row.stable_id);
+				return labelOf(overlay, row.stable_id, row.label ?? null);
 			case 'year':
-				return String(yearOf(overlay, row.stable_id) ?? '');
+				return String(yearOf(overlay, row.stable_id, row.year ?? null) ?? '');
 			default: {
 				const _exhaustive: never = col;
 				throw new Error(`Unhandled: ${String(_exhaustive)}`);
@@ -2411,10 +2489,11 @@
 		class={`h-${key} sortable`}
 		style={`width:${colWidths[col]}px`}
 		use:columnExplainer={{
-			text: columnHeaderTitle(col, `Sort by ${label} (asc -> desc -> clear)`)
+			text: columnHeaderTitle(col, `Sort by ${label} (${sortCycleHint(key)})`)
 		}}
 		onclick={(e) => {
-			if ((e.target as HTMLElement).closest('.col-resize')) return;
+			if ((e.target as HTMLElement).closest('.col-resize, .genre-funnel-pop, .rating-funnel-pop'))
+				return;
 			onsort(key);
 		}}
 		oncontextmenu={col === 'order'
@@ -2428,6 +2507,19 @@
 			<span>{label}</span>
 			{#if sortKey === key}
 				<SortArrowIcon asc={sortDir === 1} />
+			{/if}
+			<!-- Issue #9740: the Genre and Rating funnels, per pane like the BPM and Key funnels. -->
+			{#if col === 'genre'}
+				<GenreColumnFunnelPopover
+					filter={paneColumnFilters.genre}
+					rows={provider.rows}
+					onpatch={(genre) => trackTableFunnelStore.patchGenre(String(restoreKey), genre)}
+				/>
+			{:else if col === 'rating'}
+				<RatingColumnFunnelPopover
+					filter={paneColumnFilters.rating}
+					onpatch={(rating) => trackTableFunnelStore.patchRating(String(restoreKey), rating)}
+				/>
 			{/if}
 		</span>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -2562,6 +2654,16 @@
 			{@render bodyOverlay()}
 		</div>
 	{/if}
+	{#if paneFilterChipCount > 0}
+		<TrackFilterBar
+			filterState={paneFilterState}
+			shown={rows.length}
+			total={provider.rows.length}
+			onsuspend={(suspended) => trackTableFunnelStore.setSuspended(String(restoreKey), suspended)}
+			onclear={() => trackTableFunnelStore.clear(String(restoreKey))}
+			onopen={openColumnFunnel}
+		/>
+	{/if}
 	<div
 		class="table-wrap"
 		style:--tt-gap-ms={`${rowInsertGapDuration(gapMotionRows, false)}ms`}
@@ -2599,6 +2701,7 @@
 				{#if !hiddenCols.has('art')}<col style={`width:${colWidths.art}px`} />{/if}
 				<col style={`width:${colWidths.title}px`} />
 				{#if !hiddenCols.has('artist')}<col style={`width:${colWidths.artist}px`} />{/if}
+				{#if !hiddenCols.has('album')}<col style={`width:${colWidths.album}px`} />{/if}
 				{#if !hiddenCols.has('key')}<col style={`width:${colWidths.key}px`} />{/if}
 				{#if !hiddenCols.has('bpm')}<col style={`width:${colWidths.bpm}px`} />{/if}
 				{#if !hiddenCols.has('tempostab')}<col style={`width:${colWidths.tempostab}px`} />{/if}
@@ -2615,6 +2718,11 @@
 				{#if !hiddenCols.has('tags')}<col style={`width:${colWidths.tags}px`} />{/if}
 				{#if !hiddenCols.has('filename')}<col style={`width:${colWidths.filename}px`} />{/if}
 				{#if !hiddenCols.has('location')}<col style={`width:${colWidths.location}px`} />{/if}
+				{#if !hiddenCols.has('date_added')}<col style={`width:${colWidths.date_added}px`} />{/if}
+				{#if !hiddenCols.has('bitrate')}<col style={`width:${colWidths.bitrate}px`} />{/if}
+				{#if !hiddenCols.has('kind')}<col style={`width:${colWidths.kind}px`} />{/if}
+				{#if !hiddenCols.has('last_played')}<col style={`width:${colWidths.last_played}px`} />{/if}
+				{#if showPlayedAtCol}<col style={`width:${colWidths.played_at}px`} />{/if}
 				{#each typeCols as col (col.id)}<col style={`width:${col.width}px`} />{/each}
 				{#if showLyricsCol}
 					<col style={`width:${colWidths.lyrics}px`} />
@@ -2768,6 +2876,7 @@
 					</th>
 					{@render sortableTh('title', 'Track Title', 'title')}
 					{@render sortableTh('artist', 'Artist', 'artist')}
+					{@render sortableTh('album', 'Album', 'album')}
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<th
@@ -2777,7 +2886,7 @@
 							text: columnHeaderTitle('key', 'Key - sort by key (asc -> desc -> clear)')
 						}}
 						onclick={(e) => {
-							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							if ((e.target as HTMLElement).closest('.col-resize, .key-funnel-pop')) return;
 							onsort('key');
 						}}
 					>
@@ -2787,6 +2896,11 @@
 							{#if sortKey === 'key'}
 								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
+							<!-- Issue #9739: the Key funnel, per pane like the BPM and Colour funnels. -->
+							<KeyColumnFunnelPopover
+								filter={paneColumnFilters.key}
+								onpatch={(key) => trackTableFunnelStore.patchKey(String(restoreKey), key)}
+							/>
 						</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
@@ -2806,7 +2920,7 @@
 							text: columnHeaderTitle('bpm', 'BPM - sort by BPM (asc -> desc -> clear)')
 						}}
 						onclick={(e) => {
-							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							if ((e.target as HTMLElement).closest('.col-resize, .bpm-funnel-pop')) return;
 							onsort('bpm');
 						}}
 					>
@@ -2815,6 +2929,11 @@
 							{#if sortKey === 'bpm'}
 								<SortArrowIcon asc={sortDir === 1} />
 							{/if}
+							<!-- Issue #9738: the BPM range funnel, per pane like the Colour funnel. -->
+							<BpmColumnFunnelPopover
+								filter={paneColumnFilters.bpm}
+								onpatch={(bpm) => trackTableFunnelStore.patchBpm(String(restoreKey), bpm)}
+							/>
 						</span>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
@@ -2888,11 +3007,25 @@
 						></span>
 					</th>
 					{@render sortableTh('rating', 'Rating', 'rating')}
-					<th class="h-colour" style={`width:${colWidths.colour}px`}>
+					<!-- Issue #9737: a click outside the funnel and the resize grip sorts by ColorID. -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<th
+						class="h-colour sortable"
+						style={`width:${colWidths.colour}px`}
+						title={`Sort by Colour (${sortCycleHint('colour')})`}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize, .colour-funnel-pop')) return;
+							onsort('colour');
+						}}
+					>
 						<ColourColumnFunnelPopover
 							filter={paneColumnFilters.colour}
 							onpatch={(colour) => trackTableFunnelStore.patchColour(String(restoreKey), colour)}
 						/>
+						{#if sortKey === 'colour'}
+							<SortArrowIcon asc={sortDir === 1} />
+						{/if}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -2968,7 +3101,14 @@
 						></span>
 					</th>
 					<th class="h-tags" style={`width:${colWidths.tags}px`}>
-						<span class="th-label"><span>Tags</span></span>
+						<span class="th-label"
+							><span>Tags</span>
+							<!-- Issue #9742: the My Tag funnel, per pane like the other column funnels. -->
+							<MyTagColumnFunnelPopover
+								filter={paneColumnFilters.mytag}
+								onpatch={(mytag) => trackTableFunnelStore.patchMytag(String(restoreKey), mytag)}
+							/></span
+						>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="col-resize"
@@ -2980,6 +3120,13 @@
 					</th>
 					{@render sortableTh('filename', 'File name', 'filename')}
 					{@render sortableTh('location', 'Location', 'location')}
+					{@render sortableTh('date_added', 'Date Added', 'date_added')}
+					{@render sortableTh('bitrate', 'Bitrate', 'bitrate')}
+					{@render sortableTh('kind', 'Kind', 'kind')}
+					{@render sortableTh('last_played', 'Last Played', 'last_played')}
+					{#if showPlayedAtCol}
+						{@render sortableTh('played_at', 'Played at', 'played_at')}
+					{/if}
 					{#each typeCols as col (col.id)}
 						<th class="h-tagtype" style={`width:${col.width}px`}>
 							<span class="th-label"><span>{col.label}</span></span>
@@ -3378,6 +3525,11 @@
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
 						</td>
+						<td class="c-album" title={albumCellText(row)}>
+							{#each hl(albumCellText(row)) as part, i (i)}
+								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
+							{/each}
+						</td>
 						<td
 							class="c-key"
 							class:set-clash-cell={clashEdges.has(row.stable_id)}
@@ -3481,7 +3633,7 @@
 						<td class="c-rating" style={`--rating-w:${colWidths.rating}px`}>
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
 						</td>
-						<td class="c-colour" title={row.color_id ? `Colour ${row.color_id}` : 'No colour'}>
+						<td class="c-colour" title={trackColourName(row.color_id)}>
 							{#if colourSwatch}
 								<span
 									class="colour-swatch"
@@ -3596,6 +3748,11 @@
 						>
 							<span class="path-cell-text">{pathCells.location}</span>
 						</td>
+						<td class="c-date_added">{dateAddedCellText(row)}</td>
+						<td class="c-bitrate">{bitrateCellText(row)}</td>
+						<td class="c-kind">{kindCellText(row)}</td>
+						<td class="c-last_played">{lastPlayedCellText(row)}</td>
+						{#if showPlayedAtCol}<td class="c-played_at">{playedAtCellText(row)}</td>{/if}
 						{#each typeCols as col (col.id)}
 							<td class="c-tagtype">
 								<TagCell stableId={row.stable_id} {selectedIds} typeId={col.id} />
@@ -3636,7 +3793,11 @@
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
 				<span data-testid="track-table-empty-message">{emptyMessage}</span>{#if onemptyretry !== undefined}
-					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
+					<button
+						type="button"
+						class="empty-retry"
+						data-testid="track-table-empty-retry"
+						onclick={onemptyretry}>Retry search</button>
 				{/if}
 			</div>
 		{/if}
@@ -5279,7 +5440,8 @@
 	tr.rb-row-first.corridor-grace-active,
 	tr.rb-row-first:has(.deck-btns:hover),
 	tr.rb-row-first:has(.deck-btns:focus-within) {
-		z-index: 2;
+		/* Headline: row 0 deck picks must paint above sticky thead in Electron too (#13523). */
+		z-index: 10;
 	}
 	/* Issue #1558: selecting a row makes this :has() match true at the exact
 	 * instant of the FIRST click of a double-click, with the pointer already
@@ -5397,13 +5559,20 @@
 	}
 
 	.empty {
+		box-sizing: border-box;
+		min-height: min(14rem, 100%);
 		padding: 24px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
 		text-align: center;
 		color: var(--rb-text-dim);
 	}
 	.empty-retry {
 		display: block;
-		margin: 12px auto 0;
+		margin: 0;
 		color: var(--rb-text);
 		background: var(--rb-surface-2);
 		border: 1px solid var(--rb-border);
@@ -5511,6 +5680,9 @@
 	table.hide-artist :is(th.h-artist, td.c-artist) {
 		display: none;
 	}
+	table.hide-album :is(th.h-album, td.c-album) {
+		display: none;
+	}
 	table.hide-key :is(th.h-key, td.c-key) {
 		display: none;
 	}
@@ -5579,6 +5751,35 @@
 	}
 	table.hide-location :is(th.h-location, td.c-location) {
 		display: none;
+	}
+	table.hide-date_added :is(th.h-date_added, td.c-date_added) {
+		display: none;
+	}
+	table.hide-bitrate :is(th.h-bitrate, td.c-bitrate) {
+		display: none;
+	}
+	table.hide-kind :is(th.h-kind, td.c-kind) {
+		display: none;
+	}
+	td.c-bitrate {
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+		white-space: nowrap;
+	}
+	td.c-kind {
+		white-space: nowrap;
+	}
+	table.hide-last_played :is(th.h-last_played, td.c-last_played) {
+		display: none;
+	}
+	td.c-last_played,
+	td.c-played_at {
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	td.c-date_added {
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 	.path-cell-text {
 		display: block;

@@ -1,5 +1,6 @@
 // requirement: FXFILT-9829
 // requirement: RB-PERFORMANCE-13546
+// requirement: FXFILT-14361
 // The renderer in this file is a TEST DOUBLE. It covers pairing, blinding, proxies, manifest, vetoes and
 // WAV plumbing (test coverage); it is not calibration evidence. Calibration renders only through the
 // #9774 harness on the real graph with #9826 and #9828.
@@ -17,9 +18,11 @@
 // [if] the real render path is missing and the CLI does not exit 2 with [UNAVAILABLE] or creates --out [then] calibration can run on a reimplementation
 // [if] resolveRealRenderer does not name the missing dependencies, or passes without an adapter [then] the real-path gate is broken
 // [if] a non-real or missing renderer is accepted without allowTestDouble [then] the real-path gate is broken
-// [if] a renderer callback resolves after its replacement [then] the export fails closed [else stop].
+// [if] a render resolves with a valid result after the caller replaced the export [then] the export fails closed [else stop].
+// [if] a held render on an export whose signal stays live is released [then] the export writes, so the hold returns a valid result [else stop].
 // [if] the test fixture is released [then] in-flight exports finish before rmSync [else stop].
 // [if] the export rejects its render result [then] --out stays absent [else stop].
+// [if] the LFO sine/triangle or down/up pair is missing, splits its division or lacks the other proxies [then] LFO is unratable [else stop].
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,11 +31,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
 const SCRIPT_URL = new URL(
 	'../../../../../scripts/export-filter-rating-pairs.mjs',
 	import.meta.url
 );
 const mod = await import(SCRIPT_URL.href);
+const LFO = await loadTypeScriptModule('src/lib/rb/fx/beat-fx-filter-kernel.ts');
 const {
 	exportFilterRatingPairs,
 	assertPairsManifestShape,
@@ -49,7 +55,7 @@ const {
 const SR = 8000;
 const SECONDS = 3;
 const QUANTUM = 128;
-const LABELS = ['hz', 'octave', '5ms', '20ms', 'q2', 'q4', 'q8', '12db', '24db'];
+const LABELS = 'hz octave 5ms 20ms q2 q4 q8 12db 24db sine triangle down up'.split(' ');
 const knobAt = (points, tMs) => {
 	if (tMs <= points[0].t_ms) return points[0].value;
 	for (let k = 1; k < points.length; k++) {
@@ -65,7 +71,18 @@ const targetHz = (direction, k) =>
 	direction === 'hp'
 		? 30 * (6300 / 30) ** Math.max(0, (k - 0.5) / 0.5)
 		: 20000 * (130 / 20000) ** Math.max(0, (0.5 - k) / 0.5);
-/** Deterministic double: a one-pole glide on the corner in the asked domain, and a scalar gain from the corner position, Q and slope. */
+/** LFO FILTER corner per quantum: the kernel's own cutoff law at the request's shape, direction, division and tempo. */
+const lfoCornerHz = (req, q) => {
+	const periodSec = (req.lfo_beats * 60) / req.lfo_bpm;
+	const reset = LFO.beatFxFilterResetPhase(periodSec);
+	return LFO.beatFxFilterCutoffHz(
+		(q * QUANTUM) / req.sampleRate / periodSec,
+		req.lfo_shape,
+		req.lfo_direction,
+		reset
+	);
+};
+/** Deterministic double: a one-pole glide on the corner in the asked domain (or the LFO corner), and a scalar gain from the corner position, Q and slope. */
 const testDouble = ({ peakAt = null, nanAt = null, malform = null, holdFirst = false } = {}) => {
 	let holdResolve = null;
 	const holdPromise = holdFirst
@@ -73,17 +90,11 @@ const testDouble = ({ peakAt = null, nanAt = null, malform = null, holdFirst = f
 				holdResolve = resolve;
 			})
 		: null;
-	const state = { generation: 0, callLog: [], holdResolve, holdPromise };
+	const state = { callLog: [], holdResolve, holdPromise };
 	const double = {
 		id: 'test-double:filter',
 		realPath: false,
 		callLog: state.callLog,
-		get generation() {
-			return state.generation;
-		},
-		set generation(v) {
-			state.generation = v;
-		},
 		releaseHold() {
 			if (holdResolve) {
 				holdResolve();
@@ -92,14 +103,10 @@ const testDouble = ({ peakAt = null, nanAt = null, malform = null, holdFirst = f
 			}
 		},
 		async render(req) {
-			const atGeneration = state.generation;
-			const callIndex = state.callLog.length;
-			state.callLog.push({ callIndex, generation: atGeneration });
+			const call = { callIndex: state.callLog.length, returned: false };
+			state.callLog.push(call);
 			if (holdPromise) {
 				await holdPromise;
-			}
-			if (atGeneration !== state.generation) {
-				throw new Error(`stale renderer generation ${atGeneration} vs ${state.generation}`);
 			}
 			const n = req.input[0].length;
 			const quanta = Math.ceil(n / QUANTUM);
@@ -115,7 +122,7 @@ const testDouble = ({ peakAt = null, nanAt = null, malform = null, holdFirst = f
 						targetHz(req.direction, knobAt(req.automation, ((q * QUANTUM) / req.sampleRate) * 1000))
 					) -
 						glide);
-				cornerHz[q] = fromDomain(glide);
+				cornerHz[q] = req.lfo_shape ? lfoCornerHz(req, q) : fromDomain(glide);
 			}
 			const travel = req.direction === 'hp' ? Math.log2(6300 / 30) : Math.log2(20000 / 130);
 			const pos = (hz) => Math.abs(Math.log2(hz / (req.direction === 'hp' ? 30 : 20000))) / travel;
@@ -149,6 +156,7 @@ const testDouble = ({ peakAt = null, nanAt = null, malform = null, holdFirst = f
 				bad[0] = Number.NaN;
 				result = { channels, cornerHz: bad, quantum: QUANTUM };
 			}
+			call.returned = true;
 			return result;
 		}
 	};
@@ -200,9 +208,9 @@ before(async () => {
 
 const sorted = (p) => [p.meta.a_candidate, p.meta.b_candidate].sort().join(',');
 
-test('manifest has the #9776 shape with 8 pairs covering every comparison, gesture and fixture', () => {
+test('manifest has the #9776 shape with 10 pairs covering every comparison, gesture and fixture', () => {
 	assertPairsManifestShape(manifest);
-	assert.equal(manifest.pairs.length, 8);
+	assert.equal(manifest.pairs.length, 10);
 	assert.equal(manifest.family, 'filter');
 	assert.equal(manifest.seed, DEFAULT_SEED);
 	assert.deepEqual(manifest.renderer, { id: 'test-double:filter', real_path: false });
@@ -273,10 +281,10 @@ test('sides and order are seeded: same seed reproduces, another seed changes the
 	assert.notEqual(layout(other), layout(manifest));
 	const canonicalOnA = manifest.pairs.filter(
 		(p) =>
-			['hz', '5ms', '12db'].includes(p.meta.a_candidate) ||
+			['hz', '5ms', '12db', 'sine', 'down'].includes(p.meta.a_candidate) ||
 			(p.meta.axis === 'resonance_q' && p.meta.a_candidate < p.meta.b_candidate)
 	).length;
-	assert.ok(canonicalOnA > 0 && canonicalOnA < 8, `unswapped count ${canonicalOnA}`);
+	assert.ok(canonicalOnA > 0 && canonicalOnA < 10, `unswapped count ${canonicalOnA}`);
 });
 
 test('every side carries finite proxies, HP residuals only on HP, and 5 ms glides further than 20 ms', () => {
@@ -316,7 +324,11 @@ test('meta candidates match the requests after the side swap', () => {
 		q4: { resonance_q_linear: 4 },
 		q8: { resonance_q_linear: 8 },
 		'12db': { slope_db_oct: 12 },
-		'24db': { slope_db_oct: 24 }
+		'24db': { slope_db_oct: 24 },
+		sine: { lfo_shape: 'sine', lfo_direction: 'down' },
+		triangle: { lfo_shape: 'triangle', lfo_direction: 'down' },
+		down: { lfo_shape: 'sine', lfo_direction: 'down' },
+		up: { lfo_shape: 'sine', lfo_direction: 'up' }
 	};
 	for (const p of manifest.pairs) {
 		for (const side of ['a', 'b']) {
@@ -379,16 +391,16 @@ test('a finite veto stops the export and writes nothing', async () => {
 	assert.equal(existsSync(dir), false);
 });
 
-test('assertPairsManifestShape rejects a ninth pair, a leak, a missing HP residual and a non-finite proxy', () => {
+test('assertPairsManifestShape rejects an eleventh pair, a leak, a missing HP residual and a non-finite proxy', () => {
 	const copy = () => structuredClone(manifest);
-	const nine = copy();
-	nine.pairs.push({
-		...structuredClone(nine.pairs[0]),
-		id: 'p09',
-		a: 'clips/p09-a.wav',
-		b: 'clips/p09-b.wav'
+	const eleven = copy();
+	eleven.pairs.push({
+		...structuredClone(eleven.pairs[0]),
+		id: 'p11',
+		a: 'clips/p11-a.wav',
+		b: 'clips/p11-b.wav'
 	});
-	assert.throws(() => assertPairsManifestShape(nine), /pairs must hold 1 to 8/);
+	assert.throws(() => assertPairsManifestShape(eleven), /pairs must hold 1 to 10/);
 	const leak = copy();
 	leak.pairs[0].a = 'clips/octave-a.wav';
 	assert.throws(() => assertPairsManifestShape(leak), /leaks candidate label octave/);
@@ -495,22 +507,40 @@ test('a non-real or missing renderer is refused and nothing is written', async (
 	);
 });
 
-test('a stale renderer callback after generation bump rejects and writes nothing', async () => {
+test('a valid render that resolves after the export was replaced is rejected by the exporter and writes nothing', async () => {
 	const renderer = testDouble({ holdFirst: true });
+	const replaced = new AbortController();
 	const dir = join(freshDir(), 'stale');
 	const run = trackExport(
 		exportFilterRatingPairs({
 			outDir: dir,
 			...baseExportOpts(),
-			renderer
+			renderer,
+			signal: replaced.signal
 		})
 	);
 	await spinUntil(() => renderer.callLog.length > 0);
-	renderer.generation += 1;
+	replaced.abort();
 	renderer.releaseHold();
-	await assert.rejects(run, /stale renderer generation/);
+	await assert.rejects(run, /resolved .+ after the export was replaced; stale result discarded/);
+	assert.equal(renderer.callLog[0].returned, true, 'the held render returned a valid result');
+	assert.equal(renderer.callLog.length, 1, 'no render starts after the replacement');
 	assert.equal(existsSync(dir), false);
-	assert.equal(renderer.callLog[0].generation, 0);
+});
+
+test('an export whose signal is never aborted renders past the hold and writes', async () => {
+	const renderer = testDouble({ holdFirst: true });
+	const live = new AbortController();
+	const dir = join(freshDir(), 'live');
+	const run = trackExport(
+		exportFilterRatingPairs({ outDir: dir, ...baseExportOpts(), renderer, signal: live.signal })
+	);
+	await spinUntil(() => renderer.callLog.length > 0);
+	renderer.releaseHold();
+	const { manifest: m } = await run;
+	assert.equal(m.pairs.length, 10);
+	assert.ok(renderer.callLog.every((c) => c.returned));
+	assert.equal(existsSync(join(dir, 'pairs.json')), true);
 });
 
 test('fixture release waits for in-flight exports before teardown can finish', async () => {
@@ -552,4 +582,28 @@ test('malformed render results reject with malformed result and write nothing', 
 		);
 		assert.equal(existsSync(dir), false);
 	}
+});
+
+test('the LFO FILTER gains sine vs triangle and down vs up at one division, with the other clips proxies', () => {
+	const lfoPairs = manifest.pairs.filter((p) =>
+		['lfo_shape', 'lfo_direction'].includes(p.meta.axis)
+	);
+	assert.deepEqual(lfoPairs.map(sorted).sort(), ['down,up', 'sine,triangle']);
+	const proxyKeys = Object.keys(
+		manifest.pairs.find((p) => p.meta.axis === 'slope').meta.proxies.a
+	).sort();
+	for (const p of lfoPairs) {
+		const [a, b] = [p.meta.a_request, p.meta.b_request];
+		assert.equal(a.lfo_beats, b.lfo_beats, `${p.meta.key} division`);
+		assert.equal(a.lfo_bpm, b.lfo_bpm, `${p.meta.key} tempo`);
+		for (const side of ['a', 'b'])
+			assert.deepEqual(Object.keys(p.meta.proxies[side]).sort(), proxyKeys);
+		assert.notDeepEqual(p.meta.proxies.a, p.meta.proxies.b, `${p.meta.key} sides measure the same`);
+	}
+	assert.deepEqual(manifest.baseline.lfo_shipped, {
+		lfo_shape: 'sine',
+		lfo_direction: 'down',
+		lfo_beats: 1
+	});
+	assertPairsManifestShape(manifest);
 });

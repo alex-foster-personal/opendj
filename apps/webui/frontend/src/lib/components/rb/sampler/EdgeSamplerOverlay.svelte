@@ -1,12 +1,14 @@
 <script lang="ts">
 	/**
 	 * Both edge waves (spec 7.4). One rAF loop only while an edge is awake or easing (EDGESAMP-07).
+	 * On the Electron shell it also starts the sampler store (catalogue load, master follow)
+	 * for its own lifetime.
 	 */
 	import { onMount } from 'svelte';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 	import { OVERLAY_Z } from '$lib/overlays/stack';
 	import { DEFAULT_WAVE, ZONE_PX } from '$lib/player/sampler/edge-wave';
-	import { edgeSamplerUi } from '$lib/player/sampler/edge-sampler-ui.svelte';
+	import { sampler, startSampler } from '$lib/player/sampler/sampler-store.svelte';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { nativeShellKind } from '$lib/shell/native-shell';
 	import EdgeWave, { type Pointer } from './EdgeWave.svelte';
@@ -76,11 +78,15 @@
 
 	$effect(() => {
 		void enabled;
-		void edgeSamplerUi.animBump;
+		// A flip or a pin restarts the frame loop so the tabs pop or stay out.
+		void sampler.edges.L.flipAt;
+		void sampler.edges.R.flipAt;
+		void sampler.pinned;
 		ensureLoop();
 	});
 
 	onMount(() => {
+		const stopSampler = shellOk ? startSampler() : null;
 		const onResize = (): void => {
 			innerH = window.innerHeight;
 		};
@@ -101,6 +107,7 @@
 			window.removeEventListener('resize', onResize);
 			document.removeEventListener('pointerout', docLeave);
 			if (raf !== 0) cancelAnimationFrame(raf);
+			stopSampler?.();
 		};
 	});
 </script>

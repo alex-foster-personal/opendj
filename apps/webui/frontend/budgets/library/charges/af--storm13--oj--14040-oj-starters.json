@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373188,
+  "measured_with_pr": 373633,
+  "sha": "d98c2b8476",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--14040-oj-starters grows the library surface; measured +445 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

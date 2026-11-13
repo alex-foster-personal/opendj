@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 483140,
+  "measured_with_pr": 487340,
+  "sha": "4e7f0e5fb2",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--10043-track-filter-bar grows the performance surface; measured +4200 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

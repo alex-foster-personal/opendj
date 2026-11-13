@@ -291,6 +291,75 @@ def test_submit_resume_reuses_already_pushed_remote_branch(tmp_path, monkeypatch
         assert _origin_ref_sha(origin, case["branch"])
 
 
+class _FirstPushFailsStub(_SubmitGhStub):
+    """Real git except the first ``git push``, which fails before reaching origin."""
+
+    def __init__(self, target: str) -> None:
+        """Start with the first push armed to fail and every PR create succeeding."""
+        super().__init__(target)
+        self._create_calls = 1
+        self._push_failed = False
+
+    def run(self, args, *, cwd=None, check=True):
+        """Interrupt the very first push; delegate everything else to the gh stub."""
+        argv = list(args)
+        if argv[:2] == ["git", "push"] and not self._push_failed:
+            self._push_failed = True
+            raise CampaignError("command failed (128): connection reset")
+        return super().run(argv, cwd=cwd, check=check)
+
+
+def _submit_argv(manifest: Path, target: str, *extra: str) -> list[str]:
+    """Build the live submit argv for a manifest and confirmed target."""
+    return ["submit", *extra, "--manifest", str(manifest), "--execute", "--confirm-target", target]
+
+
+def test_submit_resume_after_interrupt_before_first_push_creates_branch(tmp_path):
+    """Resume after a failed first push creates the branch once and finishes all cases."""
+    campaign, manifest, origin = _prepared_submit_fixture(tmp_path)
+    target = campaign["target_repository"]
+    runner = _FirstPushFailsStub(target)
+
+    with pytest.raises(SystemExit):
+        main(_submit_argv(manifest, target), runner=runner)
+    with pytest.raises(subprocess.CalledProcessError):
+        _origin_ref_sha(origin, campaign["cases"][0]["branch"])
+
+    assert main(_submit_argv(manifest, target, "--resume"), runner=runner) == 0
+
+    submitted = json.loads(manifest.read_text(encoding="utf-8"))
+    assert submitted["state"] == "submitted"
+    assert [row["case_id"] for row in submitted["prs"]] == [case["id"] for case in campaign["cases"]]
+    assert len({row["number"] for row in submitted["prs"]}) == CASE_COUNT
+    for case, row in zip(campaign["cases"], submitted["prs"], strict=True):
+        assert _origin_ref_sha(origin, case["branch"]) == row["head_sha"]
+
+
+def test_submit_resume_refuses_conflicting_remote_branch(tmp_path, capsys):
+    """A remote case branch that is not this campaign's case is reported, never reused or overwritten."""
+    campaign, manifest, origin = _prepared_submit_fixture(tmp_path)
+    target = campaign["target_repository"]
+    branch = campaign["cases"][0]["branch"]
+    checkout = Path(campaign["checkout"])
+    _git(checkout, "switch", "-c", branch)
+    (checkout / "foreign.txt").write_text("someone else\n", encoding="utf-8")
+    _git(checkout, "add", "foreign.txt")
+    _git(checkout, "commit", "-m", "foreign")
+    _git(checkout, "push", "origin", branch)
+    _git(checkout, "switch", campaign["base_branch"])
+    foreign_sha = _origin_ref_sha(origin, branch)
+    runner = _SubmitGhStub(target)
+
+    with pytest.raises(SystemExit) as refused:
+        main(_submit_argv(manifest, target, "--resume"), runner=runner)
+
+    assert refused.value.code == 2
+    assert "remote branch conflict" in capsys.readouterr().err
+    assert _origin_ref_sha(origin, branch) == foreign_sha
+    assert runner.git_pushes == []
+    assert runner._create_calls == 0
+
+
 class _PrepareGhStub(CommandRunner):
     """Real git; stub only gh. Records whether prepared_at is on disk at push."""
 

@@ -59,6 +59,8 @@ from apps.transition_score import signals
 from apps.transition_score.contract import (
     MIN_CORE_MEASURED,
     SCORER_VERSION,
+    VOCAL_CUT_GAIN_DB,
+    VOCAL_CUT_WINDOW_S,
     ScoreResult,
     Veto,
     core_measured,
@@ -271,6 +273,8 @@ class RenderContext:
     in_bass_entry_s: float | None = None
     in_bass_entry_unknown_reason: str = "no incoming bass entry from the profile (bar_bass)"
     in_natural: np.ndarray | None = None
+    #: Bounded [0,1] segment semantic alignment; never lifts M when layer-0 vetoes fire (ENRICH-13622).
+    semantic_alignment: float = 0.0
 
     def __post_init__(self) -> None:
         start, end = self.overlap_s
@@ -280,6 +284,8 @@ class RenderContext:
             raise ValueError(f"beat_s must be positive, got {self.beat_s}")
         if self.intent is not None and self.intent not in INTENTS:
             raise ValueError(f"intent must be one of {INTENTS} or None, got {self.intent!r}")
+        if not 0.0 <= self.semantic_alignment <= 1.0:
+            raise ValueError(f"semantic_alignment must be in [0, 1], got {self.semantic_alignment}")
 
 
 @dataclass
@@ -1056,6 +1062,33 @@ def _vocal_overlap(t: _Tally, ctx: RenderContext) -> None:
     t.factors["vocal_overlap"] = squash(seconds, VOCAL_OVERLAP_KNEE_S)
 
 
+def vocal_cut_crossing_s(out_deck: np.ndarray, ctx: RenderContext) -> float | None:
+    """When the outgoing deck first falls VOCAL_CUT_GAIN_DB under its pre-overlap level, or None if it never does."""
+    db = signals.frame_rms_db(out_deck, ctx.sample_rate, VOCAL_FRAME_S)
+    start = int(ctx.overlap_s[0] / VOCAL_FRAME_S)
+    if len(db) == 0 or start >= len(db):
+        return None
+    ref = float(np.median(db[:start])) if start > 0 else float(db[0])
+    below = np.flatnonzero(db[start:] < ref + VOCAL_CUT_GAIN_DB)
+    return None if len(below) == 0 else (start + int(below[0])) * VOCAL_FRAME_S
+
+
+def _vocal_cut(t: _Tally, out_deck: np.ndarray, ctx: RenderContext) -> None:
+    if ctx.vocal_out is None:
+        t.unknown["vocal_cut"] = f"not measured, missing stem: {ctx.vocal_unknown_reason}"
+        return
+    crossing = vocal_cut_crossing_s(out_deck, ctx)
+    if crossing is None:
+        t.unknown["vocal_cut"] = "the outgoing deck never falls below its inaudible threshold"
+        return
+    db = signals.frame_rms_db(ctx.vocal_out, ctx.sample_rate, VOCAL_FRAME_S)
+    lo, hi = int(max(0.0, crossing - VOCAL_CUT_WINDOW_S) / VOCAL_FRAME_S), int(crossing / VOCAL_FRAME_S)
+    active_s = float(np.sum(db[lo:hi] > VOCAL_ACTIVE_DBFS)) * VOCAL_FRAME_S
+    t.metrics["vocal_cut_crossing_s"] = round(crossing, 2)
+    t.metrics["vocal_cut_active_s"] = round(active_s, 2)
+    t.metrics["vocal_cut"] = active_s > 0.0
+
+
 def _step_time(deck: np.ndarray, sr: int, at_s: float, search_s: float) -> float | None:
     """Where the deck's level jumps nearest ``at_s``, or None when no jump of STEP_MIN_DB is there."""
     frame_s = 0.001
@@ -1239,11 +1272,12 @@ def score_render(mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx
     _loudness(t, mix, ctx)
     _bass_overlap(t, mix, out_deck, in_deck, ctx)
     _vocal_overlap(t, ctx)
+    _vocal_cut(t, out_deck, ctx)
     _cut_to_downbeat(t, {"out": out_deck, "in": in_deck}, ctx)
     _seam_clicks(t, mix, ctx)
     measured = core_measured(t.factors)
     if t.vetoes:
-        score: float | None = 0.0
+        score = 0.0
     elif measured.k < MIN_CORE_MEASURED:
         score = None
         t.unknown["score"] = (
@@ -1251,6 +1285,15 @@ def score_render(mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx
         )
     else:
         score = round(composite(t.factors), 4)
+    if ctx.semantic_alignment > 0.0:
+        from apps.genre_infer import segment_claims
+
+        score = segment_claims.m_with_semantic_overlay(
+            score=score,
+            vetoes=t.vetoes,
+            semantic_factor=ctx.semantic_alignment,
+        )
+        t.metrics["semantic_alignment"] = round(ctx.semantic_alignment, 4)
     return ScoreResult(
         metrics_json=json.dumps(t.metrics),
         factors_json=json.dumps({k: round(v, 4) for k, v in t.factors.items()}),

@@ -34,13 +34,17 @@
 #       payload / verify-dmg-app / dmg.
 #   MDT_MACOS_NOTARY_KEYCHAIN_PROFILE `xcrun notarytool store-credentials`
 #       profile name. Required by notarize.
-#   MDT_MACOS_NOTARY_KEYCHAIN         optional path of the keychain that holds
-#       that profile. Without it notarytool resolves the profile through the
-#       DEFAULT keychain, which is the login keychain and stays locked in an
-#       ssh or launchd session nobody has logged in to at the screen: the
-#       Air, Wed 30 Sep 2026, "keychainLocked(keychainName: \"default\")"
-#       while the profile sat unlocked in opendj-signing.keychain-db. Set, it
-#       must name an existing file, and every notarytool call passes it.
+#   MDT_MACOS_NOTARY_KEYCHAIN         keychain FILE that holds that profile.
+#       Required by notarize / notarize-app. A build host gets it from
+#       build_host_signing.sh apply (~/.zshenv); a GUI Mac whose profile is
+#       in its login keychain sets it to ~/Library/Keychains/login.keychain-db.
+#       Without it notarytool resolves the profile through the DEFAULT
+#       keychain, which is the login keychain and stays locked in an ssh or
+#       launchd session nobody has logged in to at the screen: the Air, Wed
+#       30 Sep 2026, "keychainLocked(keychainName: \"default\")" while the
+#       profile sat unlocked in opendj-signing.keychain-db. Unset or missing
+#       is refused before anything is submitted. Supersedes: notarytool's
+#       implicit default-keychain lookup (no --keychain) (OPS-3944).
 #   MDT_MACOS_SIGNING_KEYCHAIN        optional path of the keychain that holds
 #       the Developer ID Application identity. Without it codesign resolves
 #       the identity through the default keychain search list. Set, it must
@@ -101,9 +105,19 @@ _require_identity() {
         "MDT_MACOS_SIGNING_IDENTITY is not set. This is the Developer ID Application identity, as printed by: security find-identity -v -p codesigning"
 }
 
+# notarytool reads --keychain-profile from the DEFAULT keychain unless told
+# otherwise, and the default (login) keychain is locked in a headless session:
+# `keychainLocked(keychainName: "default")`, measured on silver and demon-llama
+# Fri 25 Sep 2026 while the profile sat in an unlocked dedicated keychain.
+# So the keychain is always NAMED, and every notarytool call passes it. There
+# is no implicit default-keychain path left to fall back to (OPS-3944).
 _require_notary_profile() {
     [ -n "${MDT_MACOS_NOTARY_KEYCHAIN_PROFILE:-}" ] || die \
         "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE is not set. Create one with: xcrun notarytool store-credentials"
+    [ -n "${MDT_MACOS_NOTARY_KEYCHAIN:-}" ] || die \
+        "MDT_MACOS_NOTARY_KEYCHAIN is not set: name the keychain FILE that holds profile '$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE'. A build host gets it from (private path) apply --host-label <host>; a GUI Mac whose profile is in its login keychain sets it to \$HOME/Library/Keychains/login.keychain-db."
+    [ -f "$MDT_MACOS_NOTARY_KEYCHAIN" ] || die \
+        "MDT_MACOS_NOTARY_KEYCHAIN=$MDT_MACOS_NOTARY_KEYCHAIN does not exist. Run (private path) apply --host-label <host>, or point it at the keychain that holds the profile."
 }
 
 # notarytool's --keychain, as an argument list, when MDT_MACOS_NOTARY_KEYCHAIN
@@ -425,7 +439,7 @@ cmd_notarize() {
     elapsed=$(($(date +%s) - started))
 
     printf '%s\n' "$out" | grep -q 'status: Accepted' || die \
-        "the notary service did not accept the submission (see the status above). Read the full log with: xcrun notarytool log <submission-id> --keychain-profile $MDT_MACOS_NOTARY_KEYCHAIN_PROFILE"
+        "the notary service did not accept the submission (see the status above). Read the full log with: xcrun notarytool log <submission-id> --keychain-profile $MDT_MACOS_NOTARY_KEYCHAIN_PROFILE --keychain $MDT_MACOS_NOTARY_KEYCHAIN"
 
     xcrun stapler staple "$dmg" || die "stapling failed"
     xcrun stapler validate "$dmg" || die "the staple does not validate"

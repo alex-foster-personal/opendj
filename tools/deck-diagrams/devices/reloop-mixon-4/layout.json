@@ -1,0 +1,2333 @@
+{
+  "device": "Reloop Mixon 4",
+  "vendor": "Reloop",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1055,
+    "height": 607
+  },
+  "layers": [
+    "base",
+    "shift",
+    "deck_cd",
+    "deck_cd_shift"
+  ],
+  "out_of_scope": [
+    "led_return_messages",
+    "pad_modes_other_than_hot_cue",
+    "sysex"
+  ],
+  "controls": [
+    {
+      "id": "mx4-l_pad1",
+      "fig": "l_pad1",
+      "label": "L PAD 1",
+      "kind": "pad",
+      "x": 9.4,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad1",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": "l_pad1_shift",
+        "deck_cd_name": "l_pad1_cd",
+        "deck_cd_shift_name": "l_pad1_cd_shift"
+      },
+      "notes": "L PAD 1 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad2",
+      "fig": "l_pad2",
+      "label": "L PAD 2",
+      "kind": "pad",
+      "x": 15.0,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad2",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": "l_pad2_shift",
+        "deck_cd_name": "l_pad2_cd",
+        "deck_cd_shift_name": "l_pad2_cd_shift"
+      },
+      "notes": "L PAD 2 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad3",
+      "fig": "l_pad3",
+      "label": "L PAD 3",
+      "kind": "pad",
+      "x": 20.4,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad3",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": "l_pad3_shift",
+        "deck_cd_name": "l_pad3_cd",
+        "deck_cd_shift_name": "l_pad3_cd_shift"
+      },
+      "notes": "L PAD 3 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad4",
+      "fig": "l_pad4",
+      "label": "L PAD 4",
+      "kind": "pad",
+      "x": 25.9,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad4",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": "l_pad4_shift",
+        "deck_cd_name": "l_pad4_cd",
+        "deck_cd_shift_name": "l_pad4_cd_shift"
+      },
+      "notes": "L PAD 4 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad5",
+      "fig": "l_pad5",
+      "label": "L PAD 5",
+      "kind": "pad",
+      "x": 9.4,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad5",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": "l_pad5_shift",
+        "deck_cd_name": "l_pad5_cd",
+        "deck_cd_shift_name": "l_pad5_cd_shift"
+      },
+      "notes": "L PAD 5 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad6",
+      "fig": "l_pad6",
+      "label": "L PAD 6",
+      "kind": "pad",
+      "x": 15.0,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad6",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": "l_pad6_shift",
+        "deck_cd_name": "l_pad6_cd",
+        "deck_cd_shift_name": "l_pad6_cd_shift"
+      },
+      "notes": "L PAD 6 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad7",
+      "fig": "l_pad7",
+      "label": "L PAD 7",
+      "kind": "pad",
+      "x": 20.4,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad7",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": "l_pad7_shift",
+        "deck_cd_name": "l_pad7_cd",
+        "deck_cd_shift_name": "l_pad7_cd_shift"
+      },
+      "notes": "L PAD 7 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_pad8",
+      "fig": "l_pad8",
+      "label": "L PAD 8",
+      "kind": "pad",
+      "x": 25.9,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pad8",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": "l_pad8_shift",
+        "deck_cd_name": "l_pad8_cd",
+        "deck_cd_shift_name": "l_pad8_cd_shift"
+      },
+      "notes": "L PAD 8 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-l_hotcue",
+      "fig": "l_hotcue",
+      "label": "L HOT CUE",
+      "kind": "button",
+      "x": 9.4,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_mode_hotcue",
+        "type": "note",
+        "ch": 5,
+        "code": 22,
+        "deck_cd_name": "l_mode_hotcue_cd"
+      },
+      "notes": "L HOT CUE mode button note (on release)"
+    },
+    {
+      "id": "mx4-l_loop_roll",
+      "fig": "l_loop_roll",
+      "label": "L LOOP ROLL",
+      "kind": "button",
+      "x": 15.0,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_mode_loop_roll",
+        "type": "note",
+        "ch": 5,
+        "code": 23,
+        "shift_name": "l_mode_loop_roll_shift",
+        "deck_cd_name": "l_mode_loop_roll_cd",
+        "deck_cd_shift_name": "l_mode_loop_roll_cd_shift"
+      },
+      "notes": "L LOOP ROLL mode button note (on release)"
+    },
+    {
+      "id": "mx4-l_sampler",
+      "fig": "l_sampler",
+      "label": "L SAMPLER",
+      "kind": "button",
+      "x": 20.4,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_mode_sampler",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": "l_mode_sampler_shift",
+        "deck_cd_name": "l_mode_sampler_cd",
+        "deck_cd_shift_name": "l_mode_sampler_cd_shift"
+      },
+      "notes": "L SAMPLER mode button note (on release)"
+    },
+    {
+      "id": "mx4-l_slicer",
+      "fig": "l_slicer",
+      "label": "L SLICER",
+      "kind": "button",
+      "x": 25.9,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_mode_slicer",
+        "type": "note",
+        "ch": 5,
+        "code": 25,
+        "shift_name": "l_mode_slicer_shift",
+        "deck_cd_name": "l_mode_slicer_cd",
+        "deck_cd_shift_name": "l_mode_slicer_cd_shift"
+      },
+      "notes": "L SLICER mode button note (on release)"
+    },
+    {
+      "id": "mx4-l_sync",
+      "fig": "l_sync",
+      "label": "L SYNC",
+      "kind": "button",
+      "x": 2.3,
+      "y": 71.5,
+      "w": 5.3,
+      "h": 3.6,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_sync",
+        "type": "note",
+        "ch": 5,
+        "code": 14,
+        "shift_name": "l_sync_shift",
+        "deck_cd_name": "l_sync_cd",
+        "deck_cd_shift_name": "l_sync_cd_shift"
+      },
+      "notes": "L SYNC note"
+    },
+    {
+      "id": "mx4-l_cue",
+      "fig": "l_cue",
+      "label": "L CUE",
+      "kind": "button",
+      "x": 2.3,
+      "y": 77.4,
+      "w": 5.3,
+      "h": 6.6,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_cue",
+        "type": "note",
+        "ch": 5,
+        "code": 13,
+        "shift_name": "l_cue_shift",
+        "deck_cd_name": "l_cue_cd",
+        "deck_cd_shift_name": "l_cue_cd_shift"
+      },
+      "notes": "L CUE note"
+    },
+    {
+      "id": "mx4-l_play",
+      "fig": "l_play",
+      "label": "L PLAY/PAUSE",
+      "kind": "button",
+      "x": 2.3,
+      "y": 86.5,
+      "w": 5.3,
+      "h": 6.6,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_play",
+        "type": "note",
+        "ch": 5,
+        "code": 12,
+        "shift_name": "l_play_shift",
+        "deck_cd_name": "l_play_cd",
+        "deck_cd_shift_name": "l_play_cd_shift"
+      },
+      "notes": "L PLAY/PAUSE note"
+    },
+    {
+      "id": "mx4-l_slip",
+      "fig": "l_slip",
+      "label": "L SLIP",
+      "kind": "button",
+      "x": 2.9,
+      "y": 32.8,
+      "w": 2.1,
+      "h": 3.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_slip",
+        "type": "note",
+        "ch": 5,
+        "code": 15,
+        "shift_name": "l_slip_shift",
+        "deck_cd_name": "l_slip_cd",
+        "deck_cd_shift_name": "l_slip_cd_shift"
+      },
+      "notes": "L SLIP note (position estimated)"
+    },
+    {
+      "id": "mx4-l_keylock",
+      "fig": "l_keylock",
+      "label": "L KEY LOCK",
+      "kind": "button",
+      "x": 2.9,
+      "y": 38.9,
+      "w": 2.1,
+      "h": 3.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_keylock",
+        "type": "note",
+        "ch": 5,
+        "code": 16,
+        "shift_name": "l_keylock_shift",
+        "deck_cd_name": "l_keylock_cd",
+        "deck_cd_shift_name": "l_keylock_cd_shift"
+      },
+      "notes": "L KEY LOCK note (position estimated)"
+    },
+    {
+      "id": "mx4-l_keysync",
+      "fig": "l_keysync",
+      "label": "L KEY SYNC",
+      "kind": "button",
+      "x": 2.9,
+      "y": 44.6,
+      "w": 2.1,
+      "h": 3.0,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_keysync",
+        "type": "note",
+        "ch": 5,
+        "code": 17,
+        "shift_name": "l_keysync_shift",
+        "deck_cd_name": "l_keysync_cd",
+        "deck_cd_shift_name": "l_keysync_cd_shift"
+      },
+      "notes": "L KEY SYNC note (position estimated)"
+    },
+    {
+      "id": "mx4-l_loop",
+      "fig": "l_loop",
+      "label": "L LOOP",
+      "kind": "encoder",
+      "x": 2.4,
+      "y": 50.2,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_loop",
+        "type": "cc",
+        "ch": 5,
+        "code": 8,
+        "deck_cd_name": "l_loop_cd"
+      },
+      "notes": "L LOOP relative encoder (3Fh/41h)"
+    },
+    {
+      "id": "mx4-l_autoloop",
+      "fig": "l_autoloop",
+      "label": "L AUTO LOOP",
+      "kind": "button",
+      "x": 2.4,
+      "y": 60.5,
+      "w": 4.4,
+      "h": 2.3,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_autoloop",
+        "type": "note",
+        "ch": 5,
+        "code": 8,
+        "deck_cd_name": "l_autoloop_cd"
+      },
+      "notes": "L AUTO LOOP note"
+    },
+    {
+      "id": "mx4-l_param_minus",
+      "fig": "l_param_minus",
+      "label": "L PARAM -",
+      "kind": "button",
+      "x": 2.6,
+      "y": 66.6,
+      "w": 2.1,
+      "h": 2.6,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_param_minus",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": "l_param_minus_shift",
+        "deck_cd_name": "l_param_minus_cd",
+        "deck_cd_shift_name": "l_param_minus_cd_shift"
+      },
+      "notes": "L PARAM - note"
+    },
+    {
+      "id": "mx4-l_param_plus",
+      "fig": "l_param_plus",
+      "label": "L PARAM +",
+      "kind": "button",
+      "x": 5.8,
+      "y": 66.6,
+      "w": 2.1,
+      "h": 2.6,
+      "layer": "both",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_param_plus",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": "l_param_plus_shift",
+        "deck_cd_name": "l_param_plus_cd",
+        "deck_cd_shift_name": "l_param_plus_cd_shift"
+      },
+      "notes": "L PARAM + note"
+    },
+    {
+      "id": "mx4-l_shift",
+      "fig": "l_shift",
+      "label": "L SHIFT",
+      "kind": "button",
+      "x": 9.6,
+      "y": 66.2,
+      "w": 2.1,
+      "h": 2.6,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_shift",
+        "type": "note",
+        "ch": 11,
+        "code": 3
+      },
+      "notes": "SHIFT note (global channel 0Ah)"
+    },
+    {
+      "id": "mx4-l_deck",
+      "fig": "l_deck",
+      "label": "L DECK",
+      "kind": "button",
+      "x": 27.9,
+      "y": 62.1,
+      "w": 2.5,
+      "h": 4.3,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_deck",
+        "type": "note",
+        "ch": 7,
+        "code": 18,
+        "deck_cd_name": "l_deck_cd"
+      },
+      "notes": "L DECK switch note (vendor channel column 6 7 4 5)"
+    },
+    {
+      "id": "mx4-l_jog",
+      "fig": "l_jog",
+      "label": "L JOG",
+      "kind": "jog",
+      "x": 8.5,
+      "y": 29.7,
+      "w": 21.8,
+      "h": 37.9,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_jog",
+        "type": "cc",
+        "ch": 5,
+        "code": 6,
+        "deck_cd_name": "l_jog_cd"
+      },
+      "notes": "L JOG WHEEL relative (3Fh/41h); touch note 0x07"
+    },
+    {
+      "id": "mx4-l_pitch",
+      "fig": "l_pitch",
+      "label": "L PITCH",
+      "kind": "fader",
+      "x": 3.1,
+      "y": 9.9,
+      "w": 2.3,
+      "h": 19.8,
+      "layer": "base",
+      "section": "deck_l",
+      "midi": {
+        "name": "l_pitch",
+        "type": "pitchbend",
+        "ch": 5,
+        "code": null,
+        "deck_cd_name": "l_pitch_cd"
+      },
+      "notes": "pitch bend"
+    },
+    {
+      "id": "mx4-l_fx1",
+      "fig": "l_fx1",
+      "label": "L EFFECT 1",
+      "kind": "knob",
+      "x": 10.1,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx1",
+        "type": "cc",
+        "ch": 9,
+        "code": 0
+      },
+      "notes": "FX unit L EFFECT 1 absolute CC"
+    },
+    {
+      "id": "mx4-l_fx_on1",
+      "fig": "l_fx_on1",
+      "label": "L FX ON 1",
+      "kind": "button",
+      "x": 9.4,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx_on1",
+        "type": "note",
+        "ch": 9,
+        "code": 0
+      },
+      "notes": "FX unit L ON 1 note"
+    },
+    {
+      "id": "mx4-l_fx2",
+      "fig": "l_fx2",
+      "label": "L EFFECT 2",
+      "kind": "knob",
+      "x": 15.7,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx2",
+        "type": "cc",
+        "ch": 9,
+        "code": 1
+      },
+      "notes": "FX unit L EFFECT 2 absolute CC"
+    },
+    {
+      "id": "mx4-l_fx_on2",
+      "fig": "l_fx_on2",
+      "label": "L FX ON 2",
+      "kind": "button",
+      "x": 15.0,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx_on2",
+        "type": "note",
+        "ch": 9,
+        "code": 1
+      },
+      "notes": "FX unit L ON 2 note"
+    },
+    {
+      "id": "mx4-l_fx3",
+      "fig": "l_fx3",
+      "label": "L EFFECT 3",
+      "kind": "knob",
+      "x": 21.1,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx3",
+        "type": "cc",
+        "ch": 9,
+        "code": 2
+      },
+      "notes": "FX unit L EFFECT 3 absolute CC"
+    },
+    {
+      "id": "mx4-l_fx_on3",
+      "fig": "l_fx_on3",
+      "label": "L FX ON 3",
+      "kind": "button",
+      "x": 20.4,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx_on3",
+        "type": "note",
+        "ch": 9,
+        "code": 2
+      },
+      "notes": "FX unit L ON 3 note"
+    },
+    {
+      "id": "mx4-l_fx_param",
+      "fig": "l_fx_param",
+      "label": "L FX PARAMETER",
+      "kind": "encoder",
+      "x": 26.6,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx_param",
+        "type": "cc",
+        "ch": 9,
+        "code": 3
+      },
+      "notes": "FX unit L PARAMETER relative (3Fh/41h); push note 0x03"
+    },
+    {
+      "id": "mx4-l_fx_tap",
+      "fig": "l_fx_tap",
+      "label": "L TAP",
+      "kind": "button",
+      "x": 25.9,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_l",
+      "midi": {
+        "name": "l_fx_tap",
+        "type": "note",
+        "ch": 9,
+        "code": 4
+      },
+      "notes": "FX unit L TAP note"
+    },
+    {
+      "id": "mx4-r_pad1",
+      "fig": "r_pad1",
+      "label": "R PAD 1",
+      "kind": "pad",
+      "x": 85.9,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad1",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": "r_pad1_shift",
+        "deck_cd_name": "r_pad1_cd",
+        "deck_cd_shift_name": "r_pad1_cd_shift"
+      },
+      "notes": "R PAD 1 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad2",
+      "fig": "r_pad2",
+      "label": "R PAD 2",
+      "kind": "pad",
+      "x": 80.3,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad2",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": "r_pad2_shift",
+        "deck_cd_name": "r_pad2_cd",
+        "deck_cd_shift_name": "r_pad2_cd_shift"
+      },
+      "notes": "R PAD 2 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad3",
+      "fig": "r_pad3",
+      "label": "R PAD 3",
+      "kind": "pad",
+      "x": 74.9,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad3",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": "r_pad3_shift",
+        "deck_cd_name": "r_pad3_cd",
+        "deck_cd_shift_name": "r_pad3_cd_shift"
+      },
+      "notes": "R PAD 3 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad4",
+      "fig": "r_pad4",
+      "label": "R PAD 4",
+      "kind": "pad",
+      "x": 69.4,
+      "y": 76.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad4",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": "r_pad4_shift",
+        "deck_cd_name": "r_pad4_cd",
+        "deck_cd_shift_name": "r_pad4_cd_shift"
+      },
+      "notes": "R PAD 4 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad5",
+      "fig": "r_pad5",
+      "label": "R PAD 5",
+      "kind": "pad",
+      "x": 85.9,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad5",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": "r_pad5_shift",
+        "deck_cd_name": "r_pad5_cd",
+        "deck_cd_shift_name": "r_pad5_cd_shift"
+      },
+      "notes": "R PAD 5 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad6",
+      "fig": "r_pad6",
+      "label": "R PAD 6",
+      "kind": "pad",
+      "x": 80.3,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad6",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": "r_pad6_shift",
+        "deck_cd_name": "r_pad6_cd",
+        "deck_cd_shift_name": "r_pad6_cd_shift"
+      },
+      "notes": "R PAD 6 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad7",
+      "fig": "r_pad7",
+      "label": "R PAD 7",
+      "kind": "pad",
+      "x": 74.9,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad7",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": "r_pad7_shift",
+        "deck_cd_name": "r_pad7_cd",
+        "deck_cd_shift_name": "r_pad7_cd_shift"
+      },
+      "notes": "R PAD 7 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_pad8",
+      "fig": "r_pad8",
+      "label": "R PAD 8",
+      "kind": "pad",
+      "x": 69.4,
+      "y": 85.8,
+      "w": 4.7,
+      "h": 7.9,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pad8",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": "r_pad8_shift",
+        "deck_cd_name": "r_pad8_cd",
+        "deck_cd_shift_name": "r_pad8_cd_shift"
+      },
+      "notes": "R PAD 8 HOT CUE mode note"
+    },
+    {
+      "id": "mx4-r_hotcue",
+      "fig": "r_hotcue",
+      "label": "R HOT CUE",
+      "kind": "button",
+      "x": 85.9,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_mode_hotcue",
+        "type": "note",
+        "ch": 6,
+        "code": 22,
+        "deck_cd_name": "r_mode_hotcue_cd"
+      },
+      "notes": "R HOT CUE mode button note (on release)"
+    },
+    {
+      "id": "mx4-r_loop_roll",
+      "fig": "r_loop_roll",
+      "label": "R LOOP ROLL",
+      "kind": "button",
+      "x": 80.3,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_mode_loop_roll",
+        "type": "note",
+        "ch": 6,
+        "code": 23,
+        "shift_name": "r_mode_loop_roll_shift",
+        "deck_cd_name": "r_mode_loop_roll_cd",
+        "deck_cd_shift_name": "r_mode_loop_roll_cd_shift"
+      },
+      "notes": "R LOOP ROLL mode button note (on release)"
+    },
+    {
+      "id": "mx4-r_sampler",
+      "fig": "r_sampler",
+      "label": "R SAMPLER",
+      "kind": "button",
+      "x": 74.9,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_mode_sampler",
+        "type": "note",
+        "ch": 6,
+        "code": 24,
+        "shift_name": "r_mode_sampler_shift",
+        "deck_cd_name": "r_mode_sampler_cd",
+        "deck_cd_shift_name": "r_mode_sampler_cd_shift"
+      },
+      "notes": "R SAMPLER mode button note (on release)"
+    },
+    {
+      "id": "mx4-r_slicer",
+      "fig": "r_slicer",
+      "label": "R SLICER",
+      "kind": "button",
+      "x": 69.4,
+      "y": 72.2,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_mode_slicer",
+        "type": "note",
+        "ch": 6,
+        "code": 25,
+        "shift_name": "r_mode_slicer_shift",
+        "deck_cd_name": "r_mode_slicer_cd",
+        "deck_cd_shift_name": "r_mode_slicer_cd_shift"
+      },
+      "notes": "R SLICER mode button note (on release)"
+    },
+    {
+      "id": "mx4-r_sync",
+      "fig": "r_sync",
+      "label": "R SYNC",
+      "kind": "button",
+      "x": 92.4,
+      "y": 71.5,
+      "w": 5.3,
+      "h": 3.6,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_sync",
+        "type": "note",
+        "ch": 6,
+        "code": 14,
+        "shift_name": "r_sync_shift",
+        "deck_cd_name": "r_sync_cd",
+        "deck_cd_shift_name": "r_sync_cd_shift"
+      },
+      "notes": "R SYNC note"
+    },
+    {
+      "id": "mx4-r_cue",
+      "fig": "r_cue",
+      "label": "R CUE",
+      "kind": "button",
+      "x": 92.4,
+      "y": 77.4,
+      "w": 5.3,
+      "h": 6.6,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_cue",
+        "type": "note",
+        "ch": 6,
+        "code": 13,
+        "shift_name": "r_cue_shift",
+        "deck_cd_name": "r_cue_cd",
+        "deck_cd_shift_name": "r_cue_cd_shift"
+      },
+      "notes": "R CUE note"
+    },
+    {
+      "id": "mx4-r_play",
+      "fig": "r_play",
+      "label": "R PLAY/PAUSE",
+      "kind": "button",
+      "x": 92.4,
+      "y": 86.5,
+      "w": 5.3,
+      "h": 6.6,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_play",
+        "type": "note",
+        "ch": 6,
+        "code": 12,
+        "shift_name": "r_play_shift",
+        "deck_cd_name": "r_play_cd",
+        "deck_cd_shift_name": "r_play_cd_shift"
+      },
+      "notes": "R PLAY/PAUSE note"
+    },
+    {
+      "id": "mx4-r_slip",
+      "fig": "r_slip",
+      "label": "R SLIP",
+      "kind": "button",
+      "x": 95.0,
+      "y": 32.8,
+      "w": 2.1,
+      "h": 3.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_slip",
+        "type": "note",
+        "ch": 6,
+        "code": 15,
+        "shift_name": "r_slip_shift",
+        "deck_cd_name": "r_slip_cd",
+        "deck_cd_shift_name": "r_slip_cd_shift"
+      },
+      "notes": "R SLIP note (position estimated)"
+    },
+    {
+      "id": "mx4-r_keylock",
+      "fig": "r_keylock",
+      "label": "R KEY LOCK",
+      "kind": "button",
+      "x": 95.0,
+      "y": 38.9,
+      "w": 2.1,
+      "h": 3.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_keylock",
+        "type": "note",
+        "ch": 6,
+        "code": 16,
+        "shift_name": "r_keylock_shift",
+        "deck_cd_name": "r_keylock_cd",
+        "deck_cd_shift_name": "r_keylock_cd_shift"
+      },
+      "notes": "R KEY LOCK note (position estimated)"
+    },
+    {
+      "id": "mx4-r_keysync",
+      "fig": "r_keysync",
+      "label": "R KEY SYNC",
+      "kind": "button",
+      "x": 95.0,
+      "y": 44.6,
+      "w": 2.1,
+      "h": 3.0,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_keysync",
+        "type": "note",
+        "ch": 6,
+        "code": 17,
+        "shift_name": "r_keysync_shift",
+        "deck_cd_name": "r_keysync_cd",
+        "deck_cd_shift_name": "r_keysync_cd_shift"
+      },
+      "notes": "R KEY SYNC note (position estimated)"
+    },
+    {
+      "id": "mx4-r_loop",
+      "fig": "r_loop",
+      "label": "R LOOP",
+      "kind": "encoder",
+      "x": 94.8,
+      "y": 50.2,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_loop",
+        "type": "cc",
+        "ch": 6,
+        "code": 8,
+        "deck_cd_name": "r_loop_cd"
+      },
+      "notes": "R LOOP relative encoder (3Fh/41h)"
+    },
+    {
+      "id": "mx4-r_autoloop",
+      "fig": "r_autoloop",
+      "label": "R AUTO LOOP",
+      "kind": "button",
+      "x": 93.3,
+      "y": 60.5,
+      "w": 4.4,
+      "h": 2.3,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_autoloop",
+        "type": "note",
+        "ch": 6,
+        "code": 8,
+        "deck_cd_name": "r_autoloop_cd"
+      },
+      "notes": "R AUTO LOOP note"
+    },
+    {
+      "id": "mx4-r_param_minus",
+      "fig": "r_param_minus",
+      "label": "R PARAM -",
+      "kind": "button",
+      "x": 95.4,
+      "y": 66.6,
+      "w": 2.1,
+      "h": 2.6,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_param_minus",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": "r_param_minus_shift",
+        "deck_cd_name": "r_param_minus_cd",
+        "deck_cd_shift_name": "r_param_minus_cd_shift"
+      },
+      "notes": "R PARAM - note"
+    },
+    {
+      "id": "mx4-r_param_plus",
+      "fig": "r_param_plus",
+      "label": "R PARAM +",
+      "kind": "button",
+      "x": 92.1,
+      "y": 66.6,
+      "w": 2.1,
+      "h": 2.6,
+      "layer": "both",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_param_plus",
+        "type": "note",
+        "ch": 6,
+        "code": 11,
+        "shift_name": "r_param_plus_shift",
+        "deck_cd_name": "r_param_plus_cd",
+        "deck_cd_shift_name": "r_param_plus_cd_shift"
+      },
+      "notes": "R PARAM + note"
+    },
+    {
+      "id": "mx4-r_shift",
+      "fig": "r_shift",
+      "label": "R SHIFT",
+      "kind": "button",
+      "x": 88.3,
+      "y": 66.2,
+      "w": 2.1,
+      "h": 2.6,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_shift",
+        "type": "note",
+        "ch": 11,
+        "code": 3
+      },
+      "notes": "SHIFT note (global channel 0Ah)"
+    },
+    {
+      "id": "mx4-r_deck",
+      "fig": "r_deck",
+      "label": "R DECK",
+      "kind": "button",
+      "x": 69.7,
+      "y": 62.1,
+      "w": 2.5,
+      "h": 4.3,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_deck",
+        "type": "note",
+        "ch": 8,
+        "code": 18,
+        "deck_cd_name": "r_deck_cd"
+      },
+      "notes": "R DECK switch note (vendor channel column 6 7 4 5)"
+    },
+    {
+      "id": "mx4-r_jog",
+      "fig": "r_jog",
+      "label": "R JOG",
+      "kind": "jog",
+      "x": 69.7,
+      "y": 29.7,
+      "w": 21.8,
+      "h": 37.9,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_jog",
+        "type": "cc",
+        "ch": 6,
+        "code": 6,
+        "deck_cd_name": "r_jog_cd"
+      },
+      "notes": "R JOG WHEEL relative (3Fh/41h); touch note 0x07"
+    },
+    {
+      "id": "mx4-r_pitch",
+      "fig": "r_pitch",
+      "label": "R PITCH",
+      "kind": "fader",
+      "x": 94.6,
+      "y": 9.9,
+      "w": 2.3,
+      "h": 19.8,
+      "layer": "base",
+      "section": "deck_r",
+      "midi": {
+        "name": "r_pitch",
+        "type": "pitchbend",
+        "ch": 6,
+        "code": null,
+        "deck_cd_name": "r_pitch_cd"
+      },
+      "notes": "pitch bend"
+    },
+    {
+      "id": "mx4-r_fx1",
+      "fig": "r_fx1",
+      "label": "R EFFECT 1",
+      "kind": "knob",
+      "x": 86.6,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx1",
+        "type": "cc",
+        "ch": 10,
+        "code": 0
+      },
+      "notes": "FX unit R EFFECT 1 absolute CC"
+    },
+    {
+      "id": "mx4-r_fx_on1",
+      "fig": "r_fx_on1",
+      "label": "R FX ON 1",
+      "kind": "button",
+      "x": 85.9,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx_on1",
+        "type": "note",
+        "ch": 10,
+        "code": 0
+      },
+      "notes": "FX unit R ON 1 note"
+    },
+    {
+      "id": "mx4-r_fx2",
+      "fig": "r_fx2",
+      "label": "R EFFECT 2",
+      "kind": "knob",
+      "x": 81.0,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx2",
+        "type": "cc",
+        "ch": 10,
+        "code": 1
+      },
+      "notes": "FX unit R EFFECT 2 absolute CC"
+    },
+    {
+      "id": "mx4-r_fx_on2",
+      "fig": "r_fx_on2",
+      "label": "R FX ON 2",
+      "kind": "button",
+      "x": 80.3,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx_on2",
+        "type": "note",
+        "ch": 10,
+        "code": 1
+      },
+      "notes": "FX unit R ON 2 note"
+    },
+    {
+      "id": "mx4-r_fx3",
+      "fig": "r_fx3",
+      "label": "R EFFECT 3",
+      "kind": "knob",
+      "x": 75.6,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx3",
+        "type": "cc",
+        "ch": 10,
+        "code": 2
+      },
+      "notes": "FX unit R EFFECT 3 absolute CC"
+    },
+    {
+      "id": "mx4-r_fx_on3",
+      "fig": "r_fx_on3",
+      "label": "R FX ON 3",
+      "kind": "button",
+      "x": 74.9,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx_on3",
+        "type": "note",
+        "ch": 10,
+        "code": 2
+      },
+      "notes": "FX unit R ON 3 note"
+    },
+    {
+      "id": "mx4-r_fx_param",
+      "fig": "r_fx_param",
+      "label": "R FX PARAMETER",
+      "kind": "encoder",
+      "x": 70.1,
+      "y": 11.7,
+      "w": 3.2,
+      "h": 5.6,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx_param",
+        "type": "cc",
+        "ch": 10,
+        "code": 3
+      },
+      "notes": "FX unit R PARAMETER relative (3Fh/41h); push note 0x03"
+    },
+    {
+      "id": "mx4-r_fx_tap",
+      "fig": "r_fx_tap",
+      "label": "R TAP",
+      "kind": "button",
+      "x": 69.4,
+      "y": 20.1,
+      "w": 4.7,
+      "h": 2.3,
+      "layer": "base",
+      "section": "fx_r",
+      "midi": {
+        "name": "r_fx_tap",
+        "type": "note",
+        "ch": 10,
+        "code": 4
+      },
+      "notes": "FX unit R TAP note"
+    },
+    {
+      "id": "mx4-ch3_gain",
+      "fig": "ch3_gain",
+      "label": "CH3 GAIN",
+      "kind": "knob",
+      "x": 34.9,
+      "y": 12.0,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_gain",
+        "type": "cc",
+        "ch": 7,
+        "code": 0
+      },
+      "notes": "CH3 GAIN absolute CC"
+    },
+    {
+      "id": "mx4-ch3_high",
+      "fig": "ch3_high",
+      "label": "CH3 HIGH",
+      "kind": "knob",
+      "x": 34.9,
+      "y": 19.4,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_high",
+        "type": "cc",
+        "ch": 7,
+        "code": 1
+      },
+      "notes": "CH3 HIGH absolute CC"
+    },
+    {
+      "id": "mx4-ch3_mid",
+      "fig": "ch3_mid",
+      "label": "CH3 MID",
+      "kind": "knob",
+      "x": 34.9,
+      "y": 28.3,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_mid",
+        "type": "cc",
+        "ch": 7,
+        "code": 2
+      },
+      "notes": "CH3 MID absolute CC"
+    },
+    {
+      "id": "mx4-ch3_low",
+      "fig": "ch3_low",
+      "label": "CH3 LOW",
+      "kind": "knob",
+      "x": 34.9,
+      "y": 36.7,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_low",
+        "type": "cc",
+        "ch": 7,
+        "code": 3
+      },
+      "notes": "CH3 LOW absolute CC"
+    },
+    {
+      "id": "mx4-ch3_filter",
+      "fig": "ch3_filter",
+      "label": "CH3 FILTER",
+      "kind": "knob",
+      "x": 34.9,
+      "y": 46.6,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_filter",
+        "type": "cc",
+        "ch": 7,
+        "code": 4
+      },
+      "notes": "CH3 FILTER absolute CC"
+    },
+    {
+      "id": "mx4-ch3_filter_fx",
+      "fig": "ch3_filter_fx",
+      "label": "CH3 FILTER FX",
+      "kind": "button",
+      "x": 38.1,
+      "y": 43.7,
+      "w": 1.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_filter_fx",
+        "type": "note",
+        "ch": 7,
+        "code": 1
+      },
+      "notes": "CH3 FILTER FX note"
+    },
+    {
+      "id": "mx4-ch3_load",
+      "fig": "ch3_load",
+      "label": "LOAD 3",
+      "kind": "button",
+      "x": 33.6,
+      "y": 54.5,
+      "w": 5.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_load",
+        "type": "note",
+        "ch": 7,
+        "code": 2
+      },
+      "notes": "CH3 LOAD note"
+    },
+    {
+      "id": "mx4-ch3_cue",
+      "fig": "ch3_cue",
+      "label": "CUE 3",
+      "kind": "button",
+      "x": 34.9,
+      "y": 58.3,
+      "w": 2.8,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 3
+      },
+      "notes": "CH3 CUE (headphone) note"
+    },
+    {
+      "id": "mx4-ch3_fader",
+      "fig": "ch3_fader",
+      "label": "CH3 FADER",
+      "kind": "fader",
+      "x": 35.2,
+      "y": 67.5,
+      "w": 2.3,
+      "h": 14.8,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_fader",
+        "type": "cc",
+        "ch": 7,
+        "code": 5
+      },
+      "notes": "CH3 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E"
+    },
+    {
+      "id": "mx4-ch3_cf_assign",
+      "fig": "ch3_cf_assign",
+      "label": "CH3 CF ASSIGN",
+      "kind": "switch",
+      "x": 35.4,
+      "y": 82.9,
+      "w": 1.9,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch3_cf_assign_a",
+        "type": "note",
+        "ch": 7,
+        "code": 4
+      },
+      "notes": "CH3 CF ASSIGNMENT A note; T 0x05, B 0x06"
+    },
+    {
+      "id": "mx4-ch1_gain",
+      "fig": "ch1_gain",
+      "label": "CH1 GAIN",
+      "kind": "knob",
+      "x": 41.7,
+      "y": 12.0,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_gain",
+        "type": "cc",
+        "ch": 5,
+        "code": 0
+      },
+      "notes": "CH1 GAIN absolute CC"
+    },
+    {
+      "id": "mx4-ch1_high",
+      "fig": "ch1_high",
+      "label": "CH1 HIGH",
+      "kind": "knob",
+      "x": 41.7,
+      "y": 19.4,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_high",
+        "type": "cc",
+        "ch": 5,
+        "code": 1
+      },
+      "notes": "CH1 HIGH absolute CC"
+    },
+    {
+      "id": "mx4-ch1_mid",
+      "fig": "ch1_mid",
+      "label": "CH1 MID",
+      "kind": "knob",
+      "x": 41.7,
+      "y": 28.3,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_mid",
+        "type": "cc",
+        "ch": 5,
+        "code": 2
+      },
+      "notes": "CH1 MID absolute CC"
+    },
+    {
+      "id": "mx4-ch1_low",
+      "fig": "ch1_low",
+      "label": "CH1 LOW",
+      "kind": "knob",
+      "x": 41.7,
+      "y": 36.7,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_low",
+        "type": "cc",
+        "ch": 5,
+        "code": 3
+      },
+      "notes": "CH1 LOW absolute CC"
+    },
+    {
+      "id": "mx4-ch1_filter",
+      "fig": "ch1_filter",
+      "label": "CH1 FILTER",
+      "kind": "knob",
+      "x": 41.7,
+      "y": 46.6,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_filter",
+        "type": "cc",
+        "ch": 5,
+        "code": 4
+      },
+      "notes": "CH1 FILTER absolute CC"
+    },
+    {
+      "id": "mx4-ch1_filter_fx",
+      "fig": "ch1_filter_fx",
+      "label": "CH1 FILTER FX",
+      "kind": "button",
+      "x": 44.9,
+      "y": 43.7,
+      "w": 1.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_filter_fx",
+        "type": "note",
+        "ch": 5,
+        "code": 1
+      },
+      "notes": "CH1 FILTER FX note"
+    },
+    {
+      "id": "mx4-ch1_load",
+      "fig": "ch1_load",
+      "label": "LOAD 1",
+      "kind": "button",
+      "x": 40.5,
+      "y": 54.5,
+      "w": 5.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_load",
+        "type": "note",
+        "ch": 5,
+        "code": 2
+      },
+      "notes": "CH1 LOAD note"
+    },
+    {
+      "id": "mx4-ch1_cue",
+      "fig": "ch1_cue",
+      "label": "CUE 1",
+      "kind": "button",
+      "x": 41.7,
+      "y": 58.3,
+      "w": 2.8,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_cue",
+        "type": "note",
+        "ch": 5,
+        "code": 3
+      },
+      "notes": "CH1 CUE (headphone) note"
+    },
+    {
+      "id": "mx4-ch1_fader",
+      "fig": "ch1_fader",
+      "label": "CH1 FADER",
+      "kind": "fader",
+      "x": 42.0,
+      "y": 67.5,
+      "w": 2.3,
+      "h": 14.8,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_fader",
+        "type": "cc",
+        "ch": 5,
+        "code": 5
+      },
+      "notes": "CH1 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E"
+    },
+    {
+      "id": "mx4-ch1_cf_assign",
+      "fig": "ch1_cf_assign",
+      "label": "CH1 CF ASSIGN",
+      "kind": "switch",
+      "x": 42.2,
+      "y": 82.9,
+      "w": 1.9,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch1_cf_assign_a",
+        "type": "note",
+        "ch": 5,
+        "code": 4
+      },
+      "notes": "CH1 CF ASSIGNMENT A note; T 0x05, B 0x06"
+    },
+    {
+      "id": "mx4-ch2_gain",
+      "fig": "ch2_gain",
+      "label": "CH2 GAIN",
+      "kind": "knob",
+      "x": 55.2,
+      "y": 12.0,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_gain",
+        "type": "cc",
+        "ch": 6,
+        "code": 0
+      },
+      "notes": "CH2 GAIN absolute CC"
+    },
+    {
+      "id": "mx4-ch2_high",
+      "fig": "ch2_high",
+      "label": "CH2 HIGH",
+      "kind": "knob",
+      "x": 55.2,
+      "y": 19.4,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_high",
+        "type": "cc",
+        "ch": 6,
+        "code": 1
+      },
+      "notes": "CH2 HIGH absolute CC"
+    },
+    {
+      "id": "mx4-ch2_mid",
+      "fig": "ch2_mid",
+      "label": "CH2 MID",
+      "kind": "knob",
+      "x": 55.2,
+      "y": 28.3,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_mid",
+        "type": "cc",
+        "ch": 6,
+        "code": 2
+      },
+      "notes": "CH2 MID absolute CC"
+    },
+    {
+      "id": "mx4-ch2_low",
+      "fig": "ch2_low",
+      "label": "CH2 LOW",
+      "kind": "knob",
+      "x": 55.2,
+      "y": 36.7,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_low",
+        "type": "cc",
+        "ch": 6,
+        "code": 3
+      },
+      "notes": "CH2 LOW absolute CC"
+    },
+    {
+      "id": "mx4-ch2_filter",
+      "fig": "ch2_filter",
+      "label": "CH2 FILTER",
+      "kind": "knob",
+      "x": 55.2,
+      "y": 46.6,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_filter",
+        "type": "cc",
+        "ch": 6,
+        "code": 4
+      },
+      "notes": "CH2 FILTER absolute CC"
+    },
+    {
+      "id": "mx4-ch2_filter_fx",
+      "fig": "ch2_filter_fx",
+      "label": "CH2 FILTER FX",
+      "kind": "button",
+      "x": 58.4,
+      "y": 43.7,
+      "w": 1.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_filter_fx",
+        "type": "note",
+        "ch": 6,
+        "code": 1
+      },
+      "notes": "CH2 FILTER FX note"
+    },
+    {
+      "id": "mx4-ch2_load",
+      "fig": "ch2_load",
+      "label": "LOAD 2",
+      "kind": "button",
+      "x": 53.9,
+      "y": 54.5,
+      "w": 5.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_load",
+        "type": "note",
+        "ch": 6,
+        "code": 2
+      },
+      "notes": "CH2 LOAD note"
+    },
+    {
+      "id": "mx4-ch2_cue",
+      "fig": "ch2_cue",
+      "label": "CUE 2",
+      "kind": "button",
+      "x": 55.2,
+      "y": 58.3,
+      "w": 2.8,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_cue",
+        "type": "note",
+        "ch": 6,
+        "code": 3
+      },
+      "notes": "CH2 CUE (headphone) note"
+    },
+    {
+      "id": "mx4-ch2_fader",
+      "fig": "ch2_fader",
+      "label": "CH2 FADER",
+      "kind": "fader",
+      "x": 55.5,
+      "y": 67.5,
+      "w": 2.3,
+      "h": 14.8,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_fader",
+        "type": "cc",
+        "ch": 6,
+        "code": 5
+      },
+      "notes": "CH2 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E"
+    },
+    {
+      "id": "mx4-ch2_cf_assign",
+      "fig": "ch2_cf_assign",
+      "label": "CH2 CF ASSIGN",
+      "kind": "switch",
+      "x": 55.6,
+      "y": 82.9,
+      "w": 1.9,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch2_cf_assign_a",
+        "type": "note",
+        "ch": 6,
+        "code": 4
+      },
+      "notes": "CH2 CF ASSIGNMENT A note; T 0x05, B 0x06"
+    },
+    {
+      "id": "mx4-ch4_gain",
+      "fig": "ch4_gain",
+      "label": "CH4 GAIN",
+      "kind": "knob",
+      "x": 61.9,
+      "y": 12.0,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_gain",
+        "type": "cc",
+        "ch": 8,
+        "code": 0
+      },
+      "notes": "CH4 GAIN absolute CC"
+    },
+    {
+      "id": "mx4-ch4_high",
+      "fig": "ch4_high",
+      "label": "CH4 HIGH",
+      "kind": "knob",
+      "x": 61.9,
+      "y": 19.4,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_high",
+        "type": "cc",
+        "ch": 8,
+        "code": 1
+      },
+      "notes": "CH4 HIGH absolute CC"
+    },
+    {
+      "id": "mx4-ch4_mid",
+      "fig": "ch4_mid",
+      "label": "CH4 MID",
+      "kind": "knob",
+      "x": 61.9,
+      "y": 28.3,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_mid",
+        "type": "cc",
+        "ch": 8,
+        "code": 2
+      },
+      "notes": "CH4 MID absolute CC"
+    },
+    {
+      "id": "mx4-ch4_low",
+      "fig": "ch4_low",
+      "label": "CH4 LOW",
+      "kind": "knob",
+      "x": 61.9,
+      "y": 36.7,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_low",
+        "type": "cc",
+        "ch": 8,
+        "code": 3
+      },
+      "notes": "CH4 LOW absolute CC"
+    },
+    {
+      "id": "mx4-ch4_filter",
+      "fig": "ch4_filter",
+      "label": "CH4 FILTER",
+      "kind": "knob",
+      "x": 61.9,
+      "y": 46.6,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_filter",
+        "type": "cc",
+        "ch": 8,
+        "code": 4
+      },
+      "notes": "CH4 FILTER absolute CC"
+    },
+    {
+      "id": "mx4-ch4_filter_fx",
+      "fig": "ch4_filter_fx",
+      "label": "CH4 FILTER FX",
+      "kind": "button",
+      "x": 65.1,
+      "y": 43.7,
+      "w": 1.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_filter_fx",
+        "type": "note",
+        "ch": 8,
+        "code": 1
+      },
+      "notes": "CH4 FILTER FX note"
+    },
+    {
+      "id": "mx4-ch4_load",
+      "fig": "ch4_load",
+      "label": "LOAD 4",
+      "kind": "button",
+      "x": 60.7,
+      "y": 54.5,
+      "w": 5.3,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_load",
+        "type": "note",
+        "ch": 8,
+        "code": 2
+      },
+      "notes": "CH4 LOAD note"
+    },
+    {
+      "id": "mx4-ch4_cue",
+      "fig": "ch4_cue",
+      "label": "CUE 4",
+      "kind": "button",
+      "x": 61.9,
+      "y": 58.3,
+      "w": 2.8,
+      "h": 2.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_cue",
+        "type": "note",
+        "ch": 8,
+        "code": 3
+      },
+      "notes": "CH4 CUE (headphone) note"
+    },
+    {
+      "id": "mx4-ch4_fader",
+      "fig": "ch4_fader",
+      "label": "CH4 FADER",
+      "kind": "fader",
+      "x": 62.2,
+      "y": 67.5,
+      "w": 2.3,
+      "h": 14.8,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_fader",
+        "type": "cc",
+        "ch": 8,
+        "code": 5
+      },
+      "notes": "CH4 channel fader absolute CC; +SHIFT fader start up/down notes 0x5D/0x5E"
+    },
+    {
+      "id": "mx4-ch4_cf_assign",
+      "fig": "ch4_cf_assign",
+      "label": "CH4 CF ASSIGN",
+      "kind": "switch",
+      "x": 62.4,
+      "y": 82.9,
+      "w": 1.9,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch4_cf_assign_a",
+        "type": "note",
+        "ch": 8,
+        "code": 4
+      },
+      "notes": "CH4 CF ASSIGNMENT A note; T 0x05, B 0x06"
+    },
+    {
+      "id": "mx4-cue_vol",
+      "fig": "cue_vol",
+      "label": "CUE VOL",
+      "kind": "knob",
+      "x": 48.4,
+      "y": 27.7,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "cue_vol",
+        "type": "cc",
+        "ch": 11,
+        "code": 7
+      },
+      "notes": "HEADPHONE CUE VOL absolute CC"
+    },
+    {
+      "id": "mx4-cue_mix",
+      "fig": "cue_mix",
+      "label": "CUE MIX",
+      "kind": "knob",
+      "x": 48.4,
+      "y": 35.4,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "cue_mix",
+        "type": "cc",
+        "ch": 11,
+        "code": 3
+      },
+      "notes": "CUE MIX absolute CC"
+    },
+    {
+      "id": "mx4-sampler_vol",
+      "fig": "sampler_vol",
+      "label": "SAMPLER",
+      "kind": "knob",
+      "x": 48.4,
+      "y": 43.7,
+      "w": 2.8,
+      "h": 4.9,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "sampler_vol",
+        "type": "cc",
+        "ch": 11,
+        "code": 2
+      },
+      "notes": "SAMPLER volume absolute CC"
+    },
+    {
+      "id": "mx4-cf_curve",
+      "fig": "cf_curve",
+      "label": "CF CURVE",
+      "kind": "knob",
+      "x": 48.9,
+      "y": 82.4,
+      "w": 1.9,
+      "h": 3.3,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "cf_curve",
+        "type": "cc",
+        "ch": 11,
+        "code": 1
+      },
+      "notes": "CF CURVE (left 0, middle 64, right 127)"
+    },
+    {
+      "id": "mx4-xfader",
+      "fig": "xfader",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 46.1,
+      "y": 90.3,
+      "w": 7.6,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 11,
+        "code": 0
+      },
+      "notes": "CROSSFADER absolute CC"
+    },
+    {
+      "id": "mx4-trax",
+      "fig": "trax",
+      "label": "TRAX",
+      "kind": "encoder",
+      "x": 47.7,
+      "y": 51.4,
+      "w": 4.4,
+      "h": 7.6,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "trax",
+        "type": "cc",
+        "ch": 11,
+        "code": 4
+      },
+      "notes": "TRAX relative (3Fh/41h); push note 0x00"
+    },
+    {
+      "id": "mx4-back",
+      "fig": "back",
+      "label": "BACK",
+      "kind": "button",
+      "x": 48.8,
+      "y": 61.1,
+      "w": 2.1,
+      "h": 2.3,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 11,
+        "code": 1
+      },
+      "notes": "BACK note"
+    }
+  ]
+}

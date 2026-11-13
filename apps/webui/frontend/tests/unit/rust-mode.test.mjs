@@ -32,6 +32,9 @@
  *   with no AudioContext the ui-mirror meter stays stale for a whole set
  *   (Electron acceptance on the Air, Tue 3 Nov 2026); if a frame with no
  *   level keeps an earlier reading or reads as silence then broken too
+ * - if an unload reaches the engine carrying refuseIfMaster then broken: the
+ *   page enforces it, odj-audio refuses the flag, and a replace load onto an
+ *   occupied deck fails (Fri 13 Nov 2026)
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -563,4 +566,31 @@ test('connecting to an engine forgets the previous engine s gains before mirrori
 	const clear = body.indexOf('clearWaveGains();');
 	assert.ok(clear > 0, 'connectRustEngine clears every deck s gains');
 	assert.ok(clear < body.indexOf('c.onState(mirrorEngineState)'), 'before the new engine s state is mirrored');
+});
+
+test('an unload reaches the engine without refuseIfMaster, which the page has already enforced', async () => {
+	// Fri 13 Nov 2026: a replace load onto an occupied deck sent
+	// { type: 'unload', refuseIfMaster: true } and odj-audio refused it
+	// (unload.refuseIfMaster: no sync master to protect yet).
+	const sent = [];
+	m.installRustEngineClientForTest({
+		connected: true,
+		notBuilt: new Set(),
+		send: (cmd) => {
+			sent.push(cmd);
+			return Promise.resolve({ type: 'result', id: null, ok: true });
+		},
+		positionMs: () => null
+	});
+	m.rustMaster.deck = null;
+	try {
+		await m.executeRustCommand({ type: 'unload', deck: 3, refuseIfMaster: true });
+		await m.executeRustCommand({ type: 'unload', deck: 4 });
+	} finally {
+		m.installRustEngineClientForTest(null);
+	}
+	const unloads = sent.filter((c) => c.type === 'unload');
+	assert.deepEqual(unloads[0], { type: 'unload', deck: 3 }, 'the flag never crosses the wire');
+	assert.deepEqual(unloads[1], { type: 'unload', deck: 4 }, 'control: a plain unload is unchanged');
+	assert.equal(unloads.length, 2);
 });

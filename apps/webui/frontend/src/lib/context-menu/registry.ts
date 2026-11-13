@@ -37,12 +37,20 @@ import {
 	type MixerControlClass
 } from './mixer-actions';
 import type { StemControl } from '../rb/stem-types';
+import {
+	REMOVE_FROM_LIBRARY_SCOPE,
+	REMOVE_FROM_PLAYLIST_SCOPE
+} from '../components/rb/browser/track-library-menu';
+import {
+	REKORDBOX_TRACK_COLOR_IDS,
+	TRACK_COLOUR_NAMES
+} from '../components/rb/browser/track-table-column-filters';
 
 export type DeckNumber = 1 | 2 | 3 | 4;
 export type CueSlot = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
 
 /** Where a library row came from. Anything but collection/playlist is read only. */
-export type TrackSource = 'collection' | 'playlist' | 'usb' | 'readonly-import';
+export type TrackSource = 'collection' | 'playlist' | 'usb' | 'readonly-import' | 'deleted';
 /** Local audio as the listing reports it (FileAvailabilityStatus, bucketed). */
 /** OFFLOAD: `offloaded` is in the cloud on purpose (a deck load downloads it first);
  * `temporary` is back for 24 h and goes to the cloud again after (spec e8da14b8). */
@@ -71,7 +79,8 @@ export interface MenuContextByKind {
 	'playlist-folder': Record<string, never>;
 	/** A divider in the track table. `editable`: the open list can be changed. */
 	'playlist-section': { editable: boolean };
-	smartlist: Record<string, never>;
+	/** `refreshing`: a Refresh now for this smartlist is still in flight. */
+	smartlist: { refreshing: boolean };
 	/** Taglists, autolists, Missing Tracks, Recently Deleted, stick trees.
 	 * `stick` is true only inside a plugged-in USB stick's tree (USBEXP-04). */
 	'tree-readonly': { stick: boolean };
@@ -199,6 +208,12 @@ export interface ResolvedMenuItem {
 
 const DECKS: readonly DeckNumber[] = [1, 2, 3, 4];
 
+/** Issue #9737: rekordbox track colour labels in ColorID order, then 0 = None (clear). */
+const TRACK_COLOUR_MENU: readonly (readonly [number, string])[] = [
+	...REKORDBOX_TRACK_COLOR_IDS.map((n) => [n, TRACK_COLOUR_NAMES[n]] as const),
+	[0, 'None']
+];
+
 /** Labels for perf-empty layout check items (must match topbar-view-prefs PERF_VIEWS). */
 const VIEW_LABEL: Record<'waveform' | 'list' | 'phase-scope' | 'phase-meter', string> = {
 	waveform: 'Waveform',
@@ -207,7 +222,7 @@ const VIEW_LABEL: Record<'waveform' | 'list' | 'phase-scope' | 'phase-meter', st
 	'phase-meter': 'Phase meter'
 };
 
-const READ_ONLY_SOURCES: ReadonlySet<TrackSource> = new Set(['usb', 'readonly-import']);
+const READ_ONLY_SOURCES: ReadonlySet<TrackSource> = new Set(['usb', 'readonly-import', 'deleted']);
 
 function writable(ctx: { source: TrackSource }): boolean {
 	return !READ_ONLY_SOURCES.has(ctx.source);
@@ -284,6 +299,15 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		when: writable
 	},
 	{
+		// Issue #10028: rekordbox Add to Tag List (mimicked), every selected row at once.
+		id: 'add-tag-list',
+		label: 'Add to Tag List',
+		command: 'track.tag_list_add',
+		when: writable,
+		title: () => 'IPC tag_list_add {stable_ids} (POST /api/v1/taglist/items, opendj taglist add)',
+		testId: () => 'context-menu-add-tag-list'
+	},
+	{
 		id: 'bulk-edit',
 		label: (target) => `Bulk edit (${target.count})`,
 		command: 'track.edit',
@@ -300,14 +324,15 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		title: () => `PATCH /api/v1/tracks/{stable_id} {"rating": ${n}}`,
 		testId: () => `context-menu-rate-${n}`
 	})),
-	{
-		id: 'colour',
-		label: 'Colour',
+	// Issue #9737: the Colour group (rekordbox ColorID 1..8, then None), one PATCH per selected row.
+	...TRACK_COLOUR_MENU.map(([n, name]): MenuContribution<'track'> => ({
+		id: `colour-${n}`,
+		label: `Colour: ${name}`,
 		command: 'track.edit',
 		when: writable,
-		disabledWhen: () => 'no track colour yet - the library stores no row colour',
-		testId: () => 'context-menu-colour'
-	},
+		title: () => `PATCH /api/v1/tracks/{stable_id} {"color_id": ${n === 0 ? 'null' : n}}`,
+		testId: () => `context-menu-colour-${n}`
+	})),
 	{
 		// LIBUX-56: opens the row's Comment cell editor (double-click the cell does the same).
 		id: 'edit-comment',
@@ -418,6 +443,15 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		disabledWhen: (ctx) => NO_LOCAL_AUDIO[ctx.audio]
 	},
 	{
+		// TITLEFIXSELECT-12587: proposals land on /admin?tab=title-fix for review.
+		id: 'title-fix-scan',
+		label: (target) =>
+			target.count > 1 ? `Scan titles for fixes (${plural(target.count)})` : 'Scan title for fixes',
+		command: 'title_fix.scan',
+		when: writable,
+		testId: () => 'context-menu-title-fix-scan'
+	},
+	{
 		// PAIR-10 (the maintainer, Thu 8 Oct 2026): "Selecting 2 songs should have pair
 		// these 2 tracks as right click option." It makes a LOOSE pair, with no
 		// alignment; aligned pairs come from the top-bar Create pairing sheet,
@@ -453,6 +487,8 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		id: 'remove-playlist',
 		label: 'Remove from playlist',
 		command: 'playlist.remove_items',
+		title: () =>
+			`${REMOVE_FROM_PLAYLIST_SCOPE} (POST /api/v1/playlists/{playlist_id}/items:remove)`,
 		when: (ctx) => ctx.source === 'playlist'
 	},
 	{ id: 'work-edit', label: 'Work...', command: 'work.edit', when: writable },
@@ -467,7 +503,17 @@ const TRACK_MENU: MenuContribution<'track'>[] = [
 		label: (target) =>
 			target.count > 1 ? `Remove ${plural(target.count)} from library` : 'Remove from library',
 		command: 'track.remove_from_library',
+		title: () => `${REMOVE_FROM_LIBRARY_SCOPE} (POST /api/v1/tracks/{stable_id}:remove)`,
 		when: writable
+	},
+	{
+		id: 'restore-library',
+		label: (target) =>
+			target.count > 1 ? `Restore ${plural(target.count)} to library` : 'Restore to library',
+		command: 'track.undelete',
+		title: () =>
+			'Restore the removed track and its playlist memberships (POST /api/v1/tracks/{stable_id}:undelete)',
+		when: (ctx) => ctx.source === 'deleted'
 	}
 ];
 
@@ -557,6 +603,13 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 			title: () => 'opendj offload restore-playlist {playlist_id} --permanent'
 		},
 		{
+			// TITLEFIXSELECT-12587: scan every track in the playlist for title fixes.
+			id: 'title-fix-scan',
+			label: 'Scan titles for fixes',
+			command: 'title_fix.scan',
+			title: () => 'python -m apps.webui.title_fix_cli scan --ids <playlist stable_ids>'
+		},
+		{
 			// USBEXP-04: opens the USB export screen with this playlist's name.
 			id: 'export-usb',
 			label: 'Export to USB...',
@@ -586,6 +639,21 @@ export const MENU_CONTRIBUTIONS: { [K in MenuTargetKind]: MenuContribution<K>[] 
 	],
 	smartlist: [
 		...newItems<'smartlist'>(),
+		// SMART (#10024): rekordbox Edit Intelligent Playlist and a manual refresh (mimicked).
+		{
+			id: 'edit-rule',
+			label: 'Edit rule...',
+			command: 'smartlist.update',
+			testId: () => 'smartlist-edit-rule'
+		},
+		{
+			id: 'refresh',
+			label: 'Refresh now',
+			command: 'smartlist.refresh',
+			disabledWhen: (ctx) =>
+				ctx.refreshing ? 'a refresh of this smartlist is already running' : null,
+			testId: () => 'smartlist-refresh-now'
+		},
 		{ id: 'rename', label: 'Rename', command: 'smartlist.update' },
 		{ id: 'delete', label: 'Delete', command: 'smartlist.delete' },
 		{ id: 'duplicate', label: 'Duplicate', command: 'smartlist.duplicate' }

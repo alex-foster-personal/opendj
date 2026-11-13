@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Background worker for ``anlz.cache_rebuild`` jobs.
 
-Reads a JSON payload from ``--payload`` and rebuilds schema-versioned entries
+Reads a JSON payload from ``--payload-file`` and rebuilds schema-versioned entries
 under ``(private path)/``. Emits JSON-lines progress on stdout for the
 engine jobs runner.
 """
@@ -31,10 +31,15 @@ def _emit_factory() -> EmitFn:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--payload", required=True)
+    parser.add_argument("--payload-file", required=True, help="path to the payload JSON (bulk target lists)")
     args = parser.parse_args(argv)
     try:
-        payload = json.loads(args.payload)
+        payload_path = Path(args.payload_file)
+        raw = payload_path.read_text(encoding="utf-8")
+        payload_path.unlink(missing_ok=True)
+        payload = json.loads(raw)
+    except OSError as exc:
+        raise SystemExit(f"error: cannot read payload file: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise SystemExit(f"error: invalid payload JSON: {exc}") from exc
     if not isinstance(payload, dict):

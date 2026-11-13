@@ -44,6 +44,7 @@
 		runReanalyze,
 		runRevealTracks,
 		runPlaylistShuffle,
+		runSetColour,
 		runSetRating,
 		runSetTracklistHidden,
 		type PlaylistShuffleDeps
@@ -53,6 +54,10 @@
 	import { libraryWorkspace } from '$lib/library/library-workspace.svelte';
 	import { linkVersionsFromMenu, openWorkEditor } from '$lib/rb/works-menu';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
+	import { startTitleFixScanForIds } from '$lib/rb/title-fix-scan';
+	import { restoreDeletedTracks } from './track-library-menu';
+	import { undeleteFromLibrary } from '$lib/rb/track-library';
+	import { pushToast } from '$lib/stores.svelte';
 
 	type DeckId = 1 | 2 | 3 | 4;
 	const DECKS: DeckId[] = [1, 2, 3, 4];
@@ -71,6 +76,7 @@
 		oninsertsection,
 		removable = false,
 		readOnly = false,
+		deleted = false,
 		onshowinplaylists,
 		onrelocate,
 		oneditcomment = undefined,
@@ -91,6 +97,8 @@
 		removable?: boolean;
 		/** Read-only pane: its rows are not writable, so pairing is hidden (PAIR-10). */
 		readOnly?: boolean;
+		/** LIBM-54: rows of the deleted-tracks view; the menu offers Restore to library. */
+		deleted?: boolean;
 		onshowinplaylists: (row: BrowserRow, x: number, y: number) => void;
 		onrelocate: (row: BrowserRow, x: number, y: number) => void;
 		/** LIBUX-56: open the row's Comment cell editor. */
@@ -101,6 +109,12 @@
 	} = $props();
 
 	onMount(ensureTagsLoaded);
+
+	/** LIBM-54: restore deleted rows; the server's library.changed event refreshes the view. */
+	async function restoreFromLibraryUi(stableIds: string[]): Promise<void> {
+		const outcome = await restoreDeletedTracks(stableIds, undeleteFromLibrary);
+		pushToast(outcome.message, outcome.tone);
+	}
 
 	let menu = $state<{
 		x: number;
@@ -193,7 +207,9 @@
 				selection: rowCount > 1 ? 'many' : 'one',
 				source: isUsbTrackId(row.stable_id)
 					? 'usb'
-					: readOnly
+					: deleted
+						? 'deleted'
+						: readOnly
 						? 'readonly-import'
 						: removable
 							? 'playlist'
@@ -225,7 +241,16 @@
 			...Object.fromEntries(
 				[0, 1, 2, 3, 4, 5].map((n) => [`rate-${n}`, () => runSetRating(targetIds, n)])
 			),
+			...Object.fromEntries(
+				[0, 1, 2, 3, 4, 5, 6, 7, 8].map((n) => [
+					`colour-${n}`,
+					() => runSetColour(targetIds, n === 0 ? null : n)
+				])
+			),
 			'add-playlist': onaddtoplaylist ? () => onaddtoplaylist(targetIds) : undefined,
+			// Issue #10028: same typed dispatcher as an agent's tag_list_add.
+			'add-tag-list': () =>
+				void runPerformanceCommandFromUi({ type: 'tag_list_add', stable_ids: targetIds }),
 			'bulk-edit': editModal('bulk-edit'),
 			'find-replace': editModal('find-replace'),
 			'add-tag': () => openTagEditor({ stableIds: targetIds, typeId: null, x: menuX, y: menuY }),
@@ -242,10 +267,12 @@
 			pair: () => runPairTracks(targetIds),
 			'stems-generate': onstemsdonext ? () => onstemsdonext(targetIds) : undefined,
 			lyrics: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined,
+			'title-fix-scan': () => void startTitleFixScanForIds(targetIds),
 			'set-skip': () => void setTargetState.toggleSkip(targetIds),
 			'remove-playlist': onremoverow ? () => onremoverow(row) : undefined,
 			'insert-section': oninsertsection ? () => oninsertsection(row) : undefined,
 			'remove-library': onremovefromlibrary ? () => onremovefromlibrary(targetIds) : undefined,
+			'restore-library': () => void restoreFromLibraryUi(targetIds),
 			offload: () => void offloadOps.offloadTracks(targetIds),
 			'offload-restore-24h': () => void offloadOps.restoreTracks(targetIds, 'temporary'),
 			'offload-restore-permanent': () => void offloadOps.restoreTracks(targetIds, 'permanent')

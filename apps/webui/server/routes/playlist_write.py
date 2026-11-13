@@ -16,14 +16,18 @@ on these six endpoints and their etag semantics):
 
 ETag / error semantics copied from the tracks PATCH:
 
-  * PATCH / DELETE / PUT require ``If-Match`` (the etag from a prior response
-    header or ``PlaylistWriteOut.updated_at``); missing -> 428
+  * PATCH / DELETE / PUT / ``:undelete`` require ``If-Match`` (the etag from a
+    prior response header or ``PlaylistWriteOut.updated_at``; for
+    ``:undelete`` the ``etag`` of its ``GET /playlists/deleted`` row); missing -> 428
     ``precondition_required``; stale -> 409 ``conflict`` with
     ``{current, etag}`` body + fresh ``ETag`` header (rebase and retry).
   * POST create takes no ``If-Match``. POST duplicate accepts an OPTIONAL
     ``If-Match`` validated against the SOURCE playlist.
   * Unknown playlist / stable_id -> 404 ``not_found`` / 422 ``invalid_patch``.
   * Every 2xx (except 204) returns ``PlaylistWriteOut`` + an ``ETag`` header.
+  * Library Protection (LIBM-57, ``..library_protection``): ``no_delete``
+    makes DELETE answer 423 scope ``delete``; ``no_edit`` does the same with
+    scope ``edit`` for rename and every membership write.
 
 ``PUT .../tracks`` is the full-replace membership primitive for import/restore.
 ``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
@@ -32,9 +36,12 @@ answers ``MembershipAddOut`` (header + the inserted rows), never the whole
 membership (LIBM-132, #3963); read ``GET /playlists/{id}`` for that.
 ``POST .../items:remove`` and ``DELETE .../items/{item_id}`` are the O(1)
 remove primitives (LIBM-21): membership rows are tombstoned without rewriting
-neighbors.
+neighbors. ``:add`` and ``:remove`` reject a batch over 1000 ids with 422
+``bulk_limit`` before the store is touched (LIBM-26).
 ``POST .../items:move`` is the O(k) slice reorder primitive (LIBM-22): a
-contiguous block moves by updating order_keys only.
+contiguous block moves by updating order_keys only. It takes exactly one of
+``before_item_id`` / ``after_item_id``; zero or two answer 422
+``invalid_patch`` before the store is touched (LIBM-27).
 
 Every successful non-noop write also appends a ``playlist.edit`` event with
 before/after snapshots. Downstream undo/redo lives at
@@ -72,12 +79,18 @@ from apps.shared.state.writer_playlists import PlaylistNotDeletedError
 from ..backend import StateBackend
 from ..deps import get_library_state_db, get_write_state
 from ..errors import precondition_required
+from ..library_protection import require_unlocked
+from ..playlist_add import _reject_over_cap
+from ..playlist_move import _validate_move_anchors
 from ..playlist_store import PlaylistRow, PlaylistStore
 
 router = APIRouter(prefix="/playlists", tags=["playlists-write"])
 MOUNT_UNDER_API_PREFIX = True
 
 _STORE_INIT_LOCK = threading.Lock()
+# Library Protection (LIBM-57): 423 Locked while the scope is protected.
+_DELETE_LOCK = [Depends(require_unlocked("delete"))]
+_EDIT_LOCK = [Depends(require_unlocked("edit"))]
 
 
 # --- models (write-contract views; read models stay in ..models) ----------
@@ -334,7 +347,7 @@ def import_m3u_playlist(
     return PlaylistImportOut(playlist_id=row.playlist_id, name=row.name, matched=len(matched_ids), unmatched=unmatched)
 
 
-@router.patch("/{playlist_id}", response_model=PlaylistWriteOut)
+@router.patch("/{playlist_id}", response_model=PlaylistWriteOut, dependencies=_EDIT_LOCK)
 def rename_playlist(
     playlist_id: str,
     body: PlaylistRenameIn,
@@ -361,7 +374,7 @@ def rename_playlist(
     return _out(row, response)
 
 
-@router.delete("/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_DELETE_LOCK)
 def delete_playlist(
     playlist_id: str,
     if_match: str | None = Header(None, alias="If-Match"),
@@ -385,11 +398,16 @@ def delete_playlist(
 def undelete_playlist(
     playlist_id: str,
     response: Response,
+    if_match: str | None = Header(None, alias="If-Match"),
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008
     store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> PlaylistWriteOut:
+    if not if_match:
+        return precondition_required(
+            "POST /playlists/{playlist_id}:undelete requires If-Match header"
+        )
     try:
-        row = store.undelete_playlist(playlist_id)
+        row = store.undelete_playlist(playlist_id, expected_etag=if_match)
     except PlaylistNotDeletedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -420,6 +438,7 @@ def duplicate_playlist(
 
 @router.post(
     "/{playlist_id}/items:add",
+    dependencies=_EDIT_LOCK,
     response_model=MembershipAddOut,
     operation_id="add_playlist_items",
 )
@@ -430,6 +449,7 @@ def add_playlist_items(
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008
     store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> MembershipAddOut:
+    _reject_over_cap(body.stable_ids)
     result = store.add_memberships(
         playlist_id, body.stable_ids, position=body.position,
     )
@@ -446,6 +466,7 @@ def add_playlist_items(
 
 @router.post(
     "/{playlist_id}/items:remove",
+    dependencies=_EDIT_LOCK,
     response_model=PlaylistWriteOut,
     operation_id="remove_playlist_items",
 )
@@ -456,6 +477,7 @@ def remove_playlist_items(
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008
     store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
 ) -> PlaylistWriteOut:
+    _reject_over_cap(body.item_ids)
     row = store.remove_memberships(playlist_id, body.item_ids)
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
@@ -463,6 +485,7 @@ def remove_playlist_items(
 
 @router.delete(
     "/{playlist_id}/items/{item_id}",
+    dependencies=_EDIT_LOCK,
     response_model=PlaylistWriteOut,
     operation_id="delete_playlist_item",
 )
@@ -480,6 +503,7 @@ def delete_playlist_item(
 
 @router.post(
     "/{playlist_id}/items:move",
+    dependencies=_EDIT_LOCK,
     response_model=MembershipMoveOut,
     operation_id="move_playlist_items",
 )
@@ -495,6 +519,7 @@ def move_playlist_items(
         return precondition_required(
             "POST /playlists/{playlist_id}/items:move requires If-Match header"
         )
+    _validate_move_anchors(body.before_item_id, body.after_item_id)
     result = store.move_memberships(
         playlist_id,
         range_start=body.range_start,
@@ -511,6 +536,7 @@ def move_playlist_items(
 
 @router.post(
     "/{playlist_id}/items:save-order",
+    dependencies=_EDIT_LOCK,
     response_model=PlaylistWriteOut,
     operation_id="save_playlist_order",
 )
@@ -545,7 +571,7 @@ def save_playlist_order(
     return _out(row, response)
 
 
-@router.put("/{playlist_id}/tracks", response_model=PlaylistWriteOut)
+@router.put("/{playlist_id}/tracks", response_model=PlaylistWriteOut, dependencies=_EDIT_LOCK)
 def replace_playlist_tracks(
     playlist_id: str,
     body: MembershipReplaceIn,
@@ -565,7 +591,7 @@ def replace_playlist_tracks(
     return _out(row, response)
 
 
-@router.post("/{playlist_id}/tracks/transfer", response_model=MembershipTransferOut)
+@router.post("/{playlist_id}/tracks/transfer", response_model=MembershipTransferOut, dependencies=_EDIT_LOCK)
 def transfer_playlist_tracks(
     playlist_id: str,
     body: MembershipTransferIn,

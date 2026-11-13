@@ -10,13 +10,18 @@ CONTRACT this router owns (mounted under ``/api/v1``):
   GET    /dj/try/{job}                             200 TryJobOut (pick filled when one is stored)
   GET    /dj/try/{job}/candidates/{cid}/audio      200 audio/wav, the candidate's render
   GET    /dj/try/{job}/candidates/{cid}/lanes?columns=800
-         200 TryLanesOut {duration_s, decks: [{deck, peaks, curves{fader, eq_low, filter}, playing, beats}]}:
-         each deck's waveform and the knob lines the renderer applied, on the render clock (TRYER-16)
+         200 TryLanesOut {duration_s, decks: [{deck, peaks, curves{fader, eq_low, filter}, playing, beats}],
+                          energy: {out, in, cross_track_step, note}}:
+         each deck's waveform and the knob lines the renderer applied, on the render clock (TRYER-16), and each
+         source profile's energy provenance (mik, relative or none); the MIK step only when both sides have MIK
   POST   /dj/try/{job}/pick   If-Match: <etag>     {candidate} -> 200 TryJobOut
   DELETE /dj/try/{job}/pick   If-Match: <etag>     -> 200 TryJobOut (pick back to null)
 
 Errors: 422 ``try_failed`` (``try_pair`` raised ``TryError``: nothing proposed, a render
-failed, the audio extra missing), 404 ``job_not_found`` / ``candidate_not_found`` / ``render_missing``,
+failed, the audio extra missing, the serving engine failed a profile read), 422 ``track_unavailable`` (no audio or no
+usable analysis for a track), 503 ``engine_unavailable`` (lanes only: the serving engine answered a profile read with
+a 5xx or not at all; retry), 422 ``lanes_failed`` (lanes only: a stored plan is malformed or cannot be rendered),
+404 ``job_not_found`` / ``candidate_not_found`` / ``render_missing``,
 409 ``no_pick`` (undo with nothing picked) / ``already_picked`` (undo first; a pick is never replaced), 412 ``etag_mismatch``, 428
 ``if_match_required``. Pick and undo follow the etag apply/undo pattern of
 ``routes/play_it.py``: the etag is derived from the job's revision, which every
@@ -33,6 +38,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import time
@@ -48,19 +54,22 @@ from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.autodj.http import RenderPlanError, TrackProfile, build_service, try_picks
+from apps.autodj.http import PlanError, RenderPlanError, TrackProfile, TransitionPlan, build_service, try_picks
 from apps.shared import file_lock
-from apps.shared.engine_origin import EngineOrigin
+from apps.shared.engine_origin import EngineNotRunning, EngineOrigin
 from apps.transition_score.contract import SCORER_VERSION, Candidate, TryResult, best_candidate
 from apps.transition_score.http import (
     MAX_COLUMNS,
     AudioUnavailable,
     EngineProfiles,
     EngineTrackSource,
+    LaneEnergy,
     LaneError,
     Lanes,
+    PairNotTryable,
     TryError,
     build_lanes,
+    lane_energy,
     shared_start_out_bar,
     try_pair,
 )
@@ -195,14 +204,51 @@ class DeckLaneOut(BaseModel):
     beats: list[tuple[float, int]]
 
 
+class ProfileEnergyOut(BaseModel):
+    stable_id: str
+    #: mik: served MIK energy; relative: per-track normalized waveform energy only (no cross-track scale); none.
+    source: Literal["mik", "relative", "none"]
+    mik_level: int | None
+
+
+class LaneEnergyOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    out: ProfileEnergyOut
+    in_: ProfileEnergyOut = Field(alias="in")
+    #: In minus out MIK track level; null unless both sides carry a MIK scalar.
+    cross_track_step: int | None
+    note: str
+
+    @classmethod
+    def of(cls, energy: LaneEnergy) -> LaneEnergyOut:
+        return cls.model_validate(
+            {
+                "out": dataclasses.asdict(energy.out),
+                "in": dataclasses.asdict(energy.in_),
+                "cross_track_step": energy.cross_track_step,
+                "note": energy.note,
+            }
+        )
+
+
 class TryLanesOut(BaseModel):
     candidate: str
     duration_s: float
     decks: list[DeckLaneOut]
+    energy: LaneEnergyOut
 
 
 class TrackUnavailable(TryError):
     """One of the pair's tracks cannot be tried here: no audio file on this server, or no usable analysis."""
+
+
+#: The status an engine profile read answered (``GET <path> -> 500: ...``): named, the body never is.
+_UPSTREAM_STATUS = re.compile(r"-> (\d{3}):")
+
+
+class EngineUnavailable(TryError):
+    """The serving engine failed a track profile read (a 5xx or no answer): retryable, never a library-data problem."""
 
 
 @dataclass
@@ -240,8 +286,19 @@ class ServingTrackSource(EngineTrackSource):
     def profile(self, stable_id: str) -> TrackProfile:
         try:
             return super().profile(stable_id)
-        except TryError as error:
+        except PairNotTryable as error:
+            # Only a missing track or unusable analysis is the track's fault; an engine failure
+            # (a 5xx, no answer) is EngineUnavailable: the try answers try_failed, the lanes 503.
             raise TrackUnavailable(f"track {stable_id} has no usable analysis here: {error}") from error
+        except (TryError, EngineNotRunning) as error:
+            # The upstream answer and the lock path stay in the log: a response never names a server path.
+            _log.warning("try-er: the serving engine failed the profile of %s: %s", stable_id, error)
+            answered = _UPSTREAM_STATUS.search(str(error))
+            said = f", it answered {answered.group(1)}" if answered else ""
+            raise EngineUnavailable(
+                f"the serving engine could not read track {stable_id}'s profile (an engine fault, not the track{said}):"
+                " retry"
+            ) from error
 
 
 def _serving_origin(request: Request, state_db: Path) -> EngineOrigin:
@@ -268,6 +325,9 @@ PRUNE_POLL_S = 0.05
 JOB_DONE_MARKER = ".done"
 #: Held (non-blocking) while one request prunes; a request that finds it held skips pruning this time.
 PRUNE_LOCK = ".prune.lock"
+#: A pruned job's folder is first renamed to this prefix plus its job id (one atomic step, so the job's renders go
+#: all at once, never some), then deleted. A delete that fails leaves only this leftover, which every prune retries.
+RETIRED_PREFIX = ".retired-"
 
 
 def _mark_job_renders_done(folder: Path) -> None:
@@ -295,12 +355,18 @@ def _render_lock(renders: Path) -> Iterator[None]:
 
 
 def _prune_finished(renders: Path, keep: int) -> None:
-    """Delete all but the ``keep`` newest FINISHED job render folders (by their marker's time); hold ``_render_lock``.
-    A folder without the finished marker belongs to a try still running, so it is never touched."""
-    finished = [p for p in renders.iterdir() if (p / JOB_DONE_MARKER).is_file()]
+    """Retire all but the ``keep`` newest FINISHED job render folders (by their marker's time); hold ``_render_lock``.
+    A folder without the finished marker belongs to a try still running, so it is never touched. Each stale folder is
+    renamed out of its job's path before any file goes, then every retired leftover (this prune's and any an earlier
+    failed delete left) is removed."""
+    finished = [
+        p for p in renders.iterdir() if not p.name.startswith(RETIRED_PREFIX) and (p / JOB_DONE_MARKER).is_file()
+    ]
     finished.sort(key=lambda p: (p / JOB_DONE_MARKER).stat().st_mtime, reverse=True)
     for stale in finished[keep:]:
-        shutil.rmtree(stale)
+        stale.rename(renders / f"{RETIRED_PREFIX}{stale.name}")
+    for retired in sorted(renders.glob(f"{RETIRED_PREFIX}*")):
+        shutil.rmtree(retired)
 
 
 def _prune_job_renders(renders: Path, keep: int) -> None:
@@ -465,7 +531,13 @@ def start_try(
             with _store(state_db) as conn:
                 try_picks.insert_job(conn, job)
             stored = True
-            _prune_finished(renders, keep=TRY_JOB_RENDERS_KEPT)
+            try:
+                _prune_finished(renders, keep=TRY_JOB_RENDERS_KEPT)
+            except OSError as error:
+                # The job is stored and its renders are kept, so the try succeeded: answering an error now would
+                # publish a job the client never hears of. A stale folder is either intact or already renamed out of
+                # its job's path (its audio answers render_missing), and the next prune retries the delete.
+                _log.warning("try-er: pruning older job renders failed, the next try retries it: %s", error)
     except BaseException:
         if not stored:
             _discard_job_renders(job_renders)  # nothing was stored, so nothing may point at these renders
@@ -479,8 +551,28 @@ def _inside(path: str | Path, root: Path) -> bool:
 
 
 def _discard_job_renders(job_renders: Path) -> None:
-    if job_renders.exists():
+    """Remove a failed try's render folder without ever replacing the try's own error with a cleanup error.
+
+    Called while that error is being handled, so a removal failure is logged, not raised: the client still gets the
+    causal refusal. A folder that cannot be removed is renamed under ``RETIRED_PREFIX``, where every prune retries it;
+    it never had the finished marker, so no job can point at it either way."""
+    if not job_renders.exists():
+        return
+    try:
         shutil.rmtree(job_renders)
+    except OSError as error:
+        retired = job_renders.with_name(f"{RETIRED_PREFIX}{job_renders.name}")
+        try:
+            job_renders.rename(retired)
+        except OSError as rename_error:
+            _log.error(
+                "try-er: failed job renders %s could not be removed (%s) nor retired (%s): left in place",
+                job_renders,
+                error,
+                rename_error,
+            )
+            return
+        _log.warning("try-er: failed job renders %s could not be removed, the next prune retries: %s", retired, error)
 
 
 def _validated_job(
@@ -576,16 +668,28 @@ def _kept_render(
     return candidate, Path(kept)
 
 
+def _stored_plans(job: try_picks.TryJob, source: ServingTrackSource) -> dict[str, TransitionPlan]:
+    """Every candidate's stored plan, parsed; a malformed one raises ``PlanError`` naming its candidate."""
+    plans: dict[str, TransitionPlan] = {}
+    for stored in job.candidates:
+        try:
+            plans[stored["id"]] = source.autodj.parse_plan(stored.get("plan"))
+        except PlanError as error:
+            raise PlanError(f"the stored plan of candidate {stored['id']!r} is malformed: {error}") from error
+    return plans
+
+
 def _candidate_lanes(
     job: try_picks.TryJob, candidate: dict[str, Any], kept: Path, source: ServingTrackSource, columns: int
-) -> Lanes | JSONResponse:
-    """The lanes of one kept render, or the 422 that says why they cannot be drawn."""
+) -> tuple[Lanes, LaneEnergy] | JSONResponse:
+    """The lanes of one kept render and the pair's energy provenance, or the 422 that says why they cannot be drawn."""
     try:
-        plan = source.autodj.parse_plan(candidate["plan"])
+        plans = _stored_plans(job, source)
+        plan = plans[candidate["id"]]
         out_profile, in_profile = source.profile(job.out_id), source.profile(job.in_id)
         # Every render of the job starts at the bar its earliest plan needs (try_plans), not at this plan's own.
         start = shared_start_out_bar(
-            [source.autodj.parse_plan(c["plan"]) for c in job.candidates],
+            list(plans.values()),
             out_profile,
             in_profile,
             job.context_bars,
@@ -600,15 +704,18 @@ def _candidate_lanes(
         lanes = build_lanes(kept.parent, document, plan.out.deck, out_profile, layout, columns)
     except TrackUnavailable as error:
         return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "track_unavailable", str(error))
-    except (RenderPlanError, LaneError) as error:
+    except EngineUnavailable as error:
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "engine_unavailable", str(error))
+    except (PlanError, RenderPlanError, LaneError) as error:
+        # PlanError: the persisted plan data is corrupt or from an older shape; a typed refusal, never a 500.
         return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "lanes_failed", str(error))
-    return lanes
+    return lanes, lane_energy(out_profile, in_profile)
 
 
 @router.get(
     "/{job_id}/candidates/{candidate_id}/lanes",
     response_model=TryLanesOut,
-    responses={404: {"model": ErrorBody}, 422: {"model": ErrorBody}},
+    responses={404: {"model": ErrorBody}, 422: {"model": ErrorBody}, 503: {"model": ErrorBody}},
 )
 def candidate_lanes(
     request: Request,
@@ -631,15 +738,17 @@ def candidate_lanes(
         return found
     candidate, kept = found
     source = ServingTrackSource(data_dir, build_service(), origin=_serving_origin(request, state_db), state_db=state_db)
-    lanes = _candidate_lanes(job, candidate, kept, source, columns)
-    if isinstance(lanes, JSONResponse):
-        return lanes
+    drawn = _candidate_lanes(job, candidate, kept, source, columns)
+    if isinstance(drawn, JSONResponse):
+        return drawn
+    lanes, energy = drawn
     body = TryLanesOut(
         candidate=candidate_id,
         duration_s=lanes.duration_s,
         decks=[DeckLaneOut(**dataclasses.asdict(lane)) for lane in lanes.decks],
+        energy=LaneEnergyOut.of(energy),
     )
-    return JSONResponse(content=body.model_dump(mode="json"))
+    return JSONResponse(content=body.model_dump(mode="json", by_alias=True))
 
 
 @router.post("/{job_id}/pick", response_model=TryJobOut, responses=_PICK_ERRORS)

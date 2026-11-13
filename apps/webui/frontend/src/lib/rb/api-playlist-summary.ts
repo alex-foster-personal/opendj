@@ -7,6 +7,8 @@ export interface PlaylistSummaryStatsDoc {
 	energy: { min: number | null; max: number | null; missing: number };
 	keys: { distinct: number; missing: number };
 	unanalysed: number;
+	/** LIBM-105b: members whose local audio is missing on this machine (missing file, unmounted volume). */
+	unavailable: number;
 }
 
 export async function fetchPlaylistSummary(playlistId: string): Promise<PlaylistSummaryStatsDoc> {

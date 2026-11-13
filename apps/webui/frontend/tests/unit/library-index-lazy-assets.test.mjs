@@ -270,7 +270,12 @@ test('a row-assets answer fills stems, vocals and cover for the asked rows only'
 		});
 		const rows = [row('t1'), row('t2')];
 		const settled = new WeakSet();
-		const out = await fillModule.fetchAndApplyRowAssets(['t1'], () => rows, settled);
+		// Rows are raw (PR #12724): the answer arrives as whole-row patches.
+		const patchRow = (id, map) => {
+			const i = rows.findIndex((r) => r.stable_id === id);
+			rows[i] = map(rows[i]);
+		};
+		const out = await fillModule.fetchAndApplyRowAssets(['t1'], () => rows, settled, patchRow);
 		assert.ok(
 			settled.has(rows[0]) && !settled.has(rows[1]),
 			'only the answered row object is settled'

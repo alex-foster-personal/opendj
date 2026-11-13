@@ -37,6 +37,7 @@
  * module, one import, both halves of a load's telemetry.
  */
 
+import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 import { ApiError, readsAsUnreachableFetch } from '$lib/api/errors';
 import {
 	deckLoadPlainHeadline,
@@ -58,7 +59,16 @@ export {
 	type DeckLoadStageFacts,
 	type DeckLoadStagesMs
 } from '$lib/rb/deck-load-stage-units';
-import { recordDeckLoadTiming, recordPerfEvent, type StemLoadFacts } from '$lib/rb/perf-event-log';
+import {
+	snapshotDeckLoadBlockingStages,
+	type DeckLoadBlockingStageSnapshot
+} from '$lib/rb/format-load-latency';
+import {
+	recordDeckLoadTiming,
+	recordPerfEvent,
+	supplementDeckLoadBlockingStages,
+	type StemLoadFacts
+} from '$lib/rb/perf-event-log';
 import { pushToast } from '$lib/stores.svelte';
 
 /**
@@ -212,16 +222,82 @@ function _durationMsOf(stages: Record<string, number>): number {
  * closes the span this invocation opened rather than whichever span the
  * deck's most recent still-open load happens to be (#1658 review).
  */
+function _kpiSourceLabels(sources: Readonly<Record<string, string>>): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [canonical, internal] of Object.entries(sources)) {
+		out[`kpi_src_${canonical}`] = internal;
+	}
+	return out;
+}
+
+/** Publish canonical blocking-load KPI timings onto deck read models (issue #11142). */
+export function publishDeckLoadKpiFromRaw(
+	st: {
+		last_load_latency_ms: number | null;
+		last_load_stages: Record<string, number> | null;
+		last_load_stage_sources: Record<string, string> | null;
+	},
+	rawStages: Readonly<Record<string, number>>
+): DeckLoadBlockingStageSnapshot {
+	const snapshot = snapshotDeckLoadBlockingStages(rawStages);
+	st.last_load_latency_ms = snapshot.durations_ms.total ?? null;
+	st.last_load_stages = { ...snapshot.durations_ms };
+	st.last_load_stage_sources = { ...snapshot.stage_sources };
+	return snapshot;
+}
+
+/** Stamp KPI state and write a deck-load row only while this load token is still current. */
+export function recordDeckLoadKpiWhenToken(
+	token: number,
+	loadToken: number,
+	st: {
+		last_load_latency_ms: number | null;
+		last_load_stages: Record<string, number> | null;
+		last_load_stage_sources: Record<string, string> | null;
+	},
+	stages: Readonly<Record<string, number>>,
+	kind: string,
+	deck: 1 | 2 | 3 | 4 | null,
+	stems: StemLoadFacts,
+	spanId: number
+): void {
+	if (token !== loadToken) return;
+	publishDeckLoadKpiFromRaw(st, stages);
+	recordDeckLoad(kind, { ...stages }, deck, stems, spanId);
+}
+
+/** Publish completed-load KPI state only when this token won and stable_id still matches. */
+export function publishDeckLoadKpiWhenWon(
+	token: number,
+	loadToken: number,
+	st: {
+		stable_id: string | null;
+		last_load_latency_ms: number | null;
+		last_load_stages: Record<string, number> | null;
+		last_load_stage_sources: Record<string, string> | null;
+	},
+	stable_id: string,
+	stages: Readonly<Record<string, number>>
+): boolean {
+	if (token !== loadToken || st.stable_id !== stable_id) return false;
+	publishDeckLoadKpiFromRaw(st, stages);
+	return true;
+}
+
 export function recordDeckLoad(
 	kind: string,
 	stages: Record<string, number>,
 	deck: 1 | 2 | 3 | 4 | null,
 	stems: StemLoadFacts,
-	spanId: number
+	spanId: number,
+	blocking_stages?: Record<string, number>
 ): void {
 	const nowMs = performance.now();
 	const { stagesMs, facts } = splitDeckLoadStageMap(stages);
 	const subject = _closeSpan(deck, spanId, _durationMsOf(stagesMs), nowMs);
+	const snapshot = snapshotDeckLoadBlockingStages(stages);
+	const blocking = blocking_stages ?? snapshot.durations_ms;
+	const sources = snapshot.stage_sources;
 	recordDeckLoadTiming(
 		kind,
 		stagesMs,
@@ -229,10 +305,37 @@ export function recordDeckLoad(
 		stems,
 		{
 			...concurrencyLabels(subject, _spans, nowMs),
-			...pressureLabels(readMachinePressure(), Date.now())
+			...pressureLabels(readMachinePressure(), Date.now()),
+			..._kpiSourceLabels(sources)
 		},
+		blocking,
 		facts
 	);
+}
+
+/** After lazy stems land, fold stem KPI stages into the deck-load row and deck state. */
+export function supplementDeckLoadKpiWithStemStages(
+	deck: 1 | 2 | 3 | 4,
+	stableId: string,
+	st: {
+		last_load_latency_ms: number | null;
+		last_load_stages: Record<string, number> | null;
+		last_load_stage_sources: Record<string, string> | null;
+	},
+	stemStages: Readonly<Record<string, number>>
+): void {
+	const stemSnapshot = snapshotDeckLoadBlockingStages(stemStages);
+	const patch: Record<string, number> = {};
+	for (const key of ['probeStem', 'fetchStems', 'decodeStems'] as const) {
+		if (stemSnapshot.durations_ms[key] !== undefined) patch[key] = stemSnapshot.durations_ms[key];
+	}
+	if (Object.keys(patch).length === 0) return;
+	supplementDeckLoadBlockingStages(deck, stableId.slice(0, 12), patch);
+	st.last_load_stages = { ...(st.last_load_stages ?? {}), ...patch };
+	st.last_load_stage_sources = {
+		...(st.last_load_stage_sources ?? {}),
+		...stemSnapshot.stage_sources
+	};
 }
 
 // --------------------------------------------- failed loads: the report
@@ -532,6 +635,7 @@ export function reportDeckLoadFailure(
 	stages: Readonly<Record<string, number>>,
 	options: DeckLoadOptions
 ): void {
+	if (isPageGoingAway()) return;
 	const failureContext = deckLoadFailureContext(deck, stages);
 	// A load whose caller shows its own toast (Trackify, #4036) still owes the
 	// server this report: it is the only record of which stage the load died in.
@@ -554,6 +658,7 @@ export function reportDeckLoadCommandFailure(
 	message: string,
 	cause: unknown
 ): void {
+	if (isPageGoingAway()) return;
 	if (typeof cause === 'object' && cause !== null && _toastedLoadFailures.has(cause)) return;
 	// Grouped per deck, as the dispatcher groups every other command failure:
 	// a refusal repeated by a held key is one toast with a count, not a stack.

@@ -22,8 +22,14 @@
 		stepPadDrag,
 		type SelectionDragStart
 	} from '$lib/rb/knob-control.svelte';
-	import { createDragTracker, trackDragMove, type DragTracker } from '$lib/rb/drag-sensitivity.svelte';
+	import {
+		createDragTracker,
+		trackDragMove,
+		type DragTracker
+	} from '$lib/rb/drag-sensitivity.svelte';
 	import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { groupPadSelectorId } from './mixer-extra-selector-ids';
 
 	interface Props {
 		/**
@@ -45,6 +51,8 @@
 	const DIAG_DEG = [45, 135];
 	const HALF_DEG = [22.5, 67.5, 112.5, 157.5];
 
+	// The settings copy sits outside the /performance selector tree, so only the Mixer's copy is a node.
+	const selectorEnabled = $derived(!inSettings);
 	const open = $derived(knobUi.selectedIds.length >= 2 && isSettingsOpen() === inSettings);
 	const axes = $derived(padAxes(knobUi.selectedIds));
 	const xLabel = $derived(_axisLabel(axes.x));
@@ -81,7 +89,12 @@
 			for (const sign of [1, -1]) {
 				const cx = ux * R * f * sign;
 				const cy = uy * R * f * sign;
-				out.push({ x1: cx - uy * half, y1: cy + ux * half, x2: cx + uy * half, y2: cy - ux * half });
+				out.push({
+					x1: cx - uy * half,
+					y1: cy + ux * half,
+					x2: cx + uy * half,
+					y2: cy - ux * half
+				});
 			}
 		}
 		return out;
@@ -156,6 +169,7 @@
 		aria-label="Group pad"
 		data-testid="mixer-group-pad"
 		data-knob-id="group-pad"
+		use:selectorNode={{ id: groupPadSelectorId(), kind: 'leaf', enabled: selectorEnabled }}
 		onpointerenter={() => (pointerOver = true)}
 		onpointerleave={() => (pointerOver = false)}
 	>

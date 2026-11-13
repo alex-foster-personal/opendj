@@ -1,15 +1,16 @@
-"""Encode rekordbox stick ANLZ files from a library track analysis (USB export).
+"""Encode rekordbox stick ANLZ files and synthetic PMAI bytes for classic USB export.
 
-Writes byte-perfect PMAI containers using the tag layouts documented by
-pyrekordbox and Deep Symmetry. No whole-file pyrekordbox parse is used.
-
--Cursor-cloud
+Production ``build_dat`` / ``build_ext`` use library analysis inputs (USBEXP-10746).
+Classic directory export uses :func:`build_dat_ext` and :func:`write_track` with
+simpler :class:`TrackAnlzInput`. Tag layouts follow pyrekordbox and Deep Symmetry.
+Low-level public builders (``pmai``, ``pqtz``, ``pwav``, ...) support stick tests.
 """
 
 from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -73,6 +74,10 @@ def _pmai(*tags: bytes) -> bytes:
     return b"PMAI" + struct.pack(">II", 28, 28 + len(body)) + bytes(16) + body
 
 
+def pmai(*tags: bytes) -> bytes:
+    return _pmai(*tags)
+
+
 # ----- shared validation ------------------------------------------------------
 
 
@@ -117,9 +122,17 @@ def _pcpt(hot_index: int, time_ms: int, loop_end_ms: int | None) -> bytes:
     )
 
 
+def pcpt(hot: int, time_ms: int, loop_ms: int | None = None) -> bytes:
+    return _pcpt(hot, time_ms, loop_ms)
+
+
 def _pcob(list_name: bytes, entries: bytes) -> bytes:
     count = len(entries) // 56 if entries else 0
     return _tag(b"PCOB", struct.pack(">IHHi", 0 if list_name == b"memory" else 1, 0, count, -1), entries)
+
+
+def pcob(list_type: int, *entries: bytes) -> bytes:
+    return _pcob(b"memory" if list_type == _MEMORY_LIST else b"hotcue", b"".join(entries))
 
 
 # ----- PCO2 / PCP2 (.EXT extended cues) ---------------------------------------
@@ -149,12 +162,32 @@ def _pcp2(cue: CueInput) -> bytes:
     return entry + bytes(entry_len - len(entry))
 
 
+def pcp2(
+    hot: int,
+    time_ms: int,
+    *,
+    comment: str = "",
+    color: int | None = None,
+    loop_ms: int | None = None,
+) -> bytes:
+    """``hot`` is the on-stick hot index (0 = memory, 1..8 = pads A..H)."""
+    if hot == 0:
+        cue = CueInput("memory", 0, time_ms, comment=comment or None, color=color, loop_end_ms=loop_ms)
+    else:
+        cue = CueInput("hot", hot - 1, time_ms, comment=comment or None, color=color, loop_end_ms=loop_ms)
+    return _pcp2(cue)
+
+
 def _pco2(list_type: int, entries: tuple[bytes, ...]) -> bytes:
     body = b"".join(entries)
     return _tag(b"PCO2", struct.pack(">IHH", list_type, len(entries), 0), body)
 
 
-# ----- waveforms --------------------------------------------------------------
+def pco2(list_type: int, *entries: bytes) -> bytes:
+    return _pco2(list_type, entries)
+
+
+# ----- waveforms (production detail) ------------------------------------------
 
 
 def _detail_column_count(duration_s: float) -> int:
@@ -221,6 +254,39 @@ def _pwv5_tag(low: np.ndarray, mid: np.ndarray, high: np.ndarray) -> bytes:
     return _tag(b"PWV5", header, body)
 
 
+# ----- waveforms (synthetic fixtures) -----------------------------------------
+
+
+def _cols(n: int, width: int, seed: int) -> bytes:
+    return bytes((i * 7 + seed * 13 + (i // width) * 3) % 128 for i in range(n * width))
+
+
+def pwv6(n: int, seed: int) -> bytes:
+    return _tag(b"PWV6", struct.pack(">II", 3, n), _cols(n, 3, seed))
+
+
+def pwv7(n: int, seed: int) -> bytes:
+    return _tag(b"PWV7", struct.pack(">III", 3, n, 0x00960000), _cols(n, 3, seed))
+
+
+def pwav(n: int, seed: int) -> bytes:
+    return _tag(b"PWAV", struct.pack(">II", n, 0x10000), _cols(n, 1, seed))
+
+
+def pwv3(n: int, seed: int) -> bytes:
+    return _tag(b"PWV3", struct.pack(">III", 1, n, 0x00960000), _cols(n, 1, seed))
+
+
+def pwv5(heights: list[int]) -> bytes:
+    body = b"".join(struct.pack(">H", (0b101 << 13) | (h << 2)) for h in heights)
+    return _tag(b"PWV5", struct.pack(">III", 2, len(heights), 0), body)
+
+
+def pvdi(envelope: bytes) -> bytes:
+    fixed = bytes.fromhex("0000040056220001") + struct.pack(">I", len(envelope))
+    return _tag(b"PVDI", fixed, envelope)
+
+
 # ----- PSSI phrases -----------------------------------------------------------
 
 
@@ -249,6 +315,18 @@ def _pssi_tag(track: TrackAnalysisInput) -> bytes | None:
     return bytes(tag)
 
 
+def pssi(phrases: list[tuple[int, int]], *, end_beat: int, masked: bool) -> bytes:
+    entries = b"".join(
+        struct.pack(">HHH6B3H4BH", i + 1, beat, kind, *([0] * 14)) for i, (beat, kind) in enumerate(phrases)
+    )
+    header_rest = struct.pack(">IHH6sH2sB1s", 24, len(phrases), 1, bytes(6), end_beat, bytes(2), 1, bytes(1))
+    tag = bytearray(_tag(b"PSSI", header_rest, entries))
+    if masked:
+        for index in range(len(tag) - 18):
+            tag[18 + index] ^= (XOR_MASK[index % len(XOR_MASK)] + len(phrases)) % 256
+    return bytes(tag)
+
+
 # ----- PQTZ grid --------------------------------------------------------------
 
 
@@ -257,7 +335,18 @@ def _pqtz_tag(beats: tuple[BeatInput, ...]) -> bytes:
     return _tag(b"PQTZ", bytes(4) + struct.pack(">II", 0x80000, len(beats)), body)
 
 
-# ----- public writers ---------------------------------------------------------
+def pqtz(beats: list[tuple[int, float, int]]) -> bytes:
+    """beats = (beat in bar 1..4, bpm, time_ms)."""
+    body = b"".join(struct.pack(">HHI", n, round(bpm * 100), t) for n, bpm, t in beats)
+    return _tag(b"PQTZ", bytes(4) + struct.pack(">II", 0x80000, len(beats)), body)
+
+
+def grid(first_ms: int, bpm: float, count: int) -> list[tuple[int, float, int]]:
+    step = 60000 / bpm
+    return [(i % 4 + 1, bpm, round(first_ms + i * step)) for i in range(count)]
+
+
+# ----- public writers (library analysis) --------------------------------------
 
 
 def build_dat(track: TrackAnalysisInput) -> bytes:
@@ -285,9 +374,9 @@ def build_ext(track: TrackAnalysisInput) -> bytes:
         _pwv3_tag(low, mid, high),
         _pwv5_tag(low, mid, high),
     ]
-    pssi = _pssi_tag(track)
-    if pssi is not None:
-        tags.append(pssi)
+    pssi_tag = _pssi_tag(track)
+    if pssi_tag is not None:
+        tags.append(pssi_tag)
     return _pmai(*tags)
 
 
@@ -296,12 +385,73 @@ def build_anlz_pair(track: TrackAnalysisInput) -> tuple[bytes, bytes]:
     return build_dat(track), build_ext(track)
 
 
+# ----- classic directory export (USBEXP-10743) --------------------------------
+
+
+def write_track(volume: Path, rel_dat: str, *, dat: bytes, ext: bytes | None = None, twoex: bytes | None = None) -> str:
+    """Write one track's files; returns the pdb-style analyze_path."""
+    dat_path = volume / rel_dat
+    dat_path.parent.mkdir(parents=True, exist_ok=True)
+    dat_path.write_bytes(dat)
+    if ext is not None:
+        dat_path.with_suffix(".EXT").write_bytes(ext)
+    if twoex is not None:
+        dat_path.with_suffix(".2EX").write_bytes(twoex)
+    return "/" + rel_dat.replace("\\", "/")
+
+
+@dataclass(frozen=True)
+class TrackAnlzInput:
+    bpm: float
+    first_ms: int = 25
+    beat_count: int = 32
+    hot_cue_ms: int = 1000
+    hot_cue_pad: int = 1
+    seed: int = 1
+
+
+def build_dat_ext(analysis: TrackAnlzInput) -> tuple[bytes, bytes]:
+    beats = grid(analysis.first_ms, analysis.bpm, analysis.beat_count)
+    dat = pmai(pqtz(beats), pwav(400, analysis.seed))
+    ext = pmai(
+        pco2(1, pcp2(analysis.hot_cue_pad, analysis.hot_cue_ms, color=43)),
+        pco2(0, pcp2(0, max(0, analysis.hot_cue_ms // 2))),
+    )
+    return dat, ext
+
+
+def analyze_paths(*, pdb_track_id: int, content_sha256_hex: str) -> tuple[str, str]:
+    """Return ``(rel_dat_path, pdb_analyze_path)`` with a unique ANLZ directory per track."""
+    digest = content_sha256_hex[:8].upper()
+    pool = f"P{pdb_track_id:03d}"
+    rel = f"PIONEER/USBANLZ/{pool}/{digest}/ANLZ0000.DAT"
+    return rel, f"/{rel}"
+
+
 __all__ = [
     "BeatInput",
     "CueInput",
     "PhraseInput",
     "TrackAnalysisInput",
+    "TrackAnlzInput",
+    "analyze_paths",
     "build_anlz_pair",
     "build_dat",
+    "build_dat_ext",
     "build_ext",
+    "grid",
+    "pco2",
+    "pcob",
+    "pcp2",
+    "pcpt",
+    "pmai",
+    "pqtz",
+    "pssi",
+    "pvdi",
+    "pwav",
+    "pwv3",
+    "pwv5",
+    "pwv6",
+    "pwv7",
+    "write_track",
 ]

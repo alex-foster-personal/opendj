@@ -37,7 +37,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import apps.webui.server.routes.stems as stems_module
-from apps.cloud import stem_bundles, stem_hydration
+from apps.cloud import stem_bundles, stem_hydration, stem_hydration_locks
 from apps.cloud.stem_index import load_cached_index, save_cached_index
 from apps.cloud.stem_source import DirectR2Source, HubPresignedSource
 from apps.cloud.stem_upload_queue import exclusive_file_lock
@@ -1057,10 +1057,10 @@ def test_a_marker_that_cannot_be_removed_or_marked_done_stays_ignored_here(
                 Path, "unlink", _fail_with_sharing_violation(Path.unlink, _owner_or_generation, times=None)
             )
             patched.setattr(
-                stem_hydration,
+                stem_hydration_locks,
                 "_create_done_sibling",
                 _fail_with_sharing_violation(
-                    stem_hydration._create_done_sibling,
+                    stem_hydration_locks._create_done_sibling,
                     lambda *a: Path(a[0]).name.endswith(".done"),
                     times=None,
                 ),
@@ -1620,7 +1620,7 @@ def test_a_new_owner_is_not_read_as_finished_by_a_stale_tombstone(
 ):
     """[if] a stale tombstone sits by a new owner [then] the owner reads as fetching, [else stop]."""
     data_dir = tmp_path / "data"
-    monkeypatch.setattr(stem_hydration.secrets, "token_hex", lambda _n: "deadbeef")
+    monkeypatch.setattr(stem_hydration_locks.secrets, "token_hex", lambda _n: "deadbeef")
     owners = stem_hydration.hydrate_owners_dir(data_dir)
     owners.mkdir(parents=True)
     me = psutil.Process()

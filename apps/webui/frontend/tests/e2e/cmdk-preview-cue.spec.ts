@@ -28,6 +28,7 @@
 import { expect, test, type Page, type Response } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
+import { openCmdkBar } from './support/open-cmdk-bar';
 
 /** What the fixture's generated tracks are titled after (support/cmdk_preview_cue_fixture.py SEARCH_QUERY). */
 const SEARCH_QUERY = 'cmdk-preview-cue';
@@ -62,15 +63,6 @@ async function stripMessage(page: Page): Promise<string> {
 	return (await page.getByTestId('command-bar-preview-message').textContent())?.trim() ?? '';
 }
 
-/** Open the v2 bar. It loads on demand after the flags are read, so press until it opens. */
-async function openBar(page: Page): Promise<void> {
-	await expect(async () => {
-		await page.keyboard.press('Control+k');
-		await expect(page.locator('#cmdk2-list')).toBeVisible({ timeout: 1_000 });
-	}).toPass({ timeout: 30_000 });
-	await expect(page.getByTestId('command-bar-input')).toBeFocused();
-}
-
 /** → on the highlighted row, then wait for the real preview voice to sound that track. */
 async function jumpAndWaitSounding(page: Page, stableId: string): Promise<PerformanceState['preview']> {
 	await page.keyboard.press('ArrowRight');
@@ -100,10 +92,12 @@ test.describe.configure({ mode: 'serial' });
 // The config starts no engine on Windows: its shared launcher runs /bin/sh and .venv/bin/python.
 test.skip(process.platform === 'win32', 'POSIX-only: guardedWebServerCommand launches /bin/sh and .venv/bin/python');
 
-test('→ previews the highlighted track in the cue through the dispatcher, Esc and closing the bar stop it, no deck moves', async ({
+// CMDK preview dwell never reaches POST /library/row-assets when the bar highlight lands
+// during a cold collection refresh (flat clears until the index settles).
+// https://github.com/private_owner/music-dj-tools/issues/13527
+test.fixme('→ previews the highlighted track in the cue through the dispatcher, Esc and closing the bar stop it, no deck moves', async ({
 	page
 }) => {
-	test.fixme(true, 'fixture track has no downbeats, see #13527');
 	// The dev server compiles /performance on this first visit.
 	test.setTimeout(240_000);
 	// Every grid answer the page gets, so the grid the bar jumps on is read from the real response.
@@ -126,14 +120,19 @@ test('→ previews the highlighted track in the cue through the dispatcher, Esc 
 	// Muted after the silence watchdog's tap, so nothing is audible; the cue keeps its own gain.
 	await page.goto('/performance?muted=1', { timeout: 170_000 });
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, { timeout: 170_000 });
+	await page.waitForFunction(() => {
+		const root = document.querySelector('.perf-root');
+		return root !== null && getComputedStyle(root).getPropertyValue('--rb-bg').trim().length > 0;
+	});
 	const decksBefore = await deckTracks(page);
 	expect(await query(page).then((s) => s.preview.stable_id), 'nothing previews before the test').toBeNull();
 
-	await openBar(page);
+	await openCmdkBar(page);
 	await page.getByTestId('command-bar-input').fill(SEARCH_QUERY);
 	const rows = page.locator('[data-testid="command-bar-row"]');
 	await expect.poll(() => rows.count(), { message: `the bar lists no fixture track for ${SEARCH_QUERY}` }).toBeGreaterThan(1);
 
+	// ↓ then ↑: the arrows mark the list as touched, which is what hands ← → to the preview.
 	// ↓ then ↑: the arrows mark the list as touched, which is what hands ← → to the preview.
 	await page.keyboard.press('ArrowDown');
 	await page.keyboard.press('ArrowUp');
@@ -148,7 +147,7 @@ test('→ previews the highlighted track in the cue through the dispatcher, Esc 
 	await expect(strip).toBeVisible();
 	await expect(strip).toContainText(SEARCH_QUERY);
 	await expect(strip, 'the strip never drew the overview the engine serves').toHaveAttribute('data-state', 'ready', {
-		timeout: 30_000
+		timeout: 60_000
 	});
 
 	// The jump prefers a real /anlz grid, then uses the same /beatgrid-fallback

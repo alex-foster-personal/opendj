@@ -40,7 +40,7 @@ describe('library-columns', () => {
 		for (const id of ['funnel', 'err', 'cloud', 'order', 'title', 'autoplay', 'lyrics']) {
 			assert.equal(cols.isHideableColumn(id), false, id);
 		}
-		assert.equal(cols.HIDEABLE_COLUMNS.length, 18);
+		assert.equal(cols.HIDEABLE_COLUMNS.length, 23);
 		assert.equal(cols.isHideableColumn('colour'), true);
 		assert.equal(cols.HIDEABLE_COLUMN_LABELS.colour, 'Colour');
 		for (const col of cols.HIDEABLE_COLUMNS) assert.ok(cols.HIDEABLE_COLUMN_LABELS[col], col);
@@ -104,17 +104,42 @@ describe('toggleLibraryColumn', () => {
 		try {
 			const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
 			prefs.toggleLibraryColumn('key');
-			assert.deepEqual(prefs.uiPrefs.library_hidden_columns, ['key', 'filename', 'location']);
-			assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).library_hidden_columns, [
+			assert.deepEqual(prefs.uiPrefs.library_hidden_columns, [
+				'album',
 				'key',
 				'filename',
-				'location'
+				'location',
+				'date_added',
+				'bitrate',
+				'kind',
+				'last_played'
+			]);
+			assert.deepEqual(JSON.parse(store.get(STORAGE_KEY)).library_hidden_columns, [
+				'album',
+				'key',
+				'filename',
+				'location',
+				'date_added',
+				'bitrate',
+				'kind',
+				'last_played'
 			]);
 			prefs.showAllLibraryColumns();
 			assert.deepEqual(prefs.uiPrefs.library_hidden_columns, []);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			assert.deepEqual(bodies, [
-				{ library_hidden_columns: ['key', 'filename', 'location'] },
+				{
+					library_hidden_columns: [
+						'album',
+						'key',
+						'filename',
+						'location',
+						'date_added',
+						'bitrate',
+						'kind',
+						'last_played'
+					]
+				},
 				{ library_hidden_columns: [] }
 			]);
 		} finally {

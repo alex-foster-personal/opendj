@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, StrictBool, field_validator, model_serializer, model_validator
+from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator, model_serializer, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from .models_grid_quality import GridQualityRowOut, TempoCurveRowOut, TrackAnalysisHintsOut
@@ -104,6 +104,10 @@ class TrackOut(BaseModel):
     notes: str | None = None
     #: Cmd+K and index listings use the user comment string (may duplicate ``notes``).
     comments: str | None = None
+    # Issue #10029: the Year and Label columns, the file's own tags (null until
+    # the track is imported or tag-refreshed with them).
+    year: int | None = None
+    label: str | None = None
     last_played_at: str | None = None
     # PREF-01: user-set preferred tempo + playable range, keyed by stable_id
     # (not vendor bpm). Null when never set for this track.
@@ -332,6 +336,8 @@ class TrackListItemOut(TrackOut):
 
     preview_b64: str | None
     preview_max: int | None
+    # LIBUX-13803: the Date Added column, same value and rule as TrackRowOut.
+    date_added: str | None = None
     file_availability: FileAvailabilityStatus
     file_exists: bool | None
     # LIBUX-07: our own audio in non-local storage, not streaming and not
@@ -429,6 +435,11 @@ class TrackListItemOut(TrackOut):
     created_by: str | None = None
     is_edit: bool = False
     valid: bool = True
+    #: CMDK-04: a listing row (GET /tracks) does not carry the comment. The index
+    #: row (TrackIndexItemOut) does, for the Cmd K v2 bar, and GET /tracks/{sid}
+    #: (TrackOut) serves it to the inspector. LIBEDIT-9179 hoisted it onto TrackOut,
+    #: which put it on every listing row (CMDK-13842).
+    comments: SkipJsonSchema[str | None] = Field(default=None, exclude=True)
 
 
 class LyricLineOut(BaseModel):
@@ -489,6 +500,10 @@ class TrackIndexItemOut(TrackListItemOut):
     lyrics_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     auto_cues_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
     stems_available: SkipJsonSchema[bool] = Field(default=False, exclude=True)
+    #: CMDK-04: the Cmd K v2 bar searches comments across the whole collection from
+    #: this index, so the index carries them (a string the backend already holds per
+    #: track; no disk read). Listing rows (``GET /tracks``) do not.
+    comments: str | None = None
 
 
 class TrackIndexOut(BaseModel):
@@ -536,6 +551,15 @@ class TrackPatch(BaseModel):
     tempo_pref: TempoPrefPatch | None = None
     # NOWP-11487: explicit null is refused (422); omit to leave untouched.
     tracklist_hidden: StrictBool | None = None
+    # Issue #9737: rekordbox colour label, ColorID 1..8; null clears it, omit leaves it.
+    color_id: StrictInt | None = None
+
+    @field_validator("color_id")
+    @classmethod
+    def _color_id_range(cls, v: int | None) -> int | None:
+        if v is not None and not (1 <= v <= 8):
+            raise ValueError("color_id must be between 1 and 8 or null")
+        return v
 
     @field_validator("rating")
     @classmethod
@@ -586,6 +610,8 @@ class PlaylistSummaryStats(BaseModel):
     energy: PlaylistSummaryEnergyStats
     keys: PlaylistSummaryKeysStats
     unanalysed: int = 0
+    #: LIBM-105b: members whose local audio is missing on this machine (missing file, unmounted volume).
+    unavailable: int = 0
 
 
 class PlaylistSummary(BaseModel):
@@ -637,9 +663,23 @@ class TrackRowOut(BaseModel):
     valid: bool = True
     title: str | None
     artist: str | None
+    # LIBUX-13747: the Album column; same tracks.album GET /tracks/{sid} serves.
+    album: str | None
+    # Issue #10029: the Year and Label columns, same values GET /tracks/{sid} serves.
+    year: int | None = None
+    label: str | None = None
+    # LIBUX-13803: the Date Added column, YYYY-MM-DD; the earlier of Open DJ's
+    # tracks.created_at and rekordbox DateCreated, null when neither is known.
+    date_added: str | None
+    # LIBUX-13845: the Last Played column; the later of the imported last play and
+    # the newest play-log entry (one bulk read per page), null when never played.
+    last_played_at: str | None = None
     key: str | None
     bpm: float | None
     rating: int | None
+    # Issue #9737: the Colour column, rekordbox ColorID 1..8; an Open DJ edit wins
+    # over the rekordbox ColorID, null when neither sets a colour.
+    color_id: int | None = None
     duration_ms: int | None
     genre: str | None
     genre_source: str | None = None
@@ -698,6 +738,8 @@ class TrackRowOut(BaseModel):
     # too_short / no_pulse: analyzed, and no tempo was measured (issue #5986).
     bpm_status: Literal["ok", "failed", "missing", "available-not-selected", "too_short", "no_pulse"]
     bpm_reason: str | None = None
+    # PLAY-5884: usable beat grid, set by the playlist-tracks page only (null when unknown).
+    has_beatgrid: bool | None = None
     bpm_source: str | None = None
     bpm_method: str | None = None
     bpm_confidence: float | None = None
@@ -847,6 +889,14 @@ class HealthWaveformMaterialization(BaseModel):
     selected: str
     native_available: bool
     native_import_error: str | None = None
+
+
+class HealthLiveOut(BaseModel):
+    """PLATFORM-12937: the restart-liveness verdict, with no state or probe detail."""
+
+    #: Always ``alive`` when the process answers; readiness lives on GET /health.
+    status: str = "alive"
+    version: str
 
 
 class HealthOut(BaseModel):

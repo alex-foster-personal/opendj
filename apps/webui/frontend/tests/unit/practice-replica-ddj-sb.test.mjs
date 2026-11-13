@@ -6,7 +6,8 @@
 //   if deck 1 PLAY/PAUSE does not fire deck_play_toggle deck 1 then broken
 //   if deck 2 pad 3 does not fire deck_hot_cue deck 2 slot C then broken
 //   if BEAT SYNC resolves to anything but deck_sync_toggle then broken
-//   if JOG or MASTER LEVEL resolve as bound while the map only hints them then broken
+//   if JOG resolves as bound while the map only hints it then broken
+//   if MASTER LEVEL, HEADPHONES VOL or FILTER FADE resolve as anything but unwired then broken
 //   if a control with a wire number absent from the map resolves silently then broken
 //   if TEMPO's value is not 14-bit (continuous14) then broken
 //   if a documented shifted row does not resolve with shiftHeld then broken
@@ -110,19 +111,18 @@ test('wire identity picks the same action as the controller', () => {
 });
 
 test('hinted-only controls are inert with the parity tooltip', () => {
-	for (const id of [
-		'd1-jog',
-		'd1-vinyl',
-		'd1-key-lock',
-		'fx1-1',
-		'master-level',
-		'phones-vol',
-		'filter-fade',
-		'back'
-	]) {
+	for (const id of ['d1-jog', 'd1-vinyl', 'd1-key-lock', 'fx1-1', 'back']) {
 		const r = byId(id);
 		assert.equal(r.kind, 'inert', id);
 		assert.match(bindings.controlTitle(r), /not implemented - see PARITY-TODO/);
+	}
+});
+
+test('analog and local-LED controls are unwired, not placeholder wires (#12042)', () => {
+	for (const id of ['master-level', 'phones-vol', 'filter-fade']) {
+		const r = byId(id);
+		assert.equal(r.kind, 'unwired', id);
+		assert.equal(r.wire, null, id);
 	}
 });
 

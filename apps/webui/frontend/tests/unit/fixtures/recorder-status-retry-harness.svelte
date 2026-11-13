@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import RecorderRetryRail from './recorder-status-retry-rail.svelte';
+	import PerformanceRecorderRail from '$lib/components/rb/browser/PerformanceRecorderRail.svelte';
 
 	let { initiallyRecordable = true }: { initiallyRecordable?: boolean } = $props();
 	let recordable = $state(untrack(() => initiallyRecordable));
@@ -10,4 +10,9 @@
 	}
 </script>
 
-<RecorderRetryRail {recordable} />
+<PerformanceRecorderRail
+	source="collection"
+	onspotify={() => {}}
+	oncollection={() => {}}
+	{recordable}
+/>

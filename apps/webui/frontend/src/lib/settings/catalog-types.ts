@@ -20,6 +20,9 @@ export interface SettingGroup {
 	label: string;
 }
 
+/** Safe catalog actions a row runs through the typed API client; none is ever a live write (#12988). */
+export type SettingActionId = 'ratings_sync_status' | 'ratings_sync_dry_run';
+
 export type SettingControl =
 	| { kind: 'boolean' }
 	| { kind: 'enum'; options: ReadonlyArray<{ value: string; label: string }> }
@@ -30,6 +33,9 @@ export type SettingControl =
 	// Pure-navigation entry: searchable pointer to a full route page. The
 	// overlay renders an `<a href>` control and `activateSetting` calls `goto`.
 	| { kind: 'link'; href: string }
+	// A safe read or dry run through the typed API client: command search and
+	// the overlay run it and show the sentence it resolves with.
+	| { kind: 'action'; action: SettingActionId }
 	// A live numeric row: range slider + value readout + a "default" reset.
 	// Bounds come from the module that VALIDATES the value (never a second
 	// literal here), so no slider position can be one the setter refuses.

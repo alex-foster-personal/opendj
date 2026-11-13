@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.open_dj.provenance import utc_mtime, wrap
+from apps.open_dj.provenance import unwrap_provenance_scalar, utc_mtime, wrap
 
 _FIXED = datetime(2026, 2, 2, 9, 0, 0, tzinfo=UTC)
 
@@ -76,6 +76,19 @@ def test_wrap_rejects_unknown_source() -> None:
 def test_wrap_accepts_all_enum_sources() -> None:
     for src in ["mik", "rekordbox", "djay", "serato", "traktor", "open-dj-tool", "manual", "inferred"]:
         wrap(1, source=src, modified_at=_FIXED)
+
+
+@pytest.mark.requirement("OPEN-01")
+def test_unwrap_provenance_scalar_strips_envelope() -> None:
+    env = wrap(128.0, source="rekordbox", modified_at=_FIXED)
+    assert unwrap_provenance_scalar(env) == 128.0
+
+
+@pytest.mark.requirement("OPEN-01")
+def test_unwrap_provenance_scalar_passes_through_scalar() -> None:
+    assert unwrap_provenance_scalar(42) == 42
+    assert unwrap_provenance_scalar(None) is None
+    assert unwrap_provenance_scalar({"value": 1}) == {"value": 1}
 
 
 @pytest.mark.requirement("OPEN-02")

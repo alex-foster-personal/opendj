@@ -1,4 +1,4 @@
-"""Bulk-hydrate hub transport failure contracts (issue #2978, STEM-35)."""
+"""Bulk-hydrate hub transport failure contracts (issues #2978, #13392; STEM-35, SYNCEXPORT-14755)."""
 
 from __future__ import annotations
 
@@ -107,6 +107,7 @@ def _presign_payload(
 
 
 @pytest.mark.requirement("STEM-35")
+@pytest.mark.requirement("SYNCEXPORT-14755")
 def test_bulk_hydrate_hub_unreachable_before_work_returns_503(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -145,7 +146,40 @@ def test_bulk_hydrate_hub_unreachable_before_work_returns_503(
         assert client.get("/api/v1/health").status_code == 200
 
 
+@pytest.mark.requirement("SYNCEXPORT-14755")
+def test_bulk_hydrate_missing_ids_returns_400(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] bulk-hydrate has no stable_ids or playlist [then] 400 structured detail, [else stop]."""
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    entry = _seed_bundle(s3, cfg, "hub-track")
+    save_cached_index(data_dir, {"hub-track": entry})
+    source = HubPresignedSource(
+        data_dir=data_dir,
+        hub_url="http://127.0.0.1:9",
+        machine_id="machine-1",
+        bearer=None,
+        transport=_UnreachableHubTransport(),
+    )
+    monkeypatch.setattr(
+        "apps.cloud.stem_source.resolve_stem_hydration_source",
+        lambda _data_dir: source,
+    )
+
+    with _hub_assets_client(data_dir=data_dir, source=source) as client:
+        resp = client.post(
+            "/api/v1/stems/bulk-hydrate",
+            json={"budget_bytes": 10**9, "data_dir": str(data_dir)},
+        )
+        assert resp.status_code == 400
+        assert "stable_ids" in resp.json()["detail"] or "playlist" in resp.json()["detail"]
+        assert client.get("/api/v1/health").status_code == 200
+
+
 @pytest.mark.requirement("STEM-35")
+@pytest.mark.requirement("SYNCEXPORT-14755")
 def test_bulk_hydrate_hub_5xx_mid_pass_returns_200_partial_hub_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -7,6 +7,7 @@
 	import { openUsbExportForPlaylist } from '$lib/rb/usb-export.svelte';
 	import { downloadPlaylistText } from '$lib/rb/playlist-text-export';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
+	import { startTitleFixScanForPlaylist } from '$lib/rb/title-fix-scan';
 	import { isInboxPlaylistId } from './inbox-id';
 
 	let {
@@ -20,6 +21,8 @@
 		onduplicatesmartlist,
 		onselect,
 		ondeletesmartlist,
+		oneditsmartlistrule,
+		onrefreshsmartlist,
 		onsortplaylists
 	}: {
 		oncreate?: (() => void) | undefined;
@@ -32,6 +35,10 @@
 		onduplicatesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
 		onselect: (node: PlaylistNode) => void;
 		ondeletesmartlist?: ((sl: { id: string; name: string }) => void) | undefined;
+		/** SMART (#10024): open the rule editor modal for this smartlist. */
+		oneditsmartlistrule?: ((sl: { id: string; name: string }) => void) | undefined;
+		/** SMART (#10024): re-evaluate now; the item is disabled until this settles. */
+		onrefreshsmartlist?: ((sl: { id: string; name: string }) => Promise<void>) | undefined;
 		onsortplaylists?: (() => void) | undefined;
 	} = $props();
 	let menu = $state<{
@@ -41,6 +48,17 @@
 		node?: PlaylistNode | undefined;
 		smartlist?: { id: string; name: string } | undefined;
 	} | null>(null);
+	let refreshingSmartlistId = $state<string | null>(null);
+
+	async function refreshSmartlist(sl: { id: string; name: string }): Promise<void> {
+		if (onrefreshsmartlist === undefined) return;
+		refreshingSmartlistId = sl.id;
+		try {
+			await onrefreshsmartlist(sl);
+		} finally {
+			if (refreshingSmartlistId === sl.id) refreshingSmartlistId = null;
+		}
+	}
 
 	/**
 	 * Items come from the W28 registry ((private path)*.md,
@@ -59,8 +77,10 @@
 	): BoundMenuItem[] {
 		const news = { 'new-playlist': oncreate, 'new-smartlist': oncreatesmartlist };
 		if (kind === 'smartlist' && smartlist !== undefined) {
-			return bindMenuItems(menuFor({ kind: 'smartlist' }, {}), {
+			return bindMenuItems(menuFor({ kind: 'smartlist' }, { refreshing: refreshingSmartlistId === smartlist.id }), {
 				...news,
+				'edit-rule': oneditsmartlistrule === undefined ? undefined : () => oneditsmartlistrule(smartlist),
+				refresh: onrefreshsmartlist === undefined ? undefined : () => void refreshSmartlist(smartlist),
 				rename: () => onrenamesmartlist?.(smartlist),
 				delete: () => ondeletesmartlist?.(smartlist),
 				duplicate: () => onduplicatesmartlist?.(smartlist)
@@ -89,6 +109,7 @@
 			reveal: () => onselect(node),
 			'export-usb': () => void openUsbExportForPlaylist(node.name),
 			'export-text': () => downloadPlaylistText(node.playlist_id),
+			'title-fix-scan': () => void startTitleFixScanForPlaylist(node.playlist_id),
 			'offload-playlist': () => void offloadOps.offloadPlaylist(node.playlist_id),
 			'offload-playlist-restore-24h': () => void offloadOps.restorePlaylist(node.playlist_id, 'temporary'),
 			'offload-playlist-restore-permanent': () => void offloadOps.restorePlaylist(node.playlist_id, 'permanent')

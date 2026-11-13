@@ -1066,17 +1066,25 @@ fn snr_db(got: &[f32], want: &[f32]) -> f64 {
     10.0 * (e / s).log10()
 }
 
+/// None only when ffmpeg is not installed; an installed ffmpeg that cannot decode panics with its stderr.
 fn ffmpeg_mono_f32(path: &std::path::Path) -> Option<Vec<f32>> {
     // ffmpeg's `-ac 1` downmix differs from odj-audio `--mono` (front left only).
-    let out = Command::new("ffmpeg")
+    let out = match Command::new("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(path)
         .args(["-f", "f32le", "-"])
         .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
+    {
+        Ok(out) => out,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => panic!("ffmpeg could not be run: {e}"),
+    };
+    assert!(
+        out.status.success(),
+        "ffmpeg is installed but could not decode {}: {}",
+        path.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
     Some(
         out.stdout
             .chunks_exact(8)

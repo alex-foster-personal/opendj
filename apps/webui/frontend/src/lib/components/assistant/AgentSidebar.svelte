@@ -6,13 +6,28 @@
 	 * Events are folded once per animation frame, never per delta, so a
 	 * streaming reply costs the /performance waveform at most one Svelte
 	 * update a frame.
+	 *
+	 * OJ (#13711): the header glass thinks while a turn runs and smiles when the reply lands;
+	 * the panel fills with juice meanwhile. ojMotionPolicy holds it static while a deck plays
+	 * on /performance and under reduced motion; the loading variant can turn the fill off.
+	 * Mood (#13937): each folded batch of events may start one beat of smile, slosh or bubbles
+	 * (oj-agent-mood.ts); one timer ends the beat, and the mood variant can keep it calm.
+	 * Starters (#14040): an empty log shows route-keyed chips (oj-starters.ts); a chip fills the
+	 * draft and never sends.
 	 */
 	import type { AgentEvent, ContextRef } from '$lib/assistant/agent-contract';
 	import { streamAgent } from '$lib/assistant/agent-api';
 	import { availabilityOf, contextChip, contextChipId } from '$lib/assistant/agent-labels';
 	import {
+		OJ_MOOD_BEAT_MS,
+		OJ_MOOD_VARIANT,
+		ojMoodBeat,
+		ojMoodLook,
+		ojMoodStyle,
+		type OjMoodBeat
+	} from '$lib/assistant/oj-agent-mood';
+	import {
 		EMPTY_SESSION,
-		applyEvent,
 		endTurn,
 		foldEvents,
 		heldCalls,
@@ -22,9 +37,16 @@
 		type Session
 	} from '$lib/assistant/agent-session';
 	import { AssistantError, previewInstant } from '$lib/assistant/assistant-api';
+	import { ojStartersFor } from '$lib/assistant/oj-starters';
 	import { createAssistantStatusProbe } from '$lib/assistant/status-probe.svelte';
+	import { prefersReducedMotion, watchReducedMotionMedia } from '$lib/motion/reduced-motion';
+	import { anyDeckPlaying } from '$lib/rb/playing-gate';
+	import { readVariant } from '$lib/rb/prefs.svelte';
+	import { OJ_LOADING_VARIANT, ojAgentLook, ojLoadingStyle } from './oj-agent-header';
+	import { ojMotionPolicy } from './oj-motion-policy';
 
 	import AgentSidebarView, { type Decision, type TierChoice } from './AgentSidebarView.svelte';
+	import OjStarterChips from './OjStarterChips.svelte';
 
 	let {
 		open = true,
@@ -32,11 +54,6 @@
 		contexts = $bindable([])
 	}: { open?: boolean; onclose: () => void; contexts?: ContextRef[] } = $props();
 
-	const SUGGESTIONS = [
-		'Find techno around 128 BPM I have not played lately',
-		'What is loaded on each deck?',
-		'Turn the system volume down a bit'
-	];
 	/** Typing pause before a keyless draft is checked against the engine's instant rules. */
 	const PREVIEW_DEBOUNCE_MS = 150;
 
@@ -49,6 +66,50 @@
 	let controller: AbortController | null = null;
 	let queue: AgentEvent[] = [];
 	let frame = 0;
+
+	/** Bumped when the OS reduced-motion query flips; a hidden document counts as reduced. */
+	let motionTick = $state(0);
+	let documentHidden = $state(false);
+	const ojMotion = $derived.by(() => {
+		void motionTick;
+		return ojMotionPolicy({
+			reducedMotion: prefersReducedMotion() || documentHidden,
+			anyDeckPlaying: anyDeckPlaying(),
+			performanceVisible:
+				typeof location !== 'undefined' && location.pathname.startsWith('/performance'),
+			streaming: session.busy
+		});
+	});
+	const ojMood = $derived(ojMoodStyle(readVariant(OJ_MOOD_VARIANT.id)));
+	/** The live mood beat and the clock it is judged against; the beat timer advances the clock. */
+	let moodBeat = $state.raw<OjMoodBeat | null>(null);
+	let moodClock = $state(0);
+	let moodTimer: ReturnType<typeof setTimeout> | undefined;
+	const ojLook = $derived(
+		ojMoodLook(
+			ojAgentLook(session, ojMotion, ojLoadingStyle(readVariant(OJ_LOADING_VARIANT.id))),
+			moodBeat,
+			moodClock,
+			ojMood
+		)
+	);
+
+	$effect(() => {
+		const onVisibility = () => (documentHidden = document.visibilityState === 'hidden');
+		onVisibility();
+		const stopWatching = watchReducedMotionMedia(() => (motionTick += 1));
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => {
+			stopWatching();
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
+	});
+
+	/** The panel stays mounted across routes, so each open re-reads the route for the starter list. */
+	const starters = $derived.by(() => {
+		void open;
+		return ojStartersFor(typeof location === 'undefined' ? '' : location.pathname, session.items);
+	});
 
 	const chips = $derived(contexts.map(contextChip));
 	const availability = $derived(availabilityOf(statusProbe.status, statusProbe.statusError));
@@ -80,6 +141,7 @@
 	$effect(() => () => {
 		controller?.abort();
 		cancelAnimationFrame(frame);
+		clearTimeout(moodTimer);
 	});
 
 	//----- stream
@@ -94,11 +156,7 @@
 		} catch (error: unknown) {
 			if (!own.signal.aborted) {
 				flush();
-				session = applyEvent(session, {
-					type: 'error',
-					code: codeOf(error),
-					message: messageOf(error)
-				});
+				fold([{ type: 'error', code: codeOf(error), message: messageOf(error) }]);
 			}
 		} finally {
 			if (controller === own) {
@@ -118,8 +176,25 @@
 		cancelAnimationFrame(frame);
 		frame = 0;
 		if (queue.length === 0) return;
-		session = foldEvents(session, queue);
+		const events = queue;
 		queue = [];
+		fold(events);
+	}
+
+	function fold(events: AgentEvent[]): void {
+		session = foldEvents(session, events);
+		react(events);
+	}
+
+	/** Start the beat these events earn, if any; a newer beat replaces a running one. */
+	function react(events: AgentEvent[]): void {
+		const now = Date.now();
+		const beat = ojMoodBeat(events, { items: session.items, motion: ojMotion, style: ojMood, now });
+		if (beat === null) return;
+		clearTimeout(moodTimer);
+		moodBeat = beat;
+		moodClock = now;
+		moodTimer = setTimeout(() => (moodClock = beat.endsAt), OJ_MOOD_BEAT_MS);
 	}
 
 	//----- view callbacks
@@ -148,6 +223,8 @@
 		session = EMPTY_SESSION;
 		decisions = {};
 		draft = '';
+		clearTimeout(moodTimer);
+		moodBeat = null;
 	}
 
 	function removeContext(id: string): void {
@@ -165,6 +242,10 @@
 	}
 </script>
 
+{#snippet starterChips()}
+	<OjStarterChips {starters} motion={ojMotion} onpick={(text) => (draft = text)} />
+{/snippet}
+
 <AgentSidebarView
 	items={session.items}
 	busy={session.busy}
@@ -174,8 +255,9 @@
 	{instantDraft}
 	{instantError}
 	mode={statusProbe.status?.mode ?? null}
+	oj={ojLook}
 	bind:draft
-	suggestions={SUGGESTIONS}
+	starters={starterChips}
 	{decisions}
 	contexts={chips}
 	{tierChoice}

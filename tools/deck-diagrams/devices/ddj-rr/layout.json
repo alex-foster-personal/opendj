@@ -1,0 +1,2436 @@
+{
+  "device": "DDJ-RR",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1235,
+    "height": 955
+  },
+  "layers": [
+    "base",
+    "shift",
+    "mode",
+    "shift_mode"
+  ],
+  "out_of_scope": [
+    "D29-L/D29-R JOG INDICATOR: MIDI-OUT only (LED), no input row",
+    "M12, M13-1, M13-2: printed on the plate but no MIDI rows in the list",
+    "Sockets and indicators: no MIDI identity"
+  ],
+  "controls": [
+    {
+      "id": "ddj-rr-b1",
+      "fig": "b1",
+      "label": "ROTARY SELECTOR rotate. Printed channel 7",
+      "kind": "encoder",
+      "x": 48.144,
+      "y": 8.3835,
+      "w": 3.2389,
+      "h": 4.1885,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "b1_rotary_selector_rotate",
+        "type": "cc",
+        "ch": 7,
+        "code": 64,
+        "shift_name": "b1_rotary_selector_rotate_shift"
+      },
+      "notes": "[b1] PDF p1, ROTARY SELECTOR rotate. Printed channel 7, status B6, Data1 40h (printed dec 64). Difference count value from when previous operated Turn clockwise: 0x01~0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F~0x62(max) (1~30clicks/40msec)"
+    },
+    {
+      "id": "ddj-rr-b2",
+      "fig": "b2",
+      "label": "BACK press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 46.6744,
+      "y": 15.0484,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "b2_back_press",
+        "type": "note",
+        "ch": 7,
+        "code": 101,
+        "shift_name": "b2_back_press_shift"
+      },
+      "notes": "[b2] PDF p1, BACK press. Printed channel 1/2/3/4, status 96, Data1 65h (printed dec 101). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-b3-l",
+      "fig": "b3_l",
+      "label": "LOAD press",
+      "kind": "button",
+      "x": 41.1384,
+      "y": 7.1406,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "b3_l_load_press_mode_deck1_selected_on_left_deck",
+        "type": "note",
+        "ch": 7,
+        "code": 70,
+        "mode_name": "b3_l_load_press_mode_deck1_selected_on_left_deck",
+        "shift_mode_name": "b3_l_load_press_shift_mode_deck1_selected_on_left_deck"
+      },
+      "notes": "[b3_l] PDF p1, LOAD press, condition: deck1 selected on left deck. Printed channel 7, status 96, Data1 46h (printed dec 70). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-b3-r",
+      "fig": "b3_r",
+      "label": "LOAD press",
+      "kind": "button",
+      "x": 54.9631,
+      "y": 7.1406,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "b3_r_load_press_mode_deck1_selected_on_left_deck",
+        "type": "note",
+        "ch": 7,
+        "code": 70,
+        "mode_name": "b3_r_load_press_mode_deck1_selected_on_left_deck",
+        "shift_mode_name": "b3_r_load_press_shift_mode_deck1_selected_on_left_deck"
+      },
+      "notes": "[b3_r] PDF p1, LOAD press, condition: deck1 selected on left deck. Printed channel 7, status 96, Data1 46h (printed dec 70). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-b4",
+      "fig": "b4",
+      "label": "TAG TRACK press. Printed channel 7",
+      "kind": "button",
+      "x": 49.4452,
+      "y": 15.0484,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "b4_tag_track_press",
+        "type": "note",
+        "ch": 7,
+        "code": 103,
+        "shift_name": "b4_tag_track_press_shift"
+      },
+      "notes": "[b4] PDF p1, TAG TRACK press. Printed channel 7, status 96, Data1 67h (printed dec 103). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d1-l",
+      "fig": "d1_l",
+      "label": "PLAY/PAUSE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.9044,
+      "y": 63.9029,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_l_play_pause_press",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": "d1_l_play_pause_press_shift",
+        "mode_name": "d1_l_play_pause_press_mode_in_remix_deck_for_traktor"
+      },
+      "notes": "[d1_l] PDF p2, PLAY/PAUSE press. Printed channel 1/2/3/4, status 9n, Data1 0Bh (printed dec 11). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d1-r",
+      "fig": "d1_r",
+      "label": "PLAY/PAUSE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.3659,
+      "y": 63.9029,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_r_play_pause_press",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": "d1_r_play_pause_press_shift",
+        "mode_name": "d1_r_play_pause_press_mode_in_remix_deck_for_traktor"
+      },
+      "notes": "[d1_r] PDF p2, PLAY/PAUSE press. Printed channel 1/2/3/4, status 9n, Data1 0Bh (printed dec 11). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d2-l",
+      "fig": "d2_l",
+      "label": "CUE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.9506,
+      "y": 55.3845,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_l_cue_press",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": "d2_l_cue_press_shift"
+      },
+      "notes": "[d2_l] PDF p2, CUE press. Printed channel 1/2/3/4, status 9n, Data1 0Ch (printed dec 12). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d2-r",
+      "fig": "d2_r",
+      "label": "CUE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.3894,
+      "y": 55.2369,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_r_cue_press",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": "d2_r_cue_press_shift"
+      },
+      "notes": "[d2_r] PDF p2, CUE press. Printed channel 1/2/3/4, status 9n, Data1 0Ch (printed dec 12). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d3-l",
+      "fig": "d3_l",
+      "label": "JOG (Platter) rotate",
+      "kind": "jog",
+      "x": 14.2931,
+      "y": 37.9667,
+      "w": 12.1457,
+      "h": 15.7068,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d3_l_jog_platter_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 54,
+        "shift_name": "d3_l_jog_platter_rotate_shift",
+        "mode_name": "d3_l_jog_platter_rotate_mode_vinyl_on"
+      },
+      "notes": "[d3_l] PDF p2, JOG (Platter) touch. Printed channel 1/2/3/4, status 9n, Data1 36h (printed dec 54). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d3-r",
+      "fig": "d3_r",
+      "label": "JOG (Platter) rotate",
+      "kind": "jog",
+      "x": 72.891,
+      "y": 37.8861,
+      "w": 12.1457,
+      "h": 15.7068,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d3_r_jog_platter_touch",
+        "type": "note",
+        "ch": 2,
+        "code": 54,
+        "shift_name": "d3_r_jog_platter_rotate_shift",
+        "mode_name": "d3_r_jog_platter_rotate_mode_vinyl_on"
+      },
+      "notes": "[d3_r] PDF p2, JOG (Platter) touch. Printed channel 1/2/3/4, status 9n, Data1 36h (printed dec 54). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d4-l",
+      "fig": "d4_l",
+      "label": "TEMPO slide. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 34.0056,
+      "y": 13.3427,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d4_l_tempo_slide_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": "d4_l_tempo_slide_shift_msb"
+      },
+      "notes": "[d4_l] PDF p2, TEMPO slide. Printed channel 1/2/3/4, status Bn, Data1 00 20h (printed dec 0 32). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)～Max(MSB:0x7F LSB:0x7F) \"-\" side : Min(MSB:0x00 LSB:0x00) \"+\" side : Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-d4-r",
+      "fig": "d4_r",
+      "label": "TEMPO slide. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 92.5926,
+      "y": 13.3196,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d4_r_tempo_slide_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 0,
+        "shift_name": "d4_r_tempo_slide_shift_msb"
+      },
+      "notes": "[d4_r] PDF p2, TEMPO slide. Printed channel 1/2/3/4, status Bn, Data1 00 20h (printed dec 0 32). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)～Max(MSB:0x7F LSB:0x7F) \"-\" side : Min(MSB:0x00 LSB:0x00) \"+\" side : Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-d5-l",
+      "fig": "d5_l",
+      "label": "MASTER TEMPO press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 34.0801,
+      "y": 24.4987,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d5_l_master_tempo_press",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": "d5_l_master_tempo_press_shift"
+      },
+      "notes": "[d5_l] PDF p2, MASTER TEMPO press. Printed channel 1/2/3/4, status 9n, Data1 1Ah (printed dec 26). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d5-r",
+      "fig": "d5_r",
+      "label": "MASTER TEMPO press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 92.7036,
+      "y": 24.4495,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d5_r_master_tempo_press",
+        "type": "note",
+        "ch": 2,
+        "code": 26,
+        "shift_name": "d5_r_master_tempo_press_shift"
+      },
+      "notes": "[d5_r] PDF p2, MASTER TEMPO press. Printed channel 1/2/3/4, status 9n, Data1 1Ah (printed dec 26). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d6-l",
+      "fig": "d6_l",
+      "label": "NEEDLE SEARCH touch. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 18.6558,
+      "y": 13.7584,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d6_l_needle_search_touch",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": "d6_l_needle_search_touch_shift"
+      },
+      "notes": "[d6_l] PDF p2, NEEDLE SEARCH touch. Printed channel 1/2/3/4, status Bn, Data1 03h (printed dec 3). OFF = 0x00, ON = 0x00 - 0x7F 0x00 at left edge, 0x7F at right edge"
+    },
+    {
+      "id": "ddj-rr-d6-r",
+      "fig": "d6_r",
+      "label": "NEEDLE SEARCH touch. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 77.1287,
+      "y": 13.6484,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d6_r_needle_search_touch",
+        "type": "cc",
+        "ch": 2,
+        "code": 3,
+        "shift_name": "d6_r_needle_search_touch_shift"
+      },
+      "notes": "[d6_r] PDF p2, NEEDLE SEARCH touch. Printed channel 1/2/3/4, status Bn, Data1 03h (printed dec 3). OFF = 0x00, ON = 0x00 - 0x7F 0x00 at left edge, 0x7F at right edge"
+    },
+    {
+      "id": "ddj-rr-d9-l",
+      "fig": "d9_l",
+      "label": "SYNC press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.9187,
+      "y": 47.9992,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d9_l_sync_press",
+        "type": "note",
+        "ch": 1,
+        "code": 88,
+        "shift_name": "d9_l_sync_press_shift"
+      },
+      "notes": "[d9_l] PDF p2, SYNC press. Printed channel 1/2/3/4, status 9n, Data1 58h (printed dec 88). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d9-r",
+      "fig": "d9_r",
+      "label": "SYNC press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.3789,
+      "y": 47.9992,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d9_r_sync_press",
+        "type": "note",
+        "ch": 2,
+        "code": 88,
+        "shift_name": "d9_r_sync_press_shift"
+      },
+      "notes": "[d9_r] PDF p2, SYNC press. Printed channel 1/2/3/4, status 9n, Data1 58h (printed dec 88). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d10-l",
+      "fig": "d10_l",
+      "label": "AUTO BEAT LOOP press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 33.7291,
+      "y": 51.9395,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d10_l_auto_beat_loop_press",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": "d10_l_auto_beat_loop_press_shift"
+      },
+      "notes": "[d10_l] PDF p2, AUTO BEAT LOOP press. Printed channel 1/2/3/4, status 9n, Data1 14h (printed dec 20). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d10-r",
+      "fig": "d10_r",
+      "label": "AUTO BEAT LOOP press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 92.0189,
+      "y": 51.8254,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d10_r_auto_beat_loop_press",
+        "type": "note",
+        "ch": 2,
+        "code": 20,
+        "shift_name": "d10_r_auto_beat_loop_press_shift"
+      },
+      "notes": "[d10_r] PDF p2, AUTO BEAT LOOP press. Printed channel 1/2/3/4, status 9n, Data1 14h (printed dec 20). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d11-l",
+      "fig": "d11_l",
+      "label": "LOOP HALF press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 32.1987,
+      "y": 56.4359,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d11_l_loop_half_press",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": "d11_l_loop_half_press_shift"
+      },
+      "notes": "[d11_l] PDF p2, LOOP HALF press. Printed channel 1/2/3/4, status 9n, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d11-r",
+      "fig": "d11_r",
+      "label": "LOOP HALF press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 90.4125,
+      "y": 56.4359,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d11_r_loop_half_press",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": "d11_r_loop_half_press_shift"
+      },
+      "notes": "[d11_r] PDF p2, LOOP HALF press. Printed channel 1/2/3/4, status 9n, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d12-l",
+      "fig": "d12_l",
+      "label": "LOOP DOUBLE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 34.9494,
+      "y": 56.483,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d12_l_loop_double_press",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": "d12_l_loop_double_press_shift"
+      },
+      "notes": "[d12_l] PDF p2, LOOP DOUBLE press. Printed channel 1/2/3/4, status 9n, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d12-r",
+      "fig": "d12_r",
+      "label": "LOOP DOUBLE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 93.8578,
+      "y": 56.4128,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d12_r_loop_double_press",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": "d12_r_loop_double_press_shift"
+      },
+      "notes": "[d12_r] PDF p2, LOOP DOUBLE press. Printed channel 1/2/3/4, status 9n, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d13-l",
+      "fig": "d13_l",
+      "label": "LOOP IN press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 32.2611,
+      "y": 60.8421,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d13_l_loop_in_press",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": "d13_l_loop_in_press_shift",
+        "mode_name": "d13_l_loop_in_press_mode_long_press"
+      },
+      "notes": "[d13_l] PDF p2, LOOP IN press. Printed channel 1/2/3/4, status 9n, Data1 10h (printed dec 16). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d13-r",
+      "fig": "d13_r",
+      "label": "LOOP IN press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 90.3825,
+      "y": 60.7741,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d13_r_loop_in_press",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": "d13_r_loop_in_press_shift",
+        "mode_name": "d13_r_loop_in_press_mode_long_press"
+      },
+      "notes": "[d13_r] PDF p2, LOOP IN press. Printed channel 1/2/3/4, status 9n, Data1 10h (printed dec 16). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d14-l",
+      "fig": "d14_l",
+      "label": "LOOP OUT press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 35.0781,
+      "y": 60.8317,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d14_l_loop_out_press",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": "d14_l_loop_out_press_shift"
+      },
+      "notes": "[d14_l] PDF p2, LOOP OUT press. Printed channel 1/2/3/4, status 9n, Data1 11h (printed dec 17). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d14-r",
+      "fig": "d14_r",
+      "label": "LOOP OUT press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 93.6299,
+      "y": 60.8317,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d14_r_loop_out_press",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": "d14_r_loop_out_press_shift"
+      },
+      "notes": "[d14_r] PDF p2, LOOP OUT press. Printed channel 1/2/3/4, status 9n, Data1 11h (printed dec 17). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d16-l",
+      "fig": "d16_l",
+      "label": "SLIP REVERSE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.6774,
+      "y": 13.8128,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d16_l_slip_reverse_press",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": "d16_l_slip_reverse_press_shift"
+      },
+      "notes": "[d16_l] PDF p2, SLIP REVERSE press. Printed channel 1/2/3/4, status 9n, Data1 15h (printed dec 21). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d16-r",
+      "fig": "d16_r",
+      "label": "SLIP REVERSE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.3291,
+      "y": 13.7887,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d16_r_slip_reverse_press",
+        "type": "note",
+        "ch": 2,
+        "code": 21,
+        "shift_name": "d16_r_slip_reverse_press_shift"
+      },
+      "notes": "[d16_r] PDF p2, SLIP REVERSE press. Printed channel 1/2/3/4, status 9n, Data1 15h (printed dec 21). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d19-l",
+      "fig": "d19_l",
+      "label": "SLIP press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 29.4068,
+      "y": 19.5678,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d19_l_slip_press",
+        "type": "note",
+        "ch": 1,
+        "code": 64,
+        "shift_name": "d19_l_slip_press_shift"
+      },
+      "notes": "[d19_l] PDF p2, SLIP press. Printed channel 1/2/3/4, status 9n, Data1 40h (printed dec 64). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d19-r",
+      "fig": "d19_r",
+      "label": "SLIP press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 87.8659,
+      "y": 20.038,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d19_r_slip_press",
+        "type": "note",
+        "ch": 2,
+        "code": 64,
+        "shift_name": "d19_r_slip_press_shift"
+      },
+      "notes": "[d19_r] PDF p2, SLIP press. Printed channel 1/2/3/4, status 9n, Data1 40h (printed dec 64). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d20-l",
+      "fig": "d20_l",
+      "label": "GRID ADJUST press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.6474,
+      "y": 20.106,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d20_l_grid_adjust_press",
+        "type": "note",
+        "ch": 1,
+        "code": 121,
+        "shift_name": "d20_l_grid_adjust_press_shift"
+      },
+      "notes": "[d20_l] PDF p2, GRID ADJUST press. Printed channel 1/2/3/4, status 9n, Data1 79h (printed dec 121). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d20-r",
+      "fig": "d20_r",
+      "label": "GRID ADJUST press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.538,
+      "y": 20.2976,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d20_r_grid_adjust_press",
+        "type": "note",
+        "ch": 2,
+        "code": 121,
+        "shift_name": "d20_r_grid_adjust_press_shift"
+      },
+      "notes": "[d20_r] PDF p2, GRID ADJUST press. Printed channel 1/2/3/4, status 9n, Data1 79h (printed dec 121). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d21-l",
+      "fig": "d21_l",
+      "label": "GRID SLIDE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.6474,
+      "y": 24.6484,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d21_l_grid_slide_press",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": "d21_l_grid_slide_press_shift"
+      },
+      "notes": "[d21_l] PDF p2, GRID SLIDE press. Printed channel 1/2/3/4, status 9n, Data1 0Ah (printed dec 10). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d21-r",
+      "fig": "d21_r",
+      "label": "GRID SLIDE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.5777,
+      "y": 24.5113,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d21_r_grid_slide_press",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": "d21_r_grid_slide_press_shift"
+      },
+      "notes": "[d21_r] PDF p2, GRID SLIDE press. Printed channel 1/2/3/4, status 9n, Data1 0Ah (printed dec 10). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d22-l",
+      "fig": "d22_l",
+      "label": "SHIFT press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 3.775,
+      "y": 42.4432,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "d22_l_shift_press",
+        "type": "note",
+        "ch": 1,
+        "code": 63
+      },
+      "notes": "[d22_l] PDF p2, SHIFT press. Printed channel 1/2/3/4, status 9n, Data1 3Fh (printed dec 63)."
+    },
+    {
+      "id": "ddj-rr-d22-r",
+      "fig": "d22_r",
+      "label": "SHIFT press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 62.2534,
+      "y": 42.4432,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "d22_r_shift_press",
+        "type": "note",
+        "ch": 2,
+        "code": 63
+      },
+      "notes": "[d22_r] PDF p2, SHIFT press. Printed channel 1/2/3/4, status 9n, Data1 3Fh (printed dec 63)."
+    },
+    {
+      "id": "ddj-rr-d28-l",
+      "fig": "d28_l",
+      "label": "LOAD SEQUENCE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 33.5481,
+      "y": 43.3385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d28_l_load_sequence_press",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": "d28_l_load_sequence_press_shift"
+      },
+      "notes": "[d28_l] PDF p2, LOAD SEQUENCE press. Printed channel 1/2/3/4, status 9n, Data1 39h (printed dec 57). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d28-r",
+      "fig": "d28_r",
+      "label": "LOAD SEQUENCE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 92.1655,
+      "y": 43.3385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d28_r_load_sequence_press",
+        "type": "note",
+        "ch": 2,
+        "code": 57,
+        "shift_name": "d28_r_load_sequence_press_shift"
+      },
+      "notes": "[d28_r] PDF p2, LOAD SEQUENCE press. Printed channel 1/2/3/4, status 9n, Data1 39h (printed dec 57). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d25-l",
+      "fig": "d25_l",
+      "label": "SEQUENCER OVERDUB press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 32.0485,
+      "y": 47.5448,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d25_l_sequencer_overdub_press",
+        "type": "note",
+        "ch": 1,
+        "code": 74,
+        "shift_name": "d25_l_sequencer_overdub_press_shift"
+      },
+      "notes": "[d25_l] PDF p2, SEQUENCER OVERDUB press. Printed channel 1/2/3/4, status 9n, Data1 4Ah (printed dec 74). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d25-r",
+      "fig": "d25_r",
+      "label": "SEQUENCER OVERDUB press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 90.4125,
+      "y": 47.4694,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d25_r_sequencer_overdub_press",
+        "type": "note",
+        "ch": 2,
+        "code": 74,
+        "shift_name": "d25_r_sequencer_overdub_press_shift"
+      },
+      "notes": "[d25_r] PDF p2, SEQUENCER OVERDUB press. Printed channel 1/2/3/4, status 9n, Data1 4Ah (printed dec 74). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d26-l",
+      "fig": "d26_l",
+      "label": "SEQUENCER START press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 35.317,
+      "y": 47.5448,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d26_l_sequencer_start_press",
+        "type": "note",
+        "ch": 1,
+        "code": 75,
+        "shift_name": "d26_l_sequencer_start_press_shift"
+      },
+      "notes": "[d26_l] PDF p2, SEQUENCER START press. Printed channel 1/2/3/4, status 9n, Data1 4Bh (printed dec 75). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d26-r",
+      "fig": "d26_r",
+      "label": "SEQUENCER START press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 93.5582,
+      "y": 47.4694,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d26_r_sequencer_start_press",
+        "type": "note",
+        "ch": 2,
+        "code": 75,
+        "shift_name": "d26_r_sequencer_start_press_shift"
+      },
+      "notes": "[d26_r] PDF p2, SEQUENCER START press. Printed channel 1/2/3/4, status 9n, Data1 4Bh (printed dec 75). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d27-l",
+      "fig": "d27_l",
+      "label": "CAPTURE Press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 29.2307,
+      "y": 47.5395,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d27_l_capture_press",
+        "type": "note",
+        "ch": 1,
+        "code": 73,
+        "shift_name": "d27_l_capture_press_shift"
+      },
+      "notes": "[d27_l] PDF p2, CAPTURE Press. Printed channel 1/2/3/4, status 9n, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-d27-r",
+      "fig": "d27_r",
+      "label": "CAPTURE Press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 87.3501,
+      "y": 47.3364,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d27_r_capture_press",
+        "type": "note",
+        "ch": 2,
+        "code": 73,
+        "shift_name": "d27_r_capture_press_shift"
+      },
+      "notes": "[d27_r] PDF p2, CAPTURE Press. Printed channel 1/2/3/4, status 9n, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-m1",
+      "fig": "m1",
+      "label": "CROSS FADER / CH Fader (Fader Start) slide",
+      "kind": "fader",
+      "x": 48.4906,
+      "y": 62.6721,
+      "w": 2.4291,
+      "h": 7.3298,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m1_crossfader_slide_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 31,
+        "shift_mode_name": "m1_cross_fader_ch_fader_fader_start_slide_shift_mode_zero_not_zero"
+      },
+      "notes": "[m1] PDF p2, CROSSFADER slide. Printed channel 7, status B6, Data1 1F 3Fh (printed dec 31 63). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at left side, Max at right side"
+    },
+    {
+      "id": "ddj-rr-m2-1",
+      "fig": "m2_1",
+      "label": "CROSS FADER / CH Fader (Fader Start) slide",
+      "kind": "fader",
+      "x": 41.6382,
+      "y": 50.351,
+      "w": 2.4291,
+      "h": 7.3298,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m2_1_ch_fader_slide_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_mode_name": "m2_1_cross_fader_ch_fader_fader_start_slide_shift_mode_zero_not_zero"
+      },
+      "notes": "[m2_1] PDF p2, CH FADER slide. Printed channel 1/2/3/4, status Bn, Data1 13 33h (printed dec 19 51). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "id": "ddj-rr-m2-2",
+      "fig": "m2_2",
+      "label": "CROSS FADER / CH Fader (Fader Start) slide",
+      "kind": "fader",
+      "x": 55.2674,
+      "y": 50.351,
+      "w": 2.4291,
+      "h": 7.3298,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m2_2_ch_fader_slide_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 19,
+        "shift_mode_name": "m2_2_cross_fader_ch_fader_fader_start_slide_shift_mode_zero_not_zero"
+      },
+      "notes": "[m2_2] PDF p2, CH FADER slide. Printed channel 1/2/3/4, status Bn, Data1 13 33h (printed dec 19 51). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "id": "ddj-rr-m7-1",
+      "fig": "m7_1",
+      "label": "CUE (Headphone) press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 41.2334,
+      "y": 43.0275,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "m7_1_cue_headphone_press",
+        "type": "note",
+        "ch": 1,
+        "code": 84,
+        "shift_name": "m7_1_cue_headphone_press_shift"
+      },
+      "notes": "[m7_1] PDF p2, CUE (Headphone) press. Printed channel 1/2/3/4, status 9n, Data1 54h (printed dec 84). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-m7-2",
+      "fig": "m7_2",
+      "label": "CUE (Headphone) press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 54.9398,
+      "y": 43.0275,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "m7_2_cue_headphone_press",
+        "type": "note",
+        "ch": 2,
+        "code": 84,
+        "shift_name": "m7_2_cue_headphone_press_shift"
+      },
+      "notes": "[m7_2] PDF p2, CUE (Headphone) press. Printed channel 1/2/3/4, status 9n, Data1 54h (printed dec 84). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-m8",
+      "fig": "m8",
+      "label": "MASTER LEVEL rotate. Printed channel 7",
+      "kind": "knob",
+      "x": 48.2119,
+      "y": 20.9636,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m8_master_level_rotate_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 8
+      },
+      "notes": "[m8] PDF p2, MASTER LEVEL rotate. Printed channel 7, status B6, Data1 08 28h (printed dec 8 40). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-m10",
+      "fig": "m10",
+      "label": "BOOTH LEVEL rotate. Printed channel 7",
+      "kind": "knob",
+      "x": 48.1821,
+      "y": 26.9123,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m10_booth_level_rotate_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 9
+      },
+      "notes": "[m10] PDF p2, BOOTH LEVEL rotate. Printed channel 7, status B6, Data1 09 29h (printed dec 9 41). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-m14",
+      "fig": "m14",
+      "label": "HEADPHONES MIXING rotate. Printed channel 7",
+      "kind": "knob",
+      "x": 48.2094,
+      "y": 33.0202,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m14_headphones_mixing_rotate_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 12
+      },
+      "notes": "[m14] PDF p2, HEADPHONES MIXING rotate. Printed channel 7, status B6, Data1 0C 2Ch (printed dec 12 44). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-m15",
+      "fig": "m15",
+      "label": "HEADPHONES VOL rotate. Printed channel 7",
+      "kind": "knob",
+      "x": 33.2612,
+      "y": 79.9364,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m15_headphones_vol_rotate_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 13
+      },
+      "notes": "[m15] PDF p2, HEADPHONES VOL rotate. Printed channel 7, status B6, Data1 0D 2Dh (printed dec 13 45). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-f11-1",
+      "fig": "f11_1",
+      "label": "INPUT SELECT",
+      "kind": "switch",
+      "x": 41.2443,
+      "y": 11.0264,
+      "w": 3.2389,
+      "h": 2.5131,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "f11_1_input_select_op_mode_slide_switch_to_deck1_deck2",
+        "type": "note",
+        "ch": 1,
+        "code": 85,
+        "mode_name": "f11_1_input_select_op_mode_slide_switch_to_deck1_deck2"
+      },
+      "notes": "[f11_1] PDF p2, INPUT SELECT, condition: slide: Switch to DECK1/DECK2. Printed channel 1/2/3/4, status 9n, Data1 55h (printed dec 85). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-f11-2",
+      "fig": "f11_2",
+      "label": "INPUT SELECT",
+      "kind": "switch",
+      "x": 54.8896,
+      "y": 11.0264,
+      "w": 3.2389,
+      "h": 2.5131,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "f11_2_input_select_op_mode_slide_switch_to_deck1_deck2",
+        "type": "note",
+        "ch": 2,
+        "code": 85,
+        "mode_name": "f11_2_input_select_op_mode_slide_switch_to_deck1_deck2"
+      },
+      "notes": "[f11_2] PDF p2, INPUT SELECT, condition: slide: Switch to DECK1/DECK2. Printed channel 1/2/3/4, status 9n, Data1 55h (printed dec 85). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-f13",
+      "fig": "f13",
+      "label": "PC MIX",
+      "kind": "switch",
+      "x": 46.9702,
+      "y": 93.7039,
+      "w": 3.2389,
+      "h": 2.5131,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "f13_pc_mix_op_mode_slide_switch_to_each_one",
+        "type": "note",
+        "ch": 7,
+        "code": 62,
+        "mode_name": "f13_pc_mix_op_mode_slide_switch_to_each_one"
+      },
+      "notes": "[f13] PDF p2, PC MIX, condition: slide: Switch to each one. Printed channel 7, status 96, Data1 3Eh (printed dec 62). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-m3-1",
+      "fig": "m3_1",
+      "label": "TRIM rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 41.2334,
+      "y": 16.0662,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m3_1_trim_rotate_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 4
+      },
+      "notes": "[m3_1] PDF p2, TRIM rotate. Printed channel 1/2/3/4, status Bn, Data1 04 24h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m3-2",
+      "fig": "m3_2",
+      "label": "TRIM rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 54.8722,
+      "y": 16.0662,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m3_2_trim_rotate_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 4
+      },
+      "notes": "[m3_2] PDF p2, TRIM rotate. Printed channel 1/2/3/4, status Bn, Data1 04 24h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m4-1",
+      "fig": "m4_1",
+      "label": "EQ HIGH rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 41.273,
+      "y": 21.7699,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m4_1_eq_high_rotate_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 7
+      },
+      "notes": "[m4_1] PDF p2, EQ HIGH rotate. Printed channel 1/2/3/4, status Bn, Data1 07 27h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m4-2",
+      "fig": "m4_2",
+      "label": "EQ HIGH rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 54.8062,
+      "y": 21.8631,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m4_2_eq_high_rotate_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 7
+      },
+      "notes": "[m4_2] PDF p2, EQ HIGH rotate. Printed channel 1/2/3/4, status Bn, Data1 07 27h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m5-1",
+      "fig": "m5_1",
+      "label": "EQ MID rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 41.2334,
+      "y": 27.728,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m5_1_eq_mid_rotate_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 11
+      },
+      "notes": "[m5_1] PDF p2, EQ MID rotate. Printed channel 1/2/3/4, status Bn, Data1 0B 2Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m5-2",
+      "fig": "m5_2",
+      "label": "EQ MID rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 54.8722,
+      "y": 27.705,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m5_2_eq_mid_rotate_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 11
+      },
+      "notes": "[m5_2] PDF p2, EQ MID rotate. Printed channel 1/2/3/4, status Bn, Data1 0B 2Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m6-1",
+      "fig": "m6_1",
+      "label": "EQ LOW rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 41.2334,
+      "y": 33.751,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m6_1_eq_low_rotate_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 15
+      },
+      "notes": "[m6_1] PDF p2, EQ LOW rotate. Printed channel 1/2/3/4, status Bn, Data1 0F 2Fh (printed dec 15 47). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-m6-2",
+      "fig": "m6_2",
+      "label": "EQ LOW rotate. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 54.9305,
+      "y": 33.7385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m6_2_eq_low_rotate_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 15
+      },
+      "notes": "[m6_2] PDF p2, EQ LOW rotate. Printed channel 1/2/3/4, status Bn, Data1 0F 2Fh (printed dec 15 47). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-f10-1",
+      "fig": "f10_1",
+      "label": "LINE/PHONO SW",
+      "kind": "switch",
+      "x": 43.6641,
+      "y": 93.7039,
+      "w": 3.2389,
+      "h": 2.5131,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "f10_1_line_phono_sw_op_mode_slide_switch_to_each_one",
+        "type": "note",
+        "ch": 7,
+        "code": 63,
+        "mode_name": "f10_1_line_phono_sw_op_mode_slide_switch_to_each_one"
+      },
+      "notes": "[f10_1] PDF p2, LINE/PHONO SW, condition: slide: Switch to each one. Printed channel 7, status 96, Data1 3Fh (printed dec 63). Select INPUT to PHONO : 0x00 Select INPUT to LINE : 0x7F"
+    },
+    {
+      "id": "ddj-rr-e1-l",
+      "fig": "e1_l",
+      "label": "FX1-1 rotate. Printed channel 5",
+      "kind": "knob",
+      "x": 11.0052,
+      "y": 5.0442,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e1_l_fx1_1_rotate_msb",
+        "type": "cc",
+        "ch": 5,
+        "code": 2,
+        "shift_name": "e1_l_fx1_1_rotate_shift_msb"
+      },
+      "notes": "[e1_l] PDF p3, FX1-1 rotate. Printed channel 5, status B4, Data1 02 22h (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e1-r",
+      "fig": "e1_r",
+      "label": "FX2-1 rotate. Printed channel 6",
+      "kind": "knob",
+      "x": 69.542,
+      "y": 5.0442,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e1_r_fx2_1_rotate_msb",
+        "type": "cc",
+        "ch": 6,
+        "code": 2,
+        "shift_name": "e1_r_fx2_1_rotate_shift_msb"
+      },
+      "notes": "[e1_r] PDF p3, FX2-1 rotate. Printed channel 6, status B5, Data1 02 22h (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e2-l",
+      "fig": "e2_l",
+      "label": "FX1-2 rotate. Printed channel 5",
+      "kind": "knob",
+      "x": 16.189,
+      "y": 5.016,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e2_l_fx1_2_rotate_msb",
+        "type": "cc",
+        "ch": 5,
+        "code": 4,
+        "shift_name": "e2_l_fx1_2_rotate_shift_msb"
+      },
+      "notes": "[e2_l] PDF p3, FX1-2 rotate. Printed channel 5, status B4, Data1 04 24h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e2-r",
+      "fig": "e2_r",
+      "label": "FX2-2 rotate. Printed channel 6",
+      "kind": "knob",
+      "x": 74.8165,
+      "y": 5.016,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e2_r_fx2_2_rotate_msb",
+        "type": "cc",
+        "ch": 6,
+        "code": 4,
+        "shift_name": "e2_r_fx2_2_rotate_shift_msb"
+      },
+      "notes": "[e2_r] PDF p3, FX2-2 rotate. Printed channel 6, status B5, Data1 04 24h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e3-l",
+      "fig": "e3_l",
+      "label": "FX1-3 rotate. Printed channel 5",
+      "kind": "knob",
+      "x": 21.5048,
+      "y": 5.0442,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e3_l_fx1_3_rotate_msb",
+        "type": "cc",
+        "ch": 5,
+        "code": 6,
+        "shift_name": "e3_l_fx1_3_rotate_shift_msb"
+      },
+      "notes": "[e3_l] PDF p3, FX1-3 rotate. Printed channel 5, status B4, Data1 06 26h (printed dec 6 38). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e3-r",
+      "fig": "e3_r",
+      "label": "FX2-3 rotate. Printed channel 6",
+      "kind": "knob",
+      "x": 80.006,
+      "y": 5.0442,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e3_r_fx2_3_rotate_msb",
+        "type": "cc",
+        "ch": 6,
+        "code": 6,
+        "shift_name": "e3_r_fx2_3_rotate_shift_msb"
+      },
+      "notes": "[e3_r] PDF p3, FX2-3 rotate. Printed channel 6, status B5, Data1 06 26h (printed dec 6 38). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e4-l",
+      "fig": "e4_l",
+      "label": "FX1 RELEASE FX rotate. Printed channel 5",
+      "kind": "knob",
+      "x": 26.7809,
+      "y": 5.0233,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e4_l_fx1_release_fx_rotate",
+        "type": "cc",
+        "ch": 5,
+        "code": 0,
+        "shift_name": "e4_l_fx1_release_fx_rotate_shift"
+      },
+      "notes": "[e4_l] PDF p3, FX1 RELEASE FX rotate. Printed channel 5, status B4, Data1 00h (printed dec 0). Difference count value from when previous operated Turn clockwise: 0x01 - 0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F - 0x62(max) (1~30clicks/40ms"
+    },
+    {
+      "id": "ddj-rr-e4-r",
+      "fig": "e4_r",
+      "label": "FX2 RELEASE FX rotate. Printed channel 6",
+      "kind": "knob",
+      "x": 85.4003,
+      "y": 5.0233,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e4_r_fx2_release_fx_rotate",
+        "type": "cc",
+        "ch": 6,
+        "code": 0,
+        "shift_name": "e4_r_fx2_release_fx_rotate_shift"
+      },
+      "notes": "[e4_r] PDF p3, FX2 RELEASE FX rotate. Printed channel 6, status B5, Data1 00h (printed dec 0). Difference count value from when previous operated Turn clockwise: 0x01 - 0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F - 0x62(max) (1~30clicks/40ms"
+    },
+    {
+      "id": "ddj-rr-e5-l",
+      "fig": "e5_l",
+      "label": "FX1-1 ON press. Printed channel 5",
+      "kind": "button",
+      "x": 10.9121,
+      "y": 10.3311,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e5_l_fx1_1_on_press",
+        "type": "note",
+        "ch": 5,
+        "code": 71,
+        "shift_name": "e5_l_fx1_1_on_press_shift"
+      },
+      "notes": "[e5_l] PDF p3, FX1-1 ON press. Printed channel 5, status 94, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e5-r",
+      "fig": "e5_r",
+      "label": "FX2-1 ON press. Printed channel 6",
+      "kind": "button",
+      "x": 69.2999,
+      "y": 10.2327,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e5_r_fx2_1_on_press",
+        "type": "note",
+        "ch": 6,
+        "code": 71,
+        "shift_name": "e5_r_fx2_1_on_press_shift"
+      },
+      "notes": "[e5_r] PDF p3, FX2-1 ON press. Printed channel 6, status 95, Data1 47h (printed dec 71). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e6-l",
+      "fig": "e6_l",
+      "label": "FX1-2 ON press. Printed channel 5",
+      "kind": "button",
+      "x": 16.1817,
+      "y": 10.3311,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e6_l_fx1_2_on_press",
+        "type": "note",
+        "ch": 5,
+        "code": 72,
+        "shift_name": "e6_l_fx1_2_on_press_shift"
+      },
+      "notes": "[e6_l] PDF p3, FX1-2 ON press. Printed channel 5, status 94, Data1 48h (printed dec 72). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e6-r",
+      "fig": "e6_r",
+      "label": "FX2-2 ON press. Printed channel 6",
+      "kind": "button",
+      "x": 74.6181,
+      "y": 10.2118,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e6_r_fx2_2_on_press",
+        "type": "note",
+        "ch": 6,
+        "code": 72,
+        "shift_name": "e6_r_fx2_2_on_press_shift"
+      },
+      "notes": "[e6_r] PDF p3, FX2-2 ON press. Printed channel 6, status 95, Data1 48h (printed dec 72). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e7-l",
+      "fig": "e7_l",
+      "label": "FX1-3 ON press. Printed channel 5",
+      "kind": "button",
+      "x": 21.385,
+      "y": 10.3259,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e7_l_fx1_3_on_press",
+        "type": "note",
+        "ch": 5,
+        "code": 73,
+        "shift_name": "e7_l_fx1_3_on_press_shift"
+      },
+      "notes": "[e7_l] PDF p3, FX1-3 ON press. Printed channel 5, status 94, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e7-r",
+      "fig": "e7_r",
+      "label": "FX2-3 ON press. Printed channel 6",
+      "kind": "button",
+      "x": 79.9064,
+      "y": 10.2275,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e7_r_fx2_3_on_press",
+        "type": "note",
+        "ch": 6,
+        "code": 73,
+        "shift_name": "e7_r_fx2_3_on_press_shift"
+      },
+      "notes": "[e7_r] PDF p3, FX2-3 ON press. Printed channel 6, status 95, Data1 49h (printed dec 73). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e11-1",
+      "fig": "e11_1",
+      "label": "Filter Parameter rotate",
+      "kind": "button",
+      "x": 41.1528,
+      "y": 38.351,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "e11_1_filter_parameter_rotate_mode_deck1_selected_on_left_deck_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 23,
+        "mode_name": "e11_1_filter_parameter_rotate_mode_deck1_selected_on_left_deck_msb"
+      },
+      "notes": "[e11_1] PDF p3, Filter Parameter rotate, condition: deck1 selected on left deck. Printed channel 7, status B6, Data1 17 37h (printed dec 23 55). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)～Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e11-2",
+      "fig": "e11_2",
+      "label": "Filter Parameter rotate",
+      "kind": "button",
+      "x": 54.8738,
+      "y": 38.3877,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "e11_2_filter_parameter_rotate_mode_deck2_selected_on_right_deck_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 24,
+        "mode_name": "e11_2_filter_parameter_rotate_mode_deck2_selected_on_right_deck_msb"
+      },
+      "notes": "[e11_2] PDF p3, Filter Parameter rotate, condition: deck2 selected on right deck. Printed channel 7, status B6, Data1 18 38h (printed dec 24 56). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)～Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: Min When turned fully clockwise: Max"
+    },
+    {
+      "id": "ddj-rr-e23-l",
+      "fig": "e23_l",
+      "label": "FX1 BEAT DOWN press. Printed channel 5",
+      "kind": "button",
+      "x": 25.2842,
+      "y": 10.3385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e23_l_fx1_beat_down_press",
+        "type": "note",
+        "ch": 5,
+        "code": 74,
+        "shift_name": "e23_l_fx1_beat_down_press_shift"
+      },
+      "notes": "[e23_l] PDF p3, FX1 BEAT DOWN press. Printed channel 5, status 94, Data1 4Ah (printed dec 74). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e23-r",
+      "fig": "e23_r",
+      "label": "FX2 BEAT DOWN press. Printed channel 6",
+      "kind": "button",
+      "x": 83.8428,
+      "y": 10.3385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e23_r_fx2_beat_down_press",
+        "type": "note",
+        "ch": 6,
+        "code": 74,
+        "shift_name": "e23_r_fx2_beat_down_press_shift"
+      },
+      "notes": "[e23_r] PDF p3, FX2 BEAT DOWN press. Printed channel 6, status 95, Data1 4Ah (printed dec 74). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e24-l",
+      "fig": "e24_l",
+      "label": "FX1 BEAT UP press. Printed channel 5",
+      "kind": "button",
+      "x": 28.223,
+      "y": 10.3385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e24_l_fx1_beat_up_press",
+        "type": "note",
+        "ch": 5,
+        "code": 75,
+        "shift_name": "e24_l_fx1_beat_up_press_shift"
+      },
+      "notes": "[e24_l] PDF p3, FX1 BEAT UP press. Printed channel 5, status 94, Data1 4Bh (printed dec 75). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-e24-r",
+      "fig": "e24_r",
+      "label": "FX2 BEAT UP press. Printed channel 6",
+      "kind": "button",
+      "x": 86.5092,
+      "y": 10.3385,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e24_r_fx2_beat_up_press",
+        "type": "note",
+        "ch": 6,
+        "code": 75,
+        "shift_name": "e24_r_fx2_beat_up_press_shift"
+      },
+      "notes": "[e24_r] PDF p3, FX2 BEAT UP press. Printed channel 6, status 95, Data1 4Bh (printed dec 75). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-s1-l",
+      "fig": "s1_l",
+      "label": "PERFORMANCE PAD 1 press",
+      "kind": "pad",
+      "x": 10.1866,
+      "y": 56.9113,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s1_l_performance_pad_1_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "mode_name": "s1_l_performance_pad_1_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s1_l_performance_pad_1_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s1_l] PDF p4, PERFORMANCE PAD 1 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 00h (printed dec 0). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s1-r",
+      "fig": "s1_r",
+      "label": "PERFORMANCE PAD 1 press",
+      "kind": "pad",
+      "x": 68.7436,
+      "y": 56.8306,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s1_r_performance_pad_1_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 0,
+        "mode_name": "s1_r_performance_pad_1_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s1_r_performance_pad_1_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s1_r] PDF p4, PERFORMANCE PAD 1 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 00h (printed dec 0). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s2-l",
+      "fig": "s2_l",
+      "label": "PERFORMANCE PAD 2 press",
+      "kind": "pad",
+      "x": 15.5627,
+      "y": 56.9113,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s2_l_performance_pad_2_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 1,
+        "mode_name": "s2_l_performance_pad_2_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s2_l_performance_pad_2_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s2_l] PDF p4, PERFORMANCE PAD 2 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s2-r",
+      "fig": "s2_r",
+      "label": "PERFORMANCE PAD 2 press",
+      "kind": "pad",
+      "x": 74.0959,
+      "y": 56.9113,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s2_r_performance_pad_2_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 1,
+        "mode_name": "s2_r_performance_pad_2_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s2_r_performance_pad_2_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s2_r] PDF p4, PERFORMANCE PAD 2 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s3-l",
+      "fig": "s3_l",
+      "label": "PERFORMANCE PAD 3 press",
+      "kind": "pad",
+      "x": 20.8028,
+      "y": 56.8903,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s3_l_performance_pad_3_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "mode_name": "s3_l_performance_pad_3_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s3_l_performance_pad_3_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s3_l] PDF p4, PERFORMANCE PAD 3 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 02h (printed dec 2). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s3-r",
+      "fig": "s3_r",
+      "label": "PERFORMANCE PAD 3 press",
+      "kind": "pad",
+      "x": 79.3088,
+      "y": 56.8903,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s3_r_performance_pad_3_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 2,
+        "mode_name": "s3_r_performance_pad_3_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s3_r_performance_pad_3_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s3_r] PDF p4, PERFORMANCE PAD 3 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 02h (printed dec 2). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s4-l",
+      "fig": "s4_l",
+      "label": "PERFORMANCE PAD 4 press",
+      "kind": "pad",
+      "x": 26.1607,
+      "y": 56.8903,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s4_l_performance_pad_4_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "mode_name": "s4_l_performance_pad_4_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s4_l_performance_pad_4_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s4_l] PDF p5, PERFORMANCE PAD 4 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 03h (printed dec 3). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s4-r",
+      "fig": "s4_r",
+      "label": "PERFORMANCE PAD 4 press",
+      "kind": "pad",
+      "x": 84.6189,
+      "y": 57.0285,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s4_r_performance_pad_4_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 3,
+        "mode_name": "s4_r_performance_pad_4_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s4_r_performance_pad_4_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s4_r] PDF p5, PERFORMANCE PAD 4 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 03h (printed dec 3). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s5-l",
+      "fig": "s5_l",
+      "label": "PERFORMANCE PAD 5 press",
+      "kind": "pad",
+      "x": 10.2166,
+      "y": 63.3165,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s5_l_performance_pad_5_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 4,
+        "mode_name": "s5_l_performance_pad_5_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s5_l_performance_pad_5_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s5_l] PDF p5, PERFORMANCE PAD 5 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 04h (printed dec 4). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s5-r",
+      "fig": "s5_r",
+      "label": "PERFORMANCE PAD 5 press",
+      "kind": "pad",
+      "x": 68.7712,
+      "y": 63.3165,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s5_r_performance_pad_5_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 4,
+        "mode_name": "s5_r_performance_pad_5_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s5_r_performance_pad_5_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s5_r] PDF p5, PERFORMANCE PAD 5 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 04h (printed dec 4). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s6-l",
+      "fig": "s6_l",
+      "label": "PERFORMANCE PAD 6 press",
+      "kind": "pad",
+      "x": 15.474,
+      "y": 63.3374,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s6_l_performance_pad_6_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 5,
+        "mode_name": "s6_l_performance_pad_6_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s6_l_performance_pad_6_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s6_l] PDF p5, PERFORMANCE PAD 6 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 05h (printed dec 5). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s6-r",
+      "fig": "s6_r",
+      "label": "PERFORMANCE PAD 6 press",
+      "kind": "pad",
+      "x": 74.1007,
+      "y": 63.3374,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s6_r_performance_pad_6_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 5,
+        "mode_name": "s6_r_performance_pad_6_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s6_r_performance_pad_6_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s6_r] PDF p5, PERFORMANCE PAD 6 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 05h (printed dec 5). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s7-l",
+      "fig": "s7_l",
+      "label": "PERFORMANCE PAD 7 press",
+      "kind": "pad",
+      "x": 20.7761,
+      "y": 63.3374,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s7_l_performance_pad_7_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 6,
+        "mode_name": "s7_l_performance_pad_7_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s7_l_performance_pad_7_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s7_l] PDF p6, PERFORMANCE PAD 7 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s7-r",
+      "fig": "s7_r",
+      "label": "PERFORMANCE PAD 7 press",
+      "kind": "pad",
+      "x": 79.355,
+      "y": 63.3374,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s7_r_performance_pad_7_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 6,
+        "mode_name": "s7_r_performance_pad_7_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s7_r_performance_pad_7_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s7_r] PDF p6, PERFORMANCE PAD 7 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s8-l",
+      "fig": "s8_l",
+      "label": "PERFORMANCE PAD 8 press",
+      "kind": "pad",
+      "x": 26.0506,
+      "y": 63.3133,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s8_l_performance_pad_8_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 7,
+        "mode_name": "s8_l_performance_pad_8_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s8_l_performance_pad_8_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s8_l] PDF p6, PERFORMANCE PAD 8 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s8-r",
+      "fig": "s8_r",
+      "label": "PERFORMANCE PAD 8 press",
+      "kind": "pad",
+      "x": 84.6011,
+      "y": 63.5081,
+      "w": 4.3725,
+      "h": 4.1885,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s8_r_performance_pad_8_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 7,
+        "mode_name": "s8_r_performance_pad_8_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s8_r_performance_pad_8_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s8_r] PDF p6, PERFORMANCE PAD 8 press, condition: in HOT CUE mode. Printed channel 8/9/10/11, status 9p, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s9-l",
+      "fig": "s9_l",
+      "label": "HOT CUE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 10.8433,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s9_l_hot_cue_press",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": "s9_l_hot_cue_press_shift"
+      },
+      "notes": "[s9_l] PDF p6, HOT CUE press. Printed channel 1/2/3/4, status 9n, Data1 1Bh (printed dec 27). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s9-r",
+      "fig": "s9_r",
+      "label": "HOT CUE press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 69.3764,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s9_r_hot_cue_press",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": "s9_r_hot_cue_press_shift"
+      },
+      "notes": "[s9_r] PDF p6, HOT CUE press. Printed channel 1/2/3/4, status 9n, Data1 1Bh (printed dec 27). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s10-l",
+      "fig": "s10_l",
+      "label": "PAD FX1 press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 16.1133,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s10_l_pad_fx1_press",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": "s10_l_pad_fx1_press_shift"
+      },
+      "notes": "[s10_l] PDF p6, PAD FX1 press. Printed channel 1/2/3/4, status 9n, Data1 1Eh (printed dec 30). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s10-r",
+      "fig": "s10_r",
+      "label": "PAD FX1 press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 74.6461,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s10_r_pad_fx1_press",
+        "type": "note",
+        "ch": 2,
+        "code": 30,
+        "shift_name": "s10_r_pad_fx1_press_shift"
+      },
+      "notes": "[s10_r] PDF p6, PAD FX1 press. Printed channel 1/2/3/4, status 9n, Data1 1Eh (printed dec 30). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s11-l",
+      "fig": "s11_l",
+      "label": "SLICER press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 21.3473,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s11_l_slicer_press",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": "s11_l_slicer_press_shift"
+      },
+      "notes": "[s11_l] PDF p6, SLICER press. Printed channel 1/2/3/4, status 9n, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s11-r",
+      "fig": "s11_r",
+      "label": "SLICER press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 79.8542,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s11_r_slicer_press",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": "s11_r_slicer_press_shift"
+      },
+      "notes": "[s11_r] PDF p6, SLICER press. Printed channel 1/2/3/4, status 9n, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s12-l",
+      "fig": "s12_l",
+      "label": "SAMPLER press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 26.6971,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s12_l_sampler_press",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "s12_l_sampler_press_shift"
+      },
+      "notes": "[s12_l] PDF p6, SAMPLER press. Printed channel 1/2/3/4, status 9n, Data1 22h (printed dec 34). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s12-r",
+      "fig": "s12_r",
+      "label": "SAMPLER press. Printed channel 1/2/3/4",
+      "kind": "button",
+      "x": 85.1558,
+      "y": 51.9479,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s12_r_sampler_press",
+        "type": "note",
+        "ch": 2,
+        "code": 34,
+        "shift_name": "s12_r_sampler_press_shift"
+      },
+      "notes": "[s12_r] PDF p6, SAMPLER press. Printed channel 1/2/3/4, status 9n, Data1 22h (printed dec 34). OFF=0x00, ON=0x7F MIDI OUT : lit in color specified in color number. (1-64) 0FF=0x00 (dimmer)"
+    },
+    {
+      "id": "ddj-rr-s13-l",
+      "fig": "s13_l",
+      "label": "PARAMETER 1 (LEFT) press",
+      "kind": "button",
+      "x": 31.6971,
+      "y": 65.105,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s13_l_parameter_1_left_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "mode_name": "s13_l_parameter_1_left_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s13_l_parameter_1_left_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s13_l] PDF p6, PARAMETER 1 (LEFT) press, condition: in HOT CUE mode. Printed channel 1/2/3/4, status 9n, Data1 24h (printed dec 36). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-s13-r",
+      "fig": "s13_r",
+      "label": "PARAMETER 1 (LEFT) press",
+      "kind": "button",
+      "x": 90.6024,
+      "y": 65.2243,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s13_r_parameter_1_left_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "mode_name": "s13_r_parameter_1_left_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s13_r_parameter_1_left_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s13_r] PDF p6, PARAMETER 1 (LEFT) press, condition: in HOT CUE mode. Printed channel 1/2/3/4, status 9n, Data1 24h (printed dec 36). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-s14-l",
+      "fig": "s14_l",
+      "label": "PARAMETER 1 (RIGHT) press",
+      "kind": "button",
+      "x": 35.2295,
+      "y": 65.2819,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s14_l_parameter_1_right_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "mode_name": "s14_l_parameter_1_right_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s14_l_parameter_1_right_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s14_l] PDF p6, PARAMETER 1 (RIGHT) press, condition: in HOT CUE mode. Printed channel 1/2/3/4, status 9n, Data1 2Ch (printed dec 44). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-s14-r",
+      "fig": "s14_r",
+      "label": "PARAMETER 1 (RIGHT) press",
+      "kind": "button",
+      "x": 93.5275,
+      "y": 65.2819,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "base",
+      "section": "pad",
+      "midi": {
+        "name": "s14_r_parameter_1_right_press_mode_in_hot_cue_mode",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "mode_name": "s14_r_parameter_1_right_press_mode_in_hot_cue_mode",
+        "shift_mode_name": "s14_r_parameter_1_right_press_shift_mode_in_hot_cue_mode"
+      },
+      "notes": "[s14_r] PDF p6, PARAMETER 1 (RIGHT) press, condition: in HOT CUE mode. Printed channel 1/2/3/4, status 9n, Data1 2Ch (printed dec 44). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-s17",
+      "fig": "s17",
+      "label": "SAMPLER VOLUME rotate. Printed channel 7",
+      "kind": "knob",
+      "x": 48.2572,
+      "y": 37.6704,
+      "w": 2.915,
+      "h": 3.7696,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s17_sampler_volume_rotate_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 3,
+        "shift_name": "s17_sampler_volume_rotate_shift"
+      },
+      "notes": "[s17] PDF p6, SAMPLER VOLUME rotate. Printed channel 7, status B6, Data1 03 23h (printed dec 3 35). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)～Max(MSB:0x7F LSB:0x7F)"
+    },
+    {
+      "id": "ddj-rr-s18",
+      "fig": "s18",
+      "label": "SYNC press. Printed channel 7",
+      "kind": "button",
+      "x": 46.475,
+      "y": 43.0526,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s18_sync_press",
+        "type": "note",
+        "ch": 7,
+        "code": 100,
+        "shift_name": "s18_sync_press_shift"
+      },
+      "notes": "[s18] PDF p6, SYNC press. Printed channel 7, status 96, Data1 64h (printed dec 100). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-s19",
+      "fig": "s19",
+      "label": "CUE press. Printed channel 7",
+      "kind": "button",
+      "x": 49.6288,
+      "y": 43.0526,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "pad",
+      "midi": {
+        "name": "s19_cue_press",
+        "type": "note",
+        "ch": 7,
+        "code": 105,
+        "shift_name": "s19_cue_press_shift"
+      },
+      "notes": "[s19] PDF p6, CUE press. Printed channel 7, status 96, Data1 69h (printed dec 105). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "ddj-rr-t2",
+      "fig": "t2",
+      "label": "PANEL press. Printed channel 7",
+      "kind": "button",
+      "x": 3.7988,
+      "y": 5.7542,
+      "w": 3.2389,
+      "h": 2.3037,
+      "layer": "both",
+      "section": "global",
+      "midi": {
+        "name": "t2_panel_press",
+        "type": "note",
+        "ch": 7,
+        "code": 120,
+        "shift_name": "t2_panel_press_shift"
+      },
+      "notes": "[t2] PDF p6, PANEL press. Printed channel 7, status 96, Data1 78h (printed dec 120). OFF=0x00, ON=0x7F"
+    }
+  ]
+}

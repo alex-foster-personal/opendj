@@ -19,7 +19,7 @@
 	import {
 		vocalsAnalyzeOutcome,
 		vocalsAnalyzeRefusal,
-		vocalsStatusHasRegions
+		vocalsAnalyzeResultFromVocalStatus
 	} from '$lib/rb/vocals-analyze-refusal';
 	import { requestTracksRefresh } from '$lib/rb/tracks-refresh-request';
 
@@ -43,9 +43,8 @@
 		busy = true;
 		try {
 			const live = await getVocalStatus(stableId);
-			const result = vocalsStatusHasRegions(live)
-				? { claimed: [] as const, refused: { [stableId]: 'cached_demucs' } as const }
-				: await analyzeVocalsFromStems(stableId);
+			const preflight = vocalsAnalyzeResultFromVocalStatus(stableId, live);
+			const result = preflight ?? (await analyzeVocalsFromStems(stableId));
 			const outcome = vocalsAnalyzeOutcome(stableId, result);
 			serverRefusal = outcome.category;
 			pushToast(outcome.message, outcome.toastKind);

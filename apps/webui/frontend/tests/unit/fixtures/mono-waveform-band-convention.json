@@ -1,0 +1,14 @@
+{
+  "_comment": "Mono waveform band convention (issue #12585). The backend declares kind 'mono' and repeats one real PWAV/PWV3 envelope under low/mid/high; the browser paints the per-point max across the three as one mono-colour envelope. tests/webui/test_mono_waveform_band_convention.py proves the backend side; tests/unit/mono-waveform-band-convention.test.mjs proves the browser side.",
+  "pwav_heights": [0, 31, 15, 8, 24, 3, 0, 31],
+  "points": 8,
+  "waveform": {
+    "kind": "mono",
+    "detail": {
+      "low": [0.0, 1.0, 0.4839, 0.2581, 0.7742, 0.0968, 0.0, 1.0],
+      "mid": [0.0, 1.0, 0.4839, 0.2581, 0.7742, 0.0968, 0.0, 1.0],
+      "high": [0.0, 1.0, 0.4839, 0.2581, 0.7742, 0.0968, 0.0, 1.0],
+      "length": 8
+    }
+  }
+}

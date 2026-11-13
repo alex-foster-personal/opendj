@@ -30,6 +30,7 @@ from apps.engine_core.lock import (
     HEARTBEAT_TTL_S,
     EngineLock,
     EngineLockError,
+    LockHolder,
     _swap_reason,
     inspect_lock,
     read_holder,
@@ -76,19 +77,23 @@ def test_a_healthy_holder_is_not_something_the_operator_is_told_to_kill(
         )
 
 
+def _age_heartbeat_past_ttl(lock_path: Path) -> None:
+    """Rewrite the held record with a heartbeat older than the TTL, flock untouched."""
+    stale = json.loads(lock_path.read_text(encoding="utf-8"))
+    stale["heartbeat_at"] = (
+        datetime.now(UTC) - timedelta(seconds=HEARTBEAT_TTL_S * 2)
+    ).isoformat(timespec="milliseconds")
+    _overwrite_without_unlinking(lock_path, json.dumps(stale))
+
+
 def test_the_wedged_holder_refusal_still_says_to_kill_it(
     tmp_path: Path,
 ) -> None:
     """A holder that stopped heartbeating IS the case that needs a kill."""
     lock_path = tmp_path / ".engine.lock"
     with EngineLock(lock_path, boot_id="boot-a"):
-        # Age the recorded heartbeat past the TTL without touching the flock,
-        # which is what a wedged-but-live engine looks like from outside.
-        stale = json.loads(lock_path.read_text(encoding="utf-8"))
-        stale["heartbeat_at"] = (
-            datetime.now(UTC) - timedelta(seconds=HEARTBEAT_TTL_S * 2)
-        ).isoformat(timespec="milliseconds")
-        _overwrite_without_unlinking(lock_path, json.dumps(stale))
+        # Aged heartbeat, flock untouched: a wedged-but-live engine from outside.
+        _age_heartbeat_past_ttl(lock_path)
 
         with pytest.raises(EngineLockError) as refusal:
             EngineLock(lock_path, boot_id="boot-b").acquire()
@@ -498,6 +503,54 @@ def test_inspect_lock_reports_the_holder_while_held(tmp_path: Path) -> None:
         assert inspected != "free"
         assert inspected.pid == os.getpid()
         assert inspected.port == 7777
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_inspect_lock_never_reports_a_stale_holder_as_live(tmp_path: Path) -> None:
+    """
+    [if] a lock holder pid exists but its heartbeat is stale [then] inspect_lock reports it held but not live and boot is refused, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, host="127.0.0.1", port=7777, boot_id="boot-a"):
+        _age_heartbeat_past_ttl(lock_path)
+        inspected = inspect_lock(lock_path)
+        assert isinstance(inspected, LockHolder), inspected
+        assert inspected.pid == os.getpid()
+        assert inspected.heartbeat_age_s is not None
+        assert inspected.heartbeat_age_s >= HEARTBEAT_TTL_S
+        assert not inspected.is_live, inspected.describe()
+
+        with pytest.raises(EngineLockError) as refusal:
+            EngineLock(lock_path, boot_id="boot-b").acquire()
+        message = str(refusal.value)
+        assert "stale" in message, message
+        assert "alive and healthy" not in message, message
+        assert inspect_lock(lock_path) != "free"
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_reinspection_sees_a_stale_holder_recover_once_it_heartbeats(
+    tmp_path: Path,
+) -> None:
+    """
+    [if] a stale holder heartbeats again before reinspection [then] the second inspect_lock reports the same holder as live, [else stop].
+    """
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, host="127.0.0.1", port=7777, boot_id="boot-a") as lock:
+        _age_heartbeat_past_ttl(lock_path)
+        first = inspect_lock(lock_path)
+        assert isinstance(first, LockHolder), first
+        assert not first.is_live
+
+        lock.heartbeat()
+        again = inspect_lock(lock_path)
+        assert isinstance(again, LockHolder), again
+        assert again.is_live, again.describe()
+        assert (again.pid, again.boot_id, again.port) == (
+            first.pid,
+            first.boot_id,
+            first.port,
+        )
 
 
 def test_env_contract_sets_data_dir_and_defaults_the_backend(

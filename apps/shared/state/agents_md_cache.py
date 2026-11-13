@@ -13,9 +13,10 @@ that when BOTH halves of the cache agree:
   read). The row travels with a restored or copied state.db and the file
   does not, so the row alone cannot prove the sidecar is current.
 
-A miss runs the real generator (``MissingColumnDocsError`` still raises
-before any write) and then records the marker idempotently: two opens that
-both miss must not abort on the primary key.
+A miss runs the real generator and then records the marker idempotently:
+two opens that both miss must not abort on the primary key. A
+``MissingColumnDocsError`` there (it raises before any write) is logged and
+skipped, not raised, so the open continues and no marker is recorded.
 
 The gate lives here beside its only production caller ``open_rw``; the
 generator implementation lives in :mod:`apps.shared.agents_md` so this
@@ -32,6 +33,13 @@ from pathlib import Path
 from apps.shared.state import schema_markers
 
 _log = logging.getLogger(__name__)
+
+#: Cache markers whose schema failed column-docs coverage in this process.
+#: Neither half of the cache can record them (the sidecar is left as is), so
+#: without this every later ``open_rw`` would re-run introspection and log
+#: the same warning again. The marker carries the schema fingerprint, so a
+#: schema change still gets a fresh attempt.
+_UNDOCUMENTED_SCHEMA_MARKERS: set[str] = set()
 
 
 def _capture_sidecar_write_failure(exc: BaseException) -> None:
@@ -52,14 +60,23 @@ def _regenerate_agents_md_tolerating_sidecar_failures(
     owned_tables: frozenset[str] | None,
     marker: str,
 ) -> bool:
-    """Regenerate the doc sidecar; never abort ``open_rw`` on sidecar I/O.
+    """Regenerate the doc sidecar; never abort ``open_rw`` on it.
 
     Expected sharing-lock read/replace denials log at warning. Other
     ``OSError`` during regeneration log at error and may reach Sentry, but
     still return False so the database open continues and a later open retries.
+
+    A ``MissingColumnDocsError`` logs one warning naming the columns and
+    leaves the existing sidecar as is. On a user's engine it means a newer
+    build already added columns to this shared data dir (Thu 12 Nov 2026:
+    ``playlist_memberships.edit_id`` stopped an older build starting). The
+    drift guard stays strict where developers see it: the generator CLI,
+    ``write_agents_md`` itself, and the coverage tests in
+    ``(private path)``.
     """
     from apps.shared.agents_md.generator import (
         ExistingSidecarAccessError,
+        MissingColumnDocsError,
         SidecarReplacePermissionError,
         write_agents_md,
     )
@@ -78,6 +95,16 @@ def _regenerate_agents_md_tolerating_sidecar_failures(
             "AGENTS.md sidecar access failed (%s); skipping this open",
             exc,
         )
+        return False
+    except MissingColumnDocsError as exc:
+        _log.warning(
+            "AGENTS.md not regenerated: %d undocumented live column(s), likely "
+            "added by a newer build sharing this data dir; keeping the existing "
+            "file: %s",
+            len(exc.missing),
+            ", ".join(exc.missing),
+        )
+        _UNDOCUMENTED_SCHEMA_MARKERS.add(marker)
         return False
     except OSError as exc:
         _log.error(
@@ -116,6 +143,8 @@ def regenerate_agents_md_cached(
         owned_tables=owned_tables,
         generator_version=GENERATOR_VERSION,
     )
+    if marker in _UNDOCUMENTED_SCHEMA_MARKERS:
+        return False
     sidecar_path = state_dir / "AGENTS.md"
     if schema_markers.has_marker(conn, marker):
         try:

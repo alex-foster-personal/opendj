@@ -106,6 +106,14 @@
 		hoverId = null;
 	}
 
+	function onOutsidePointerDown(event: PointerEvent): void {
+		if (!open || pinned || event.button !== 0) return;
+		const target = event.target;
+		if (!(target instanceof Node) || wrapEl?.contains(target)) return;
+		open = false;
+		hoverId = null;
+	}
+
 	async function copyAllTips(): Promise<void> {
 		const text = formatCopyAllTips(allTips);
 		try {
@@ -222,10 +230,14 @@
 	{/if}
 </div>
 
+<svelte:window onpointerdowncapture={onOutsidePointerDown} />
+
 <style>
 	.conn-dots {
 		position: absolute;
-		left: 10px;
+		/* Past the 30px icon rail (UX-RAIL-01); left: 10px overlapped
+		 * bottom-corner rail buttons on short /performance browser rows. */
+		left: 38px;
 		bottom: 34px;
 		display: flex;
 		flex-direction: column;
@@ -279,8 +291,6 @@
 	}
 	.conn-panel {
 		position: fixed;
-		left: 18px;
-		bottom: 0;
 		width: min(340px, 70vw);
 		padding: 8px 10px;
 		border: 1px solid var(--rb-border, #2e333a);
@@ -290,8 +300,12 @@
 		font-size: 11px;
 		line-height: 1.35;
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-		pointer-events: auto;
+		/* Unpinned hover tips must not eat library / deck clicks underneath (#13523). */
+		pointer-events: none;
 		z-index: 9600;
+	}
+	.conn-panel:has(.conn-panel-pin.active) {
+		pointer-events: auto;
 	}
 	.conn-panel-head {
 		display: flex;
@@ -313,6 +327,9 @@
 	}
 	.conn-panel-st.bad {
 		color: #e07070;
+	}
+	.conn-panel :is(.conn-panel-pin, .conn-panel-close, .conn-panel-copy) {
+		pointer-events: auto;
 	}
 	.conn-panel-pin,
 	.conn-panel-close,

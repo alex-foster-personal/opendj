@@ -43,6 +43,8 @@
 #   MDT_REPO_ROOT                       tree to check (default: this repo)
 #   MDT_MACOS_SIGNING_IDENTITY          Developer ID identity to sign with
 #   MDT_MACOS_NOTARY_KEYCHAIN_PROFILE   notarytool keychain profile
+#   MDT_MACOS_NOTARY_KEYCHAIN           keychain FILE holding that profile;
+#                                        required to notarize (OPS-3944)
 #   MDT_SHIP_UNSIGNED                   1 = deliberately unsigned dev image
 #   MDT_LOCAL_FAST_UNNOTARIZED          1 = local signed app, no notary profile needed
 #   TAURI_SIGNING_PRIVATE_KEY           updater minisign key (never printed)
@@ -115,6 +117,21 @@ _probe_in() { # <dir> <command...>; prints first output line, returns its status
     return "$status"
 }
 _probe() { _probe_in "$PWD" "$@"; }
+
+# Run "$@" but kill it after $1 seconds: macOS ships no `timeout`. The watcher's
+# output is redirected so a caller capturing "$@" with $(...) is not held open
+# by the watcher's sleep until the deadline.
+_with_deadline() { # <seconds> <command...>
+    local secs="$1"
+    shift
+    "$@" &
+    local pid=$!
+    ( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    local watcher=$! status=0
+    wait "$pid" || status=$?
+    { kill "$watcher"; wait "$watcher"; } >/dev/null 2>&1 || true
+    return "$status"
+}
 
 #----- A. host platform ---------------------------------------------------
 
@@ -259,6 +276,68 @@ check_signing_config() {
     else
         ok "MDT_SHIP_UNSIGNED=1: a deliberately unsigned image, quarantine cleared on install"
     fi
+}
+
+#----- C2. notary profile -------------------------------------------------
+
+# A NAMED profile is not a USABLE one. Measured Fri 25 Sep 2026: silver and
+# demon-llama both exported MDT_MACOS_NOTARY_KEYCHAIN_PROFILE and passed item
+# C, while from a headless session notarytool could not read that profile at
+# all (`keychainLocked(keychainName: "default")`): it reads the DEFAULT
+# keychain unless given --keychain, and the default is the login keychain.
+# MDT_MACOS_NOTARY_KEYCHAIN is therefore required, never inferred.
+# A signed build would have compiled, signed, and then died at notarization.
+# So this makes the same call the build makes, with the same keychain, and
+# only a successful answer from Apple is a pass.
+NOTARY_PROBE_DEADLINE_S=60
+
+check_notary_profile() {
+    section "C2. notary profile (a live notarytool call)"
+    local profile="${MDT_MACOS_NOTARY_KEYCHAIN_PROFILE:-}"
+    local keychain="${MDT_MACOS_NOTARY_KEYCHAIN:-}"
+    if [ "${MDT_SHIP_UNSIGNED:-}" = "1" ]; then
+        ok "MDT_SHIP_UNSIGNED=1: nothing is notarized"
+        return
+    fi
+    if [ -z "$profile" ]; then
+        # Item C already reports the missing profile as unmet; a second line
+        # for one cause reads as two problems. This is not a pass either.
+        printf '[--]      no notary profile configured; reported under C\n'
+        return
+    fi
+    # Supersedes: the implicit default-keychain lookup. It is refused here
+    # rather than tried, because in a headless session it can only fail.
+    if [ -z "$keychain" ]; then
+        fail "notary profile" \
+             "MDT_MACOS_NOTARY_KEYCHAIN is not set, so notarization has no keychain to read profile '$profile' from" \
+             "Name the keychain FILE that holds the profile. A build host gets it from (private path) apply --host-label <host> (~/.zshenv); a GUI Mac whose profile is in its login keychain exports MDT_MACOS_NOTARY_KEYCHAIN=\$HOME/Library/Keychains/login.keychain-db."
+        return
+    fi
+    if [ ! -f "$keychain" ]; then
+        fail "notary profile" \
+             "MDT_MACOS_NOTARY_KEYCHAIN=$keychain does not exist, so notarization cannot find profile '$profile'" \
+             "Run (private path) apply --host-label <host>, or point MDT_MACOS_NOTARY_KEYCHAIN at the keychain that holds the profile."
+        return
+    fi
+    local args=(--keychain-profile "$profile" --keychain "$keychain") where="$keychain"
+    if ! command -v xcrun >/dev/null 2>&1; then
+        fail "notary profile" \
+             "the notary profile CANNOT BE MEASURED on this host: no xcrun on PATH" \
+             "Install the Xcode command line tools, or export MDT_SHIP_UNSIGNED=1 for a deliberately unsigned dev image."
+        return
+    fi
+    local out status=0
+    out="$(_with_deadline "$NOTARY_PROBE_DEADLINE_S" xcrun notarytool history "${args[@]}" 2>&1)" || status=$?
+    if [ "$status" = 0 ] && grep -q 'Successfully received submission history' <<<"$out"; then
+        ok "notary profile '$profile' resolves from $where and Apple answers"
+        return
+    fi
+    local reason
+    reason="$(grep -m1 -i 'error' <<<"$out" || true)"
+    [ -n "$reason" ] || reason="$(head -1 <<<"$out")"
+    fail "notary profile" \
+         "notarytool cannot use profile '$profile' from $where (rc=$status): ${reason:-no output within ${NOTARY_PROBE_DEADLINE_S}s}" \
+         "A locked keychain is the usual cause, and the lock is per login session: an ssh session does not inherit another session's unlock. On a build host, build through (private path), which unlocks the signing keychain in the SAME session before \`just dmg\` (or run \`security unlock-keychain $where\` in this session first); a host that has never been provisioned needs build_host_signing.sh apply --host-label <host>, which also exports MDT_MACOS_NOTARY_KEYCHAIN. Elsewhere, store the profile with: xcrun notarytool store-credentials"
 }
 
 #----- D. rust toolchain --------------------------------------------------
@@ -844,6 +923,7 @@ echo "repo: $ROOT"
 check_platform
 check_working_tree
 check_signing_config
+check_notary_profile
 check_rust_toolchain
 check_apple_xattr
 check_uv

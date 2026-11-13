@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483752,
+  "measured_with_pr": 483893,
+  "sha": "c083a2172c",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--stems--10237-state-raw-stores grows the performance surface; measured +141 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -55,7 +55,7 @@ AUDIO_SUBDIR: str = "fixture-audio"
 SAMPLE_RATE_HZ: int = 22_050
 SECONDS: float = 4.0
 #: The flags this gate needs on, written as the data dir's own override file.
-FLAGS: dict[str, bool] = {"cmdk.v2": True}
+FLAGS: dict[str, bool] = {"cmdk.v2": True, "cmdk.v2.preview": False}
 #: The one directory this builder may wipe: the e2e fixtures dir's own pick-race data dir,
 #: which playwright.cmdk-pick-race.config.ts passes as --data-dir.
 FIXTURES_ROOT: Path = Path(__file__).resolve().parents[1] / "fixtures"

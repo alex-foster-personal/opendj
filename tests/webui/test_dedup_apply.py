@@ -14,11 +14,15 @@ Regression one-liners:
   - if apply deletes the alias audio file then broken
   - if missing state.db is not 503 then broken
   - if OpenAPI omits apply/undo If-Match as required then broken
+  - if undo with no applied merge is not 404 with aliases and playlists unchanged then broken
+  - if undo with a stale If-Match is not 409 with aliases and playlists unchanged then broken
+  - if a repeat undo after the applied merge was undone is not 404 and a no-op then broken
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -174,6 +178,19 @@ def _undo(
         headers={"If-Match": revision},
         json={"cluster_key": cluster_key, "survivor": survivor},
     )
+
+
+def _alias_rows(db_path: Path) -> list[tuple[str, str, int, str]]:
+    """Return the dedup alias rows so refused undos can prove aliases did not move."""
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT alias_stable_id, alias_path, cluster_id, canonical_stable_id "
+            "FROM track_aliases ORDER BY alias_stable_id"
+        ).fetchall()
+    finally:
+        conn.close()
+    return [tuple(row) for row in rows]
 
 
 def _playlist_items(client: TestClient, playlist_id: str) -> list[str]:
@@ -357,6 +374,52 @@ def test_missing_state_db_is_503(
         )
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "state_db_missing"
+
+
+def test_undo_without_applied_merge_is_404_and_noop(client: TestClient, dedup_db: Path) -> None:
+    """Undo with no applied merge is refused and leaves aliases and playlists unchanged."""
+    cluster_key, revision = _revision(client)
+    playlist_id, _ = _create_playlist(client, "Never Applied", [ALIAS, OTHER])
+    aliases_before = _alias_rows(dedup_db)
+    undone = _undo(client, cluster_key, revision)
+    assert undone.status_code == 404, undone.text
+    assert undone.json()["detail"]["error"] == "not_found"
+    assert _playlist_items(client, playlist_id) == [ALIAS, OTHER]
+    assert _alias_rows(dedup_db) == aliases_before
+    assert _revision(client)[1] == revision
+
+
+def test_undo_with_stale_if_match_is_409_and_noop(client: TestClient, dedup_db: Path) -> None:
+    """Undo with a stale revision is refused and leaves the merged playlist and aliases alone."""
+    cluster_key, stale = _revision(client)
+    playlist_id, _ = _create_playlist(client, "Stale Undo", [ALIAS, OTHER])
+    applied = _apply(client, cluster_key, stale)
+    assert applied.status_code == 200, applied.text
+    assert applied.headers["etag"] != stale
+    aliases_before = _alias_rows(dedup_db)
+    undone = _undo(client, cluster_key, stale)
+    assert undone.status_code == 409, undone.text
+    assert _playlist_items(client, playlist_id) == [CANON, OTHER]
+    assert _alias_rows(dedup_db) == aliases_before
+    clusters = client.get("/api/v1/dedup/clusters").json()["clusters"][0]
+    assert clusters["decision"]["pending_apply"] is False
+
+
+def test_repeat_undo_after_current_merge_is_404_and_noop(client: TestClient, dedup_db: Path) -> None:
+    """Undo of the current applied merge works once; a repeat undo is refused and changes nothing."""
+    cluster_key, revision = _revision(client)
+    playlist_id, _ = _create_playlist(client, "Undo Once", [ALIAS, OTHER, ALIAS])
+    applied = _apply(client, cluster_key, revision)
+    assert applied.status_code == 200, applied.text
+    aliases_before = _alias_rows(dedup_db)
+    undone = _undo(client, cluster_key, applied.headers["etag"])
+    assert undone.status_code == 200, undone.text
+    assert _playlist_items(client, playlist_id) == [ALIAS, OTHER, ALIAS]
+    again = _undo(client, cluster_key, undone.headers["etag"])
+    assert again.status_code == 404, again.text
+    assert again.json()["detail"]["error"] == "not_found"
+    assert _playlist_items(client, playlist_id) == [ALIAS, OTHER, ALIAS]
+    assert _alias_rows(dedup_db) == aliases_before
 
 
 def test_openapi_documents_apply_undo_if_match(client: TestClient) -> None:

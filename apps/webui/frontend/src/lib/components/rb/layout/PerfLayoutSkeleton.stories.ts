@@ -65,3 +65,5 @@ export const DeckGrid1280x800: Story = perfLayoutSkeletonStories['deck-grid-1280
 export const DeckGrid1920x1080: Story = perfLayoutSkeletonStories['deck-grid-1920x1080'];
 export const ReplicaDesk1280x800: Story = perfLayoutSkeletonStories['replica-desk-1280x800'];
 export const ReplicaDesk1920x1080: Story = perfLayoutSkeletonStories['replica-desk-1920x1080'];
+export const LibraryFirst1280x800: Story = perfLayoutSkeletonStories['library-first-1280x800'];
+export const LibraryFirst1920x1080: Story = perfLayoutSkeletonStories['library-first-1920x1080'];

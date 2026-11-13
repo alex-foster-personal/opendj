@@ -1,3 +1,7 @@
+// requirement: TRACKIFY-13653
+// [if] a track fails to load in Trackify [then] the player skips within 2 s with one dismissible toast
+// [if] every candidate fails [then] one toast is shown and the poll keeps watching feed epoch
+// [if] Trackify mounts [then] the 250 ms poll advances deck 1 without a stall banner
 import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, describe, it, mock } from 'node:test';
 import { existsSync } from 'node:fs';
@@ -197,6 +201,25 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 	// bound comes from the requirement, NOT from TRACKIFY_LOAD_SKIP_DEADLINE_MS,
 	// so raising the constant past the requirement turns these tests red.
 	const REQUIRED_SKIP_BOUND_MS = 2000;
+
+	it('with autoplay on and an empty deck, the 250 ms poll loads the first snapshot row onto deck 1', async () => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+		let uninstall = null;
+		try {
+			const { log } = installFakeTransport();
+			entry.e2ePrimeTrackifyFeed([row('first'), row('second')]);
+			uninstall = entry.installTrackifyAutoplay();
+			mock.timers.tick(250);
+			await settle();
+			assert.deepEqual(log, ['load first', 'play first']);
+			const state = entry.readTrackifyAutoplayState();
+			assert.equal(state.autoplay_enabled, true);
+			assert.equal(state.queue_head, 'first');
+		} finally {
+			if (uninstall !== null) uninstall();
+			mock.timers.reset();
+		}
+	});
 
 	it('a rejected load is quarantined and the next candidate loads and plays with no clock advance', async () => {
 		mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });

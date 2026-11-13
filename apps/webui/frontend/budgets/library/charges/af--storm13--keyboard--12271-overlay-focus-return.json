@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 373188,
+  "measured_with_pr": 374693,
+  "sha": "58ccedbffc",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12271-overlay-focus-return grows the library surface; measured +1505 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

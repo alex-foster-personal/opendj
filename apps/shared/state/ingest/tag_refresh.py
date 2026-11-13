@@ -12,8 +12,9 @@ read always yields a duration, so a NULL one is the signature of a read that
 never happened. The refresh fills only what the failed read left empty and
 never touches the file itself (Open DJ never writes into library files):
 
-* ``title`` only while it is still the filename stem the import fell back to
-* ``artists`` / ``album`` only while empty
+* ``title`` / ``artists`` / ``album`` only while they are still the file's
+  own (:func:`apps.shared.state.ingest.folder.merge_reloaded_identity`): a
+  value the user corrected is kept, LIBM-67b
 * ``duration_ms`` only while NULL
 * genre / comments / tag BPM / tag key through the import's own rule
   (:func:`apps.shared.state.ingest.folder.write_file_tag_metadata`)
@@ -22,6 +23,7 @@ Requirements (mini-PRD):
   ✔︎ blank rows get their tags back
     [if] a row reads title=stem, artists=[], duration NULL and its file is tagged [then] the tags land
     [if] a row was renamed by the user (title != stem) [then] its title is kept
+    [if] the user corrected title, artists or album after a read [then] a reload keeps them
     [if] a row already has a duration [then] it is not a candidate
     [if] the tags read but no duration does [then] what read lands and the row is reported failed
 """
@@ -34,7 +36,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.shared import audio_files
-from apps.shared.state.ingest.folder import FolderIngestReport, write_file_tag_metadata
+from apps.shared.state.ingest.folder import (
+    FolderIngestReport,
+    TrackIdentity,
+    merge_reloaded_identity,
+    read_file_identity,
+    record_file_identity,
+    write_file_tag_metadata,
+)
 from apps.shared.state.writer import StateWriter
 
 
@@ -88,18 +97,26 @@ def refresh_row(writer: StateWriter, row: BlankRow) -> bool:
     if metadata is None:
         return False
     stem = Path(row.file_path).stem
+    from_file = TrackIdentity(metadata.title or stem, [metadata.artist] if metadata.artist else [], metadata.album)
+    merged = merge_reloaded_identity(
+        TrackIdentity(row.title, row.artists, row.album),
+        from_file,
+        read_file_identity(writer.raw_conn, row.stable_id),
+        fallback_title=stem,
+    )
     writer.upsert_track(
         stable_id=row.stable_id,
         stable_id_tier=row.stable_id_tier,
-        title=metadata.title if metadata.title and row.title in (None, "", stem) else row.title,
-        artists=row.artists or ([metadata.artist] if metadata.artist else []),
-        album=row.album or metadata.album,
+        title=merged.title,
+        artists=merged.artists,
+        album=merged.album,
         isrc=row.isrc,
         duration_ms=int(metadata.duration_s * 1000) if metadata.duration_s else None,
         file_path=row.file_path,
         content_hash=row.content_hash,
         audio_hash=row.audio_hash,
     )
+    record_file_identity(writer, row.stable_id, from_file)
     write_file_tag_metadata(writer, row.stable_id, metadata, FolderIngestReport(roots=[]))
     return bool(metadata.duration_s)
 

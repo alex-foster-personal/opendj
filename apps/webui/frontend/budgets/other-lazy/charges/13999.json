@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557258,
+  "measured_with_pr": 557413,
+  "sha": "e249dddb2f5416bc0cd1da7ea48f22d388e69971",
+  "date": "Fri 13 Nov 2026",
+  "reason": "PR #13999 adds library keyboard regression tests only. CI measured +155 B gzip on other-lazy over main (557258 to 557413), above the 128 B build-noise floor. This charge records that delta, ceiled to KiB.",
+  "payback": "none planned; this test-only PR adds no production modules to remove, and commit-stamped builds change emitted chunk output"
+}

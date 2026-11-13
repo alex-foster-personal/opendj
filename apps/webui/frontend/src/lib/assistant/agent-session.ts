@@ -6,6 +6,8 @@
  * `history` is what the next request resends: user turns plus every
  * `message` event verbatim. `items` is what the reader sees.
  */
+import type { ToolStepRef, ToolTraceStepStatus } from '$lib/chat-kit/types';
+
 import {
 	DECLINED_CODE,
 	type AgentEvent,
@@ -134,6 +136,37 @@ export function applyEvent(session: Session, event: AgentEvent): Session {
 
 export function foldEvents(session: Session, events: AgentEvent[]): Session {
 	return events.reduce(applyEvent, session);
+}
+
+/** Map one agent tool row to the kit-local ToolTrace step status. */
+export function agentToolStatusToTrace(status: ToolStatus): ToolTraceStepStatus {
+	switch (status) {
+		case 'running':
+		case 'held':
+			return 'running';
+		case 'ok':
+			return 'ok';
+		case 'failed':
+		case 'declined':
+			return 'failed';
+		default: {
+			const _exhaustive: never = status;
+			throw new Error(`unknown tool status: ${String(_exhaustive)}`);
+		}
+	}
+}
+
+/** Tool rows for ToolTrace; safe while `session.busy` before a terminal `done`. */
+export function toolStepsFromSession(session: Session): ToolStepRef[] {
+	return toolStepsFromItems(session.items);
+}
+
+export function toolStepsFromItems(items: Item[]): ToolStepRef[] {
+	return items.flatMap((item) =>
+		item.kind === 'tool'
+			? [{ id: item.call.id, name: item.call.name, status: agentToolStatusToTrace(item.status) }]
+			: []
+	);
 }
 
 //----- helpers

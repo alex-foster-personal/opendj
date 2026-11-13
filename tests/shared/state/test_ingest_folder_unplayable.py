@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.shared import flac_meta
+from apps.shared import _tagreader, flac_meta
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder
 from apps.shared.state.writer import StateWriter
@@ -98,6 +98,17 @@ def test_folder_import_rejects_corrupt_wav_fixtures(tmp_path: Path) -> None:
     assert report.files_seen == 7
     assert report.files_rejected_unplayable == 6
     assert report.files_without_tags == 1
+    expected_reasons = {
+        "zero-bytes.wav": "empty file",
+        "header-only.wav": "empty data chunk",
+        "truncated.wav": "truncated riff",
+        "actually-text.wav": "missing wav riff header",
+        "riff-then-garbage.wav": "missing wav riff header",
+        "corrupt-fmt.wav": "truncated extensible fmt",
+    }
+    assert len(report.unplayable_rejections) == 6
+    by_name = {Path(row.path).name: row.reason for row in report.unplayable_rejections}
+    assert by_name == expected_reasons
 
 
 @pytest.mark.requirement("SETUP-16")
@@ -135,6 +146,37 @@ def test_valid_untagged_wav_imports_without_rejection(tmp_path: Path) -> None:
     assert report.files_rejected_unplayable == 0
     assert report.files_without_tags == 1
     assert report.tracks_inserted == 1
+
+
+@pytest.mark.requirement("LIBM-14673")
+def test_unplayable_rejection_list_is_capped_but_count_is_honest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] more rejections than cap [then] full count and capped list, [else stop]."""
+    monkeypatch.setattr(folder, "MAX_UNPLAYABLE_REJECTIONS", 2)
+    root = tmp_path / "fixtures"
+    root.mkdir()
+    _write_wav(root / "control-valid.wav")
+    for index in range(3):
+        (root / f"empty-{index}.wav").write_bytes(b"")
+    state_path = tmp_path / "state.db"
+    report = _ingest(root, state_path)
+    assert report.files_rejected_unplayable == 3
+    assert len(report.unplayable_rejections) == 2
+
+
+def test_unplayable_rejection_reasons_with_tag_reader_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] HAS_TAG_READER false [then] probe reasons still recorded [else stop]."""
+    monkeypatch.setattr(_tagreader, "HAS_TAG_READER", False)
+    root = tmp_path / "fixtures"
+    root.mkdir()
+    _build_corrupt_fixture_dir(root)
+    (root / "control-valid.wav").unlink()
+    state_path = tmp_path / "state.db"
+    report = _ingest(root, state_path)
+    assert report.files_rejected_unplayable == 6
+    assert len(report.unplayable_rejections) == 6
+    assert all(row.reason for row in report.unplayable_rejections)
 
 
 def test_folder_import_rejects_corrupt_wav_with_tag_reader_installed(

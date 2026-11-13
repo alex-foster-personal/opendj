@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483140,
+  "measured_with_pr": 483754,
+  "sha": "91fb395521",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10778-client-api grows the performance surface; measured +614 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

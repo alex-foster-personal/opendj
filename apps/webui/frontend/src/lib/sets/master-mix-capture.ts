@@ -19,6 +19,7 @@
 import { API_BASE } from '$lib/api/base';
 import { masterMixUnavailableReason } from '$lib/sets/record-input-choice';
 import { masterMixTapPoint } from '$lib/rb/audio-engine.svelte';
+import { clearMasterMixOrigin, setMasterMixOrigin } from '$lib/sets/master-mix-origin';
 
 /** The same master bus tap, for the remote speaker (I18): one importer of the
  * audio engine serves both MAIN taps, so the engine's fan-in does not grow. */
@@ -103,12 +104,16 @@ export async function startMasterMixCapture(
 	let failed: string | null = null;
 	let stopped = false;
 	let retapping = false;
+	// Frames handed to the queue by every tap so far: the recorded-WAV frame
+	// index where the next tap's audio begins (control-event `sample` origin).
+	let framesCaptured = 0;
 	// Started only once the first tap is connected: a watch that ran during
 	// a slow first attach (tap still null) started a SECOND tap, whose orphaned
 	// worklet kept feeding a stopped recording (SET-12, reproduced live).
 	let watch: ReturnType<typeof setInterval> | undefined;
 
 	function detach(): void {
+		clearMasterMixOrigin(sessionId);
 		if (tap === null) return;
 		tap.worklet.port.onmessage = null;
 		tap.node.disconnect(tap.worklet);
@@ -236,6 +241,7 @@ export async function startMasterMixCapture(
 				worklet.disconnect();
 				return;
 			}
+			framesCaptured += frames;
 			queue.push({ pcm, frames, stream: next.stream, seq: next.seq++, sampleRate: next.sampleRate, port: worklet.port });
 			if (queue.length > MAX_QUEUED_CHUNKS) {
 				fail(`the recorder fell ${queue.length * CHUNK_SECONDS} s behind the master mix`);
@@ -253,6 +259,13 @@ export async function startMasterMixCapture(
 			throw new Error('the master tap ended before it connected');
 		}
 		tap = next;
+		setMasterMixOrigin({
+			sessionId,
+			context,
+			contextFrame: Math.round(context.currentTime * context.sampleRate),
+			recordedFrames: framesCaptured,
+			sampleRate: context.sampleRate
+		});
 	}
 
 	// The graph is rebuilt on an output-device change or a context failure;

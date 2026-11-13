@@ -47,6 +47,9 @@ const AUDIO_BYTES = SAMPLE_RATE_HZ * 4 * TRACK_SECONDS;
 // the presentation clock exists to honor.
 const OUTPUT_LAG_S = 0.032;
 const FRAME_S = 1 / 60;
+/** Turn floor and wall-clock budget for waitFor: turns alone run out in about 40 ms on a loaded runner (#8530). */
+const WAIT_FOR_MIN_TURNS = 400;
+const WAIT_FOR_DEADLINE_MS = 5000;
 const STRETCH_STUB = fileURLToPath(
 	new URL('./fixtures/stretch-deck-processor-recording-stub.ts', import.meta.url)
 );
@@ -404,14 +407,20 @@ export async function startRealEngine(bundleText, { tracks }) {
 		for (let i = 0; i < turns; i += 1) await new Promise((resolve) => setImmediate(resolve));
 	}
 
-	/** Wall-clock floor for waitFor: a loaded CI runner can spend 400 turns in under 100 ms (STEM-4806, #10508). */
-	const WAIT_FOR_MIN_MS = 5000;
-
-	/** Turn the loop until `predicate` holds: at least 400 turns AND at least WAIT_FOR_MIN_MS of wall time. */
+	/** Turn the loop until `predicate` holds: at least WAIT_FOR_MIN_TURNS AND WAIT_FOR_DEADLINE_MS wall time (STEM-4806, #10508). */
 	async function waitFor(predicate, what) {
-		const deadline = performance.now() + WAIT_FOR_MIN_MS;
-		for (let i = 0; !predicate() && (i < 400 || performance.now() < deadline); i += 1) await settle(1);
-		assert.ok(predicate(), `timed out waiting for ${what} (400 turns and ${WAIT_FOR_MIN_MS} ms)`);
+		const deadline = performance.now() + WAIT_FOR_DEADLINE_MS;
+		for (
+			let i = 0;
+			!predicate() && (i < WAIT_FOR_MIN_TURNS || performance.now() < deadline);
+			i += 1
+		) {
+			await settle(1);
+		}
+		assert.ok(
+			predicate(),
+			`timed out waiting for ${what} (${WAIT_FOR_MIN_TURNS} turns and ${WAIT_FOR_DEADLINE_MS} ms)`
+		);
 	}
 
 	/** Advance the render clock one display frame and run the frame the engine queued. */
@@ -433,11 +442,11 @@ export async function startRealEngine(bundleText, { tracks }) {
 	 * 240 frames is the budget, but a frame here costs about a millisecond, so on a loaded CI runner all 240
 	 * can pass in under 100 ms while the stem decode's own async work is still queued behind other test
 	 * processes (seen on #13607: "never reached: track B's stems to read ready" after 94 ms). A display runs
-	 * on wall-clock time, so the wait also lasts at least WAIT_FOR_MIN_MS before it gives up, the same floor
+	 * on wall-clock time, so the wait also lasts at least WAIT_FOR_DEADLINE_MS before it gives up, the same floor
 	 * waitFor already has. A state that is reached returns at once either way; only a failing wait gets slower.
 	 */
 	async function stepUntil(predicate, what) {
-		const giveUpAt = performance.now() + WAIT_FOR_MIN_MS;
+		const giveUpAt = performance.now() + WAIT_FOR_DEADLINE_MS;
 		for (let i = 0; !predicate() && (i < 240 || performance.now() < giveUpAt); i += 1) await stepFrame();
 		assert.ok(predicate(), `the deck never reached: ${what}`);
 	}

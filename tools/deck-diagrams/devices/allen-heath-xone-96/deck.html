@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Allen & Heath Xone:96 interactive deck</title>
+<style>
+:root {
+  --bg: #0e1114;
+  --ink: #e8eef2;
+  --muted: #8a9aa6;
+  --red: #ff2a2a;
+  --accent: #3dd6c6;
+  --panel: #1a2229;
+  --shift: #ffb020;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--ink);
+}
+header {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #2a3540;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+header .meta { color: var(--muted); font-size: 12px; }
+.toolbar button, .toolbar label {
+  background: #24303a; color: var(--ink); border: 1px solid #3a4a57;
+  border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.toolbar button.active, .toolbar button[aria-pressed="true"] {
+  background: var(--shift); color: #111; border-color: var(--shift); font-weight: 600;
+}
+.stage-wrap { padding: 12px; overflow: auto; }
+.stage {
+  position: relative; width: min(1200px, 100%);
+  margin: 0 auto; user-select: none;
+}
+.stage img.plate { width: 100%; height: auto; display: block; border-radius: 4px; }
+.stage img.plate[hidden] { display: none !important; }
+.control {
+  position: absolute; border: 2px solid var(--red); color: var(--red);
+  background: rgba(255, 40, 40, 0.12); font-size: 9px; line-height: 1.1;
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  padding: 1px 2px; overflow: hidden; cursor: pointer;
+}
+.control .tag { font-weight: 700; pointer-events: none; }
+.control.kind-jog { border-radius: 50%; }
+.control.kind-knob, .control.kind-encoder { border-radius: 50%; }
+.control.kind-fader { border-radius: 2px; }
+.control.kind-pad { border-radius: 3px; }
+.control.pressed, .control:active { background: rgba(255,40,40,0.45); }
+.control.shift-hot { border-color: var(--shift); color: var(--shift); background: rgba(255,176,32,0.18); }
+#readout {
+  position: sticky; bottom: 0; background: #12181e; border-top: 1px solid #2a3540;
+  padding: 10px 14px; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px; min-height: 52px;
+}
+#readout .k { color: var(--accent); }
+.legend { color: var(--muted); font-size: 11px; margin-left: auto; }
+.pad-modes { color: var(--ink); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+.pad-modes select {
+  background: #24303a; color: var(--ink); border: 1px solid #3a4a57;
+  border-radius: 4px; padding: 5px 8px; font-size: 12px;
+}
+.plate-missing {
+  margin: 0 auto 12px; max-width: 1200px; padding: 10px 14px;
+  background: #3a2410; border: 1px solid var(--shift); color: var(--shift);
+  border-radius: 4px; font-size: 13px;
+}
+
+.stage.deck-mode img.plate { opacity: 0.35; filter: grayscale(0.3); }
+.stage.deck-mode .control {
+  border-color: #6af; color: #cfe; background: rgba(40,80,120,0.55);
+  align-items: center; justify-content: center; text-align: center;
+  font-size: 10px; font-weight: 600;
+}
+.stage.deck-mode .control.shift-hot {
+  border-color: var(--shift); color: #211; background: rgba(255,176,32,0.75);
+}
+.stage.deck-mode .control.kind-knob::after,
+.stage.deck-mode .control.kind-encoder::after {
+  content: ""; position: absolute; width: 40%; height: 40%;
+  border: 2px solid currentColor; border-radius: 50%; top: 30%; left: 30%;
+  pointer-events: none;
+}
+.dial-value { position: absolute; bottom: 2px; right: 3px; font-size: 8px; opacity: 0.85; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Allen & Heath Xone:96 - interactive deck</h1>
+  <span class="meta">Usable surface for mapping / teaching. Dials: click to nudge (+Shift = down).</span>
+  <div class="toolbar">
+    <button type="button" id="shiftBtn" aria-pressed="false" title="Toggle SHIFT layer (exposes shift MIDI twins)">SHIFT</button>
+    
+    <a href="overlay.html" style="color:var(--accent);font-size:12px;">open overlay</a>
+  </div>
+  <span class="legend">Keyboard Shift also toggles layer</span>
+</header>
+<div class="stage-wrap">
+  <div class="stage deck-mode" id="stage" style="aspect-ratio:698/858;">
+    <img class="plate" src="source/plate-top.png" alt="Allen & Heath Xone:96 plate underlay"/>
+    <div class="control kind-button" style="left:36.7%;top:58.6%;width:5.7%;height:4.7%;" data-fig="B1" data-label="CUE 1" data-kind="button" data-midi-name="cue_1" data-midi-type="note" data-midi-ch="16" data-midi-code="0" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B1 CUE 1"><span class="tag">B1<br>CUE 1</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:47.0%;top:58.6%;width:5.7%;height:4.7%;" data-fig="B2" data-label="CUE 2" data-kind="button" data-midi-name="cue_2" data-midi-type="note" data-midi-ch="16" data-midi-code="1" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B2 CUE 2"><span class="tag">B2<br>CUE 2</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:57.3%;top:58.6%;width:5.7%;height:4.7%;" data-fig="B3" data-label="CUE 3" data-kind="button" data-midi-name="cue_3" data-midi-type="note" data-midi-ch="16" data-midi-code="2" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B3 CUE 3"><span class="tag">B3<br>CUE 3</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:67.7%;top:58.6%;width:5.7%;height:4.7%;" data-fig="B4" data-label="CUE 4" data-kind="button" data-midi-name="cue_4" data-midi-type="note" data-midi-ch="16" data-midi-code="3" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B4 CUE 4"><span class="tag">B4<br>CUE 4</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:5.9%;top:56.2%;width:5.7%;height:4.7%;" data-fig="B5" data-label="CUE A" data-kind="button" data-midi-name="cue_a" data-midi-type="note" data-midi-ch="16" data-midi-code="4" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B5 CUE A"><span class="tag">B5<br>CUE A</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:16.2%;top:56.2%;width:5.7%;height:4.7%;" data-fig="B6" data-label="CUE B" data-kind="button" data-midi-name="cue_b" data-midi-type="note" data-midi-ch="16" data-midi-code="5" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B6 CUE B"><span class="tag">B6<br>CUE B</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.4%;top:19.1%;width:5.7%;height:4.7%;" data-fig="B7" data-label="CUE C" data-kind="button" data-midi-name="cue_c" data-midi-type="note" data-midi-ch="16" data-midi-code="6" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B7 CUE C"><span class="tag">B7<br>CUE C</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.4%;top:36.3%;width:5.7%;height:4.7%;" data-fig="B8" data-label="CUE D" data-kind="button" data-midi-name="cue_d" data-midi-type="note" data-midi-ch="16" data-midi-code="7" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B8 CUE D"><span class="tag">B8<br>CUE D</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.1%;top:7.9%;width:5.7%;height:4.7%;" data-fig="B9" data-label="C ON/OFF" data-kind="button" data-midi-name="on_off_c" data-midi-type="note" data-midi-ch="16" data-midi-code="8" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B9 C ON/OFF"><span class="tag">B9<br>C ON/OFF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.1%;top:25.0%;width:5.7%;height:4.7%;" data-fig="B10" data-label="D ON/OFF" data-kind="button" data-midi-name="on_off_d" data-midi-type="note" data-midi-ch="16" data-midi-code="9" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B10 D ON/OFF"><span class="tag">B10<br>D ON/OFF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.5%;top:57.4%;width:5.7%;height:4.7%;" data-fig="B11" data-label="F1 HPF" data-kind="button" data-midi-name="vcf1_hpf" data-midi-type="note" data-midi-ch="16" data-midi-code="10" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B11 F1 HPF"><span class="tag">B11<br>F1 HPF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.5%;top:62.9%;width:5.7%;height:4.7%;" data-fig="B12" data-label="F1 BPF" data-kind="button" data-midi-name="vcf1_bpf" data-midi-type="note" data-midi-ch="16" data-midi-code="11" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B12 F1 BPF"><span class="tag">B12<br>F1 BPF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.5%;top:68.3%;width:5.7%;height:4.7%;" data-fig="B13" data-label="F1 LPF" data-kind="button" data-midi-name="vcf1_lpf" data-midi-type="note" data-midi-ch="16" data-midi-code="12" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B13 F1 LPF"><span class="tag">B13<br>F1 LPF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:26.5%;top:83.2%;width:5.7%;height:4.7%;" data-fig="B14" data-label="FILTER 1" data-kind="button" data-midi-name="vcf1_on_off" data-midi-type="note" data-midi-ch="16" data-midi-code="13" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B14 FILTER 1"><span class="tag">B14<br>FILTER 1</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:78.3%;top:57.4%;width:5.7%;height:4.7%;" data-fig="B15" data-label="F2 HPF" data-kind="button" data-midi-name="vcf2_hpf" data-midi-type="note" data-midi-ch="16" data-midi-code="14" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B15 F2 HPF"><span class="tag">B15<br>F2 HPF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:78.3%;top:62.9%;width:5.7%;height:4.7%;" data-fig="B16" data-label="F2 BPF" data-kind="button" data-midi-name="vcf2_bpf" data-midi-type="note" data-midi-ch="16" data-midi-code="15" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B16 F2 BPF"><span class="tag">B16<br>F2 BPF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:78.3%;top:68.3%;width:5.7%;height:4.7%;" data-fig="B17" data-label="F2 LPF" data-kind="button" data-midi-name="vcf2_lpf" data-midi-type="note" data-midi-ch="16" data-midi-code="16" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B17 F2 LPF"><span class="tag">B17<br>F2 LPF</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:78.3%;top:83.2%;width:5.7%;height:4.7%;" data-fig="B18" data-label="FILTER 2" data-kind="button" data-midi-name="vcf2_on_off" data-midi-type="note" data-midi-ch="16" data-midi-code="17" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B18 FILTER 2"><span class="tag">B18<br>FILTER 2</span><span class="dial-value" hidden>64</span></div><div class="control kind-button" style="left:88.3%;top:46.6%;width:5.7%;height:4.7%;" data-fig="B19" data-label="MUTE" data-kind="button" data-midi-name="mute" data-midi-type="note" data-midi-ch="16" data-midi-code="18" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="B19 MUTE"><span class="tag">B19<br>MUTE</span><span class="dial-value" hidden>64</span></div><div class="control kind-fader" style="left:38.3%;top:65.2%;width:4.3%;height:18.6%;" data-fig="F1" data-label="FADER 1" data-kind="fader" data-midi-name="fader_1" data-midi-type="cc" data-midi-ch="16" data-midi-code="0" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="F1 FADER 1"><span class="tag">F1<br>FADER 1</span><span class="dial-value" hidden>64</span></div><div class="control kind-fader" style="left:48.6%;top:65.2%;width:4.3%;height:18.6%;" data-fig="F2" data-label="FADER 2" data-kind="fader" data-midi-name="fader_2" data-midi-type="cc" data-midi-ch="16" data-midi-code="1" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="F2 FADER 2"><span class="tag">F2<br>FADER 2</span><span class="dial-value" hidden>64</span></div><div class="control kind-fader" style="left:58.8%;top:65.2%;width:4.3%;height:18.6%;" data-fig="F3" data-label="FADER 3" data-kind="fader" data-midi-name="fader_3" data-midi-type="cc" data-midi-ch="16" data-midi-code="2" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="F3 FADER 3"><span class="tag">F3<br>FADER 3</span><span class="dial-value" hidden>64</span></div><div class="control kind-fader" style="left:69.1%;top:65.2%;width:4.3%;height:18.6%;" data-fig="F4" data-label="FADER 4" data-kind="fader" data-midi-name="fader_4" data-midi-type="cc" data-midi-ch="16" data-midi-code="3" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="F4 FADER 4"><span class="tag">F4<br>FADER 4</span><span class="dial-value" hidden>64</span></div><div class="control kind-fader" style="left:45.1%;top:88.4%;width:21.5%;height:3.5%;" data-fig="F5" data-label="XFADER" data-kind="fader" data-midi-name="crossfader" data-midi-type="cc" data-midi-ch="16" data-midi-code="5" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="F5 XFADER"><span class="tag">F5<br>XFADER</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:36.7%;top:17.6%;width:6.4%;height:5.2%;" data-fig="P1" data-label="SRC 1" data-kind="rotary" data-midi-name="source_1_usb1" data-midi-type="note" data-midi-ch="16" data-midi-code="19" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P1 SRC 1"><span class="tag">P1<br>SRC 1</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:46.9%;top:17.6%;width:6.4%;height:5.2%;" data-fig="P2" data-label="SRC 2" data-kind="rotary" data-midi-name="source_2_usb1" data-midi-type="note" data-midi-ch="16" data-midi-code="23" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P2 SRC 2"><span class="tag">P2<br>SRC 2</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:57.2%;top:17.6%;width:6.4%;height:5.2%;" data-fig="P3" data-label="SRC 3" data-kind="rotary" data-midi-name="source_3_usb1" data-midi-type="note" data-midi-ch="16" data-midi-code="27" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P3 SRC 3"><span class="tag">P3<br>SRC 3</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:67.6%;top:17.6%;width:6.4%;height:5.2%;" data-fig="P4" data-label="SRC 4" data-kind="rotary" data-midi-name="source_4_usb1" data-midi-type="note" data-midi-ch="16" data-midi-code="31" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P4 SRC 4"><span class="tag">P4<br>SRC 4</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:5.6%;top:17.6%;width:6.4%;height:5.2%;" data-fig="P5" data-label="SRC A" data-kind="rotary" data-midi-name="source_a_usb1" data-midi-type="note" data-midi-ch="16" data-midi-code="35" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P5 SRC A"><span class="tag">P5<br>SRC A</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:15.8%;top:17.6%;width:6.4%;height:5.2%;" data-fig="P6" data-label="SRC B" data-kind="rotary" data-midi-name="source_b_usb1" data-midi-type="note" data-midi-ch="16" data-midi-code="39" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P6 SRC B"><span class="tag">P6<br>SRC B</span><span class="dial-value" hidden>64</span></div><div class="control kind-rotary" style="left:4.7%;top:88.5%;width:6.4%;height:5.2%;" data-fig="P7" data-label="PH2 SRC" data-kind="rotary" data-midi-name="phones2_source_1" data-midi-type="note" data-midi-ch="16" data-midi-code="43" data-shift-name="" data-mode-name="" data-shift-mode-name="" data-layer="base" title="P7 PH2 SRC"><span class="tag">P7<br>PH2 SRC</span><span class="dial-value" hidden>64</span></div>
+  </div>
+</div>
+<div id="readout">Hover a control…</div>
+<script>
+const stage = document.getElementById('stage');
+const readout = document.getElementById('readout');
+const shiftBtn = document.getElementById('shiftBtn');
+let shift = false;
+const dials = new Map();
+
+const padModeSel = document.getElementById('padMode');
+
+function padModeReadout(el) {
+  if (!padModeSel || !el.dataset.padModes) return '';
+  const mode = JSON.parse(el.dataset.padModes).find(m => m.mode === padModeSel.value);
+  if (!mode) return ' · pad mode <span class="k">' + padModeSel.value + '</span>: no wire in midi.json';
+  const note = (n, c) => n ? `<span class="k">${n}</span> Note ${c} ch${el.dataset.midiCh}` : 'none';
+  return ` · pad mode <span class="k">${mode.mode}</span>: ${note(mode.name, mode.code)}` +
+    ` · shift twin ${note(mode.shift_name, mode.shift_code)}`;
+}
+
+function setShift(on) {
+  shift = on;
+  shiftBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  shiftBtn.classList.toggle('active', on);
+  document.querySelectorAll('.control').forEach(el => {
+    const has = !!el.dataset.shiftName;
+    el.classList.toggle('shift-hot', on && has);
+    if (on && has) {
+      el.querySelector('.tag').innerHTML = el.dataset.fig + '<br>SHIFT: ' + el.dataset.shiftName;
+    } else if (el.dataset._baseHtml) {
+      el.querySelector('.tag').innerHTML = el.dataset._baseHtml;
+    }
+  });
+}
+
+document.querySelectorAll('.control').forEach(el => {
+  el.dataset._baseHtml = el.querySelector('.tag').innerHTML;
+  el.addEventListener('pointerenter', () => {
+    const sn = el.dataset.shiftName;
+    readout.innerHTML =
+      `<span class="k">${el.dataset.fig}</span> ${el.dataset.label} · ` +
+      `<span class="k">${el.dataset.midiType.toUpperCase()}</span> ch${el.dataset.midiCh} ` +
+      `code ${el.dataset.midiCode} · name <span class="k">${el.dataset.midiName}</span>` +
+      (sn ? ` · shift twin <span class="k">${sn}</span>` : ' · (no shift twin)') +
+      (el.dataset.modeName ? ` · mode twin <span class="k">${el.dataset.modeName}</span>` : '') +
+      (el.dataset.shiftModeName ? ` · shift+mode twin <span class="k">${el.dataset.shiftModeName}</span>` : '') +
+      (shift && sn ? ' · <span class="k">SHIFT LAYER ACTIVE</span>' : '') +
+      padModeReadout(el);
+  });
+  el.addEventListener('pointerdown', (ev) => {
+    el.classList.add('pressed');
+    if (el.dataset.kind === 'knob' || el.dataset.kind === 'encoder' || el.dataset.kind === 'fader') {
+      const id = el.dataset.fig;
+      let v = dials.get(id) ?? 64;
+      v = Math.max(0, Math.min(127, v + (ev.shiftKey ? -8 : 8)));
+      dials.set(id, v);
+      const dv = el.querySelector('.dial-value');
+      if (dv) { dv.hidden = false; dv.textContent = String(v); }
+      readout.innerHTML += ` · value <span class="k">${v}</span>`;
+    }
+  });
+  el.addEventListener('pointerup', () => el.classList.remove('pressed'));
+  el.addEventListener('pointerleave', () => el.classList.remove('pressed'));
+});
+
+shiftBtn?.addEventListener('click', () => setShift(!shift));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') setShift(true);
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Shift') setShift(false);
+});
+
+document.querySelectorAll('img.plate').forEach(img => {
+  const markMissing = () => {
+    if (img.dataset.missingShown === '1') return;
+    img.dataset.missingShown = '1';
+    img.hidden = true;
+    const note = document.createElement('div');
+    note.className = 'plate-missing';
+    note.setAttribute('role', 'alert');
+    note.textContent = 'Plate image missing: ' + (img.getAttribute('src') || '') +
+      ' is not in this checkout. Control boxes still work.';
+    const host = img.closest('.stage');
+    (host || img).insertAdjacentElement('beforebegin', note);
+  };
+  img.addEventListener('error', markMissing);
+  if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) markMissing();
+});
+</script>
+</body>
+</html>

@@ -75,8 +75,20 @@ test('Deck.svelte controlError reads the failure cell, not the whole performance
 		new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url),
 		'utf8'
 	);
-	const derived = source.match(/const controlError[^;]*\$derived\(([\s\S]*?)\n\t\);/);
-	assert.ok(derived, 'controlError derived not found in Deck.svelte');
+	assert.match(
+		source,
+		/const controlError[^;]*\$derived\(deckControlError\(deckId\)\);/,
+		'controlError derived not found in Deck.svelte'
+	);
+	// The chain itself lives in deck-effects, shared by mounted and unmounted decks.
+	const effects = readFileSync(
+		new URL('../../src/lib/rb/deck-effects.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	const derived = effects.match(
+		/export function deckControlError\(deckId: DeckId\): string \| null \{([\s\S]*?)\n\}/
+	);
+	assert.ok(derived, 'deckControlError not found in deck-effects.svelte.ts');
 	assert.doesNotMatch(
 		derived[1],
 		/queryPerformanceState/,

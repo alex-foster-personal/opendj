@@ -316,7 +316,7 @@ test('the clip pip judges the peak after the crossfader gain the audio thread ap
 
 	// Wiring: the heard copy is `xf` itself, or the fader on a routed deck that
 	// skips the crossfader, folded on the worklet's second input.
-	const graph = readFileSync(fileURLToPath(new URL('../../src/lib/rb/deck-channel-graph.ts', import.meta.url)), 'utf8');
+	const graph = readFileSync(fileURLToPath(new URL('../../src/lib/rb/deck-channel-graph-core.ts', import.meta.url)), 'utf8');
 	assert.match(graph, /meterSources\.push\(\{ tap, source: fader, heardSource: extsplit === null \? xf : fader \}\);/);
 	const tapSrc = readFileSync(fileURLToPath(new URL('../../src/lib/rb/meter-tap.ts', import.meta.url)), 'utf8');
 	assert.match(tapSrc, /heardInput: heardSource !== undefined/);
@@ -394,13 +394,15 @@ test('R arms the level the channel meter shows; M keeps the channel tap level', 
 	const decayed = { db: -4.18, heardDb: -7.19 };
 	assert.equal(meter.calibrationCaptureDb('red', decayed), -4.18);
 	assert.equal(meter.calibrationCaptureDb('ceiling', decayed), -4.18);
-	// The ChannelStrip press uses this capture on the deck's live meter reading.
-	const strip = readFileSync(
-		fileURLToPath(new URL('../../src/lib/components/rb/mixer/ChannelStrip.svelte', import.meta.url)),
+	// The shared R/M apply path (ChannelStrip click and the level_calibration
+	// command, #5586) uses this capture on the deck's live meter reading.
+	const apply = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/level-calibration-command.ts', import.meta.url)),
 		'utf8'
 	);
-	assert.match(strip, /const db = calibrationCaptureDb\(kind, peekDeckMeterReading\(deckId\)\);/);
-	assert.doesNotMatch(strip, /channelDbHeardOnMaster|mixerState\.crossfader/);
+	assert.match(apply, /const db = calibrationCaptureDb\(kind, _sources\.readingOf\(deck\)\);/);
+	assert.match(apply, /readingOf: \(deck\) => peekDeckMeterReading\(deck\)/);
+	assert.doesNotMatch(apply, /channelDbHeardOnMaster|mixerState\.crossfader/);
 });
 
 test('null calibration keeps the default scale exactly', () => {

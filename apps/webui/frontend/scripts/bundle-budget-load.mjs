@@ -124,6 +124,23 @@ export function ceilToKiB(bytes) {
 	return Math.ceil(bytes / KIB) * KIB;
 }
 
+// Build noise on a PR delta. Two builds of the same source differ in gzip bytes per surface,
+// because content-hash file names change and gzip compresses them differently on each head. The
+// spread grows with the surface: 1 to 21 B on the small surfaces (#8534 run 42043423398, Thu 5 Nov
+// 2026) but 72, 156 and 217 B on other-lazy (about 160 files, 557 KB gzip; PRs #14810, #13662,
+// #13678) with no frontend change. It is deterministic per head, so a re-run never clears it. The
+// floor is therefore max(128 B, 0.05% of the surface's gzip bytes on main): 128 B on small
+// surfaces, about 280 B on other-lazy, still far below a real feature (a KiB and up).
+export const NOISE_FLOOR_MIN_BYTES = 128;
+export const NOISE_FLOOR_FRACTION = 0.0005;
+
+/** The build-noise floor for a surface whose main measurement is `mainBytes` gzip. */
+export function noiseFloorBytes(mainBytes) {
+	if (!Number.isInteger(mainBytes) || mainBytes < 0)
+		throw new BudgetError(`noise floor needs a non-negative integer byte count, got ${mainBytes}`);
+	return Math.max(NOISE_FLOOR_MIN_BYTES, Math.ceil(mainBytes * NOISE_FLOOR_FRACTION));
+}
+
 // ---------------------------------------------------------------- schema ---
 
 function _checkAttribution(where, attribution) {

@@ -7,12 +7,10 @@
 	 * modifier jumping to the ends; a focused text field always wins. Nothing
 	 * here touches audio, so a playing deck is never interrupted.
 	 */
-	import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 	import {
 		backstageNav,
 		isCurrentBackstageItem,
-		navArrowKey,
-		nextNavIndex,
+		moveFocusAmong,
 		type BackstageItem
 	} from './backstage-nav';
 
@@ -26,16 +24,12 @@
 	let root: HTMLElement | undefined = $state();
 
 	function onKeydown(event: KeyboardEvent): void {
-		if (isTextEntryTarget(event.target)) return;
-		const arrow = navArrowKey(event.key);
-		if (arrow === null || root === undefined) return;
-		const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('a[data-nav-item]'));
-		const current = links.indexOf(document.activeElement as HTMLAnchorElement);
-		const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
-		const next = nextNavIndex(current, links.length, arrow, modified);
-		if (next < 0) return;
-		event.preventDefault();
-		links[next].focus();
+		if (root === undefined) return;
+		moveFocusAmong(
+			event,
+			Array.from(root.querySelectorAll<HTMLAnchorElement>('a[data-nav-item]')),
+			document.activeElement
+		);
 	}
 </script>
 

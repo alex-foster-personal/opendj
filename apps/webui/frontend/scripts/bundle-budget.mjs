@@ -52,7 +52,7 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { join, dirname, normalize, relative } from 'node:path';
-import { BudgetError, BUDGETS_DIR, chargeBranchId, loadBudgets } from './bundle-budget-load.mjs';
+import { BudgetError, BUDGETS_DIR, chargeBranchId, loadBudgets, noiseFloorBytes } from './bundle-budget-load.mjs';
 
 // ---------------------------------------------------------------- budgets ---
 
@@ -82,11 +82,10 @@ import { BudgetError, BUDGETS_DIR, chargeBranchId, loadBudgets } from './bundle-
 // Coverage (every chunk charged to a surface) fails in every mode.
 
 
-// Build noise on a PR delta: two builds of the same source differ by a few bytes gzip per surface
-// (chunk hashes and import order; 1 to 21 B measured on CI Thu 5 Nov 2026, #8534 run 42043423398).
-// A PR's delta passes while it is within its own charges plus this floor, so noise never reds a PR
-// and a real feature (hundreds of bytes and up) still needs a charge file.
-const PR_DELTA_NOISE_BYTES = 128;
+// Build noise on a PR delta: a PR's delta passes while it is within its own charges plus the
+// surface's noise floor, noiseFloorBytes(main bytes) = max(128 B, 0.05% of main's gzip bytes)
+// (scripts/bundle-budget-load.mjs has the measured spread), so noise never reds a PR and a real
+// feature (a KiB and up) still needs a charge file.
 
 // ---------------------------------------------------------------- helpers ---
 
@@ -197,6 +196,8 @@ function main() {
     )
   ];
   const reportOnly = args.includes('--report-only');
+  // --attribution adds a per-file {file, surface, bytes} list; scripts/bundle-report.mjs joins it to module rows.
+  const withAttribution = args.includes('--attribution');
   const measurePath = _value('--measure');
   const sha = _value('--sha');
   if (baselinePath && reportOnly) _fail('--baseline and --report-only are different readings; pass one');
@@ -323,9 +324,11 @@ function main() {
 
   const totals = Object.fromEntries(BUDGETS.map((b) => [b.name, { bytes: 0, files: 0 }]));
   const unattributed = [];
+  const attribution = [];
   for (const file of inventory) {
     const bucket = charge(file);
     const bytes = gzipSync(readFileSync(join(immutableDir, file))).length;
+    if (withAttribution) attribution.push({ file, surface: bucket, bytes });
     if (bucket === 'UNATTRIBUTED') unattributed.push({ file, bytes });
     else {
       totals[bucket].bytes += bytes;
@@ -334,6 +337,7 @@ function main() {
   }
 
   const measurement = { sha: sha ?? baseline?.sha ?? null, totals, unattributed, budgets: BUDGETS };
+  if (withAttribution) measurement.files = attribution;
   if (measurePath) {
     mkdirSync(dirname(measurePath), { recursive: true });
     writeFileSync(measurePath, JSON.stringify(measurement, null, 2));
@@ -392,12 +396,14 @@ function main() {
         continue;
       }
       const delta = bytes - before.bytes;
-      const overDelta = delta > allowance + PR_DELTA_NOISE_BYTES;
+      const noise = noiseFloorBytes(before.bytes);
+      const overDelta = delta > allowance + noise;
       const verdict = overDelta ? 'OVER' : 'ok';
       if (!asJson) {
         console.log(
           `  ${budget.name.padEnd(12)} main ${String(before.bytes).padStart(7)} -> ${String(bytes).padStart(7)}` +
-            `  delta ${String(delta).padStart(6)}  allowance ${String(allowance).padStart(5)}` +
+            `  delta ${String(delta).padStart(6)}  noise ${String(noise).padStart(4)}` +
+            `  allowance ${String(allowance).padStart(5)}` +
             (own.length ? ` (${own.map((c) => c.id).join(', ')})` : '') +
             `  [${verdict}]`,
         );
@@ -406,7 +412,7 @@ function main() {
         failed = true;
         console.error(
           `[ERROR] budget "${budget.name}" grows by ${delta} bytes gzip over main (${before.bytes} -> ${bytes}) ` +
-            `against this PR's allowance of ${allowance} (plus ${PR_DELTA_NOISE_BYTES} B build noise)` +
+            `against this PR's allowance of ${allowance} (plus ${noise} B build noise)` +
             (own.length ? ` (${own.map((c) => c.id).join(', ')})` : ' (no charge file of its own)') +
             `. If this PR grows the surface on purpose, add budgets/${budget.name}/charges/<pr>.json ` +
             `for the growth (budgets/README.md); main's own size is a nightly ratchet, not this PR's.`,

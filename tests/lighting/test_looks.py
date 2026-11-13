@@ -118,8 +118,8 @@ def test_progress_out_of_range_refused() -> None:
     """[if] crossfade progress is outside 0..1 or non-finite [then] ValueError."""
     a = _look_a_front()
     b = _look_b_front()
-    for bad in (-0.1, 1.1, math.nan):
-        with pytest.raises(ValueError):
+    for bad in (-1e-9, -0.1, 1.0 + 1e-9, 1.1, -1.0, 2.0, 1e300, math.nan, math.inf, -math.inf):
+        with pytest.raises(ValueError, match=r"outside 0\.0\.\.1\.0"):
             crossfade(a, b, bad)  # type: ignore[arg-type]
 
 
@@ -167,3 +167,19 @@ def test_untouched_previous_fixture_passes_through() -> None:
     previous = {"side": FixtureState(rgb=(10, 20, 30), intensity=0.2)}
     result = crossfade(a, b, 0.5, previous=previous)  # type: ignore[arg-type]
     assert result["side"] == previous["side"]
+
+
+def test_progress_within_unit_preserves_group_targets() -> None:
+    """[if] crossfade progress in 0..1 drops a group fixture or leaves the A..B channel span [then] fail, [else stop]."""
+    a = _look_a_front()
+    b = _look_b_front()
+    for progress in (0.0, 1e-9, 0.25, 0.5, 0.75, 1.0 - 1e-9, 1.0):
+        result = crossfade(a, b, progress)  # type: ignore[arg-type]
+        assert set(result) == {"par1", "par2"}
+        for fixture_id in ("par1", "par2"):
+            state = result[fixture_id]
+            assert state.rgb is not None and state.intensity is not None
+            red, green, blue = state.rgb
+            assert 0 <= red <= 255 and green == 0 and 0 <= blue <= 255
+            assert 0.5 <= state.intensity <= 1.0
+            assert state.pan_deg is None and state.tilt_deg is None

@@ -191,3 +191,26 @@ test('set_layout_preset reaches prefs, snapshot and refuses bad pairings', async
 		delete globalThis.window;
 	}
 });
+
+// requirement: PARITY-13760
+test('set_deck_layout persists the TopBar layout state, restores four decks and refuses bad values', async () => {
+	const storage = _ipcStorage();
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const dispatch = (c) => globalThis.window.musicDjToolsPerformance.dispatch(c);
+	const ui = () => ipc.queryPerformanceState().ui;
+	try {
+		await dispatch({ type: 'set_deck_layout', layout: 'two-deck' });
+		assert.equal(ui().deck_layout, 'two-deck');
+		assert.equal(JSON.parse(storage.getItem(STORAGE_KEY)).deck_layout, 'less');
+		await dispatch({ type: 'set_deck_layout', layout: 'four-deck' });
+		assert.equal(ui().deck_layout, 'four-deck');
+		assert.equal(JSON.parse(storage.getItem(STORAGE_KEY)).deck_layout, 'more');
+		await assert.rejects(
+			dispatch({ type: 'set_deck_layout', layout: 'three-deck' }),
+			/DeckLayoutValidationError/
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});

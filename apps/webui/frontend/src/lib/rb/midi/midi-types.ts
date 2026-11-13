@@ -375,7 +375,13 @@ export type LedTrigger =
 	 * be overridden per-cue by the palette resolver (FLX10: Note-On
 	 * velocity 1-127 selects the colour palette entry - spike 2a). */
 	| { kind: 'hot_cue_present'; deck: DeckId; slot: HotCueSlot; padMode?: ControllerPadMode }
-	| { kind: 'channel_cue_enabled'; deck: DeckId };
+	| { kind: 'channel_cue_enabled'; deck: DeckId }
+	/** Lit while THIS device holds its own SHIFT layer (per device, #10061). */
+	| { kind: 'shift_held' }
+	/** Lit while the MASTER CUE overlay is engaged in the glue. */
+	| { kind: 'master_cue_active' }
+	/** Lit on the deck that is the current Beat Sync master. */
+	| { kind: 'sync_master'; deck: DeckId };
 
 /** One LED output rule: when trigger is true send velocityOn, else
  * velocityOff, as a Note On to (ch, note) on the device's MIDI output. */

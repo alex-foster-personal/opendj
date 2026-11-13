@@ -190,15 +190,20 @@ test('menu constants match the Tauri Window item and accelerator', () => {
 test('preload exposes the windows IPC used by the page command', () => {
 	const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'preload.ts'), 'utf8');
 	assert.match(source, /opendj:window/);
+	assert.match(source, /opendj:window-labels/);
 	assert.match(source, /windows:\s*\{/);
 	assert.match(source, /open:\s*\(label/);
 	assert.match(source, /close:\s*\(label/);
 	assert.match(source, /focus:\s*\(label/);
+	assert.match(source, /list:\s*\(\)/);
+	assert.match(source, /onChange:/);
 });
 
 test('main wires the window IPC and menu item to the same controller', () => {
 	const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main.ts'), 'utf8');
 	assert.match(source, /opendj:window/);
+	assert.match(source, /opendj:window-labels/);
+	assert.match(source, /publishWindowLabelsToMainWindow/);
 	assert.match(source, /SECOND_SCREEN_MENU_LABEL/);
 	assert.match(source, /SECOND_SCREEN_ACCELERATOR/);
 	assert.match(source, /SecondScreenController/);

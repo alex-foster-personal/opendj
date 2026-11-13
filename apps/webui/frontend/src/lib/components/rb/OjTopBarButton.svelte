@@ -10,6 +10,7 @@
 	import { createAssistantStatusProbe } from '$lib/assistant/status-probe.svelte';
 	import { ojSidebar } from '$lib/assistant/oj-sidebar.svelte';
 	import { ojTopBarButtonVisible } from '$lib/assistant/oj-sidebar-toggle';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	let {
 		ontoggle,
@@ -26,6 +27,7 @@
 		type="button"
 		class="oj-topbar-button"
 		data-testid="oj-topbar-button"
+		use:topbarSelectorNode={{ name: 'oj', disabled: false }}
 		aria-label={ojSidebar.open ? 'Close OJ' : 'Open OJ'}
 		aria-pressed={ojSidebar.open}
 		title={ojSidebar.open ? 'Close OJ' : 'Open OJ'}

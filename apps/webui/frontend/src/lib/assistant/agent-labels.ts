@@ -3,6 +3,8 @@
  * held-call keyboard rule. Pure: no DOM, so node tests run it directly.
  */
 import type { ContextKind, ContextRef, Tier } from './agent-contract';
+import { TYPED_TOOL_LABEL, valueText, type ToolArgs } from './agent-labels-typed';
+import { TYPED_TOOL_LABEL_2 } from './agent-labels-typed-2';
 
 export const TIER_LABEL: Record<Tier, string> = {
 	instant: 'Instant',
@@ -25,12 +27,26 @@ const TOOL_LABEL: Record<string, string> = {
 	system_volume_get: 'Read system volume',
 	system_volume_set: 'Set system volume',
 	usb_list: 'List USB sticks',
-	usb_eject: 'Eject USB stick'
+	usb_eject: 'Eject USB stick',
+	label_provider_hit: 'Label provider catalog hit'
 };
 
-/** Unknown tool names show as themselves rather than vanishing. */
-export function toolLabel(name: string): string {
-	return TOOL_LABEL[name] ?? name;
+/** An unknown tool reads as its name and its arguments, never as a blank. */
+function unknownToolLabel(name: string, args: ToolArgs | undefined): string {
+	const shown = name.trim() || 'Unnamed tool';
+	const pairs = Object.entries(args ?? {}).map(([key, value]) => `${key}: ${valueText(value)}`);
+	return pairs.length ? `${shown} (${pairs.join(', ')})` : shown;
+}
+
+/**
+ * The card's words for one tool call. Typed OJ tools read as the sentence
+ * their arguments make; generic tools keep their fixed label.
+ */
+export function toolLabel(name: string, args?: ToolArgs): string {
+	if (Object.hasOwn(TYPED_TOOL_LABEL, name)) return TYPED_TOOL_LABEL[name](args ?? {});
+	if (Object.hasOwn(TYPED_TOOL_LABEL_2, name)) return TYPED_TOOL_LABEL_2[name](args ?? {});
+	if (Object.hasOwn(TOOL_LABEL, name)) return TOOL_LABEL[name];
+	return unknownToolLabel(name, args);
 }
 
 //----- setup state and context chips

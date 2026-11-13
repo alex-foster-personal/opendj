@@ -342,6 +342,20 @@ FLAGS: tuple[FlagDef, ...] = (
         retire_by="2027-03-01",
         sandbox_gated=False,
     ),
+    FlagDef(
+        flag_id="fx.beat_rack",
+        default=False,
+        owner="maintainer",
+        note=(
+            "Beat FX unit graph (BEATFX, issue #9782): each channel's post-fader send "
+            "and dry nodes, one kernel slot hosting the shared echo kernel, the wet "
+            "joining the master gain. OFF (default) builds today's channel graph with "
+            "no beat FX node, and every beat_fx and beat_fx_release command is refused "
+            "with the reason fx.beat_rack is off (issue #9783)."
+        ),
+        retire_by="2027-05-01",
+        sandbox_gated=False,
+    ),
 )
 
 APP_MODE_IDS: tuple[str, ...] = (

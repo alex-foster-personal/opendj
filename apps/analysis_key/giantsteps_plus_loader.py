@@ -12,6 +12,7 @@ This module reads local JSON only. It does not download dataset files.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +68,8 @@ def load_segments(payload: Mapping[str, Any]) -> tuple[KeySegment, ...]:
             end_s = float(raw_end)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"segment {index} timestamps must be numbers") from exc
+        if not (math.isfinite(start_s) and math.isfinite(end_s)):
+            raise ValueError(f"segment {index} timestamps must be finite")
         if not isinstance(raw_key, str) or not raw_key:
             raise ValueError(f"segment {index} key must be a non-empty string")
         if start_s >= end_s:

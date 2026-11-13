@@ -91,19 +91,25 @@ PWV6_FULL_SCALE_SINE: tuple[int, int, int] = (69, 86, 176)
 # a fit over the Mac bench bundle against real PWV6 bytes can replace it.
 PWV6_MUSIC_GAIN: tuple[int, int, int] = (83, 56, 176)
 #: Bumped whenever the bytes ``pwv6_scale`` writes for the same peaks change.
-PWV6_SCALE_VERSION: str = "pwv6-music-1"
+PWV6_SCALE_VERSION: str = "pwv6-music-2"
 # Matches decode headroom: 255 is +6 dBFS, so 0 dBFS is half a byte scale.
 _OWN_PEAK_FULL_SCALE: float = 255.0 / _DECODE_PROFILE.peak_full_scale_linear
 
 
 def unit_float_peaks(peaks: np.ndarray) -> np.ndarray:
-    """``(n, 3)`` uint8 peak columns as float64 in 0..1 (detail lane / scorer)."""
+    """``(n, 3)`` uint8 peak columns as float64 in 0..1 (scorer, compared to 0..1 truth)."""
     return np.clip(peaks.astype(np.float64) / _OWN_PEAK_FULL_SCALE, 0.0, 1.0)
 
 
 def measured_peak_bands(peaks: np.ndarray) -> dict[str, np.ndarray]:
-    """Own uint8 peak columns as three measured 0..1 envelopes (not PWV6-scaled)."""
-    scaled = unit_float_peaks(peaks)
+    """Own uint8 peak columns as three measured envelopes, 1.0 = 0 dBFS (not PWV6-scaled).
+
+    Not clipped at 1.0 (DECKUX-9675): band filter overshoot above digital full
+    scale is real amplitude the decode headroom kept, and the deck's display
+    curves divide by the track's own peak, so clipping here would pin exactly
+    the columns the headroom exists to preserve.
+    """
+    scaled = peaks.astype(np.float64) / _OWN_PEAK_FULL_SCALE
     return {name: scaled[:, col] for name, col in _BAND_COLUMNS}
 
 

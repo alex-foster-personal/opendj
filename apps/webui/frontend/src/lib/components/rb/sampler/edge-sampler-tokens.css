@@ -1,0 +1,99 @@
+/* Edge sampler tokens: the approved mock's own colours and type
+ * ((private path), variant D),
+ * its :root palette plus every literal colour its sampler rules use.
+ * The one place sampler components take colour and type from (`var(--es-*)`);
+ * tests/unit/edge-sampler-tokens.test.mjs holds these values to the mock.
+ * Declared on :root, not the overlay, so the top bar toggle, stories and any
+ * dialog rendered outside the overlay read the same values.
+ * Fonts: the app bundles none of the mock's families (Barlow Condensed,
+ * IBM Plex Sans, IBM Plex Mono), so display keeps the mock's own fallback,
+ * body follows the skin's --rb-font, and mono is the app's mono skin stack.
+ * The body token sits on .perf-root because --rb-font is declared there, and a
+ * var() in a custom property resolves where it is declared. */
+:root {
+	--es-bg: #0d0f12;
+	--es-panel: #15181d;
+	--es-raised: #1c2027;
+	--es-line: #2a2f38;
+	--es-fg: #e6e8eb;
+	--es-muted: #8b939f;
+	--es-dim: #5b6370;
+	--es-accent: #ff9f1c;
+	--es-accent-ink: #1b1204;
+	--es-loop: #ff8a00;
+	--es-deck-a: #3fa7ff;
+	--es-ok: #4fd18b;
+	--es-warn: #ffd166;
+	--es-bad: #ff6b6b;
+	--es-tab-bg: #1a1d23;
+	--es-tab-border: #333945;
+	--es-border-strong: #3a4150;
+	--es-head-bg: #121419;
+	--es-playing-bg: #2a2110;
+	--es-ghost-bg: #241a0b;
+	--es-play-bg: #0d0f13;
+	--es-search-bg: #0b0c10;
+	--es-input-bg: #0b0d10;
+	--es-source-bg: #0f1115;
+	--es-cuedeck-border: #2f3a4c;
+	--es-cuedeck-bg: #0f1218;
+	--es-cue-ink: #06111d;
+	--es-mark-ink: #1a1405;
+	--es-toggle-ring: #0b0c0f;
+	--es-playhead: #fff;
+	--es-empty-bg: rgba(18,20,25,.75);
+	--es-drag-src-bg: rgba(17,20,25,.94);
+	--es-mix-border: rgba(63,167,255,.5);
+	--es-vec-border: rgba(63,167,255,.45);
+	--es-armed-glow: rgba(255,209,102,.35);
+	--es-armed-glow-off: rgba(255,209,102,0);
+	--es-shadow-tab: rgba(0,0,0,.55);
+	--es-shadow-ghost: rgba(0,0,0,.6);
+	--es-shadow-pop: rgba(0,0,0,.65);
+	--es-font-display: 'Arial Narrow', sans-serif;
+	--es-font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+/* The mock palette above is the dark theme under the Default skin. The light theme and
+ * every other skin re-colour the app through --rb-* on .perf-root (src/lib/rb/theme.css),
+ * so there the sampler takes its colours from them. Shadows stay the mock's black. */
+html:is([data-theme='light'], [data-skin]) .perf-root {
+	--es-bg: var(--rb-bg);
+	--es-panel: var(--rb-panel);
+	--es-raised: var(--rb-panel-raised);
+	--es-line: var(--rb-border);
+	--es-fg: var(--rb-text);
+	--es-muted: var(--rb-text-dim);
+	--es-dim: color-mix(in srgb, var(--rb-text-dim) 70%, var(--rb-bg));
+	--es-accent: var(--rb-orange);
+	--es-accent-ink: var(--rb-bg);
+	--es-loop: var(--rb-orange);
+	--es-deck-a: var(--rb-accent);
+	--es-ok: var(--rb-green);
+	--es-warn: var(--rb-yellow);
+	--es-bad: var(--rb-red);
+	--es-tab-bg: var(--rb-panel-raised);
+	--es-tab-border: var(--rb-border);
+	--es-border-strong: color-mix(in srgb, var(--rb-text-dim) 40%, var(--rb-border));
+	--es-head-bg: var(--rb-panel);
+	--es-playing-bg: color-mix(in srgb, var(--rb-orange) 18%, var(--rb-panel));
+	--es-ghost-bg: color-mix(in srgb, var(--rb-orange) 12%, var(--rb-panel));
+	--es-play-bg: var(--rb-bg);
+	--es-search-bg: var(--rb-bg);
+	--es-input-bg: var(--rb-bg);
+	--es-source-bg: var(--rb-bg);
+	--es-cuedeck-border: color-mix(in srgb, var(--rb-accent) 35%, var(--rb-border));
+	--es-cuedeck-bg: var(--rb-bg);
+	--es-cue-ink: var(--rb-bg);
+	--es-mark-ink: var(--rb-bg);
+	--es-toggle-ring: var(--rb-bg);
+	--es-playhead: var(--rb-text);
+	--es-empty-bg: color-mix(in srgb, var(--rb-panel) 75%, transparent);
+	--es-drag-src-bg: color-mix(in srgb, var(--rb-panel) 94%, transparent);
+	--es-mix-border: color-mix(in srgb, var(--rb-accent) 50%, transparent);
+	--es-vec-border: color-mix(in srgb, var(--rb-accent) 45%, transparent);
+	--es-armed-glow: color-mix(in srgb, var(--rb-yellow) 35%, transparent);
+	--es-armed-glow-off: color-mix(in srgb, var(--rb-yellow) 0%, transparent);
+}
+.perf-root {
+	--es-font-body: var(--rb-font);
+}

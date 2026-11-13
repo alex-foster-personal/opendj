@@ -1,0 +1,24 @@
+{
+  "method": "POST",
+  "path": "/library-tracks/prompt-search",
+  "status": 200,
+  "headers": {
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "59",
+    "x-ratelimit-reset": "1731340900",
+    "retry-after": "0"
+  },
+  "body": {
+    "items": [
+      {
+        "score": 0.91,
+        "track": {
+          "id": "libtr_hit01",
+          "title": "Neon Pulse",
+          "externalId": "odj-demo-1"
+        }
+      }
+    ],
+    "pageInfo": {}
+  }
+}

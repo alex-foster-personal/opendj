@@ -7,6 +7,9 @@ track ids come from the daemon's ``GET /api/v1/state/ui-mirror`` (409 = no page 
 ``/anlz`` is fetched once per new track id and refetched when the daemon bus publishes
 ``library.changed`` with kind ``beatgrid_edit`` or ``sections``. A wrong token raises
 ``EngineFeedAuthError``; any close raises ``EngineFeedDisconnected``. Reconnecting is the runtime's job.
+Each analysis also carries the track's lighting profile, built by the injected ``ProfileBuilder``
+(the composition root passes ``AutoDjService.profile_from_payloads``; None when absent or it fails).
+``DeckFeedBuilder`` turns batches into runtime ``DeckFeed`` rows whose profile is cleared (None) on the first batch after a deck unloads.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import json
 import logging
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
@@ -27,7 +30,9 @@ import httpx
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
+from apps.autodj.contract import TrackProfile
 from apps.lighting.beat_clock import DeckSample
+from apps.lighting.runtime import DeckFeed
 from apps.lighting.sections import SectionSpan, resolve_sections
 from apps.shared import runtime_policy
 
@@ -42,6 +47,9 @@ MIRROR_POLL_S = 1.0
 REFETCH_KINDS = frozenset({"beatgrid_edit", "sections"})
 IGNORED_TYPES = frozenset({"hello", "result", "load_failed", "midi_unmapped"})
 WS_OPEN_TIMEOUT_S = 5.0
+
+
+ProfileBuilder = Callable[[Mapping[str, Any], Mapping[str, Any]], TrackProfile]
 
 
 class EngineFeedError(RuntimeError):
@@ -72,6 +80,7 @@ class TrackAnalysis:
     grid: tuple[dict[str, float | int], ...]
     grid_missing: str | None
     sections: tuple[SectionSpan, ...]
+    profile: TrackProfile | None = None
 
 
 @dataclass(frozen=True)
@@ -184,9 +193,50 @@ def grid_from_anlz_beatgrid(
     return tuple(beats), None
 
 
-def analysis_from_anlz(track_id: str, payload: Mapping[str, Any], duration_ms: float) -> TrackAnalysis:
+def analysis_from_anlz(
+    track_id: str, payload: Mapping[str, Any], duration_ms: float, profile_builder: ProfileBuilder | None = None
+) -> TrackAnalysis:
     grid, missing = grid_from_anlz_beatgrid(payload.get("beatgrid"))
-    return TrackAnalysis(track_id, grid, missing, tuple(resolve_sections(payload, duration_ms / 1000.0)))
+    sections = tuple(resolve_sections(payload, duration_ms / 1000.0))
+    return TrackAnalysis(track_id, grid, missing, sections, profile_from_anlz(track_id, payload, profile_builder))
+
+
+def profile_from_anlz(
+    track_id: str, payload: Mapping[str, Any], profile_builder: ProfileBuilder | None
+) -> TrackProfile | None:
+    """The track's lighting profile from its anlz payload, or None (logged) when it cannot be built."""
+    if profile_builder is None:
+        return None
+    try:
+        return profile_builder(payload, {"stable_id": track_id})
+    except Exception as exc:  # noqa: BLE001 - a bad profile must not stop the feed
+        log.warning("lighting profile for %s unavailable: %s", track_id, exc)
+        return None
+
+
+class DeckFeedBuilder:
+    """Turns feed batches into runtime ``DeckFeed`` rows; a deck that unloads gets one row with profile None."""
+
+    def __init__(self) -> None:
+        self._seen: set[str] = set()
+
+    def feeds(self, batch: FeedBatch) -> tuple[DeckFeed, ...]:
+        """Runtime deck feeds for one batch, with each loaded deck's profile and cleared rows for unloaded decks."""
+        rows: list[DeckFeed] = []
+        loaded: set[str] = set()
+        for frame in batch.decks:
+            loaded.add(frame.sample.deck)
+            analysis = frame.analysis
+            if analysis is None:
+                rows.append(DeckFeed(frame.sample))
+                continue
+            rows.append(DeckFeed(frame.sample, analysis.grid, analysis.sections, profile=analysis.profile))
+        rows.extend(
+            DeckFeed(DeckSample(deck, 0.0, 0.0, False, batch.received_ns))
+            for deck in sorted(self._seen - loaded, key=int)
+        )
+        self._seen = loaded
+        return tuple(rows)
 
 
 def track_ids_from_mirror(document: Mapping[str, Any]) -> dict[str, str | None]:
@@ -241,7 +291,9 @@ class EngineFeed:
         endpoint: EngineEndpoint,
         events_url: str,
         mirror_poll_s: float = MIRROR_POLL_S,
+        profile_builder: ProfileBuilder | None = None,
     ) -> None:
+        self._profile_builder = profile_builder
         self._http = http
         self._endpoint = endpoint
         self._events_url = events_url
@@ -355,4 +407,4 @@ class EngineFeed:
         self.anlz_fetches[track_id] += 1
         if resp.status_code != HTTPStatus.OK:
             raise EngineFeedError(f"GET {path} for {track_id} answered {resp.status_code}")
-        return analysis_from_anlz(track_id, resp.json(), duration_ms)
+        return analysis_from_anlz(track_id, resp.json(), duration_ms, self._profile_builder)

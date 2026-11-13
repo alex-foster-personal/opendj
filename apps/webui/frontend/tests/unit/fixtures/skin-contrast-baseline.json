@@ -1,0 +1,6 @@
+{
+  "comment": "Known per-skin AA contrast violations (issue #13873). This list may only shrink: fix the palette, then delete the entry.",
+  "violations": [
+    "practice-ddj-flx4: rb-accent on rb-color-fx-filter-face"
+  ]
+}

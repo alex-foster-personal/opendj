@@ -56,7 +56,10 @@ const meta = {
 		oncontextmenurow: fn(),
 		oneditdraft: fn(),
 		onrenamekeydown: fn(),
-		onrenamecommit: fn()
+		onrenamecommit: fn(),
+		ondragoverrow: fn(),
+		ondragleaverow: fn(),
+		ondroprow: fn()
 	},
 	parameters: { layout: 'padded' }
 } satisfies Meta<typeof TreeSmartlistSectionView>;

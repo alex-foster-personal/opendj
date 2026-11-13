@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import signal
 
 import pytest
 
@@ -136,3 +137,36 @@ class TestRun:
         assert rc == 0, (captured.out, captured.err)
         assert "daemon starting" in captured.out
         assert "mic capture disabled: sounddevice not importable" in captured.err
+
+    def test_run_sigterm_stops_loop_and_restores_handler(self, capsys, monkeypatch):
+        """SIGTERM during ``voice run`` ends the loop cleanly (rc=0) and restores the prior handler."""
+        seen: list[str] = []
+        before = signal.getsignal(signal.SIGTERM)
+
+        def fake_capture(args):
+            yield "find daft punk"
+            handler = signal.getsignal(signal.SIGTERM)
+            assert callable(handler) and handler is not before
+            handler(signal.SIGTERM, None)
+            yield "find daft punk"
+            yield "find daft punk"
+
+        monkeypatch.setattr(cli, "_capture_transcripts", fake_capture)
+        from apps.voice import actions as actions_mod
+
+        class _RecResp:
+            reply = "ok"
+            published = False
+
+        def _fake_dispatch(self, intent, ctx):
+            seen.append(intent.kind)
+            return _RecResp()
+
+        monkeypatch.setattr(actions_mod.Registry, "dispatch", _fake_dispatch)
+
+        rc = cli.main(["run", "--dry-bus", "--max-iters", "5"])
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "SIGTERM received; shutting down" in out
+        assert seen == ["SEARCH", "SEARCH"], seen
+        assert signal.getsignal(signal.SIGTERM) is before

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483087,
+  "measured_with_pr": 483245,
+  "sha": "beb1fcd93a",
+  "date": "Thu 12 Nov 2026",
+  "reason": "#13678 untracks the pane row patch, keeps an already revealed row and publishes row-assets answers as whole-row patches; measured +158 B gzip on silver against the merge base.",
+  "payback": "none planned; the growth is the fix's own few lines"
+}

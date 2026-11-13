@@ -80,8 +80,23 @@ async function createRecordingServer() {
 				await new Promise((r) => setTimeout(r, 20));
 			}
 		},
-		close: () => new Promise((resolve) => server.close(resolve))
+		close: async () => {
+			while (releases.length > 0) releases.shift()();
+			await new Promise((resolve) => server.close(resolve));
+		}
 	};
+}
+
+/** prefs.svelte.ts may queue a migration or unsaved-marker PUT at module load; drain it
+ * before setter-driven writes so releaseInOrder(3) targets only this test's actions. */
+async function releaseModuleBootDiskWrites(recorder) {
+	for (let i = 0; i < 50; i += 1) {
+		if (recorder.bodies.length > 0) break;
+		await new Promise((r) => setTimeout(r, 5));
+	}
+	if (recorder.bodies.length > 0) {
+		await recorder.releaseInOrder(recorder.bodies.length);
+	}
 }
 
 // Codex P2 then P1 BLOCKING on #1503: each R/M action PUTs a full snapshot of
@@ -103,6 +118,8 @@ test('calibration writes are serialized over a real http transport', async () =>
 		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
 			viteApiBase: recorder.base
 		});
+		await releaseModuleBootDiskWrites(recorder);
+		const bodiesAfterBoot = recorder.bodies.length;
 
 		isolated.setLevelCalibrationCapture('red', -12);
 		isolated.setLevelCalibrationCapture('ceiling', -3);
@@ -115,7 +132,11 @@ test('calibration writes are serialized over a real http transport', async () =>
 			1,
 			`writes overlapped (${recorder.maxInFlightRef()} in flight at once)`
 		);
-		assert.equal(recorder.bodies.length, 3, 'every action must still reach the daemon');
+		assert.equal(
+			recorder.bodies.length,
+			bodiesAfterBoot + 3,
+			'every action must still reach the daemon'
+		);
 		const last = recorder.bodies[recorder.bodies.length - 1].level_calibration;
 		assert.equal(last.red_enabled, false, 'last write lost the disable');
 		assert.equal(last.ceiling_dbfs, -3, 'last write lost the ceiling capture');
@@ -145,6 +166,8 @@ test('a calibration write and an unrelated pref write are serialized together', 
 		const isolated = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
 			viteApiBase: recorder.base
 		});
+		await releaseModuleBootDiskWrites(recorder);
+		const bodiesAfterBoot = recorder.bodies.length;
 
 		isolated.setLevelCalibrationCapture('red', -12);
 		isolated.setTheme('light');
@@ -157,7 +180,11 @@ test('a calibration write and an unrelated pref write are serialized together', 
 			1,
 			`a calibration write raced an unrelated pref write (${recorder.maxInFlightRef()} in flight at once)`
 		);
-		assert.equal(recorder.bodies.length, 3, 'every action must still reach the daemon');
+		assert.equal(
+			recorder.bodies.length,
+			bodiesAfterBoot + 3,
+			'every action must still reach the daemon'
+		);
 	} finally {
 		storage.restore();
 		await recorder.close();

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373188,
+  "measured_with_pr": 373437,
+  "sha": "d38ecb5353",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12254-overlay-node-names grows the library surface; measured +249 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

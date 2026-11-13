@@ -13,6 +13,8 @@ let runner;
 /** @type {import('./fixtures/commanded-move-runner-entry.ts')} */
 let knobs;
 let dialAnimations;
+let motion;
+let presentation;
 
 let t;
 /** @type {Array<() => void>} */
@@ -36,7 +38,7 @@ before(async () => {
 			this.isContentEditable = isContentEditable;
 		}
 	};
-	({ runner, knobs, dialAnimations } = await loadTypeScriptModule(
+	({ runner, knobs, dialAnimations, motion, presentation } = await loadTypeScriptModule(
 		'tests/unit/fixtures/commanded-move-runner-entry.ts'
 	));
 });
@@ -457,6 +459,73 @@ test('non-finite valueAt rejects done', async () => {
 	const rejected = assert.rejects(handle.done, RangeError);
 	await step(16);
 	await rejected;
+});
+
+test('a started move exposes its target and bounded progress, and completion clears both', async () => {
+	/** [if] a move runs to its end [then] the seam shows target 0.25 with progress rising in 0..1, then null, [else stop]. */
+	registerTrackedDial('1:low', 1);
+	const endMs = t + 4 * BEAT_MS;
+	const handle = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0.25, now, endMs));
+	const first = runner.commandedMovePresentation('1:low');
+	assert.deepEqual(first, { from: 1, target: 0.25, progress: 0 });
+	let last = 0;
+	while (pending.length > 0) {
+		await step(100);
+		const view = runner.commandedMovePresentation('1:low');
+		if (view === null) break;
+		assert.ok(view.progress >= last && view.progress <= 1, `progress ${view.progress} out of order`);
+		assert.equal(view.target, 0.25);
+		last = view.progress;
+	}
+	assert.equal((await handle.done).outcome, 'completed');
+	assert.ok(last > 0.9);
+	assert.equal(runner.commandedMovePresentation('1:low'), null);
+	assert.deepEqual(Object.keys(runner.commandedMoveView.active), []);
+});
+
+test('hand cancel clears the presentation in the same tick, and a replacement shows only the new target', async () => {
+	/** [if] a move is replaced then cut by hand [then] the seam holds the newest target, then clears at once, [else stop]. */
+	registerTrackedDial('1:low', 1);
+	const endMs = t + 4 * BEAT_MS;
+	runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0, now, endMs));
+	await step(16);
+	const second = runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 0.75, now, endMs));
+	assert.equal(runner.commandedMovePresentation('1:low')?.target, 0.75);
+	await step(16);
+	knobs.nudgeKnobOrSelection('1:low', 0.01);
+	assert.equal(runner.commandedMovePresentation('1:low'), null);
+	assert.equal((await second.done).outcome, 'cancelled');
+	await step(16);
+	assert.equal(runner.commandedMovePresentation('1:low'), null);
+});
+
+test('reduced motion steps progress in whole quarters', async () => {
+	/** [if] reduce_motion is on [then] progress moves 0, 0.25, 0.5 ... never between, [else stop]. */
+	registerTrackedDial('1:low', 0);
+	motion.setReduceMotionPref(true);
+	try {
+		const endMs = t + 1000;
+		runner.startCommandedMove('1:low', (from, now) => linearPlan(from, 1, now, endMs));
+		await step(300);
+		assert.equal(runner.commandedMovePresentation('1:low')?.progress, 0.25);
+		await step(300);
+		assert.equal(runner.commandedMovePresentation('1:low')?.progress, 0.5);
+	} finally {
+		motion.setReduceMotionPref(false);
+	}
+});
+
+test('progress is bounded, an instant move is complete, and a bad window throws', () => {
+	/** [if] now is outside the window or the window is zero [then] progress clamps to 0..1 and bad input throws, [else stop]. */
+	assert.equal(presentation.commandedMoveProgress(100, 200, 50, false), 0);
+	assert.equal(presentation.commandedMoveProgress(100, 200, 150, false), 0.5);
+	assert.equal(presentation.commandedMoveProgress(100, 200, 900, false), 1);
+	assert.equal(presentation.commandedMoveProgress(100, 100, 100, false), 1);
+	assert.equal(presentation.commandedMoveProgress(100, 200, 199, true), 0.75);
+	assert.throws(() => presentation.commandedMoveProgress(200, 100, 150, false), RangeError);
+	assert.throws(() => presentation.commandedMoveProgress(0, Number.NaN, 0, false), RangeError);
+	assert.equal(presentation.progressRingDash(0.5, 10), '5.00 5.01');
+	assert.throws(() => presentation.commandedGhostStyle('sparkle'), /not ghost-arc\|ghost-only/);
 });
 
 function functionBody(source, name) {

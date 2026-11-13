@@ -169,4 +169,14 @@ def niche_match_citation(*, start_s: float, end_s: float, label: str, source: st
     }
 
 
-__all__ = ["merge_own_phrases", "niche_match_citation"]
+def phrase_windows_for_claims(payload: dict[str, Any]) -> list[dict[str, int]]:
+    """Phrase windows from a merged ``/anlz`` payload for enrichment claims."""
+    from apps.genre_infer import segment_claims
+
+    return [
+        {"start_ms": window.start_ms, "end_ms": window.end_ms}
+        for window in segment_claims.phrase_windows_from_payload(payload)
+    ]
+
+
+__all__ = ["merge_own_phrases", "niche_match_citation", "phrase_windows_for_claims"]

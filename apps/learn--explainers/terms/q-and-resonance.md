@@ -57,6 +57,6 @@ self-oscillation.
 
 The mid bell uses Q = 1 (`EQ_MID_Q` in `apps/audio-engine/src/mixer.rs`). The filter knob passes
 Q = 0.707 to Web Audio, which reads it in dB for low-pass and high-pass, giving about +0.7 dB at
-the corner (`FILTER_Q`; explained in `apps/audio-engine/src/dsp.rs`). A resonance control is
+the corner (`FILTER_Q_DB`; explained in `apps/audio-engine/src/dsp.rs`). A resonance control is
 deliberately not built: `apps/webui/frontend/src/lib/player/constants.ts` names it MIXUX-05,
 waiting on an ear calibration.

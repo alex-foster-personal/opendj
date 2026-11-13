@@ -1,3 +1,5 @@
+// requirement: TRACKIFY-13653
+// [if] the live playlist mutates while autoplay runs [then] the PLAY-04 snapshot stays frozen until a new epoch
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from apps.analysis_structure import fast_segment as fast_segment_mod
 from apps.analysis_structure.dj_labels import NO_ENERGY_CONTRAST
 from apps.analysis_structure.fast_segment import MIN_BARS, PRODUCER_VERSION, band_envelopes, segment
 
@@ -179,6 +180,60 @@ def test_peaks_cut_short_by_a_bar_or_two_fail(cut_bars: int):
     # Control: a grid whose last downbeat sits within a beat of the peaks' end is a whole track.
     within_a_beat = peaks[: peaks.shape[0] - round(BAR_S / 8 * FPS)]
     assert segment(within_a_beat, _grid(within_a_beat), within_a_beat.shape[0] / FPS)["status"] == "ok"
+
+
+def _classic_with_break_matching_drop() -> list[tuple[int, int, int, int]]:
+    plan = [tuple(block) for block in CLASSIC]
+    plan[3] = (16, 230, 160, 200)
+    return plan
+
+
+def _interior_confidence(result: dict) -> dict[int, float]:
+    return {
+        int(s["start_bar"]): float(s["confidence"])
+        for s in result["sections"]
+        if int(s["start_bar"]) > 0 and "confidence" in s
+    }
+
+
+@pytest.mark.requirement("STRUCT-14875")
+def test_a_contrasty_fixture_attaches_boundary_confidence():
+    """[if] contrasty fixture is segmented [then] interior starts carry confidence, [else stop]."""
+    peaks = _peaks(CLASSIC)
+    result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
+    assert result["status"] == "ok"
+    conf = _interior_confidence(result)
+    assert conf and all(isinstance(v, float) and v >= fast_segment_mod.NOVELTY_MIN for v in conf.values())
+
+
+@pytest.mark.requirement("STRUCT-14875")
+def test_a_weak_classic_boundary_merges_and_lands_in_suppressed():
+    """[if] one interior peak falls below threshold [then] it merges and is suppressed, [else stop]."""
+    peaks = _peaks(_classic_with_break_matching_drop())
+    result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
+    assert result["status"] == "ok"
+    assert 64 not in _starts(result)
+    row = next(r for r in result["suppressed"] if r["start_bar"] == 64)
+    assert isinstance(row["confidence"], float)
+
+
+@pytest.mark.requirement("STRUCT-14875")
+def test_a_restored_classic_boundary_is_a_shown_section_again():
+    """[if] that peak is raised back above threshold [then] the boundary is shown, [else stop]."""
+    peaks = _peaks(CLASSIC)
+    result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
+    assert result["status"] == "ok"
+    assert 64 in _starts(result)
+    assert all(row["start_bar"] != 64 for row in result.get("suppressed", []))
+
+
+@pytest.mark.requirement("STRUCT-14875")
+def test_all_weak_interior_peaks_are_not_shown_as_sections(monkeypatch: pytest.MonkeyPatch):
+    """[if] every interior peak is below threshold on contrasty audio [then] no interior starts, [else stop]."""
+    monkeypatch.setattr(fast_segment_mod, "NOVELTY_MIN", 10.0)
+    peaks = _peaks(CLASSIC)
+    result = segment(peaks, _grid(peaks), peaks.shape[0] / FPS)
+    assert _starts(result) in ([], [0])
 
 
 def test_unlabeled_own_fast_does_not_fake_niche_suggestions():

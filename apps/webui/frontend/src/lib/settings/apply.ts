@@ -55,6 +55,7 @@ import {
 	setPinVisibleDays,
 	setReduceMotion,
 	setShowStems,
+	setWaveStemFollow,
 	setWaveEqReflect,
 	setMixerStems,
 	setMixerPlacement,
@@ -88,6 +89,7 @@ import {
 	setWaveHeight,
 	setWavePalette,
 	setLayoutOverride,
+	setLibraryFirstVariant,
 	setUiSkin,
 	setWaveSplitMaster,
 	setWaveZoom,
@@ -220,6 +222,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
+	'wave_stem_follow',
 	'reduce_motion',
 	'deck_hover_link',
 	'compact_decks',
@@ -276,6 +279,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'drag_sensitivity.falloff_px',
 	'layout_override.performance',
 	'layout_override.library',
+	'layout_variant.library_first',
 	'crossfade_curve',
 	'horizontal_wheel_knob',
 	'perf_tier',
@@ -447,6 +451,7 @@ function _readAnalysisAutoPref(key: _AnalysisAutoPrefKey): SettingValue {
 const _APPEARANCE_AND_DECK_UI_PREF_KEYS = [
 	'jog_radial_waveform',
 	'show_stems',
+	'wave_stem_follow',
 	'reduce_motion',
 	'deck_hover_link',
 	'compact_decks',
@@ -506,6 +511,8 @@ function _readAppearanceAndDeckUiPref(key: _AppearanceAndDeckUiPrefKey): Setting
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
 			return uiPrefs.show_stems;
+		case 'wave_stem_follow':
+			return uiPrefs.wave_stem_follow;
 		case 'reduce_motion':
 			return uiPrefs.reduce_motion;
 		case 'deck_hover_link':
@@ -666,6 +673,8 @@ function _readNumericAndExternalSetting(key: _NumericAndExternalSettingKey): Set
 			return uiPrefs.layout_override.performance;
 		case 'layout_override.library':
 			return uiPrefs.layout_override.library;
+		case 'layout_variant.library_first':
+			return uiPrefs.layout_variant_library_first;
 		case 'rb.midi_enabled':
 			return midiEnabledPersisted();
 		case 'auto_gain.enabled':
@@ -827,6 +836,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
+			return;
+		case 'wave_stem_follow':
+			setWaveStemFollow(_asBool(value, key));
 			return;
 		case 'reduce_motion':
 			setReduceMotion(_asBool(value, key));
@@ -1092,6 +1104,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setLayoutOverride(surface, value);
 			return;
 		}
+		case 'layout_variant.library_first':
+			setLibraryFirstVariant(value);
+			return;
 		case 'crossfade_curve': {
 			if (value !== 'magic') {
 				throw new Error(

@@ -93,21 +93,6 @@ def _load_cached_payload(
     return None
 
 
-def all_cached_payloads_fresh(stable_ids: list[str], points: int) -> bool:
-    """Whether every ``stable_ids`` row has a current on-disk cache entry."""
-    from apps.adapters.rekordbox.paths import anlz_dir, resolve_content
-
-    for stable_id in stable_ids:
-        try:
-            content = resolve_content(stable_id)
-            mtime = _anlz_mtime(anlz_dir(content))
-        except Exception:  # noqa: BLE001 -- reconcile is a presence check
-            return False
-        if _load_cached_payload(stable_id, mtime, points) is None:
-            return False
-    return True
-
-
 def _store_cached_payload(
     stable_id: str, anlz_mtime: float, points: int, payload: dict[str, Any]
 ) -> None:

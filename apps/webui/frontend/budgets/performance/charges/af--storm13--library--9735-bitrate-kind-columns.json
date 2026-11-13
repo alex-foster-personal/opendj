@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483140,
+  "measured_with_pr": 484050,
+  "sha": "bcb1df6e10",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--9735-bitrate-kind-columns grows the performance surface; measured +910 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

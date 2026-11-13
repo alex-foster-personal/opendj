@@ -52,12 +52,14 @@ def _emit(payload: object, stream: TextIO | None = None) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True), file=stream)
 
 
+def _read_body(body_file: Path) -> str:
+    if str(body_file) == "-":
+        return sys.stdin.read()
+    return body_file.read_text(encoding="utf-8")
+
+
 def _put(conn: sqlite3.Connection, args: argparse.Namespace) -> dict[str, object]:
-    body = (
-        sys.stdin.read()
-        if str(args.body_file) == "-"
-        else args.body_file.read_text(encoding="utf-8")
-    )
+    body = _read_body(args.body_file)
     try:
         prior = load_set_note(conn, args.scope)
         geometry, visible = prior.geometry, prior.visible

@@ -74,6 +74,30 @@ export function perfReadoutRows(input: PerfReadoutInputs): PerfReadoutRow[] {
 }
 
 // -----------------------------------------------------------------------------
+// Agent read path (PERFREADOUT-12579)
+
+let rowsSource: (() => PerfReadoutRow[]) | null = null;
+
+/**
+ * PerfMeters registers a getter for its live rows; the client performance
+ * sampler reads it every sample and posts the rows, so
+ * GET /api/v1/performance/telemetry/readouts (and `opendj perf_readouts`,
+ * MCP `perf_readouts`) serve the very rows the card draws. Returns the
+ * unregister function.
+ */
+export function setPerfReadoutRowsSource(source: () => PerfReadoutRow[]): () => void {
+	rowsSource = source;
+	return () => {
+		if (rowsSource === source) rowsSource = null;
+	};
+}
+
+/** The registered card's current rows, or null when no card is mounted. */
+export function readPerfReadoutRows(): PerfReadoutRow[] | null {
+	return rowsSource ? rowsSource().map((row) => ({ ...row })) : null;
+}
+
+// -----------------------------------------------------------------------------
 // Card open / pin state
 
 export interface PerfCardState {

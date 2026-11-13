@@ -29,6 +29,7 @@ from apps.transition_score.scorer import (
     PRIOR_WEIGHTS,
     RenderContext,
     score_render,
+    vocal_cut_crossing_s,
 )
 from tests.transition_score.synth import BEAT_S, MOMENTARY_DIP_AT_S, UNLISTED_CLICK_S, Mutation, render
 
@@ -69,7 +70,7 @@ def test_clean_render_scores_high_with_every_core_factor_measured() -> None:
     assert result.score is not None and result.score >= CLEAN_FLOOR, (
         "if the clean render scores low then M penalizes good transitions"
     )
-    assert result.scorer_version == SCORER_VERSION == "0.11.0"
+    assert result.scorer_version == SCORER_VERSION == "0.12.0"
     for name in BAND_FACTORS:
         assert name in result.factors and result.factors[name] >= 0.95
     assert result.metrics["band_handover"] == "plan_step"
@@ -190,6 +191,51 @@ def test_missing_vocal_stem_reads_unknown_with_its_reason_never_zero() -> None:
     assert "vocal_overlap" not in result.factors and "vocal_overlap_s" not in result.metrics
     assert "no vocal stem" in result.unknown["vocal_overlap"]
     assert result.measured.k == 6
+
+
+def _vocal_cut_render(active_before_cut: bool) -> ScoreResult:
+    mix, out_deck, in_deck, ctx = render()
+    crossing = vocal_cut_crossing_s(out_deck, ctx)
+    assert crossing is not None
+    t = np.arange(len(mix)) / ctx.sample_rate
+    end = crossing if active_before_cut else crossing - 1.0
+    span = (t >= crossing - 2.0) & (t < end)
+    vocal = np.where(span, 0.1 * np.sin(2 * np.pi * 220.0 * t), 0.0)
+    return score_render(mix, out_deck, in_deck, dataclasses.replace(ctx, vocal_out=vocal))
+
+
+def test_vocal_active_before_gain_crossing_reports_vocal_cut() -> None:
+    """[if] the outgoing vocal is active in the final 500 ms before its gain falls below -20 dB [then] vocal_cut is reported, [else stop]."""
+    result = _vocal_cut_render(active_before_cut=True)
+    assert result.metrics["vocal_cut"] is True
+    assert result.metrics["vocal_cut_active_s"] > 0.3
+
+
+def test_vocal_inactive_before_gain_crossing_reports_no_vocal_cut() -> None:
+    """[if] the outgoing vocal is inactive before that gain crossing [then] vocal_cut is false, [else stop]."""
+    result = _vocal_cut_render(active_before_cut=False)
+    assert result.metrics["vocal_cut"] is False
+    assert result.metrics["vocal_cut_active_s"] == 0.0
+    assert "vocal_cut" not in result.unknown
+
+
+def test_missing_outgoing_vocal_stem_reports_vocal_cut_not_measured() -> None:
+    """[if] no outgoing vocal stem was rendered [then] vocal_cut is unknown with a missing stem reason, never a pass, [else stop]."""
+    mix, out_deck, in_deck, ctx = render()
+    result = score_render(mix, out_deck, in_deck, dataclasses.replace(ctx, vocal_out=None))
+    assert "vocal_cut" not in result.metrics
+    assert "missing stem" in result.unknown["vocal_cut"]
+
+
+def test_vocal_cut_round_trips_through_json() -> None:
+    """[if] the score result is converted to JSON [then] the vocal_cut fields round-trip, [else stop]."""
+    import json
+
+    result = _vocal_cut_render(active_before_cut=True)
+    back = json.loads(json.dumps(result.to_json()))
+    assert back["metrics"]["vocal_cut"] is True
+    assert back["metrics"]["vocal_cut_active_s"] == result.metrics["vocal_cut_active_s"]
+    assert back["scorer_version"] == SCORER_VERSION
 
 
 def test_below_four_core_factors_there_is_no_composite() -> None:
@@ -667,7 +713,7 @@ def test_a_bass_free_solo_reports_bass_overlap_unknown() -> None:
         assert "bass_overlap" not in result.factors
         assert "bass_both_full_beats" not in result.metrics
         assert result.measured.k == 6 and result.measured.n == 7
-        assert result.scorer_version == SCORER_VERSION == "0.11.0"
+        assert result.scorer_version == SCORER_VERSION == "0.12.0"
         assert result.score is not None
     pile = _score(Mutation(in_low_unheld=True))
     assert "bass_overlap" in pile.factors and pile.metrics["bass_both_full_beats"] >= 8

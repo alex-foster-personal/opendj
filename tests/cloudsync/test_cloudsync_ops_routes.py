@@ -294,6 +294,34 @@ def test_post_sync_is_409_not_500_when_a_standalone_cli_holds_the_flock(
     assert status["recent_results"] == []
 
 
+def test_post_sync_force_true_refused_for_non_local_operator_leaves_journal_unchanged(
+    enroll_live_hub: str,
+    enroll_spoke_dir: Path,
+) -> None:
+    """[if] force=true lacks local-operator authority [then] 403 and journal unchanged, [else stop]."""
+    with ops_client(enroll_spoke_dir) as http:
+        baseline_sync = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": False},
+        )
+        before_status = http.get("/api/v1/cloudsync/status").json()
+
+    assert baseline_sync.status_code == 200, baseline_sync.text
+    assert before_status["recent_results"], "control: journal has a completed round"
+
+    with ops_client(enroll_spoke_dir, client_addr=("203.0.113.7", 50123)) as http:
+        refused = http.post(
+            "/api/v1/cloudsync/sync",
+            json={"hub_url": enroll_live_hub, "force": True},
+        )
+        after_status = http.get("/api/v1/cloudsync/status").json()
+
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["detail"]["code"] == "CLOUDSYNC_OPS_LOCAL_ONLY"
+    assert after_status["recent_results"] == before_status["recent_results"]
+    assert after_status.get("last_result") == before_status.get("last_result")
+
+
 def test_post_sync_returns_409_when_deck_playing(enroll_live_hub: str, enroll_spoke_dir: Path) -> None:
     """[if] a deck is playing [then] POST /sync returns 409 CLOUDSYNC_SYNC_DEFERRED."""
     with ops_client(enroll_spoke_dir) as http:
@@ -656,7 +684,7 @@ OPS_CALLS: list[tuple[str, str, dict[str, Any] | None]] = [
         {"live": False, "hub_url": "http://127.0.0.1:9"},
     ),
     ("GET", "/api/v1/cloudsync/hash-pending-backfill", None),
-    ("POST", "/api/v1/cloudsync/sync", {"hub_url": "http://127.0.0.1:9"}),
+    ("POST", "/api/v1/cloudsync/sync", {"hub_url": "http://127.0.0.1:9", "force": True}),
     ("GET", "/api/v1/cloudsync/fleet", None),
     ("POST", "/api/v1/cloudsync/enrollment-grants", {"owner_email": ENROLL_OWNER_EMAIL}),
     # PUT repoints this machine's scheduler at a hub; GET discloses the hub URL.

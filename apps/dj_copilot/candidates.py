@@ -150,3 +150,12 @@ def filter_candidates(
             continue
         out.append(cand)
     return out, trace
+
+
+def similar_library_candidates(
+    *,
+    current: TrackFeature,
+    library: list[TrackFeature],
+) -> list[TrackFeature]:
+    """Candidates for Specific find-similar: full library minus the reference track."""
+    return [t for t in library if t.stable_id != current.stable_id]

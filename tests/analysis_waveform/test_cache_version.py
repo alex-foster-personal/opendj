@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from collections.abc import Iterator
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -76,6 +78,24 @@ def test_a_current_entry_round_trips_exactly(source: Path) -> None:
     assert read_back is not None, "a just-written current entry must be a cache HIT"
     assert np.array_equal(read_back, peaks)
     assert local_waveform.local_preview_strip(SID)[0] is not None
+
+
+def test_old_pwv6_music_one_strip_sidecar_is_re_derived_not_served(
+    source: Path,
+) -> None:
+    """[if] old cached peaks reshape into new strip scale without re-decode [then] fail, [else stop]."""
+    from apps.analysis_waveform.bands import PWV6_SCALE_VERSION
+
+    key = local_waveform._decode_key(source)
+    local_waveform._store_peaks(SID, key, _tri_peaks())
+    strip_path = local_waveform._strip_path(SID)
+    entry = json.loads(strip_path.read_text(encoding="utf-8"))
+    entry["strip_scale"] = "pwv6-music-1"
+    local_waveform._write_json(strip_path, entry)
+    b64, peak_max = local_waveform.local_preview_strip(SID)
+    assert b64 is not None and peak_max is not None
+    rewritten = json.loads(strip_path.read_text(encoding="utf-8"))
+    assert rewritten["strip_scale"] == PWV6_SCALE_VERSION
 
 
 def test_a_tri_one_headroom_entry_is_a_cache_miss(source: Path) -> None:
@@ -301,3 +321,45 @@ def test_ffmpeg_peaks_for_an_engine_refused_file_never_answer_a_forced_engine(
     local_waveform._store_peaks(SID, {**engine_key, "decoder": "ffmpeg"}, _tri_peaks())
     monkeypatch.delenv(decode.DECODER_ENV)
     assert local_waveform._cached_peaks(SID, engine_key) is None
+
+
+# ----- issue #13266: Windows-safe source keys (PLATFORM-13595) -----
+
+
+@pytest.mark.requirement("PLATFORM-13595")
+def test_source_key_includes_inode_when_stat_reports_nonzero(source: Path) -> None:
+    """[if] POSIX stat has inode data [then] key includes inode, [else stop]."""
+    real = source.stat()
+    if real.st_ino == 0:
+        pytest.skip("host reports inode 0; production omits inode the same way")
+    key = local_waveform._source_key(source)
+    assert key.get("inode") == real.st_ino
+
+
+@pytest.mark.requirement("PLATFORM-13595")
+def test_source_key_omits_inode_when_stat_lacks_inode_data(source: Path) -> None:
+    """[if] stat lacks inode data [then] key omits inode, [else stop]."""
+    real = source.stat()
+    fake = SimpleNamespace(st_size=real.st_size, st_mtime_ns=real.st_mtime_ns)
+    key_a = local_waveform._source_key(source, stat=fake)
+    key_b = local_waveform._source_key(source, stat=fake)
+    assert key_a == key_b
+    assert "inode" not in key_a
+
+
+@pytest.mark.requirement("PLATFORM-13595")
+def test_source_key_changes_when_bytes_or_mtime_change(source: Path) -> None:
+    """[if] bytes or mtime change [then] key changes, [else stop]."""
+    before = local_waveform._source_key(source)
+    with source.open("r+b") as handle:
+        handle.seek(8)
+        handle.write(b"\xff")
+    after_bytes = local_waveform._source_key(source)
+    assert after_bytes["content_fp"] != before["content_fp"]
+
+    real = source.stat()
+    new_mtime_ns = real.st_mtime_ns + 1_000_000_000
+    os.utime(source, ns=(real.st_atime_ns, new_mtime_ns))
+    after_mtime = local_waveform._source_key(source)
+    assert after_mtime["mtime_ns"] == new_mtime_ns
+    assert after_mtime != before

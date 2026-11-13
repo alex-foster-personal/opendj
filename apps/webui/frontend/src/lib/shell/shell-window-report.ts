@@ -4,6 +4,7 @@
  */
 
 import {
+	electronBridge,
 	nativeShellKind,
 	WINDOW_LABELS,
 	type Scope,
@@ -25,12 +26,43 @@ function parseShellWindowLabels(raw: unknown): WindowLabel[] {
 	return labels.sort();
 }
 
-/** Subscribe to Tauri `opendj-shell-windows` and seed from `query_shell_window_labels`. */
-export function installTauriShellWindowReporter(
+/** Subscribe to shell window-label reports (Electron bridge or Tauri events). */
+export function installShellWindowReporter(
 	applyLabels: (labels: WindowLabel[]) => void,
 	scope: Scope = globalThis
 ): () => void {
-	if (nativeShellKind(scope) !== 'tauri') return () => {};
+	const kind = nativeShellKind(scope);
+	if (kind === 'electron') {
+		const bridge = electronBridge(scope);
+		const windowsApi = bridge?.windows;
+		const listWindows = windowsApi?.list;
+		const onWindowsChange = windowsApi?.onChange;
+		if (listWindows === undefined || onWindowsChange === undefined) return () => {};
+
+		let unsubscribe: (() => void) | null = null;
+		let cancelled = false;
+
+		void (async () => {
+			try {
+				const initial = await listWindows();
+				if (!cancelled) applyLabels(parseShellWindowLabels(initial));
+				unsubscribe = onWindowsChange((labels) => {
+					if (!cancelled) applyLabels(parseShellWindowLabels(labels));
+				});
+			} catch (exc) {
+				console.error('[shell-windows] Electron reporter failed to install', exc);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+			const stop = unsubscribe;
+			unsubscribe = null;
+			if (stop !== null) stop();
+		};
+	}
+
+	if (kind !== 'tauri') return () => {};
 
 	let unlisten: (() => void) | null = null;
 	let cancelled = false;

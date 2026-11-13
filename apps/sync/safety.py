@@ -254,6 +254,12 @@ class _TrackWriter:
         with self.session.reverse_script_path.open("a", encoding="utf-8") as fp:
             fp.write(snippet.rstrip() + "\n")
 
+    def append_reverse_record(self, record: dict[str, object]) -> None:
+        """Append one structured reverse operation to ``reverse.jsonl``."""
+        path = self.session.reverse_records_path
+        with path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(record, sort_keys=True) + "\n")
+
 
 @dataclass(slots=True)
 class LiveWriteSession:
@@ -334,6 +340,12 @@ class LiveWriteSession:
     def reverse_script_path(self) -> Path:
         assert self._reverse_dir is not None
         return self._reverse_dir / "reverse.sh"
+
+    @property
+    def reverse_records_path(self) -> Path:
+        """Return the structured reversal log beside ``reverse.sh``."""
+        assert self._reverse_dir is not None
+        return self._reverse_dir / "reverse.jsonl"
 
     @property
     def backup_path(self) -> Path | None:

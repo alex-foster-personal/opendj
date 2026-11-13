@@ -1,6 +1,9 @@
 /**
  * Global hotkeys overlay open/close + view/query.
  * Mounted from root layout so "/" and "?" work on /performance and the shell.
+ *
+ * #12271: every close path (Esc, the X button, "?" again, "/" release) sets
+ * open false, which unmounts the dialog; its focusTrap hands focus back.
  */
 import {
 	createHotkeysOverlayMachine,

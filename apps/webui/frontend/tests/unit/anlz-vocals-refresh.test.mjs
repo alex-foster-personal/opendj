@@ -4,6 +4,10 @@
  * dedicated cache module instance per test, with the production deck sink
  * (createDeckVocalsSink, the factory audio-engine.svelte.ts installs) wired to
  * plain deck records through its ports.
+ *
+ * Issue #13206 (spec 7e3f2964 "Outcome"): the bypass refresh republishes only a
+ * validated payload; a malformed vocals answer or a failed request fails loudly
+ * and leaves the shared cache entry and every deck on their existing state.
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -15,7 +19,7 @@ let server;
 let origin;
 /** Deck-shaped holders the installed vocals sink writes through. */
 let deckHolders = [];
-/** stable_id -> { vocals } served by the real HTTP server. */
+/** stable_id -> { vocals } or { fail: 'http500' | 'socket' } served by the real HTTP server. */
 const anlzCatalog = new Map();
 /** stable_id -> { status } served by GET /vocals/{id}/status. */
 const vocalStatusCatalog = new Map();
@@ -71,6 +75,70 @@ async function refreshSettled(cache, stableId, status = 'demucs') {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** Runs `start` and resolves with the loud failure the fire-and-forget refresh
+ * raises. Node's test runner attributes any unhandled rejection to the running
+ * test even with an extra listener, so its own listener is parked for the
+ * duration and restored afterwards. */
+async function loudFailureOf(start) {
+	const parked = process.listeners('unhandledRejection');
+	process.removeAllListeners('unhandledRejection');
+	try {
+		const failure = new Promise((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error('refresh never failed loudly')), 5000);
+			process.once('unhandledRejection', (reason) => {
+				clearTimeout(timer);
+				resolve(reason);
+			});
+		});
+		start();
+		return await failure;
+	} finally {
+		process.removeAllListeners('unhandledRejection');
+		for (const listener of parked) process.on('unhandledRejection', listener);
+	}
+}
+
+/** Two decks holding the same track on a validated not_analyzed payload, with
+ * that payload published as the shared cache entry. */
+async function seededTwoDecks(stableId) {
+	deckHolders = [
+		{ stable_id: stableId, anlz: anlzPayload({ status: 'not_analyzed' }, stableId), loadToken: 0 },
+		{ stable_id: stableId, anlz: anlzPayload({ status: 'not_analyzed' }, stableId), loadToken: 0 }
+	];
+	const cache = await freshCache();
+	await cache.refreshAnlzCacheEntry(stableId, deckHolders[0].anlz);
+	const seeded = cache.getAnlzEntry(stableId).data;
+	return { cache, seeded, before: deckHolders.map((deck) => deck.anlz) };
+}
+
+/** Asserts the shared entry and both decks still carry exactly the pre-refresh state. */
+function assertStatePreserved(cache, stableId, seeded, beforeDecks) {
+	const entry = cache.getAnlzEntry(stableId);
+	assert.equal(entry.status, 'ready', 'a failed refresh must not blank the good entry');
+	assert.equal(entry.data, seeded, 'the shared entry must stay the validated payload');
+	assert.equal(entry.data.vocals.status, 'not_analyzed');
+	deckHolders.forEach((deck, i) => {
+		assert.equal(deck.anlz, beforeDecks[i], `deck ${i} must keep its existing ANLZ object`);
+		assert.equal(deck.anlz.vocals.status, 'not_analyzed');
+	});
+}
+
+const DEMUCS_VOCALS = {
+	status: 'demucs',
+	fps: 10,
+	regions: [{ start_s: 1, end_s: 2.5, intensity: 0.8 }]
+};
+
+/** After a failure the in-flight slot must be free: a later valid answer republishes. */
+async function assertRecoversWithValidPayload(cache, stableId) {
+	anlzCatalog.set(stableId, { vocals: DEMUCS_VOCALS });
+	cache.refreshAnlzVocalsIfNeeded(stableId, 'demucs');
+	await refreshSettled(cache, stableId, 'demucs');
+	assert.equal(anlzRequestLog.length, 2, 'the retry after a failure issues one new bypass fetch');
+	assert.deepEqual(cache.getAnlzEntry(stableId).data.vocals, DEMUCS_VOCALS);
+	for (const deck of deckHolders) assert.deepEqual(deck.anlz.vocals, DEMUCS_VOCALS);
+}
+
 before(async () => {
 	server = createServer((req, res) => {
 		const url = req.url ?? '';
@@ -81,6 +149,17 @@ before(async () => {
 			const entry = anlzCatalog.get(stableId);
 			if (entry === undefined) {
 				res.writeHead(404).end();
+				return;
+			}
+			if (entry.fail === 'socket') {
+				req.socket.destroy();
+				return;
+			}
+			if (entry.fail === 'http500') {
+				res.writeHead(500, { 'content-type': 'application/json' });
+				res.end(
+					JSON.stringify({ detail: { code: 'INTERNAL_ERROR', message: 'anlz build failed' } })
+				);
 				return;
 			}
 			res.writeHead(200, { 'content-type': 'application/json' });
@@ -356,4 +435,111 @@ test('the vocals sink installs once and its uninstall frees the slot for a hot u
 	const release = fresh.installAuthoritativeAnlzVocalsSink(sink);
 	release();
 	fresh.installAuthoritativeAnlzVocalsSink(sink)();
+});
+
+test('a valid newer vocals payload from the bypass fetch republishes to the cache and every holder', async () => {
+	// Pins that a validated newer payload is the one thing the bypass refresh republishes.
+	const stableId = 'valid-newer-vocals-track';
+	const rekordboxVocals = {
+		status: 'rekordbox',
+		fps: 150,
+		regions: [
+			{ start_s: 0.5, end_s: 4, intensity: 3 },
+			{ start_s: 8, end_s: 9.25, intensity: 1 }
+		]
+	};
+	anlzCatalog.set(stableId, { vocals: rekordboxVocals });
+	anlzRequestLog.length = 0;
+	try {
+		const { cache } = await seededTwoDecks(stableId);
+		cache.refreshAnlzVocalsIfNeeded(stableId, 'rekordbox');
+		await refreshSettled(cache, stableId, 'rekordbox');
+		assert.equal(anlzRequestLog.length, 1, 'exactly one cache-bypassing /anlz request');
+		assert.deepEqual(cache.getAnlzEntry(stableId).data.vocals, rekordboxVocals);
+		for (const deck of deckHolders) assert.deepEqual(deck.anlz.vocals, rekordboxVocals);
+	} finally {
+		deckHolders = [];
+		anlzCatalog.delete(stableId);
+	}
+});
+
+const MALFORMED_CASES = [
+	{
+		name: 'an unknown vocals status',
+		vocals: { status: 'whisper', fps: 10, regions: [] },
+		error: /unknown status "whisper"/
+	},
+	{
+		name: 'a region missing its intensity',
+		vocals: { status: 'demucs', fps: 10, regions: [{ start_s: 1, end_s: 2 }] },
+		error: /region 0 malformed/
+	},
+	{
+		name: 'a rekordbox status with zero regions',
+		vocals: { status: 'rekordbox', fps: 150, regions: [] },
+		error: /rekordbox with zero regions/
+	},
+	{
+		name: 'no vocals field at all',
+		vocals: undefined,
+		error: /no valid "vocals" field/
+	}
+];
+
+for (const { name, vocals, error } of MALFORMED_CASES) {
+	test(`a bypass response with ${name} fails loudly and preserves cache and deck state`, async () => {
+		// Pins that a malformed vocals answer is refused before it can reach the cache or a deck.
+		const stableId = `malformed-vocals-${name.replace(/\W+/g, '-')}`;
+		anlzCatalog.set(stableId, { vocals });
+		anlzRequestLog.length = 0;
+		try {
+			const { cache, seeded, before: beforeDecks } = await seededTwoDecks(stableId);
+			const reason = await loudFailureOf(() => cache.refreshAnlzVocalsIfNeeded(stableId, 'demucs'));
+			assert.match(String(reason?.message ?? reason), error);
+			assert.equal(anlzRequestLog.length, 1, 'the refresh did reach the server');
+			assert.match(anlzRequestLog[0].url, /\/anlz\?/);
+			assertStatePreserved(cache, stableId, seeded, beforeDecks);
+			await assertRecoversWithValidPayload(cache, stableId);
+		} finally {
+			deckHolders = [];
+			anlzCatalog.delete(stableId);
+		}
+	});
+}
+
+test('a bypass request the server answers with HTTP 500 fails loudly and preserves state', async () => {
+	// Pins that an explicit server error on the bypass fetch republishes nothing.
+	const stableId = 'http500-vocals-track';
+	anlzCatalog.set(stableId, { fail: 'http500' });
+	anlzRequestLog.length = 0;
+	try {
+		const { cache, seeded, before: beforeDecks } = await seededTwoDecks(stableId);
+		const reason = await loudFailureOf(() => cache.refreshAnlzVocalsIfNeeded(stableId, 'demucs'));
+		assert.ok(reason instanceof Error, 'the failure surfaces as a real Error');
+		assert.equal(reason.code, 'INTERNAL_ERROR');
+		assert.equal(anlzRequestLog.length, 1);
+		assertStatePreserved(cache, stableId, seeded, beforeDecks);
+		await assertRecoversWithValidPayload(cache, stableId);
+	} finally {
+		deckHolders = [];
+		anlzCatalog.delete(stableId);
+	}
+});
+
+test('a bypass request whose connection drops fails loudly and preserves state', async () => {
+	// Pins that a network failure on the bypass fetch leaves the validated state in place.
+	const stableId = 'socket-drop-vocals-track';
+	anlzCatalog.set(stableId, { fail: 'socket' });
+	anlzRequestLog.length = 0;
+	try {
+		const { cache, seeded, before: beforeDecks } = await seededTwoDecks(stableId);
+		const reason = await loudFailureOf(() => cache.refreshAnlzVocalsIfNeeded(stableId, 'demucs'));
+		assert.ok(reason instanceof Error, 'the failure surfaces as a real Error');
+		assert.equal(anlzRequestLog.length, 1);
+		assertStatePreserved(cache, stableId, seeded, beforeDecks);
+		await assertRecoversWithValidPayload(cache, stableId);
+	} finally {
+		deckHolders = [];
+		anlzCatalog.delete(stableId);
+	}
 });

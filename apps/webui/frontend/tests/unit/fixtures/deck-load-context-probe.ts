@@ -6,9 +6,15 @@
  * entries would give the test a DIFFERENT copy of the ring from the one the
  * code under test appends to -- `readPerfEvents()` would return an empty array
  * and every assertion about a row would read as "no row was written", which is
- * the false-negative shape .claude/rules/verification.md warns about. One
+ * the false-negative shape (private path) warns about. One
  * entry point, one module instance each, one ring.
  */
-export { beginDeckLoad, recordDeckLoad } from '$lib/rb/deck-load-context';
+export {
+	beginDeckLoad,
+	publishDeckLoadKpiFromRaw,
+	recordDeckLoad,
+	supplementDeckLoadKpiWithStemStages,
+	warnShortDurationOnLoad
+} from '$lib/rb/deck-load-context';
 export { startMachinePressurePolling } from '$lib/rb/machine-pressure';
 export { readPerfEvents } from '$lib/rb/perf-event-log';

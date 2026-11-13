@@ -22,6 +22,7 @@
  */
 import { SETTINGS_CATALOG } from './catalog';
 import type { SettingDef } from './catalog-types';
+import { VARIANT_REGISTRY } from './variant-setting';
 import {
 	resolveCustomiseSetting as resolveCustomiseSettingCore,
 	resolveCustomiseScreen,
@@ -200,6 +201,7 @@ export function layoutScreenDef(catalog: readonly SettingDef[]): CustomiseScreen
 	const look = settingRowsPresent(catalog, LAYOUT_LOOK_VARIANT_IDS);
 	const modes: CustomiseRow[] = [
 		{ kind: 'setting', id: 'deck_layout' },
+		{ kind: 'setting', id: 'feature_icon_single_click' },
 		...settingRowsPresent(catalog, LAYOUT_MODE_OPTIONAL_IDS)
 	];
 	const groups: CustomiseGroup[] = [
@@ -240,7 +242,29 @@ export function mixerScreenDef(catalog: readonly SettingDef[]): CustomiseScreenD
 
 export const MIXER_SCREEN: CustomiseScreenDef = mixerScreenDef(SETTINGS_CATALOG);
 
-const CUSTOMISE_SCREEN_DEFS = [DECKS_SCREEN, LIBRARY_SCREEN, LAYOUT_SCREEN, MIXER_SCREEN] as const;
+/** Colours screen (#13880, spike §2.8): theme and reduce motion. `ui_skin` stays in WAVE_QS_GROUPS until #9439. Data only. */
+export const COLOURS_SCREEN: CustomiseScreenDef = {
+	id: 'colours',
+	label: 'Colours',
+	groups: [
+		{
+			id: 'appearance',
+			label: 'Appearance',
+			rows: [
+				{ kind: 'setting', id: 'theme' },
+				{ kind: 'setting', id: 'reduce_motion' }
+			]
+		}
+	]
+} as const;
+
+const CUSTOMISE_SCREEN_DEFS = [
+	DECKS_SCREEN,
+	LIBRARY_SCREEN,
+	LAYOUT_SCREEN,
+	MIXER_SCREEN,
+	COLOURS_SCREEN
+] as const;
 
 /** A catalog id that no customisation screen shows, with the one-line reason (spike #9438 §3, §4 (a)). */
 export interface SettingsOnlyRow {
@@ -259,7 +283,7 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 	{ id: 'confirm.delete_playlist', reason: 'Confirmation behaviour, not display.' },
 	{ id: 'confirm.playlist_drop_mode', reason: 'Remembered prompt policy, not display.' },
 	{ id: 'auto_sync', reason: 'Per-target writeback destinations (multi_bool).' },
-	{ id: 'sync.run_ratings_writeback', reason: 'Link action into the sync flow.' },
+	{ id: 'sync.run_ratings_writeback', reason: 'Ratings sync dry run action (#12988).' },
 	{ id: 'cloudsync.machines', reason: 'Link into the CloudSync policy surface.' },
 	{ id: 'cloudsync.playlist_pins', reason: 'Link into CloudSync.' },
 	{ id: 'cloudsync.overview', reason: 'Link into CloudSync.' },
@@ -271,16 +295,18 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 	{ id: 'speaker_auto_recover', reason: 'Device recovery policy.' },
 	{ id: 'show_dev_ui', reason: 'Developer switch.' },
 	{ id: 'hide_todo_settings', reason: 'Developer switch (devOnly).' },
+	// Taste variants register through variant-families.ts (catalog.ts, imported above, evaluates it).
+	...VARIANT_REGISTRY.map((def) => ({
+		id: def.id,
+		reason: 'Taste variant (devOnly, epic #10045).'
+	})),
 	{ id: 'pin_visible_days', reason: 'Feedback-pin age, with no deck or library chrome.' },
+	{ id: 'wave_stem_follow', reason: 'Awaiting a screen: stem waveform follow (STEMPERF).' },
 	{
 		id: 'lyrics_global',
 		reason: 'Master switch for every lyric overlay, so it belongs on no single screen.'
 	},
 	{ id: 'technically_working_animate', reason: 'Cross-surface banner animation.' },
-	{
-		id: 'reduce_motion',
-		reason: 'App-wide motion policy; lives in Settings Appearance until a Colours screen lands.'
-	},
 	// Not a boolean/enum row: customise rows refuse other control kinds.
 	{
 		id: 'library_watcher_folders',
@@ -291,6 +317,7 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 		reason: 'Link control; customise rows are boolean or enum only.'
 	},
 	// Added after spike #9438; no placement decided yet.
+	{ id: 'sync.ratings_sync_status', reason: 'Ratings sync status action (#12988), not display.' },
 	{
 		id: 'deck_number_art',
 		reason:
@@ -364,11 +391,11 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 		id: 'tempo_lane_scale',
 		reason: 'Awaiting the Waveform screen (#9439, spike §2.3); not in the WAVE_QS_GROUPS stand-in.'
 	},
-	{ id: 'horizontal_wheel_knob', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'auto_gain.enabled', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'auto_gain.target_lufs', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'wheel_sensitivity.mouse', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'wheel_sensitivity.trackpad', reason: 'Awaiting the Mixer screen (spike §2.5).' },
+	{ id: 'horizontal_wheel_knob', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' },
+	{ id: 'auto_gain.enabled', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' },
+	{ id: 'auto_gain.target_lufs', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' },
+	{ id: 'wheel_sensitivity.mouse', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' },
+	{ id: 'wheel_sensitivity.trackpad', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' },
 	{
 		id: 'wheel_sensitivity.library_mouse',
 		reason: 'Library list scroll distance; Settings sliders until Library customise supports numeric rows (LIBM-12633).'
@@ -377,10 +404,8 @@ export const SETTINGS_ONLY: ReadonlyArray<SettingsOnlyRow> = [
 		id: 'wheel_sensitivity.library_trackpad',
 		reason: 'Library list scroll distance; Settings sliders until Library customise supports numeric rows (LIBM-12633).'
 	},
-	{ id: 'drag_sensitivity.base', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'drag_sensitivity.falloff_px', reason: 'Awaiting the Mixer screen (spike §2.5).' },
-	{ id: 'feature_icon_single_click', reason: 'Awaiting the Layout screen (spike §2.7).' },
-	{ id: 'theme', reason: 'Awaiting the Colours / skin screen (spike §2.8).' }
+	{ id: 'drag_sensitivity.base', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' },
+	{ id: 'drag_sensitivity.falloff_px', reason: 'Mixer screen exists; placement owned by #9442 (epic #9368, spike §2.5).' }
 ];
 
 

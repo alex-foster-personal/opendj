@@ -28,6 +28,7 @@
 	import type {
 		CrossfaderAssign,
 		EqBand,
+		CueCalibrationProbe,
 		HeadphoneAlignmentMode,
 		HeadphoneOutputMode
 	} from '$lib/rb/mixer-types';
@@ -201,6 +202,11 @@
 	/** CUEOUT-14: the modal's mode radios; same command as POST /headphones/alignment-mode. */
 	function handleAlignmentMode(value: HeadphoneAlignmentMode): void {
 		void runPerformanceCommandFromUi({ type: 'headphone_alignment_mode', value });
+	}
+
+	/** CUEOUT-12692: the I/O panel stimulus select; same command as the CLI verb. */
+	function handleCalibrationProbe(value: CueCalibrationProbe): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_calibration_probe', value });
 	}
 
 	function refreshHeadphoneOutputs(): ReturnType<typeof runPerformanceCommandFromUi> {
@@ -389,7 +395,7 @@
 		{/each}
 	</div>
 	<div class="lower">
-		<div class="hp-row" use:selectorNode={{ id: selId.headphones(), kind: 'leaf', enabled: true }}>
+		<div class="hp-row" use:selectorNode={{ id: selId.headphones(), kind: 'group', enabled: true }}>
 			<HeadphoneCluster
 				state={mixerState.headphones}
 				booth={mixerState.booth}
@@ -406,6 +412,7 @@
 				onmode={handleHeadphoneOutputMode}
 				oncalibrate={openCueAlignModal}
 				onAlignmentMode={handleAlignmentMode}
+				onprobe={handleCalibrationProbe}
 				testrun={runAudioIoTest}
 			/>
 		</div>
@@ -435,6 +442,10 @@
 		/* clip, not hidden: a hidden box is still programmatically scrollable, and
 		 * focusing a wide two-outputs headphone row scrolled it ~82px sideways. */
 		overflow: clip;
+		/* SKINLAYOUT-13413: the mixer region is the size container its compact
+		 * tier queries (@container mixer below), never @media. */
+		container-type: inline-size;
+		container-name: mixer;
 	}
 	/* Pin 246b0f5: "MORE/LESS toggle is too big ... pushing EQs down" -
 	 * shrunk from padding-bottom 4px + 10px/2px-10px buttons (~22px tall)
@@ -608,6 +619,19 @@
 		display: flex;
 		align-items: center;
 		gap: 5px;
+	}
+	/* SKINLAYOUT-13413: compact mixer tier by container query (the 248 px
+	 * column has a 236 px content box, so the default look never matches).
+	 * Under 230 px the view toggles and the crossfader row wrap onto extra
+	 * lines instead of clipping, so every control stays on screen and
+	 * clickable. Nothing hides and no font scales. */
+	@container mixer (max-width: 229px) {
+		.mixer-view-row,
+		.xfade-row {
+			flex-wrap: wrap;
+			justify-content: center;
+			row-gap: 2px;
+		}
 	}
 
 	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css. */

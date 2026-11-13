@@ -23,6 +23,7 @@
 	import { collectDroppedAudioFiles } from '$lib/rb/ingest-drop-files';
 	import { refreshIngestPending } from '$lib/rb/ingest-pending.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 
 	let { onYoutubeLink }: { onYoutubeLink?: (() => void) | undefined } = $props();
 
@@ -188,6 +189,15 @@
 	function onKeydown(e: KeyboardEvent): void {
 		if (open && e.key === 'Escape') close();
 	}
+
+	/** Escape closes from inside; Tab reaches the focus trap; every other key stops here, off the page shortcuts. */
+	function onDialogKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			close();
+		}
+		if (e.key !== 'Tab') e.stopPropagation();
+	}
 </script>
 
 <svelte:window
@@ -205,16 +215,18 @@
 {/if}
 
 {#if open}
-	<!-- scrim click closes; Escape handled on window; inner stops propagation -->
+	<!-- scrim click closes; Escape closes from window or inside; focusTrap keeps Tab inside -->
 	<div class="scrim" role="presentation" onclick={close} onkeydown={onKeydown}>
 		<div
 			class="modal"
 			role="dialog"
+			aria-modal="true"
 			aria-label="Ingest new tracks"
 			data-testid="ingest-modal"
 			tabindex="-1"
+			use:focusTrap
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
+			onkeydown={onDialogKeydown}
 		>
 			<div class="m-title">Ingest {files.length} file{files.length === 1 ? '' : 's'}</div>
 

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483623,
+  "measured_with_pr": 483921,
+  "sha": "b1eaf10a76",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--skins--10207-library-first-preset grows the performance surface; measured +298 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

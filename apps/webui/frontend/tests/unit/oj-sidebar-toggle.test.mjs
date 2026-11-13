@@ -13,6 +13,10 @@ let state;
 let guards;
 let ipc;
 let ssr;
+let perf;
+
+// The engine reads the page URL for ?extroute=; these tests run as a page with no query.
+globalThis.location ??= { search: '' };
 
 const SSR_ENTRY = [
 	"export { default as OjTopBarButton } from '$lib/components/rb/OjTopBarButton.svelte';",
@@ -29,6 +33,9 @@ before(async () => {
 	state = await loadTypeScriptModule('src/lib/assistant/oj-sidebar.svelte.ts');
 	guards = await loadTypeScriptModule('src/lib/rb/performance-ipc-guards.ts');
 	ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts');
+	perf = await loadTypeScriptModule('tests/unit/fixtures/pairing-snapshot-entry.ts', {
+		viteApiBase: 'https://pairing.example.test'
+	});
 	ssr = await loadSvelteSsrModule(SSR_ENTRY, {
 		alias: { '$lib/assistant/status-probe.svelte': FAKE_PROBE }
 	});
@@ -66,6 +73,30 @@ test('if an agent sends oj_toggle then it parses, skips the deck queue and flips
 	assert.deepEqual(guards._parseCommand({ type: 'oj_toggle' }), { type: 'oj_toggle' });
 	assert.throws(() => guards._parseCommand({ type: 'oj_toggle', extra: 1 }));
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'oj_toggle' }), null);
+});
+
+/** [if] an agent sends oj_toggle [then] the command result and the query both report oj.open flipped, [else stop]. */
+test('if the performance query or the oj_toggle result hides the sidebar open state then broken', async () => {
+	globalThis.window = {};
+	const uninstall = perf.installPerformanceBrowserIpc();
+	try {
+		const before = perf.queryPerformanceState();
+		assert.deepEqual(before.oj, { open: false }, 'closed at start');
+		const opened = await perf.dispatchPerformanceCommand({ type: 'oj_toggle' });
+		assert.deepEqual(opened.oj, { open: true }, 'the oj_toggle result reads back open');
+		assert.deepEqual(perf.queryPerformanceState().oj, { open: true }, 'the query agrees');
+		assert.doesNotThrow(
+			() => structuredClone(perf.queryPerformanceState().oj),
+			'cloneable over IPC'
+		);
+		const closed = await perf.dispatchPerformanceCommand({ type: 'oj_toggle' });
+		assert.deepEqual(closed.oj, { open: false }, 'a second toggle reads back closed');
+	} finally {
+		if (perf.queryPerformanceState().oj.open)
+			await perf.dispatchPerformanceCommand({ type: 'oj_toggle' });
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('if oj_toggle stops reaching the shared sidebar state then broken', async () => {

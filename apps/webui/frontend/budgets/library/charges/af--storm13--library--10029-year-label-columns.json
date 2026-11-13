@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 373163,
+  "measured_with_pr": 376690,
+  "sha": "cfae7f4de8",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--10029-year-label-columns grows the library surface; measured +3527 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

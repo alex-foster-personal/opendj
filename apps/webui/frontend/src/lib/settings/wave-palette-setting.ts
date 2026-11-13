@@ -8,7 +8,8 @@ import type { SettingDef } from './catalog-types';
 
 const PERFORMANCE_LAYOUT_LABELS: Record<PerformanceLayout, string> = {
 	'deck-grid': 'Deck grid',
-	'replica-desk': 'Replica desk'
+	'replica-desk': 'Replica desk',
+	'library-first': 'Library first'
 };
 
 const LIBRARY_LAYOUT_LABELS: Record<LibraryLayout, string> = {
@@ -101,6 +102,25 @@ export const LIBRARY_LAYOUT_SETTING: SettingDef = {
 		"Auto (default) follows the skin's SKIN_LAYOUT entry. An explicit preset wins on every skin. Same path as the set_layout_preset command (HTTP POST /api/v1/commands, opendj set_layout_preset).",
 	implemented: true,
 	control: _layoutEnumOptions('library')
+};
+
+/** SKINLAYOUT-10207: where the decks sit under the library-first preset. */
+export const LIBRARY_FIRST_VARIANT_SETTING: SettingDef = {
+	id: 'layout_variant.library_first',
+	label: 'Library-first look',
+	group: 'performance',
+	keywords: ['layout', 'library', 'prep', 'variant', 'decks', 'bottom', 'top'],
+	title: 'Library-first preset: decks below or above the library',
+	detail:
+		'Applies when the performance layout is Library first. Decks at the bottom (default) keep the library on top; decks at the top put the decks and waves in a band under the top bar.',
+	implemented: true,
+	control: {
+		kind: 'enum',
+		options: [
+			{ value: 'decks-bottom', label: 'Decks at the bottom' },
+			{ value: 'decks-top', label: 'Decks at the top' }
+		]
+	}
 };
 
 /** Split main waveform: master deck on top, this deck below. Opt-in. */

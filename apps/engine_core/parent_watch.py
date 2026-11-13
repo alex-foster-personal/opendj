@@ -55,7 +55,9 @@ def _read_parent_file(data_dir: Path) -> int | None:
         return None
     try:
         return _parse_positive_pid(path.read_text(encoding="utf-8"))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # Non-UTF-8 bytes are just another malformed marker: fall back to the
+        # env pid rather than end the watch thread and orphan the engine.
         return None
 
 

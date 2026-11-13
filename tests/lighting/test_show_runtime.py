@@ -21,6 +21,8 @@ from apps.lighting.beat_clock import DeckSample
 from apps.lighting.contract import LIGHTING_FLAG_ID
 from apps.lighting.http import bind_lighting_runtime, router
 from apps.lighting.runtime import (
+    QUEUE_SIZE,
+    SLOW_CONSUMER_CODE,
     DeckFeed,
     FeedFrame,
     LightingRuntime,
@@ -174,6 +176,80 @@ def test_master_only_follows_incoming_only_on_its_phrase_boundary() -> None:
     assert frame.colour_deck == "B"
 
 
+BLENDING_MODES = [HandoverMode.BLEND, HandoverMode.UPFADER_ONLY]
+
+
+@pytest.mark.parametrize("mode", BLENDING_MODES)
+def test_zero_weight_deck_contributes_no_layer(mode: HandoverMode) -> None:
+    """A playing deck at weight 0 is left out of the layers; the weighted deck keeps full intensity."""
+    _, frame = step(ShowState(), [_deck("A", 8, 1.0, PLAN_A), _deck("B", 8, 0.0, PLAN_B)], mode)
+    assert [(lay.deck, lay.intensity, lay.look) for lay in frame.layers] == [("A", 1.0, "a-red")]
+    assert frame.colour_deck == "A" and frame.position_deck == "A" and not frame.ambient
+
+
+@pytest.mark.parametrize("mode", BLENDING_MODES)
+def test_zero_weight_deck_never_takes_colour(mode: HandoverMode) -> None:
+    """A zero-weight deck crossing its downbeats never takes colour from the weighted owner."""
+    state = ShowState()
+    for beat in range(16):
+        state, frame = step(state, [_deck("A", 40 + beat, 0.0, PLAN_A), _deck("B", beat, 1.0, PLAN_B)], mode)
+        assert frame.colour_deck == "B", beat
+        assert [lay.deck for lay in frame.layers] == ["B"]
+
+
+@pytest.mark.parametrize("mode", BLENDING_MODES)
+def test_owner_dropping_to_zero_weight_hands_over_on_next_downbeat(mode: HandoverMode) -> None:
+    """When the owner falls to weight 0 its layer vanishes at once, but colour waits for B's downbeat."""
+    state, _ = step(ShowState(), [_deck("A", 0, 1.0, PLAN_A), _deck("B", 0, 0.0, PLAN_B)], mode)
+    for beat in range(1, 5):
+        state, frame = step(state, [_deck("A", beat, 1.0, PLAN_A), _deck("B", beat, 0.0, PLAN_B)], mode)
+    state, frame = step(state, [_deck("A", 5, 0.0, PLAN_A), _deck("B", 5, 1.0, PLAN_B)], mode)
+    assert [lay.deck for lay in frame.layers] == ["B"] and frame.colour_deck == "A"
+    for beat in (6, 7):
+        state, frame = step(state, [_deck("A", beat, 0.0, PLAN_A), _deck("B", beat, 1.0, PLAN_B)], mode)
+        assert frame.colour_deck == "A", beat
+    _, frame = step(state, [_deck("A", 8, 0.0, PLAN_A), _deck("B", 8, 1.0, PLAN_B)], mode)
+    assert frame.colour_deck == "B" and frame.position_deck == "B"
+
+
+@pytest.mark.parametrize("mode", BLENDING_MODES)
+def test_equal_weights_give_equal_layers_with_own_looks(mode: HandoverMode) -> None:
+    """Two decks at equal weight each get a layer at that same intensity showing their own plan's look."""
+    _, frame = step(ShowState(), [_deck("B", 33, 0.5, PLAN_B), _deck("A", 2, 0.5, PLAN_A)], mode)
+    assert [(lay.deck, lay.intensity, lay.look) for lay in frame.layers] == [
+        ("A", 0.5, "a-red"),
+        ("B", 0.5, "b-cyan"),
+    ]
+
+
+@pytest.mark.parametrize("owner", ["A", "B"])
+@pytest.mark.parametrize("mode", BLENDING_MODES)
+def test_equal_weight_tie_keeps_current_owner(mode: HandoverMode, owner: str) -> None:
+    """An equal-weight tie never moves colour off the owner, even on the other deck's downbeat after the hold."""
+    state = ShowState(owner=owner, owner_since_beat=0, last_beat={"A": 15, "B": 15})
+    for beat in range(16, 33):
+        state, frame = step(state, [_deck("A", beat, 0.5, PLAN_A), _deck("B", beat, 0.5, PLAN_B)], mode)
+        assert frame.colour_deck == owner and frame.position_deck == owner, beat
+        assert [lay.intensity for lay in frame.layers] == [0.5, 0.5]
+
+
+def test_master_only_gives_followed_deck_one_full_layer_regardless_of_weights() -> None:
+    """master_only emits only the followed deck's layer at intensity 1.0, never the weight, never the other deck."""
+    state = ShowState(owner="A", owner_since_beat=0, last_beat={"A": 9, "B": 9})
+    _, frame = step(state, [_deck("A", 10, 0.4, PLAN_A), _deck("B", 10, 0.6, PLAN_B)], HandoverMode.MASTER_ONLY)
+    assert [(lay.deck, lay.intensity, lay.look) for lay in frame.layers] == [("A", 1.0, "a-red")]
+    assert frame.colour_deck == "A" and frame.position_deck == "A"
+
+
+def test_master_only_stopped_followed_deck_hands_over_without_waiting_for_phrase() -> None:
+    """If the followed deck stops, master_only follows the remaining deck at once, off any phrase boundary."""
+    state = ShowState(owner="A", owner_since_beat=0, last_beat={"A": 50, "B": 10})
+    decks = [_deck("A", 51, 1.0, PLAN_A, playing=False), _deck("B", 11, 1.0, PLAN_B)]
+    new_state, frame = step(state, decks, HandoverMode.MASTER_ONLY)
+    assert frame.colour_deck == "B" and new_state.owner == "B" and new_state.owner_since_beat == 11
+    assert [(lay.deck, lay.intensity) for lay in frame.layers] == [("B", 1.0)]
+
+
 def test_both_decks_stopped_hands_over_to_ambient() -> None:
     state, _ = step(ShowState(), [_deck("A", 5, 1.0, PLAN_A), _deck("B", 5, 0.0, PLAN_B)], HandoverMode.BLEND)
     stopped = [_deck("A", 6, 1.0, PLAN_A, playing=False), _deck("B", 6, 0.0, PLAN_B, playing=False)]
@@ -317,3 +393,27 @@ def test_events_socket_receives_show_frames_from_replayed_feed(tmp_path: Path) -
     show_msgs = [m for m in messages if m["type"] == "show_frame"]
     assert any(m.get("colour_deck") == "A" for m in show_msgs)
     assert code == 1000
+
+
+@pytest.mark.requirement("LIGHT-13355")
+def test_slow_subscriber_overflows_bounded_while_healthy_one_keeps_receiving() -> None:
+    """[if] one subscriber stops consuming [then] it is capped and marked 1013 while a healthy one gets every message."""
+    runtime = LightingRuntime()
+    slow = runtime.hub.attach()
+    healthy = runtime.hub.attach()
+    received: list[dict[str, Any]] = []
+    total = QUEUE_SIZE * 2
+    for index in range(total):
+        runtime.hub.publish({"type": "probe", "index": index})
+        item = healthy.queue.get_nowait()
+        assert item is not None
+        received.append(item)
+
+    assert slow.overflow.is_set()
+    assert slow.close_code == SLOW_CONSUMER_CODE
+    assert slow.close_reason == "slow consumer"
+    assert slow.queue.qsize() == QUEUE_SIZE
+    assert not healthy.overflow.is_set()
+    assert [m["index"] for m in received] == list(range(total))
+    assert [m["seq"] for m in received] == list(range(1, total + 1))
+    assert runtime.hub.subscriber_count == 2

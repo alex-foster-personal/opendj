@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
 import { fn } from 'storybook/test';
 
-import { HOTKEY_REGISTRY } from './hotkeys-registry';
+import { HOTKEY_REGISTRY, HOTKEYS_OVERLAY_TRIGGER } from './hotkeys-registry';
 
 import HotkeysOverlayView from './HotkeysOverlayView.svelte';
 
@@ -21,6 +21,7 @@ const meta = {
 		view: 'grid',
 		query: '',
 		entries: HOTKEY_REGISTRY,
+		trigger: HOTKEYS_OVERLAY_TRIGGER,
 		onHide: fn(),
 		onSetView: fn(),
 		onSetQuery: fn()

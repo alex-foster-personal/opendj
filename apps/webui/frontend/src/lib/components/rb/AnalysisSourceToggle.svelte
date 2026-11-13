@@ -20,7 +20,9 @@
 		loadAnalysisSource,
 		subscribeAnalysisRecordChanges
 	} from '$lib/rb/analysis-source.svelte';
+	import { isPageGoingAway } from '$lib/api/lifecycle-abort';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	type MenuComponent = Component<{
 		style: string;
@@ -39,6 +41,7 @@
 
 	const _poll = (): void => {
 		void loadAnalysisSource().catch((exc) => {
+			if (isPageGoingAway()) return;
 			console.error('[analysis-source] poll failed; retrying on the next tick', exc);
 		});
 	};
@@ -92,8 +95,7 @@
 	}
 
 	function _hide(e: FocusEvent | PointerEvent): void {
-		const next =
-			e instanceof FocusEvent ? e.relatedTarget : (e as PointerEvent).relatedTarget;
+		const next = e instanceof FocusEvent ? e.relatedTarget : (e as PointerEvent).relatedTarget;
 		if (next instanceof Node && wrapEl?.contains(next)) return;
 		if (next instanceof Element && next.closest?.('.src-menu')) return;
 		menuOpen = false;
@@ -108,6 +110,7 @@
 <span
 	class="src-wrap"
 	data-custom-tip=""
+	use:topbarSelectorNode={{ name: 'analysis-source', disabled: false }}
 	bind:this={wrapEl}
 	onpointerenter={_show}
 	onpointerleave={_hide}

@@ -19,11 +19,24 @@
  *
  * Native nodes only, nothing allocated per render quantum: a clock change (division, tempo,
  * TIME) makes one oscillator and one PeriodicWave; a level change makes nothing.
+ *
+ * LFO shape and direction (#10014) are build options (`lfoShape`, `lfoDirection`, defaults
+ * sine and down, the trajectory above). A non-sine shape becomes the PeriodicWave's first
+ * BEAT_FX_FILTER_LFO_HARMONICS harmonics of `filterLfoUnit`, sampled from the current phase.
  */
-import { FILTER_LP_CEILING_HZ, FILTER_LP_FLOOR_HZ, FILTER_Q } from '$lib/player/constants';
+import { FILTER_LP_CEILING_HZ, FILTER_LP_FLOOR_HZ, FILTER_Q_DB } from '$lib/player/constants';
 
 import type { AnlzBeat } from '../anlz-types';
 import { lfoAnchor, lfoCycleSeconds, MOD_FX_TIME_MS, wrapUnitPhase } from '../mod-fx-lfo';
+import {
+	assertFilterLfoDirection,
+	assertFilterLfoShape,
+	FILTER_LFO_DEFAULT_DIRECTION,
+	FILTER_LFO_DEFAULT_SHAPE,
+	filterLfoUnit,
+	type FilterLfoDirection,
+	type FilterLfoShape
+} from './beat-fx-filter-lfo-shapes';
 
 /** Beat divisions, DJM-A9 BEAT 1/16 to 64 beats, plus 3/4 from the beat FX unit's list. */
 export const BEAT_FX_FILTER_BEATS = [
@@ -56,6 +69,18 @@ export const BEAT_FX_FILTER_LEVEL_RAMP_SEC = 0.01;
 
 /** Points in the preallocated raised-cosine level curve. */
 export const BEAT_FX_FILTER_CURVE_POINTS = 64;
+
+/** Harmonics in a non-sine LFO wave, and the points it is sampled at (4 per harmonic). */
+export const BEAT_FX_FILTER_LFO_HARMONICS = 512;
+export const BEAT_FX_FILTER_LFO_POINTS = 4 * BEAT_FX_FILTER_LFO_HARMONICS;
+
+/** Narrowest saw_decay fall the harmonics resolve, in cycles (the 10 ms ramp holds up to 1.28 s cycles). */
+export const BEAT_FX_FILTER_MIN_RESET_PHASE = 1 / 128;
+
+export interface BeatFxFilterOptions {
+	lfoShape?: FilterLfoShape;
+	lfoDirection?: FilterLfoDirection;
+}
 
 export type BeatFxFilterContext = Pick<
 	BaseAudioContext,
@@ -110,6 +135,8 @@ export interface BeatFxFilterKernel {
 	lp: BiquadFilterNode;
 	/** LFO (-1..1) to cents on lp.detune. */
 	lfoDepth: GainNode;
+	lfoShape: FilterLfoShape;
+	lfoDirection: FilterLfoDirection;
 	setClock(clock: BeatFxFilterClock, now: number): void;
 	setLevel(level: number, now: number): void;
 	state(): BeatFxFilterState;
@@ -139,11 +166,25 @@ export function assertBeatFxFilterTimeMs(timeMs: number): void {
 	}
 }
 
-/** Cutoff at LFO `phase`: 0 = trough (floor), 0.5 = crest (ceiling), a sine on the octave axis. */
-export function beatFxFilterCutoffHz(phase: number): number {
-	if (!Number.isFinite(phase))
-		throw new Error(`beat-fx-filter: phase must be finite, got ${String(phase)}`);
-	return BEAT_FX_FILTER_CENTER_HZ * 2 ** (-BEAT_FX_FILTER_SPAN_OCT * Math.cos(2 * Math.PI * phase));
+/** Cutoff at LFO `phase` for a shape and direction; the defaults are a sine with its trough (floor) at 0, crest at 0.5. */
+export function beatFxFilterCutoffHz(
+	phase: number,
+	shape: FilterLfoShape = FILTER_LFO_DEFAULT_SHAPE,
+	direction: FilterLfoDirection = FILTER_LFO_DEFAULT_DIRECTION,
+	resetPhase = 0
+): number {
+	return (
+		BEAT_FX_FILTER_CENTER_HZ *
+		2 ** (BEAT_FX_FILTER_SPAN_OCT * filterLfoUnit(shape, direction, phase, resetPhase))
+	);
+}
+
+/** saw_decay fall width in cycles: the 10 ms level ramp, widened to what the harmonics resolve, at most half a cycle. */
+export function beatFxFilterResetPhase(periodSec: number): number {
+	return Math.min(
+		0.5,
+		Math.max(BEAT_FX_FILTER_LEVEL_RAMP_SEC / periodSec, BEAT_FX_FILTER_MIN_RESET_PHASE)
+	);
 }
 
 /** Beat clock when the grid and tempo lock; TIME clock (reason no-tempo) otherwise. Never guesses a tempo. */
@@ -197,7 +238,15 @@ function _raisedCosine(from: number, to: number, frac: number): number {
 //-----------------------------------------------------------------------------
 // graph
 
-export function buildBeatFxFilterKernel(ctx: BeatFxFilterContext): BeatFxFilterKernel {
+export function buildBeatFxFilterKernel(
+	ctx: BeatFxFilterContext,
+	options: BeatFxFilterOptions = {}
+): BeatFxFilterKernel {
+	const { lfoShape = FILTER_LFO_DEFAULT_SHAPE, lfoDirection = FILTER_LFO_DEFAULT_DIRECTION } =
+		options;
+	assertFilterLfoShape(lfoShape);
+	assertFilterLfoDirection(lfoDirection);
+	const sign = lfoDirection === 'up' ? -1 : 1;
 	const input = ctx.createGain();
 	const output = ctx.createGain();
 	const dry = ctx.createGain();
@@ -208,19 +257,46 @@ export function buildBeatFxFilterKernel(ctx: BeatFxFilterContext): BeatFxFilterK
 	wet.gain.value = 0;
 	lp.type = 'lowpass';
 	lp.frequency.value = BEAT_FX_FILTER_CENTER_HZ;
-	lp.Q.value = FILTER_Q;
+	lp.Q.value = FILTER_Q_DB;
 	lfoDepth.gain.value = BEAT_FX_FILTER_SPAN_OCT * 1200;
 	input.connect(dry).connect(output);
 	input.connect(lp).connect(wet).connect(output);
 	lfoDepth.connect(lp.detune);
 
-	const waveReal = new Float32Array(2);
-	const waveImag = new Float32Array(2);
+	const harmonics = lfoShape === 'sine' ? 1 : BEAT_FX_FILTER_LFO_HARMONICS;
+	const waveReal = new Float32Array(harmonics + 1);
+	const waveImag = new Float32Array(harmonics + 1);
+	const samples = new Float64Array(lfoShape === 'sine' ? 0 : BEAT_FX_FILTER_LFO_POINTS);
+	const cosTable = Float64Array.from(samples, (_, i) =>
+		Math.cos((2 * Math.PI * i) / samples.length)
+	);
+	const sinTable = Float64Array.from(samples, (_, i) =>
+		Math.sin((2 * Math.PI * i) / samples.length)
+	);
 	const wetCurve = new Float32Array(BEAT_FX_FILTER_CURVE_POINTS);
 	const dryCurve = new Float32Array(BEAT_FX_FILTER_CURVE_POINTS);
 	let lfo: OscillatorNode | null = null;
 	let clock: BeatFxFilterClock | null = null;
 	let ramp = { start: 0, from: 0, to: 0 };
+
+	// Fourier series of the trajectory from `phase` on: x(t) = sum real[k] cos(2 pi k t) + imag[k] sin(2 pi k t).
+	function _fillLfoWave(periodSec: number, phase: number): void {
+		const n = samples.length;
+		const resetPhase = beatFxFilterResetPhase(periodSec);
+		for (let i = 0; i < n; i++)
+			samples[i] = filterLfoUnit(lfoShape, lfoDirection, phase + i / n, resetPhase);
+		for (let k = 1; k <= harmonics; k++) {
+			let re = 0;
+			let im = 0;
+			for (let i = 0; i < n; i++) {
+				const j = (k * i) % n;
+				re += samples[i] * cosTable[j];
+				im += samples[i] * sinTable[j];
+			}
+			waveReal[k] = (2 * re) / n;
+			waveImag[k] = (2 * im) / n;
+		}
+	}
 
 	function levelAt(t: number): number {
 		const frac = (t - ramp.start) / BEAT_FX_FILTER_LEVEL_RAMP_SEC;
@@ -231,8 +307,12 @@ export function buildBeatFxFilterKernel(ctx: BeatFxFilterContext): BeatFxFilterK
 
 	function setClock(next: BeatFxFilterClock, now: number): void {
 		const phase = beatFxFilterPhase(next, now);
-		waveReal[1] = -Math.cos(2 * Math.PI * phase);
-		waveImag[1] = Math.sin(2 * Math.PI * phase);
+		if (lfoShape === 'sine') {
+			waveReal[1] = sign * -Math.cos(2 * Math.PI * phase);
+			waveImag[1] = sign * Math.sin(2 * Math.PI * phase);
+		} else {
+			_fillLfoWave(next.periodSec, phase);
+		}
 		const wave = ctx.createPeriodicWave(waveReal, waveImag, { disableNormalization: true });
 		const osc = ctx.createOscillator();
 		osc.setPeriodicWave(wave);
@@ -294,5 +374,18 @@ export function buildBeatFxFilterKernel(ctx: BeatFxFilterContext): BeatFxFilterK
 		for (const node of [input, output, dry, wet, lp, lfoDepth]) node.disconnect();
 	}
 
-	return { input, output, dry, wet, lp, lfoDepth, setClock, setLevel, state, dispose };
+	return {
+		input,
+		output,
+		dry,
+		wet,
+		lp,
+		lfoDepth,
+		lfoShape,
+		lfoDirection,
+		setClock,
+		setLevel,
+		state,
+		dispose
+	};
 }

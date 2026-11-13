@@ -82,11 +82,15 @@ def old_index_items(request: Request, tracks: list[Any]) -> list[TrackIndexItemO
         base["key"] = row["key"]
         # CMDK-04: the independent oracle includes the index comment field.
         base["comments"] = row.get("comments")
+        base["last_played_at"] = row["last_played_at"]
+        # Issue #9737: the Open DJ colour edit, else the rekordbox ColorID.
+        base["color_id"] = row["color_id"]
         items.append(
             TrackIndexItemOut(
                 **base,
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
+                date_added=row["date_added"],
                 file_availability=row["file_availability"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),

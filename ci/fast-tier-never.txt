@@ -41,6 +41,11 @@ tests/test_playlist_write.py
 tests/test_progress_file_lock.py
 (private path)
 (private path)
+(private path)
+(private path)
+(private path)
+(private path)
+(private path)
 tests/test_smartlists_route.py
 tests/transition_score/test_mutations.py
 (private path)

@@ -3,6 +3,7 @@
 	// smartlist rows, the inline rename and the tree context menu; the rename
 	// input element is bound back to it so a begun rename can focus it.
 	import type { SmartlistSummary } from '$lib/rb/api-smartlists';
+	import { SMARTLIST_DROP_REFUSAL } from '$lib/rb/track-drag.svelte';
 
 	let {
 		open,
@@ -13,13 +14,18 @@
 		editingId,
 		editDraft,
 		renameInputEl = $bindable(null),
+		refusedId = null,
 		ontoggle,
 		onclickrow,
+		ondblclickrow = () => {},
 		onmenukey,
 		oncontextmenurow,
 		oneditdraft,
 		onrenamekeydown,
-		onrenamecommit
+		onrenamecommit,
+		ondragoverrow,
+		ondragleaverow,
+		ondroprow
 	}: {
 		open: boolean;
 		/** null = still loading. */
@@ -32,14 +38,21 @@
 		editingId: string | null;
 		editDraft: string;
 		renameInputEl?: HTMLInputElement | null;
+		/** LIBM-84: id of the row refusing the live track drag, or null. */
+		refusedId?: string | null;
 		ontoggle: () => void;
 		onclickrow: (sl: SmartlistSummary) => void;
+		/** SMART (#10024): double-click opens the rule editor modal. */
+		ondblclickrow?: (sl: SmartlistSummary) => void;
 		/** Every row keydown, for the context menu's keyboard opener. */
 		onmenukey: (event: KeyboardEvent, sl: SmartlistSummary) => void;
 		oncontextmenurow: (event: MouseEvent, sl: SmartlistSummary) => void;
 		oneditdraft: (value: string) => void;
 		onrenamekeydown: (event: KeyboardEvent) => void;
 		onrenamecommit: () => void;
+		ondragoverrow: (event: DragEvent, sl: SmartlistSummary) => void;
+		ondragleaverow: (sl: SmartlistSummary) => void;
+		ondroprow: () => void;
 	} = $props();
 </script>
 
@@ -82,8 +95,15 @@
 				tabindex="0"
 				data-testid="smartlist-row"
 				data-smartlist-id={sl.id}
-				title={sl.rule_summary}
+				class:drop-refused={refusedId === sl.id}
+				title={refusedId === sl.id ? SMARTLIST_DROP_REFUSAL : sl.rule_summary}
+				ondragover={(e) => ondragoverrow(e, sl)}
+				ondragleave={() => ondragleaverow(sl)}
+				ondrop={() => ondroprow()}
 				onclick={() => onclickrow(sl)}
+				ondblclick={() => {
+					if (editingId !== sl.id) ondblclickrow(sl);
+				}}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') onclickrow(sl);
 					onmenukey(e, sl);
@@ -134,6 +154,11 @@
 	}
 	.row.selected {
 		background: var(--rb-select);
+	}
+	.row.drop-refused {
+		cursor: no-drop;
+		box-shadow: inset 0 0 0 1px var(--rb-text-dim);
+		opacity: 0.6;
 	}
 	.row svg {
 		flex: none;

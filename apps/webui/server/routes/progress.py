@@ -61,7 +61,7 @@ else:
     import fcntl
 
 import yaml
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.shared.source_tree import dev_only_refusal, is_repo_checkout
@@ -77,6 +77,16 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 # Canonical route dependency. Core transactions take an explicit path so tests
 # can exercise disposable production-format ledgers without replacing globals.
 PROGRESS_FILE: Path = REPO_ROOT / "data" / "progress-tree.yaml"
+
+
+def progress_file_for_request(request: Request | None = None) -> Path:
+    """Ledger path for this request; ``app.state.progress_file`` overrides for live-engine tests."""
+    if request is not None:
+        override = getattr(request.app.state, "progress_file", None)
+        if override is not None:
+            return Path(override)
+    return PROGRESS_FILE
+
 
 STATUSES: tuple[str, ...] = (
     "missing",

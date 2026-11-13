@@ -56,6 +56,7 @@ function headphoneProps() {
 		onmode: noop,
 		oncalibrate: noop,
 		onAlignmentMode: noop,
+		onprobe: noop,
 		testrun: noopTestRun
 	};
 }

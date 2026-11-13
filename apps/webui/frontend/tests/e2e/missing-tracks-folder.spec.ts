@@ -284,10 +284,21 @@ test('Missing Tracks folder shows the broken count and is not a user playlist', 
 	await expect(folder).toBeVisible({ timeout: 45_000 });
 	await expect(folder).toContainText('Missing Tracks');
 	await expect(folder.locator('.count')).toHaveText('2');
+	// LIBM-104 (issue #12326): the system node sits in the System section, and its
+	// Rename / Delete stay focusable but refuse; the user's same-named playlist does not.
+	await expect(
+		page.getByTestId('playlist-system-section').getByTestId('playlist-missing-tracks')
+	).toBeVisible();
+	const sysDelete = folder.getByTestId('system-node-delete');
+	await expect(sysDelete).toHaveAttribute('aria-disabled', 'true');
+	await sysDelete.focus();
+	await expect(sysDelete).toBeFocused();
+	await expect(sysDelete).toHaveAccessibleDescription(/cannot be renamed or deleted/);
 
 	const userRow = page.getByTestId('playlist-row').filter({ hasText: 'Missing Tracks' });
 	await expect(userRow).toBeVisible();
 	await expect(userRow).not.toHaveAttribute('data-testid', 'playlist-missing-tracks');
+	await expect(userRow).not.toHaveAttribute('data-system-node', /.+/);
 
 	await folder.click();
 	await expect(page.locator('.title-text', { hasText: 'Broken Alpha' })).toBeVisible();

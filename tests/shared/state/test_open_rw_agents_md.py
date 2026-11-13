@@ -116,18 +116,41 @@ def test_regenerate_raises_on_undocumented_table(tmp_path: Path) -> None:
         conn.close()
 
 
-@pytest.mark.requirement("LIBM-12644")
-def test_open_rw_propagates_missing_column_docs_error_on_reopen(tmp_path: Path) -> None:
-    """[if] an owned column lacks docs [then] open_rw raises MissingColumnDocsError, [else stop]."""
-    # Cache marker uses PRAGMA schema_version, not app SCHEMA_VERSION (#4015).
+@pytest.mark.requirement("LIBM-13766")
+def test_open_rw_opens_a_db_a_newer_build_added_a_column_to(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] a column a newer build added stops open_rw or rewrites AGENTS.md [then] fail, [else stop]."""
+    # Thu 12 Nov 2026: a newer build added playlist_memberships.edit_id, and
+    # the older build then refused to start. The drift guard is for developers.
     db_path = tmp_path / "state.db"
-    conn = open_rw(db_path)
-    conn.execute("ALTER TABLE tracks ADD COLUMN totally_fake_injected_column TEXT")
+    open_rw(db_path).close()
+    sidecar = tmp_path / "AGENTS.md"
+    before = sidecar.read_bytes()
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE playlist_memberships ADD COLUMN edit_id_from_a_newer_build TEXT")
     conn.close()
 
-    with pytest.raises(MissingColumnDocsError) as excinfo:
-        open_rw(db_path)
-    assert "tracks.totally_fake_injected_column" in str(excinfo.value)
+    with caplog.at_level(logging.WARNING, logger="apps.shared.state.agents_md_cache"):
+        reopened = open_rw(db_path)
+    try:
+        reopened.execute("SELECT edit_id_from_a_newer_build FROM playlist_memberships").fetchall()
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1, warnings
+        assert "playlist_memberships.edit_id_from_a_newer_build" in warnings[0]
+        assert sidecar.read_bytes() == before, "the existing AGENTS.md is left as is"
+
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="apps.shared.state.agents_md_cache"):
+            open_rw(db_path).close()
+        assert not caplog.records, "a later open on the same schema neither re-runs nor re-warns"
+
+        # The generator's own strict path still raises: drift is caught in CI.
+        with pytest.raises(MissingColumnDocsError) as excinfo:
+            write_agents_md(reopened, tmp_path / "strict" / "AGENTS.md")
+        assert "playlist_memberships.edit_id_from_a_newer_build" in str(excinfo.value)
+    finally:
+        reopened.close()
 
 
 def test_open_rw_tolerates_reverted_v25_playlist_columns(tmp_path: Path) -> None:

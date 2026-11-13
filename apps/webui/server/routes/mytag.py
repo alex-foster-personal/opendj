@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from apps.shared.events import publish
@@ -20,6 +20,7 @@ from ..backend import (
 )
 from ..deps import get_read_state, get_write_state
 from ..etag import compute_etag
+from ..mytag_comment_sync import read_mytag_to_comments, sweep_mytag_comments, sync_mytag_comments
 
 router = APIRouter(prefix="/mytags", tags=["mytags"])
 MOUNT_UNDER_API_PREFIX = True
@@ -139,7 +140,11 @@ def list_mytags(backend: StateBackend = Depends(get_read_state)) -> MyTagListOut
 
 
 @router.post("/assign", response_model=MyTagAssignOut)
-def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write_state)) -> MyTagAssignOut:  # noqa: B008  # FastAPI DI
+def assign_mytags(
+    body: MyTagAssignIn,
+    request: Request,
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> MyTagAssignOut:
     missing = [stable_id for stable_id in body.stable_ids if stable_id not in body.expected_etags]
     if missing:
         raise HTTPException(status_code=422, detail={"error": "missing_expected_etag", "stable_ids": missing})
@@ -153,6 +158,7 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
             [TrackUpdate(stable_id, patch, body.expected_etags[stable_id]) for stable_id in body.stable_ids],
             source="webui",
         )
+        tracks = sync_mytag_comments(request.app, backend, tracks, source="webui")
     except BatchConflictError as exc:
         _raise_conflict(exc)
     publish("library.changed", {"kind": "mytags", "ids": sorted({*body.add, *body.remove})})
@@ -170,6 +176,7 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
 
 
 def _sweep_tag(
+    request: Request,
     backend: StateBackend,
     old_name: str,
     new_name: str | None,
@@ -179,7 +186,7 @@ def _sweep_tag(
     confirm_merge: bool = False,
 ) -> int:
     try:
-        return backend.update_tag_members(
+        tracks_updated = backend.update_tag_members(
             old_name,
             new_name,
             expected_catalog_revision=expected_catalog_revision,
@@ -187,6 +194,8 @@ def _sweep_tag(
             confirm_merge=confirm_merge,
             source="webui",
         )
+        if read_mytag_to_comments(request.app):
+            sweep_mytag_comments(backend, enabled=True, source="webui")
     except BatchConflictError as exc:
         _raise_conflict(exc)
     except MyTagScopeConflictError as exc:
@@ -206,6 +215,8 @@ def _sweep_tag(
                 "destination_name": exc.destination_name,
             },
         ) from exc
+    else:
+        return tracks_updated
 
 
 @router.post(
@@ -218,8 +229,13 @@ def _sweep_tag(
         },
     },
 )
-def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:  # noqa: B008  # FastAPI DI
+def rename_mytag(
+    body: MyTagRenameIn,
+    request: Request,
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> MyTagSweepOut:
     tracks_updated = _sweep_tag(
+        request,
         backend,
         body.old_name,
         body.new_name,
@@ -241,8 +257,13 @@ def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_
         },
     },
 )
-def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:  # noqa: B008  # FastAPI DI
+def delete_mytag(
+    body: MyTagDeleteIn,
+    request: Request,
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> MyTagSweepOut:
     tracks_updated = _sweep_tag(
+        request,
         backend,
         body.name,
         None,

@@ -4,14 +4,17 @@
 	import type { MyTagCatalog } from '$lib/rb/api-edit-suite';
 	import type { PlaylistNode } from '$lib/rb/library-types';
 	import type { groupTagsByType } from '$lib/rb/tag-display';
+	import { acceptTrackDragOver, droppedStableIds, endTrackDrag } from '$lib/rb/track-drag.svelte';
 	import { taglistNode, taglistPaneId } from './taglist-nav';
+	import { tagRowAcceptsDrop, type TagTreeRow } from './tag-drop';
 
 	let {
 		catalog,
 		error,
 		groups = [],
 		selectedId,
-		onselect
+		onselect,
+		ondroptracks
 	}: {
 		catalog: MyTagCatalog | null;
 		error: string | null;
@@ -19,7 +22,33 @@
 		groups?: ReturnType<typeof groupTagsByType>;
 		selectedId: string | null;
 		onselect: (node: PlaylistNode) => void;
+		/** Dragged library tracks dropped on a tag row (LIBTAG-9668). */
+		ondroptracks?: (tagName: string, stableIds: string[]) => void;
 	} = $props();
+
+	/** Tag name under a track drag, for the drop highlight. */
+	let dropTargetName: string | null = $state(null);
+
+	function _onTrackDragOver(event: DragEvent, row: TagTreeRow): void {
+		if (ondroptracks === undefined || !tagRowAcceptsDrop(row)) return;
+		// WKWebView rule: accept on the in-app drag state, never on dataTransfer.types.
+		if (!acceptTrackDragOver(event)) return;
+		dropTargetName = row.name;
+	}
+
+	function _onTrackDragLeave(row: TagTreeRow): void {
+		if (tagRowAcceptsDrop(row) && dropTargetName === row.name) dropTargetName = null;
+	}
+
+	function _onTrackDrop(event: DragEvent, row: TagTreeRow): void {
+		if (ondroptracks === undefined || !tagRowAcceptsDrop(row)) return;
+		event.preventDefault();
+		dropTargetName = null;
+		const ids = droppedStableIds(event);
+		endTrackDrag();
+		if (ids.length === 0) return;
+		ondroptracks(row.name, ids);
+	}
 
 	function _rowKeydown(event: KeyboardEvent, tag: { name: string; track_count: number }): void {
 		if (event.key === 'Enter') onselect(taglistNode(tag));
@@ -44,11 +73,15 @@
 			<div
 				class="row"
 				class:selected={selectedId === taglistPaneId(tag.name)}
+				class:drop-target={dropTargetName === tag.name}
 				data-testid="taglist-row"
 				role="button"
 				tabindex="0"
 				onclick={() => onselect(taglistNode(tag))}
 				onkeydown={(e) => _rowKeydown(e, tag)}
+				ondragover={(e) => _onTrackDragOver(e, { kind: 'tag', name: tag.name })}
+				ondragleave={() => _onTrackDragLeave({ kind: 'tag', name: tag.name })}
+				ondrop={(e) => _onTrackDrop(e, { kind: 'tag', name: tag.name })}
 			>
 				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 					<path d="M2 4h12v2H2zM2 8h8v2H2zM2 12h10v2H2z" fill="currentColor" />
@@ -101,6 +134,9 @@
 	}
 	.row.selected {
 		background: var(--rb-select);
+	}
+	.row.drop-target {
+		box-shadow: inset 0 0 0 1px var(--rb-accent);
 	}
 	.row svg {
 		flex: none;

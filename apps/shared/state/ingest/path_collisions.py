@@ -23,6 +23,20 @@ class PathCollisionError(ValueError):
         super().__init__(f"path collision: distinct files share the same normalized path key: {joined}")
 
 
+class AmbiguousAnalysisPathError(PathCollisionError):
+    """Two or more tracks resolve to one normalized audio path for native analysis."""
+
+    def __init__(self, stable_ids: Sequence[str], paths: Sequence[str]) -> None:
+        self.stable_ids = sorted(dict.fromkeys(stable_ids))
+        super().__init__(paths)
+        self.args = (
+            "ambiguous analysis path: tracks "
+            + ", ".join(self.stable_ids)
+            + " resolve to one normalized audio path: "
+            + "; ".join(self.paths),
+        )
+
+
 def path_collision_key(raw_path: str) -> str:
     """NFC-normalize then case-fold for collision grouping only."""
     return unicodedata.normalize("NFC", raw_path).casefold()
@@ -49,6 +63,26 @@ def assert_no_path_collisions(paths: Iterable[str]) -> None:
         raise PathCollisionError(unique)
 
 
+def assert_unambiguous_analysis_paths(targets: Iterable[tuple[str, str | None]]) -> None:
+    """Raise :class:`AmbiguousAnalysisPathError` when distinct tracks share one path key.
+
+    ``targets`` is ``(stable_id, resolved_path)`` pairs. Unlike ingest, a
+    shared physical file is still refused: one file analyzed for two tracks
+    cannot say whose analysis it is. Missing and streaming paths are skipped.
+    """
+    by_key: dict[str, dict[str, list[str]]] = {}
+    for stable_id, raw in targets:
+        if not raw or is_streaming_path(raw):
+            continue
+        by_key.setdefault(path_collision_key(raw), {}).setdefault(stable_id, []).append(raw)
+
+    for key in sorted(by_key):
+        group = by_key[key]
+        if len(group) < 2:
+            continue
+        raise AmbiguousAnalysisPathError(list(group), [path for paths in group.values() for path in paths])
+
+
 def _file_identity(path_str: str) -> tuple[int, int] | None:
     try:
         stat = os.stat(path_str)
@@ -73,8 +107,10 @@ def _all_same_physical_file(paths: Sequence[str]) -> bool:
 
 
 __all__ = [
+    "AmbiguousAnalysisPathError",
     "PathCollisionError",
     "assert_no_path_collisions",
+    "assert_unambiguous_analysis_paths",
     "is_streaming_path",
     "path_collision_key",
     "paths_are_same_physical_file",

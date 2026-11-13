@@ -13,7 +13,8 @@ const sampleStats = {
 	bpm: { min: 122, median: 126, max: 128, missing: 1 },
 	energy: { min: 5, max: 8, missing: 2 },
 	keys: { distinct: 9, missing: 1 },
-	unanalysed: 3
+	unanalysed: 3,
+	unavailable: 0
 };
 
 const meta = {
@@ -54,7 +55,8 @@ export const EmptyPlaylist: Story = {
 			bpm: { min: null, median: null, max: null, missing: 0 },
 			energy: { min: null, max: null, missing: 0 },
 			keys: { distinct: 0, missing: 0 },
-			unanalysed: 0
+			unanalysed: 0,
+			unavailable: 0
 		}
 	}
 };

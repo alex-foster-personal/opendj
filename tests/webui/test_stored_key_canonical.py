@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import TrackFilter
+from apps.webui.server.routes.tracks import parse_key_query
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 ISO = "2026-10-24T10:00:00.000000Z"
@@ -92,5 +93,5 @@ def test_listing_serves_one_notation(client: TestClient) -> None:
 
 def test_key_filter_matches_any_notation(state_path: Path) -> None:
     """[if] ?key=Am misses rows stored as 8A or 1m [then] the filter lies, [else stop]."""
-    page = SqliteBackend(state_path).list_tracks(TrackFilter(key="Am", limit=50))
+    page = SqliteBackend(state_path).list_tracks(TrackFilter(keys=parse_key_query(["Am"]), limit=50))
     assert sorted(t.stable_id for t in page.items) == ["sid-camelot", "sid-musical", "sid-openkey"]

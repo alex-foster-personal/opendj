@@ -1,12 +1,13 @@
 """Command-line surface for DJ Copilot (Phase 13).
 
-Subcommands: ``play-it`` + ``suggest-next``. Exit codes 0/1/2.
+Subcommands: ``play-it``, ``suggest-next``, ``find-similar``. Exit codes 0/1/2.
 No network, no live-DB writes.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -21,7 +22,7 @@ from .pinning import PinUnsatisfiableError
 from .play_it import InsufficientDataError, play_it
 from .session_context import PlayedTrack, SessionContext, load_session_context
 from .set_goal import SetGoal
-from .suggester import suggest_next
+from .suggester import FindSimilarMode, find_similar_tracks, suggest_next
 
 
 def _load_tracks_from_json(path: Path) -> list[TrackFeature]:
@@ -71,6 +72,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sn.add_argument("--session-json", type=Path, default=None)
     sn.add_argument("--explain", action="store_true")
+
+    fs = sub.add_parser("find-similar")
+    fs.add_argument("--stable-id", required=True)
+    fs.add_argument(
+        "--mode",
+        choices=["generic", "specific", "niche"],
+        default="specific",
+    )
+    fs.add_argument("--library-json", type=Path, required=True)
+    fs.add_argument("--limit", type=int, default=20)
     return p
 
 
@@ -154,6 +165,56 @@ def _cmd_play_it(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _cmd_find_similar(args: argparse.Namespace) -> int:
+    try:
+        library = _load_tracks_from_json(args.library_json)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        print(f"error: failed to load library-json: {exc}", file=sys.stderr)
+        return 2
+
+    mode: FindSimilarMode = args.mode
+    try:
+        if mode == "specific":
+            conn = sqlite3.connect(":memory:")
+            try:
+                doc = find_similar_tracks(
+                    conn,
+                    stable_id=args.stable_id,
+                    mode=mode,
+                    limit=args.limit,
+                    library=library,
+                )
+            finally:
+                conn.close()
+        else:
+            from apps.shared.state import db as state_db
+
+            conn = state_db.open_ro(args.db)
+            try:
+                doc = find_similar_tracks(
+                    conn,
+                    stable_id=args.stable_id,
+                    mode=mode,
+                    limit=args.limit,
+                )
+            finally:
+                conn.close()
+    except InsufficientDataError as exc:
+        print(f"pre-flight failed: {exc}", file=sys.stderr)
+        return 1
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"mode={doc['mode']} provider={doc['provider']} track={doc['stable_id']}")
+    for i, row in enumerate(doc["candidates"]):
+        rationales = row.get("rationale_numbers") or {}
+        nums = ",".join(f"{k}={v:.3f}" for k, v in sorted(rationales.items()))
+        suffix = f"  ({nums})" if nums else ""
+        print(f"{i:>3}  {row['stable_id']:<40}  {row['score']:>6.3f}{suffix}")
+    return 0
+
+
 def _cmd_suggest_next(args: argparse.Namespace) -> int:
     try:
         library = _load_tracks_from_json(args.library_json)
@@ -229,6 +290,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_play_it(args)
     if args.cmd == "suggest-next":
         return _cmd_suggest_next(args)
+    if args.cmd == "find-similar":
+        return _cmd_find_similar(args)
     parser.error(f"unknown command {args.cmd!r}")
     return 2
 

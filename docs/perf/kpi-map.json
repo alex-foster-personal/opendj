@@ -11,7 +11,7 @@
         "xruns_per_playing_hour",
         "silent_while_playing_events_per_hour"
       ],
-      "missing_kpi": "xruns_per_playing_hour, and silent_while_playing_events_per_hour now that PR #856 detects both a silent output and a stalled presentation clock. The sentinel proves the INSTRUMENT is quiet at idle; it does not yet report the RATE during a real set, which is the number S1 is about. Both are required: xruns alone lets a silent-but-not-xrunning glitch report PASS, which is the audible-integrity gap PR #856 exists to close.",
+      "missing_kpi": "Instrumented, not yet captured: xruns_per_playing_hour and silent_while_playing_events_per_hour (PR #856 detects both a silent output and a stalled presentation clock). uv run python -m scripts.perf.capture_s1_agg --samples <client-samples.jsonl> --dry-run turns stored client performance samples into both rows: xruns summed over PERFPROBE-01 windows where a deck plays per playing hour (withheld when the frame probe was off), and silent-while-playing plus presentation-stalled rising edges per playing hour, both withheld under 10 playing minutes. No ledger row exists until a real set is captured. The sentinel proves the INSTRUMENT is quiet at idle; only the aggregator reports the RATE during a real set, which is the number S1 is about. Both are required: xruns alone lets a silent-but-not-xrunning glitch report PASS, which is the audible-integrity gap PR #856 exists to close.",
       "lower_is_better": true,
       "budget": 0,
       "acceptable": 0,
@@ -334,7 +334,7 @@
       "kpis": [
         "row_select_prefetch_ready_s"
       ],
-      "missing_kpi": "Only a hit or miss flag is recorded, with no duration, so the prefetch can be losing its race every time and still report hits.",
+      "missing_kpi": "Instrumented, not yet captured: a row-select prefetch writes, sampled 1 in 5, a library-prefetch-anlz (fetch_ms, ok) or library-prefetch-audio (fetch_ms, mib) perf event (recordAnlzPrefetchSampled, recordAudioPrefetchSampled in library-perf.ts), and uv run python -m scripts.perf.capture_s10_agg --samples <perf-event-snapshots.json> turns ring snapshots into the p95 ready-time ledger row in seconds, with per-kind p95 and the ok=0 error rate in the note (withheld under 10 ready rows). No ledger row exists until a real session is captured.",
       "lower_is_better": true,
       "budget": 1,
       "acceptable": 2,

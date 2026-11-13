@@ -9,6 +9,7 @@
  *     [if] a registered entry is missing any field [then ⛔️]
  *     [if] waveform, list, phase-scope or phase-meter is absent [then ⛔️]
  *     [if] default, mono-dev or light is absent from skin packs [then ⛔️]
+ *     [if] a UI_SKIN_CHOICES id (green-room, practice-ddj-flx4) has no pack row [then ⛔️]
  *   ? parsePerfViewId refuses unknown ids.
  *     [if] parsePerfViewId('grid') returns instead of throwing [then ⛔️]
  *   ? Waveform is the only view that mounts the default scrolling stack.
@@ -49,8 +50,8 @@ export type PerfViewRegistryEntry = Readonly<{
 /** Live perf_view values; the registry is the allow list. */
 export type PerfViewId = 'waveform' | 'list' | 'phase-scope' | 'phase-meter';
 
-/** First-wave skin packs (Macintosh and other pre-mades stay on #325). */
-export type RegisteredSkinPackId = 'default' | 'mono-dev' | 'light';
+/** Every ui_skin has a pack row (Macintosh and other pre-mades stay on #325). */
+export type RegisteredSkinPackId = UiSkin;
 
 export type SkinPackLayoutSlot = 'performance-root' | 'library-surface';
 
@@ -153,6 +154,22 @@ export const SKIN_PACK_REGISTRY: Readonly<Record<RegisteredSkinPackId, SkinPackR
 		layoutSlots: ['performance-root', 'library-surface'],
 		flags: { setsDataSkinAttribute: true, declaresWaveformChrome: true },
 		layout: SKIN_LAYOUT.light
+	},
+	'green-room': {
+		id: 'green-room',
+		title: 'Green Room',
+		cssPack: 'green-room',
+		layoutSlots: ['performance-root', 'library-surface'],
+		flags: { setsDataSkinAttribute: true, declaresWaveformChrome: true },
+		layout: SKIN_LAYOUT['green-room']
+	},
+	'practice-ddj-flx4': {
+		id: 'practice-ddj-flx4',
+		title: 'Practice deck',
+		cssPack: 'practice-ddj-flx4',
+		layoutSlots: ['performance-root', 'library-surface'],
+		flags: { setsDataSkinAttribute: true, declaresWaveformChrome: true },
+		layout: SKIN_LAYOUT['practice-ddj-flx4']
 	}
 };
 

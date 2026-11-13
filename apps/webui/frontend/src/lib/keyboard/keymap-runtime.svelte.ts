@@ -15,7 +15,8 @@ import { isNativeInteractiveTarget } from '$lib/rb/performance-hotkeys-target';
 import { runPerformanceCommandFromUi, uiPrefs } from '$lib/rb/performance-ipc.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
-import { keymapCommandTarget } from './keymap-commands';
+import { installKeyboardAgentHandle } from './keyboard-agent-handle';
+import { KEYMAP_COMMANDS, keymapCommandTarget } from './keymap-commands';
 import {
 	chordFromEvent,
 	effectiveKeymap,
@@ -23,6 +24,7 @@ import {
 	keymapOwnsKeydown,
 	legacyPerformanceChordsActive,
 	resolveKeymapKeydown,
+	type Keymap,
 	type KeymapOverrides
 } from './keymap';
 import type { KeymapPresetId } from './presets/index';
@@ -77,10 +79,11 @@ function runMixerDelta(
 
 const silentNotify: Notify = () => {};
 
-function runKeymapTarget(
+/** Run one keymap command's target, as its chord press does; legacy targets need `legacy`. */
+export function runKeymapTarget(
 	commandId: string,
 	pressT0Ms: number,
-	legacy: PerformanceShortcutHandlers
+	legacy: PerformanceShortcutHandlers | null
 ): void {
 	const target = keymapCommandTarget(commandId);
 	if (target === null) return;
@@ -102,6 +105,7 @@ function runKeymapTarget(
 		return;
 	}
 	if (target.kind === 'legacy') {
+		if (legacy === null) throw new Error(`keymap command ${commandId} needs shortcut handlers`);
 		switch (target.name) {
 			case 'transport.toggle':
 				legacy.toggleRecentPlay(pressT0Ms, false);
@@ -214,12 +218,35 @@ export function keyboardKeymapState(): KeyboardKeymapState {
 	return keyboardState;
 }
 
+/** The keymap a chord press resolves against right now (preset plus overrides). */
+export function activeKeyboardKeymap(): Keymap {
+	return effectiveKeymap(getKeymapPreset(keyboardState.preset), keyboardState.overrides);
+}
+
 export function installKeyboardKeymapRuntime(): () => void {
 	refreshKeyboardPrefFromServer();
 	const off = subscribeKind('ui_prefs', () => {
 		void hydrateKeyboardPrefFromDisk();
 	});
-	return off;
+	const uninstallAgentHandle = installKeyboardAgentHandle({
+		commands: KEYMAP_COMMANDS,
+		activeKeymap: activeKeyboardKeymap,
+		runKeymapTarget
+	});
+	return () => {
+		off();
+		uninstallAgentHandle();
+	};
+}
+
+/**
+ * #14100: plain Space and plain Enter activate a focused native control (button, link, select,
+ * checkbox), so no keymap binding may take them there. Modifier chords (Cmd+Enter) still route.
+ */
+const NATIVE_ACTIVATION_CHORDS: ReadonlySet<string> = new Set(['Space', 'Enter']);
+
+function nativeControlOwnsChord(chord: string | null, target: EventTarget | null): boolean {
+	return chord !== null && NATIVE_ACTIVATION_CHORDS.has(chord) && isNativeInteractiveTarget(target);
 }
 
 export function handleKeymapKeydown(
@@ -228,19 +255,18 @@ export function handleKeymapKeydown(
 ): boolean {
 	if (isSettingsOpen() || isTextEntryTarget(e.target)) return false;
 	const chord = chordFromEvent(e);
-	if (chord === 'Space' && isNativeInteractiveTarget(e.target)) return false;
+	if (nativeControlOwnsChord(chord, e.target)) return false;
 
 	const state = keyboardState;
 	if (state.preset === 'opendj' && Object.keys(state.overrides).length === 0) {
 		return false;
 	}
 
-	const keymap = effectiveKeymap(getKeymapPreset(state.preset), state.overrides);
+	const keymap = activeKeyboardKeymap();
 	let commandId: string | null = null;
 
 	if (state.preset === 'opendj') {
-		const chordHit = chordFromEvent(e);
-		if (chordHit === null || !keymapOwnsKeydown(state, chordHit)) return false;
+		if (chord === null || !keymapOwnsKeydown(state, chord)) return false;
 		commandId = resolveKeymapKeydown(keymap, e, { activeScopes: ['global', 'deck'] });
 	} else {
 		commandId = resolveKeymapKeydown(keymap, e, { activeScopes: ['global', 'deck'] });

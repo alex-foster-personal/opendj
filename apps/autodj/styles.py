@@ -60,8 +60,8 @@ VOLUME_LANES = ("crossfade", "overlap", "fade_in_fade_out")
 #: outgoing deck held in its lull until then (lull_then_drop, D13).
 SWAP_POSITIONS = ("center", "end", "phrase")
 #: Filter primitives: which deck is swept and which way (glossary: low-pass in, high-pass out, ...). ``hp_out``
-#: sweeps only the outgoing deck (filter_sweep).
-FILTER_MOVES = ("lp_in_hp_out", "lp_both", "hp_both", "hp_out")
+#: sweeps only the outgoing deck (filter_sweep); ``lp_out`` closes only the outgoing low-pass, incoming left open.
+FILTER_MOVES = ("lp_in_hp_out", "lp_both", "hp_both", "hp_out", "lp_out")
 #: Stem moves: a parameter, but no style with one is available until stems are part of plan execution.
 STEM_MOVES = ("vocals_swap",)
 
@@ -117,6 +117,18 @@ ECHO_TAIL_BARS = 1
 NOISE_LEVEL = 0.8
 NOISE_SWEEP = 0.7
 STYLE_TEMPO_MODES = ("sync_to_out", "none")
+
+
+#: #10148, spec 04 decision 1: a blend glides to the incoming tempo from this gap (percent) up to Beat Sync's reach.
+GLIDE_MIN_GAP_PCT = 0.5
+
+
+def plan_tempo_mode(style: Style, bars: int, gap_pct: float | None, reach_pct: float) -> str:
+    """The tempo mode a style's plan carries: its own on unsynced styles, cuts and 1-bar plans, glide_to_in on a blend
+    whose gap is from GLIDE_MIN_GAP_PCT to the reach, else sync_to_out."""
+    if style.tempo_mode != "sync_to_out" or bars <= 1 or not style.needs_beatmatch or gap_pct is None:
+        return style.tempo_mode
+    return "glide_to_in" if GLIDE_MIN_GAP_PCT <= gap_pct <= reach_pct else "sync_to_out"
 
 
 def exit_bar(bars: int) -> float:
@@ -274,6 +286,24 @@ def _cut(bars: int, out_deck: int, in_deck: int, _hit_bar: float | None = None, 
         _set(0, in_deck, "eq_low", FLAT),
         _do(0, in_deck, "play"),
         _set(0, out_deck, "fader", KILL),
+        *_handover(bars, out_deck, in_deck),
+    ]
+
+
+#: #10146, spec 05 section 3: the unsynced fallback offered when a grid is untrusted is this many bars at nominal BPM
+#: (mimicked: Spotify Mix's short gridless fade).
+FALLBACK_CROSSFADE_BARS = 2
+
+
+def short_crossfade_events(out_deck: int, in_deck: int) -> list[Event]:
+    """#10146: a 2-bar equal-power fader crossfade with the lows left flat, for a pair whose grid is not trusted."""
+    bars = FALLBACK_CROSSFADE_BARS
+    steps = [(k + 1) / CURVE_SEGMENTS for k in range(CURVE_SEGMENTS)]
+    return [
+        _set(0, in_deck, "fader", KILL),
+        _do(0, in_deck, "play"),
+        *_chain(in_deck, "fader", 0, bars, [_gain(DEFAULT_FADE_SHAPE, t, rising=True) for t in steps]),
+        *_chain(out_deck, "fader", 0, bars, [_gain(DEFAULT_FADE_SHAPE, t, rising=False) for t in steps]),
         *_handover(bars, out_deck, in_deck),
     ]
 
@@ -732,6 +762,7 @@ _FILTER_ENDS: dict[str, tuple[float | None, float | None]] = {
     "lp_both": (LOWPASS_SWEEP, LOWPASS_SWEEP),
     "hp_both": (HIGHPASS_SWEEP, HIGHPASS_SWEEP),
     "hp_out": (None, HIGHPASS_SWEEP),
+    "lp_out": (None, LOWPASS_SWEEP),
 }
 
 

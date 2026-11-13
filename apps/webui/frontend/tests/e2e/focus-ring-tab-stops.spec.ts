@@ -5,10 +5,17 @@
  *   [if] Tab never reaches the top bar, a play button, a knob, the crossfader or a library row [then ⛔️]
  *   [if] any of those stops has computed outline-style none or under 2px [then ⛔️]
  *   [if] a mouse click on a knob or play button leaves a visible ring [then ⛔️]
+ *   [if] Tab focuses a selector-registered control while the selector ring is on that node [then ⛔️ if the ring hides the focus outline]
+ *   [if] a mouse click focuses a registered control while the selector ring is shown [then ⛔️ if a keyboard ring appears or selection vanishes]
  */
 import { expect, test, type Page } from '@playwright/test';
 
 import { waitForPerformanceIpc } from './support/performance-ready';
+import {
+	assertFocusAndSelectorRingsDistinguishable,
+	readFocusSelectorCoexistence,
+	syncSelectorRingToNodeId
+} from './support/selector-focus-ring';
 
 type Stop = { target: string | null; outlineStyle: string; outlineWidth: string };
 
@@ -64,6 +71,62 @@ test('Tab shows a 2px focus ring on the top bar, play, knob, crossfader and a li
 		expect(stop.outlineStyle, `${name} has no visible focus ring`).not.toBe('none');
 		expect(parseFloat(stop.outlineWidth), `${name} ring under 2px`).toBeGreaterThanOrEqual(2);
 	}
+});
+
+test('[if] Tab focuses a selector-registered knob [then] the focus-visible outline stays visible beside the selector ring, [else stop]', async ({
+	page
+}) => {
+	test.setTimeout(240_000);
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
+	await loadDeckOne(page);
+	await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+	let knobSelNodeId: string | null = null;
+	for (let i = 0; i < 600; i++) {
+		await page.keyboard.press('Tab');
+		const hit = await page.evaluate(() => {
+			const el = document.activeElement as HTMLElement | null;
+			if (el === null || !el.matches('.knob')) return null;
+			return el.closest('[data-sel-node]')?.getAttribute('data-sel-node') ?? null;
+		});
+		if (hit !== null) {
+			knobSelNodeId = hit;
+			break;
+		}
+	}
+	expect(knobSelNodeId, 'Tab never reached a selector-registered knob').toBeTruthy();
+
+	await syncSelectorRingToNodeId(page, knobSelNodeId as string);
+	await expect(page.getByTestId('selector-ring')).toBeVisible();
+
+	const snapshot = await readFocusSelectorCoexistence(page);
+	assertFocusAndSelectorRingsDistinguishable(snapshot, 'tabbed knob');
+});
+
+test('[if] a mouse click focuses a selector-registered knob [then] no focus-visible ring shows but the selector ring stays, [else stop]', async ({
+	page
+}) => {
+	await page.goto('/performance');
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({ timeout: 30_000 });
+	await waitForPerformanceIpc(page);
+
+	const knob = page.locator('.knob').first();
+	await knob.click();
+
+	const selNodeId = await page.evaluate(() => {
+		const el = document.activeElement as HTMLElement;
+		return el.closest('[data-sel-node]')?.getAttribute('data-sel-node') ?? null;
+	});
+	expect(selNodeId, 'clicked knob sits under a selector node').toBeTruthy();
+	await syncSelectorRingToNodeId(page, selNodeId as string);
+	await expect(page.getByTestId('selector-ring')).toBeVisible();
+
+	const snapshot = await readFocusSelectorCoexistence(page);
+	expect(snapshot.focus?.focusVisible).toBe(false);
+	expect(snapshot.focus?.outlineStyle).toBe('none');
+	expect(snapshot.selectorRing).not.toBeNull();
 });
 
 test('a mouse click on a knob does not show the keyboard focus ring', async ({ page }) => {

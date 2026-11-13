@@ -4,6 +4,8 @@
 playlist folder tree, and refuses a tree rekordbox XML cannot express before any byte is
 written. ``LibraryExport.iter_bytes`` then streams tracks and playlist entries from that
 snapshot through ``writer.iter_dj_playlists_xml``, so 10k tracks never sit in memory.
+``plan_playlist_export`` does the same for one playlist (LIBORG-9751): its live tracks once
+each in COLLECTION, and ROOT holding only that playlist with every entry in order.
 
 - TrackID is ``tracks.rowid``.
 - A deleted track (``deleted_at`` set, LIBM-140) is in neither COLLECTION nor any playlist;
@@ -97,11 +99,45 @@ _SQL_ITER_EXPORTABLE_TRACKS = (
     + "t.file_path GLOB 'http://*' OR t.file_path GLOB 'https://*'"
     + ") ORDER BY t.rowid"
 )
+# LIBORG-9751: the same reads narrowed to one playlist's live members.
+_SQL_PLAYLIST_NODE = "SELECT name, kind FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL"
+_SQL_COUNT_PLAYLIST_TRACKS = (
+    "SELECT COUNT(*), COUNT(DISTINCT t.rowid) FROM playlist_memberships m "
+    + "JOIN tracks t ON t.stable_id = m.stable_id WHERE m.playlist_id = ? AND "
+    + "m.deleted_at IS NULL AND t.deleted_at IS NULL AND "
+    + "COALESCE(t.file_path, '') <> '' AND NOT ("
+    + "t.file_path GLOB 'spotify:*' OR t.file_path GLOB 'tidal:*' OR "
+    + "t.file_path GLOB 'http://*' OR t.file_path GLOB 'https://*'"
+    + ")"
+)
+_SQL_COUNT_PLAYLIST_SKIPPED = (
+    "SELECT COALESCE(SUM(COALESCE(t.file_path, '') = ''), 0), COALESCE(SUM("
+    + "t.file_path GLOB 'spotify:*' OR t.file_path GLOB 'tidal:*' OR "
+    + "t.file_path GLOB 'http://*' OR t.file_path GLOB 'https://*'"
+    + "), 0) FROM playlist_memberships m JOIN tracks t ON t.stable_id = m.stable_id "
+    + "WHERE m.playlist_id = ? AND m.deleted_at IS NULL AND t.deleted_at IS NULL"
+)
+_SQL_ITER_PLAYLIST_TRACKS = (
+    "SELECT t.rowid, t.stable_id, t.file_path, t.title, t.artists_json, t.album, t.duration_ms, "
+    + "bpm.value_json, k.value_json, r.value_json FROM tracks t "
+    + "LEFT JOIN track_fields bpm ON bpm.stable_id = t.stable_id AND bpm.field_name = 'bpm' "
+    + "LEFT JOIN track_fields k ON k.stable_id = t.stable_id AND k.field_name = 'key' "
+    + "LEFT JOIN track_fields r ON r.stable_id = t.stable_id AND r.field_name = 'rating' "
+    + "WHERE t.deleted_at IS NULL AND COALESCE(t.file_path, '') <> '' AND NOT ("
+    + "t.file_path GLOB 'spotify:*' OR t.file_path GLOB 'tidal:*' OR "
+    + "t.file_path GLOB 'http://*' OR t.file_path GLOB 'https://*'"
+    + ") AND t.stable_id IN (SELECT m.stable_id FROM playlist_memberships m "
+    + "WHERE m.playlist_id = ? AND m.deleted_at IS NULL) ORDER BY t.rowid"
+)
 _FETCH_BATCH = 500
 
 
 class ExportRefused(ValueError):
     """The library cannot be expressed as rekordbox XML."""
+
+
+class PlaylistNotFound(LookupError):
+    """No live playlist, folder or set has the requested id."""
 
 
 @dataclass(frozen=True)
@@ -119,7 +155,7 @@ class LibraryExport:
         try:
             yield from iter_dj_playlists_xml(
                 track_count=self.track_count,
-                tracks=_iter_tracks(self.conn, self.lane_fields),
+                tracks=_iter_tracks(self.conn, self.lane_fields, _SQL_ITER_EXPORTABLE_TRACKS, ()),
                 tree=self.tree,
                 entries_of=lambda key: _iter_entries(self.conn, key),
             )
@@ -149,6 +185,71 @@ def plan_library_export(conn: sqlite3.Connection, *, lane_fields: LaneFieldsReso
         conn.close()
         raise
     return LibraryExport(conn, int(track_count), tree, int(skipped), int(streaming), playlist_count, lane_fields)
+
+
+@dataclass(frozen=True)
+class PlaylistExport:
+    """One playlist as a rekordbox XML document: its tracks in COLLECTION, ROOT holding just it."""
+
+    conn: sqlite3.Connection
+    playlist_id: str
+    track_count: int
+    entry_count: int
+    tree: tuple[XmlNode, ...]
+    skipped_no_location: int
+    skipped_streaming: int
+    lane_fields: LaneFieldsResolver
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        """Stream the document; closes the connection when done or abandoned."""
+        try:
+            yield from iter_dj_playlists_xml(
+                track_count=self.track_count,
+                tracks=_iter_tracks(self.conn, self.lane_fields, _SQL_ITER_PLAYLIST_TRACKS, (self.playlist_id,)),
+                tree=self.tree,
+                entries_of=lambda key: _iter_entries(self.conn, key),
+            )
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        if self.conn.in_transaction:
+            self.conn.rollback()
+        self.conn.close()
+
+
+def plan_playlist_export(
+    conn: sqlite3.Connection, playlist_id: str, *, lane_fields: LaneFieldsResolver
+) -> PlaylistExport:
+    """Snapshot ``conn`` and plan one playlist's export (LIBORG-9751). Closes ``conn`` on refusal.
+
+    Each track is in COLLECTION once, however often the playlist holds it; the playlist's
+    Entries keep every position in order. Tracks with no path or a streaming URI are counted.
+    """
+    try:
+        conn.execute("BEGIN")
+        name = _exportable_playlist_name(conn, playlist_id)
+        entry_count, track_count = conn.execute(_SQL_COUNT_PLAYLIST_TRACKS, (playlist_id,)).fetchone()
+        no_location, streaming = conn.execute(_SQL_COUNT_PLAYLIST_SKIPPED, (playlist_id,)).fetchone()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        conn.close()
+        raise
+    tree = (XmlNode(key=playlist_id, name=name, is_folder=False, entry_count=int(entry_count)),)
+    return PlaylistExport(
+        conn, playlist_id, int(track_count), int(entry_count), tree, int(no_location), int(streaming), lane_fields
+    )
+
+
+def _exportable_playlist_name(conn: sqlite3.Connection, playlist_id: str) -> str:
+    node = conn.execute(_SQL_PLAYLIST_NODE, (playlist_id,)).fetchone()
+    if node is None:
+        raise PlaylistNotFound(f"no playlist {playlist_id!r}")
+    name, kind = node
+    if kind != "playlist":
+        raise ExportRefused(f"{playlist_id!r} is a {kind}, not a playlist; only a playlist exports on its own")
+    return str(name)
 
 
 # -----------------------------------------------------------------------------
@@ -213,8 +314,10 @@ def _iter_entries(conn: sqlite3.Connection, playlist_id: str) -> Iterator[int]:
             yield int(rowid)
 
 
-def _iter_tracks(conn: sqlite3.Connection, lane_fields: LaneFieldsResolver) -> Iterator[XmlTrack]:
-    cursor = conn.execute(_SQL_ITER_EXPORTABLE_TRACKS)
+def _iter_tracks(
+    conn: sqlite3.Connection, lane_fields: LaneFieldsResolver, sql: str, params: tuple[str, ...]
+) -> Iterator[XmlTrack]:
+    cursor = conn.execute(sql, params)
     while batch := cursor.fetchmany(_FETCH_BATCH):
         resolved = lane_fields(conn, [row[1] for row in batch])
         for row in batch:

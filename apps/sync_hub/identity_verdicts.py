@@ -47,6 +47,7 @@ from apps.sync_hub.sync_set import (
     identity_keys,
     identity_remap_from_rows,
     identity_row_select,
+    library_has_identity_keys,
 )
 
 # ----- config -------------------------------------------------------------------
@@ -85,8 +86,12 @@ class IdentityLoserVerdicts:
         self._library_losers: frozenset[str] | None = None
         self._select: str | None = None
         self._hash_columns: tuple[str, ...] | None = None
+        self._identity_elections = library_has_identity_keys(conn)
 
     def is_loser(self, stable_id: str) -> bool:
+        if not self._identity_elections:
+            self._verdicts.setdefault(stable_id, False)
+            return False
         if self._library_losers is not None:
             return stable_id in self._library_losers
         if stable_id in self._verdicts:
@@ -108,6 +113,8 @@ class IdentityLoserVerdicts:
         instead of deciding the first rows one component at a time: a
         10,042-member bundle asks for every one of its tracks at once.
         """
+        if not self._identity_elections:
+            return
         if self._library_losers is None and len(self._verdicts) + count >= CFG.ELECT_LIBRARY_AFTER_VERDICTS:
             self._library_losers = frozenset(effective_identity_remap(self._conn))
 

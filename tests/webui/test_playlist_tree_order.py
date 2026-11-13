@@ -235,3 +235,67 @@ def test_seq_for_offsets_rekordbox_seq_after_user_order() -> None:
         {"u1": 5, "rb1": 0, "rb2": 1, "own": None},
     )
     assert out == {"u1": 0, "rb1": 1, "rb2": 2, "own": None}
+
+
+@pytest.fixture
+def seeded_track(db_path: Path, tmp_path: Path) -> Path:
+    """One library track an M3U import can match, seeded before the app opens."""
+    music = tmp_path / "music"
+    conn = state_db.open_rw(db_path)
+    bus = EventBus()
+    try:
+        writer = StateWriter(conn, bus=bus, actor="test-seed")
+        try:
+            writer.upsert_track(
+                stable_id="t-001", stable_id_tier="inferred", title="One", artists=["Artist"],
+                album=None, isrc=None, duration_ms=180_000, file_path=str(music / "one.mp3"),
+            )
+        finally:
+            writer.close()
+    finally:
+        bus.close()
+        conn.close()
+    return music
+
+
+def test_imported_playlist_left_out_follows_the_stored_order(
+    seeded_track: Path, client: TestClient, db_path: Path
+) -> None:
+    """[if] stored order omits an imported playlist [then] it falls in after the order and the file is untouched."""
+    a = _create(client, "A")
+    b = _create(client, "B")
+    assert client.put("/api/v1/playlist-tree/order", json={"order": [b, a]}).status_code == 200
+    r = client.post(
+        "/api/v1/playlists/import",
+        json={"name": "Imported", "m3u": "#EXTM3U\none.mp3\n", "base_dir": str(seeded_track)},
+    )
+    assert r.status_code == 201, r.text
+    assert _seqs(client) == {"B": 0, "A": 1, "Imported": None}
+    assert tree_order.load_order(tree_order.path_for(db_path.parent.parent)) == [b, a]
+
+
+def test_undeleted_playlist_returns_to_its_stored_slot(client: TestClient, db_path: Path) -> None:
+    """[if] a hidden (deleted) playlist returns to the tree [then] it takes back its stored slot."""
+    a = _create(client, "A")
+    b = _create(client, "B")
+    c = _create(client, "C")
+    assert client.put("/api/v1/playlist-tree/order", json={"order": [b, a, c]}).status_code == 200
+    etag = client.get(f"/api/v1/playlists/{b}").headers["ETag"]
+    assert client.delete(f"/api/v1/playlists/{b}", headers={"If-Match": etag}).status_code == 204
+    assert _seqs(client) == {"A": 1, "C": 2}
+    deleted_etag = next(row["etag"] for row in client.get("/api/v1/playlists/deleted").json() if row["playlist_id"] == b)
+    assert client.post(f"/api/v1/playlists/{b}:undelete", headers={"If-Match": deleted_etag}).status_code == 200
+    assert _seqs(client) == {"B": 0, "A": 1, "C": 2}
+    assert tree_order.load_order(tree_order.path_for(db_path.parent.parent)) == [b, a, c]
+
+
+def test_unknown_id_in_order_keeps_the_stored_order(client: TestClient, db_path: Path) -> None:
+    """[if] an order request contains an unknown id [then] 422 and the stored order and seqs stay put."""
+    a = _create(client, "A")
+    b = _create(client, "B")
+    assert client.put("/api/v1/playlist-tree/order", json={"order": [b, a]}).status_code == 200
+    r = client.put("/api/v1/playlist-tree/order", json={"order": [a, "pl-ghost", b]})
+    assert r.status_code == 422
+    assert "unknown playlist ids: pl-ghost" in r.json()["detail"]["message"]
+    assert tree_order.load_order(tree_order.path_for(db_path.parent.parent)) == [b, a]
+    assert _seqs(client) == {"B": 0, "A": 1}

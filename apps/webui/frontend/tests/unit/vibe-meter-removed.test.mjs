@@ -40,7 +40,7 @@ test('R10 mutation control: the old meter markup is detected', () => {
 
 test('R10: both thumbs render in the TopBar centre slot and fire their existing handlers', async () => {
 	const topbar = read('lib/components/rb/TopBar.svelte');
-	assert.match(topbar, /<div class="thumbs-slot topbar-slot-thumbs">\s*<FeedbackThumbs \/>/);
+	assert.match(topbar, /<div\s+class="thumbs-slot topbar-slot-thumbs"[^>]*>\s*<FeedbackThumbs \/>/);
 	const { render } = await import('svelte/server');
 	const html = render(ssr.TopBarThumbs, {}).body;
 	assert.match(html, /aria-label="thumbs down"/);

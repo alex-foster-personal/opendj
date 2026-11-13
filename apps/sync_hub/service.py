@@ -52,6 +52,7 @@ from fastapi import APIRouter
 from apps.sync_hub.service_billing import router as billing_router
 from apps.sync_hub.service_handshake import router as handshake_router
 from apps.sync_hub.service_lyrics_asr_assets import router as lyrics_asr_assets_router
+from apps.sync_hub.service_lyrics_pair_assets import router as lyrics_pair_assets_router
 from apps.sync_hub.service_models import (
     DigestResponse,
     EnrollRequest,
@@ -79,6 +80,7 @@ from apps.sync_hub.service_wiring import MAX_PULL_LIMIT
 router = APIRouter(prefix="/sync", tags=["sync"])
 router.include_router(stem_assets_router)
 router.include_router(lyrics_asr_assets_router)
+router.include_router(lyrics_pair_assets_router)
 router.include_router(billing_router)
 router.include_router(plugins_router)
 router.include_router(handshake_router)

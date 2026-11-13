@@ -6,6 +6,7 @@
  *  - if vocalsRefusalCopy returns a snake_case token then the toast leaks an internal category
  *  - if cached_demucs is an error toast or skips refresh then existing vocals look like a failure
  *  - if an unknown category is not logged with console.error then server drift goes unseen
+ *  - if status preflight (#13329) maps regions to completed toast while missing_file stays error
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -103,6 +104,33 @@ test('vocalsStatusHasRegions is true only when regions are non-empty', () => {
 	);
 	assert.equal(mod.vocalsStatusHasRegions({ status: 'not_analyzed' }), false);
 	assert.equal(mod.vocalsStatusHasRegions({ status: 'no_vocals', fps: 10, regions: [] }), false);
+});
+
+test('status with regions yields completed outcome, unlike genuine refusal (#13329)', () => {
+	const vocals = {
+		status: 'demucs',
+		fps: 10,
+		regions: [{ start_s: 0, end_s: 1, intensity: 1 }]
+	};
+	const result = mod.vocalsAnalyzeResultFromVocalStatus('track-a', vocals);
+	assert.ok(result);
+	assert.equal(result.refused['track-a'], 'cached_demucs');
+	const completed = mod.vocalsAnalyzeOutcome('track-a', result);
+	assert.equal(completed.toastKind, 'info');
+	assert.equal(completed.refresh, true);
+	assert.equal(completed.message, 'Vocals already analyzed');
+	assert.equal(completed.category, 'cached_demucs');
+	assert.doesNotMatch(completed.message, SNAKE);
+	const refused = mod.vocalsAnalyzeOutcome('track-a', {
+		claimed: [],
+		refused: { 'track-a': 'missing_file' }
+	});
+	assert.equal(refused.toastKind, 'error');
+	assert.equal(refused.refresh, false);
+	assert.equal(refused.message, 'Audio file not found');
+	assert.notEqual(completed.toastKind, refused.toastKind);
+	assert.notEqual(completed.refresh, refused.refresh);
+	assert.equal(mod.vocalsAnalyzeResultFromVocalStatus('track-a', { status: 'not_analyzed' }), null);
 });
 
 test('requestTracksRefresh reaches subscribers until unsubscribed; a throwing one does not block others', (t) => {

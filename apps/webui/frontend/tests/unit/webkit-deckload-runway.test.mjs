@@ -51,7 +51,8 @@ function readE2eSource(relative) {
 }
 
 const SPEC_SRC = readE2eSource('webkit-deckload.spec.ts');
-const FIXTURE_SRC = readE2eSource('support/deckload_fixture.py');
+// Track lengths live in deckload_fixture_model.py since #10955 split the builder.
+const FIXTURE_SRC = readE2eSource('support/deckload_fixture_model.py');
 /** The engine half of the reload contract: unload must not roll the count back. */
 const ENGINE_SRC = readFileSync(
 	fileURLToPath(new URL('../../src/lib/rb/audio-engine.svelte.ts', import.meta.url)),
@@ -190,7 +191,7 @@ test('an unload carries the load generation forward', () => {
 
 test('the fixture audio is long enough to give every test a runway', () => {
 	const lengths = [...FIXTURE_SRC.matchAll(/seconds=(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
-	assert.ok(lengths.length > 0, 'deckload_fixture.py declares no track lengths');
+	assert.ok(lengths.length > 0, 'deckload_fixture_model.py declares no track lengths');
 	// The longest single test in the suite plays for well under 30s now that
 	// each one starts from zero. This floor is the margin that claim rests on:
 	// shorten the fixture past it and the suite can run dry inside ONE test,

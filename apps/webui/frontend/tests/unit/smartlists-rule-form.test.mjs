@@ -190,3 +190,8 @@ test('isFormGroup narrows group vs predicate nodes', () => {
 	assert.equal(ruleForm.isFormGroup(ruleForm.createEmptyGroup('and')), true);
 	assert.equal(ruleForm.isFormGroup(ruleForm.createEmptyPredicate('bpm')), false);
 });
+
+test('[if] a saved rule is a top-N node [then] the form refuses to load it rather than drop the limit, [else stop].', () => {
+	const rule = { op: 'top_n', n: 3, sort_field: 'added_date' };
+	assert.throws(() => ruleForm.astToForm(rule), /top-N rules are not editable/);
+});

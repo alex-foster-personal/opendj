@@ -45,8 +45,8 @@ from apps.autodj.contract.models import (
     Side,
     TransitionPlan,
 )
-from apps.autodj.profile import DECK_LOAD_TRIM_DB, TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, trim_knob
-from apps.autodj.styles import STYLES
+from apps.autodj.profile import DECK_LOAD_TRIM_DB, TRIM_MAX_DB, VOCAL_BAR_THRESHOLD, TrackProfile, stem_status, trim_knob
+from apps.autodj.styles import FALLBACK_CROSSFADE_BARS, STYLES
 
 #: Spec 09-transitions-fx 4.2: the outgoing deck's color ECHO send and its dry level (0..1), and the action that
 #: puts the effect, its knob and the dry back to their pre-plan values.
@@ -59,15 +59,22 @@ NOISE_FIELDS: tuple[str, ...] = ("level", "sweep")
 #: parses it, refusing it with its own reason until NOISE exists (#9804), so live validation does not name it here;
 #: a plan with fx_noise still carries fx_reset, which stays pending on #9848.
 PAGE_PENDING_FX: frozenset[str] = frozenset({"fx_echo", "fx_dry", "fx_reset"})
+#: Per-stem gain controls (0..1), each the stem-set part it moves; compile.py sends them as ``stem_gain``.
+STEM_CONTROLS: dict[str, str] = {"stem_vocals": "vocals", "stem_drums": "drums", "stem_bass": "bass", "stem_other": "other"}
 #: Per-deck controls a plan may set or ramp, and the bus command each becomes.
-DECK_CONTROLS: frozenset[str] = frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"}) | (
-    FX_CONTROLS
+DECK_CONTROLS: frozenset[str] = (
+    frozenset({"fader", "trim", "filter", "eq_low", "eq_mid", "eq_high", "tempo"}) | FX_CONTROLS | frozenset(STEM_CONTROLS)
 )
 #: Mixer-wide controls (no deck).
 MIXER_CONTROLS: frozenset[str] = frozenset({"crossfader"})
 CONTROLS: frozenset[str] = DECK_CONTROLS | MIXER_CONTROLS
 ACTIONS: frozenset[str] = frozenset({"play", "stop", "master"}) | FX_ACTIONS
-TEMPO_MODES: frozenset[str] = frozenset({"sync_to_out", "none"})
+TEMPO_MODES: frozenset[str] = frozenset({"sync_to_out", "glide_to_in", "none"})
+#: #10148, spec 04 decision 3: the steepest glide (percent tempo per bar) before it reads as a slide. Placeholder
+#: until calibrated from review tags.
+GLIDE_MAX_PCT_PER_BAR = 1.0
+#: #10148, spec 04 decision 1: a deck within this much (percent) of rate 1.0 for the whole plan plays key lock off.
+KEYLOCK_BYPASS_PCT = 0.5
 ANCHORS: frozenset[str] = frozenset({"window", "next_phrase", "next_bar"})
 #: D13: plan shapes whose loudness dip before the incoming bass hit is intended (a scorer may skip its loudness-loss
 #: check for them); every other plan carries none.
@@ -280,13 +287,28 @@ def _event(document: Any, index: int) -> list[PlanEvent]:
 
 
 def _tempo_mode(document: Mapping[str, Any]) -> str:
-    """The tempo mode: synced when the field is absent or null; an object must name its mode, and anything else is refused, never defaulted."""
+    """The tempo mode alone (see :func:`_tempo`), with no bound on a glide's bars."""
+    return _tempo(document, 2**31)[0]
+
+
+def _tempo(document: Mapping[str, Any], bars: int) -> tuple[str, int | None]:
+    """The tempo mode and a glide's bars: synced when the field is absent or null; an object must name its mode, and
+    anything else is refused, never defaulted. A glide defaults to the plan's bars."""
     if "tempo" not in document or document["tempo"] is None:
-        return "sync_to_out"
+        return "sync_to_out", None
     tempo = document["tempo"]
     if not isinstance(tempo, Mapping) or "mode" not in tempo:
         raise PlanError(f"tempo must be an object with a mode, got {tempo!r}")
-    return _member(tempo["mode"], TEMPO_MODES, "tempo.mode")
+    mode = _member(tempo["mode"], TEMPO_MODES, "tempo.mode")
+    raw = tempo.get("over_bars")
+    if mode != "glide_to_in":
+        if raw is not None:
+            raise PlanError(f"tempo.over_bars belongs to glide_to_in, not {mode}")
+        return mode, None
+    over = bars if raw is None else _int(raw, "tempo.over_bars", minimum=1)
+    if over > bars:
+        raise PlanError(f"tempo.over_bars must be at most the plan's {bars} bars, got {over}")
+    return mode, over
 
 
 def _optional_text(value: Any, field: str) -> str | None:
@@ -350,7 +372,8 @@ def parse_plan(document: Any) -> TransitionPlan:
     events = document.get("events")
     if not isinstance(events, list) or not events:
         raise PlanError("events must be a non-empty list")
-    tempo_mode = _tempo_mode(document)
+    out_side = _in_field("out", lambda: _side(document.get("out"), "out"))
+    tempo_mode, tempo_over_bars = _tempo(document, out_side.bars)
     anchor = _in_field("anchor", lambda: _member(document.get("anchor", "window"), ANCHORS, "anchor"))
     known = {"out", "in", "style", "events", "tempo", "anchor", "intent", "rationale", "bass_entry", "shape"}
     shape = document.get("shape")
@@ -362,11 +385,12 @@ def parse_plan(document: Any) -> TransitionPlan:
         for parsed in _in_field(f"events[{index}]", partial(_event, event, index))
     ]
     return TransitionPlan(
-        out=_in_field("out", lambda: _side(document.get("out"), "out")),
+        out=out_side,
         in_=_in_field("in", lambda: _side(document.get("in"), "in")),
         style=style_name,
         events=tuple(sorted(parsed_events, key=lambda e: e.at_bar)),
         tempo_mode=str(tempo_mode),
+        tempo_over_bars=tempo_over_bars,
         anchor=str(anchor),
         intent=_optional_text(document.get("intent"), "intent"),
         rationale=_optional_text(document.get("rationale"), "rationale"),
@@ -745,6 +769,37 @@ def handover_bar(plan: TransitionPlan) -> float | None:
     return None if terminal is None else terminal[0]
 
 
+def glide_span(plan: TransitionPlan) -> tuple[float, float] | None:
+    """#10148: (start, end) plan bars of a glide_to_in plan's glide, or None for another mode or an empty span.
+
+    It ends at the terminal master handover (the plan's end without one), so the incoming deck becomes master at rate
+    1.0, and starts ``over_bars`` earlier but never before the incoming launch (a synced move there is refused)."""
+    if plan.tempo_mode != "glide_to_in":
+        return None
+    end = handover_bar(plan)
+    end = float(plan.bars) if end is None else end
+    start = end - (plan.tempo_over_bars or plan.bars)
+    launch = _incoming_start(plan)
+    if launch is not None:
+        start = max(start, launch)
+    return (start, end) if end > start else None
+
+
+def resolve_glide(plan: TransitionPlan) -> TransitionPlan:
+    """#10148: a glide_to_in plan as the synced plan it runs as: sync_to_out plus one incoming tempo ramp to rate 1.0
+    over :func:`glide_span` (compile puts it on the leader, AGENT-32). Any other mode comes back unchanged."""
+    if plan.tempo_mode != "glide_to_in":
+        return plan
+    span = glide_span(plan)
+    synced = replace(plan, tempo_mode="sync_to_out", tempo_over_bars=None)
+    if span is None:
+        return synced
+    ramp = PlanEvent(
+        at_bar=span[0], deck=plan.in_.deck, kind="ramp", name="tempo", value=1.0, over_bars=span[1] - span[0]
+    )
+    return replace(synced, events=tuple(sorted((*plan.events, ramp), key=lambda e: e.at_bar)))
+
+
 def prelaunch_synced_tempo_moves(plan: TransitionPlan) -> list[PlanEvent]:
     """A synced plan's incoming tempo moves that run before the incoming deck actually starts (Codex + Sol #7594).
 
@@ -988,6 +1043,8 @@ def validate_plan(
 ) -> Validation:
     """Errors (refuse to schedule), warnings (allowed, said) and clash metrics."""
     result = Validation()
+    _check_glide(plan, out_profile, in_profile, result)
+    plan = resolve_glide(plan)
     base = _base_rate(plan, in_profile, live)
     scale = _tempo_scale(plan, in_profile, live)
     clock_pitch = _clock_pitch(plan, live)
@@ -1177,6 +1234,8 @@ def _check_structure(
         )
     if _incoming_start(plan) is None:
         errors.append(f"no play event starts the incoming deck {plan.in_.deck}")
+    errors.extend(stem_status_errors(plan, out_profile, in_profile))
+    errors.extend(stem_layout_errors(plan, out_profile, in_profile))
     errors.extend(_shape_errors(plan))
     errors.extend(_fx_errors(plan))
     errors.extend(_gives_way_before_hit(plan))
@@ -1187,6 +1246,40 @@ def _check_structure(
             f"the incoming track runs out of grid: it starts at bar {plan.in_.start_bar} and the "
             f"plan needs {in_bars_heard:g} bars, but its grid ends at bar {in_profile.bars}"
         )
+
+
+def _stem_dependent(plan: TransitionPlan) -> bool:
+    style_doc = STYLES.get(plan.style)
+    if style_doc is not None and ((style_doc.params is not None and style_doc.params.stems is not None) or "stem_gain" in style_doc.controls):
+        return True
+    return any(event.name == "stem_gain" or event.name in STEM_CONTROLS for event in plan.events)
+
+
+def stem_layout_errors(plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile) -> list[str]:
+    """Refuse a stem control whose part the deck's stem-set layout lacks: never a silent no-op."""
+    layouts = {plan.out.deck: out_profile.stem_layout, plan.in_.deck: in_profile.stem_layout}
+    errors = []
+    for event in plan.events:
+        part = STEM_CONTROLS.get(event.name)
+        layout = layouts.get(event.deck) if part else None
+        if part and layout is not None and part not in layout:
+            errors.append(f"{event.name}: deck {event.deck} layout is {'+'.join(layout)}")
+    return errors
+
+
+def stem_status_errors(plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile) -> list[str]:
+    """Refuse a stem-dependent plan when either deck's stem-set is unavailable or unresolved."""
+    if not _stem_dependent(plan):
+        return []
+    errors = []
+    for role, side, track in (("outgoing", plan.out, out_profile), ("incoming", plan.in_, in_profile)):
+        status = stem_status(track)
+        if status != "ready":
+            errors.append(
+                f"style {plan.style!r} needs stems, but the {role} deck {side.deck} stem-set is {status}: "
+                "a plain mix cannot stand in for a stem move"
+            )
+    return errors
 
 
 def _shape_errors(plan: TransitionPlan) -> list[str]:
@@ -1342,6 +1435,34 @@ def _check_tempo_fit(
         )
     if plan.tempo_mode == "none" and beatmatched:
         result.warnings.append("tempo mode none on a beatmatched style: the decks will drift")
+
+
+def _check_glide(plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation) -> None:
+    """#10148: a glide authors the incoming tempo itself; a slope past GLIDE_MAX_PCT_PER_BAR or a gap past Beat Sync's
+    reach is allowed, but said."""
+    if plan.tempo_mode != "glide_to_in":
+        return
+    if any(e.deck == plan.in_.deck and e.name == "tempo" for e in plan.events):
+        result.errors.append("glide_to_in authors the incoming tempo itself: drop the incoming tempo events")
+    span = glide_span(plan)
+    if span is None:
+        result.warnings.append("glide_to_in has no bars between the incoming launch and the handover: no glide runs")
+        return
+    gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
+    if gap is None:
+        result.warnings.append("a tempo is unknown, so the glide slope was not checked")
+        return
+    slope = gap / (span[1] - span[0])
+    result.metrics["glide_pct_per_bar"] = round(slope, 3)
+    if slope > GLIDE_MAX_PCT_PER_BAR + 1e-9:
+        result.warnings.append(
+            f"glide slope {slope:.2f}% per bar is past {GLIDE_MAX_PCT_PER_BAR:g}% per bar: the slide may be heard"
+        )
+    reach = beat_sync_reach_pct(in_profile)
+    if gap > reach:
+        result.warnings.append(
+            f"glide gap {gap:.1f}% after octave fold is beyond the incoming Beat Sync {reach:g}% reach"
+        )
 
 
 def _relation_label(relation: str) -> str:
@@ -1648,7 +1769,7 @@ def live_child(parent: Mapping[str, Any], key: str, where: str = "live mirror va
     return live_mapping(parent[key], where)
 
 
-def _loop_engaged(state: Mapping[str, Any]) -> bool:
+def loop_engaged(state: Mapping[str, Any]) -> bool:
     """Whether the HTTP UI mirror reports an engaged loop (``loop.engaged`` or a legacy top-level flag)."""
     if state.get("loop_engaged") is True:
         return True
@@ -1677,10 +1798,10 @@ def _validate_live(
     if isinstance(in_state, Mapping) and in_state.get("quantized_launch_armed") is not None:
         # Schedule and the page's runner refuse an armed deck as busy, so validation must refuse it too.
         result.errors.append(f"deck {plan.in_.deck} is armed to launch; pick an idle deck")
-    if _loop_engaged(out_state):
+    if loop_engaged(out_state):
         # An engaged loop wraps the playhead, so the outgoing window is never reached and the plan would wait forever.
         result.errors.append(f"deck {plan.out.deck} has an engaged loop; release it so the plan can reach its window")
-    if isinstance(in_state, Mapping) and _loop_engaged(in_state):
+    if isinstance(in_state, Mapping) and loop_engaged(in_state):
         # The seek lands inside the loop; quantized launch keeps it, so the deck repeats loop bars instead of the plan window.
         result.errors.append(f"deck {plan.in_.deck} has an engaged loop; release it so the plan can play its window")
     _check_out_position(plan, out_profile, out_state, result)
@@ -1698,6 +1819,8 @@ def _validate_live(
 
 def _beatmatched(plan: TransitionPlan) -> bool:
     style_doc = STYLES.get(plan.style)
+    if plan.style == "crossfade" and plan.tempo_mode == "none" and plan.bars <= FALLBACK_CROSSFADE_BARS:
+        return False  # #10146: the short unsynced fallback is meant to run at nominal tempo
     return (style_doc.needs_beatmatch if style_doc is not None else True) and plan.bars > 1
 
 

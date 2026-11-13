@@ -129,6 +129,7 @@ import plistlib
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -205,7 +206,9 @@ LIBSYSTEM = "/usr/lib/libSystem.B.dylib"
 ACCEPTANCE_ROOT = Path.home() / ".opendj-acceptance" / "runs"
 # Written only when the real data dir has no state.db before launch, so the
 # real_store_untouched row can detect a touch without claiming PASS on absence.
-REAL_STORE_SENTINEL_BYTES = b"opendj-app-acceptance-real-store-sentinel/v1\n"
+# The sentinel is a valid SQLite file (an app launch can open it) and is removed
+# again on every exit path while its bytes are still the ones this run wrote.
+REAL_STORE_SENTINEL_TABLE = "opendj_app_acceptance_real_store_sentinel_v1"
 
 PASS, FAIL, UNKNOWN = "PASS", "FAIL", "UNKNOWN"
 
@@ -782,7 +785,7 @@ class Run:
     our_job_ids: set[str] = field(default_factory=set)
     memory_boot: dict[str, Any] = field(default_factory=dict)
     launched_at: float = 0.0
-    # True when this run wrote REAL_STORE_SENTINEL_BYTES because state.db was absent.
+    # True when this run wrote the SQLite sentinel because state.db was absent.
     real_store_sentinel_seeded: bool = False
     quit_sigkill_control_exercised: bool = False
 
@@ -889,13 +892,46 @@ def real_store_digest(state_dir: Path) -> dict[str, str | None]:
     return digests
 
 
-def _seed_real_store_sentinel(state_dir: Path) -> bool:
-    """Write the acceptance sentinel when state.db is absent. Returns True when written."""
+@dataclass(frozen=True)
+class RealStoreSentinel:
+    """The sentinel state.db one run wrote, its sha256, and the dirs it had to create."""
+
+    db_path: Path
+    digest: str
+    created_dirs: tuple[Path, ...]
+
+
+def _seed_real_store_sentinel(state_dir: Path) -> RealStoreSentinel | None:
+    """Write a valid SQLite sentinel when state.db is absent. None when one already exists."""
     db_path = state_dir / "state.db"
     if db_path.exists():
-        return False
+        return None
+    missing = [d for d in (state_dir, *state_dir.parents) if not d.exists()]
     state_dir.mkdir(parents=True, exist_ok=True)
-    db_path.write_bytes(REAL_STORE_SENTINEL_BYTES)
+    with contextlib.closing(sqlite3.connect(db_path)) as conn:
+        conn.execute(f"CREATE TABLE {REAL_STORE_SENTINEL_TABLE} (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    record = _store_file_record(db_path)
+    assert record is not None
+    return RealStoreSentinel(db_path=db_path, digest=record[0], created_dirs=tuple(missing))
+
+
+def _remove_real_store_sentinel(sentinel: RealStoreSentinel) -> bool:
+    """Delete the sentinel and the dirs it created, unless anything has changed it since."""
+    db_path = sentinel.db_path
+    sidecars = [db_path.with_name(db_path.name + suffix) for suffix in ("-wal", "-shm", "-journal")]
+    try:
+        record = _store_file_record(db_path)
+    except StoreUnreadable:
+        return False
+    if record is None or record[0] != sentinel.digest or any(p.exists() for p in sidecars):
+        return False
+    db_path.unlink()
+    for directory in sentinel.created_dirs:
+        try:
+            directory.rmdir()
+        except OSError:
+            break
     return True
 
 
@@ -1424,22 +1460,36 @@ def _spawn_sigterm_ignoring_child(home: Path) -> subprocess.Popen[bytes]:
 
 
 def _reap_sigkill_control_child(child: subprocess.Popen[bytes]) -> None:
+    """Hard-kill the control child portably (Popen.kill is SIGKILL on POSIX, TerminateProcess on Windows)."""
     if child.poll() is None:
         with contextlib.suppress(OSError, ProcessLookupError):
-            os.kill(child.pid, signal.SIGKILL)
+            child.kill()
     with contextlib.suppress(subprocess.TimeoutExpired):
         child.wait(timeout=5)
 
 
-def exercise_sigkill_quit_control(run: Run, check: Check) -> str | None:
-    """Prove clean_quit can go red on a sigterm-ignoring child before the real quit."""
+_SIGKILL_CONTROL_LOG = "[shell shutdown] engine pgid 99: SIGKILLed processes left behind by the exited engine\n"
+
+
+def exercise_sigkill_quit_control(run: Run, check: Check, *,
+                                  survivors: Callable[[], list[Proc]] | None = None) -> str | None:
+    """Prove clean_quit can go red on a sigterm-ignoring child before the real quit.
+
+    The child is counted by the same ``survivors`` collector clean_quit uses after quit,
+    and the SIGKILL evidence goes through ``parse_shutdown_log``, so a blind collector
+    or parser fails the control instead of letting it pass.
+    """
     child = _spawn_sigterm_ignoring_child(run.home)
     home_marker = str(run.home)
+    if survivors is None:
+        def survivors() -> list[Proc]:
+            """Default collector: processes carrying the run HOME in argv."""
+            return [p for p in _ps() if home_marker in p.command]
     try:
         time.sleep(0.25)
         if child.poll() is not None:
             return "SIGKILL control: sigterm-ignoring child exited before the probe"
-        visible = [p for p in _ps() if p.pid == child.pid and home_marker in p.command]
+        visible = [p for p in survivors() if p.pid == child.pid]
         if not visible:
             return "SIGKILL control: child not visible to the orphan probe"
         if os.name != "nt":
@@ -1447,13 +1497,14 @@ def exercise_sigkill_quit_control(run: Run, check: Check) -> str | None:
             time.sleep(0.25)
             if child.poll() is not None:
                 return "SIGKILL control: child died on SIGTERM instead of ignoring it"
-        survivor_problem = quit_problems(1.0, 1, [100], [], False)
+        left = [p for p in survivors() if p.pid == child.pid]
+        survivor_problem = quit_problems(1.0, len(left), [100], [], False)
         if survivor_problem is None or not any("still alive" in item for item in survivor_problem):
-            return "SIGKILL control: quit_problems did not fail on a survivor"
-        sigkill_problem = quit_problems(
-            1.0, 0, [100], ["[shell shutdown] engine pgid 99: SIGKILLed processes left behind"], False)
+            return "SIGKILL control: survivor collector or quit_problems missed the sigterm-ignoring child"
+        sigkill_lines = parse_shutdown_log(_SIGKILL_CONTROL_LOG)["sigkill_lines"]
+        sigkill_problem = quit_problems(1.0, 0, [100], sigkill_lines, False)
         if sigkill_problem is None or not any("SIGKILL" in item for item in sigkill_problem):
-            return "SIGKILL control: quit_problems did not fail on a SIGKILL log line"
+            return "SIGKILL control: parse_shutdown_log or quit_problems missed a SIGKILL log line"
         check.numbers["sigkill_control_child_pid"] = child.pid
         check.evidence.append(f"SIGKILL control: child {child.pid} ignored SIGTERM and was visible before quit")
         run.quit_sigkill_control_exercised = True
@@ -2483,7 +2534,7 @@ def check_clean_quit(run: Run) -> Check:
     if len(before) - len(_owned_renderers_alive(run, before)) < 2:
         return check.set(UNKNOWN, f"orphan probe sees {len(before)} app processes before quit: it cannot see "
                                   "the app, so an empty result after would mean nothing")
-    failure = exercise_sigkill_quit_control(run, check)
+    failure = exercise_sigkill_quit_control(run, check, survivors=survivors)
     if failure:
         return check.set(FAIL, failure)
     t0 = time.monotonic()
@@ -2675,11 +2726,15 @@ def _boot(run: Run) -> str | None:
 
 def run_acceptance(args: argparse.Namespace) -> tuple[dict[str, Any], int, FixtureRecord]:
     source = Path(args.fixture).resolve()
+    seeded: list[RealStoreSentinel] = []
     try:
-        return _begin_acceptance(args, source)
+        return _begin_acceptance(args, source, seeded)
     except Refused as exc:
         record = exc.fixture_record if exc.fixture_record is not None else FixtureRecord()
         raise Refused(str(exc), record) from exc
+    finally:
+        for sentinel in seeded:
+            _remove_real_store_sentinel(sentinel)
 
 
 def _fresh_home(home: Path, captured: FixtureRecord) -> Path:
@@ -2693,7 +2748,9 @@ def _fresh_home(home: Path, captured: FixtureRecord) -> Path:
     return home
 
 
-def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str, Any], int, FixtureRecord]:
+def _begin_acceptance(
+    args: argparse.Namespace, source: Path, seeded: list[RealStoreSentinel] | None = None,
+) -> tuple[dict[str, Any], int, FixtureRecord]:
     app = Path(args.app).resolve()
     fixture = Fixture.load(source)
     captured = fixture.record()
@@ -2722,7 +2779,11 @@ def _begin_acceptance(args: argparse.Namespace, source: Path) -> tuple[dict[str,
     real_store_sentinel_seeded = False
     try:
         if _store_file_record(state_dir / "state.db") is None:
-            real_store_sentinel_seeded = _seed_real_store_sentinel(state_dir)
+            sentinel = _seed_real_store_sentinel(state_dir)
+            if sentinel is not None:
+                real_store_sentinel_seeded = True
+                if seeded is not None:
+                    seeded.append(sentinel)
         real_before = _real_store_stat(shell)
     except StoreUnreadable as err:
         raise Refused(f"real store could not be read before launch: {err}", captured) from err

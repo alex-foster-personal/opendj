@@ -16,7 +16,6 @@ Run: uv run --locked python tools/deck-diagrams/scripts/build_dj_tech_mix_101_pa
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -33,9 +32,12 @@ IMAGE_PX = (485, 321)
 PLATE_PX = {"x0": 0, "x1": 484, "y0": 0, "y1": 320}
 MM_PER_PX_X = round(PANEL_W_MM / (PLATE_PX["x1"] - PLATE_PX["x0"] + 1), 5)
 MM_PER_PX_Y = round(PANEL_D_MM / (PLATE_PX["y1"] - PLATE_PX["y0"] + 1), 5)
-SOURCE_PDF_SHA256 = hashlib.sha256(
-    b"DJ-Tech MIX-101 User Manual ManualsLib 1110404 top-panel figure and specifications"
-).hexdigest()
+# No local copy of the source PDF exists (ManualsLib serves page images, not the PDF), so no PDF
+# digest is recorded; a hash of a description would not identify the document (issue #13458).
+SOURCE_PDF_SHA256: str | None = None
+SOURCE_PDF_NOTE = (
+    "source PDF bytes unavailable: traced from the ManualsLib page-3 image (source_image_sha256); no PDF digest"
+)
 SOURCE_IMAGE_SHA256 = "5fd0a64d5aa9672627d5032f9f10ec531793ee15dbda9e65550e46fe39478344"
 REPEAT_SPREAD_MM = 0.5
 TRACE_DATE = "Thu 12 Nov 2026"
@@ -247,6 +249,7 @@ def build_reference() -> dict[str, object]:
         "trace": {
             "source": ("DJ-Tech MIX-101 User Manual (ManualsLib 1110404), Main Features page top-panel product figure"),
             "source_pdf_sha256": SOURCE_PDF_SHA256,
+            "source_pdf_note": SOURCE_PDF_NOTE,
             "source_image_sha256": SOURCE_IMAGE_SHA256,
             "provenance": "https://www.manualslib.com/manual/1110404/Dj-Tech-Mix-101.html?page=3",
             "image_px": list(IMAGE_PX),

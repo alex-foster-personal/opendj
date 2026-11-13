@@ -680,9 +680,20 @@ def test_catalog_counts_are_reported_so_coverage_is_never_guessed(
     # .pdf, so the grader grades it down rather than up (#3744).
     # Re-measured Thu 12 Nov 2026: vendor-pdf 7 on main; bootstrap-stub 15 after
     # the DDJ-FLX10 map (#12638) and xdj-az prose source (#10286).
-    assert body["counts"]["bootstrap-stub"] == 15
-    assert body["counts"]["vendor-pdf"] == 7
-    assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 95
+    # Re-measured Fri 13 Nov 2026 (direct-commit round 3, bundle 1): vendor-pdf
+    # 13 after six maps whose source ends in .pdf (reloop-beatmix-2-mk2 #13823,
+    # reloop-beatmix-4-mk2 #13841, reloop-mixon-4 #13861, djm-a9 #13881,
+    # djm-s7 #13900, ddj-rr #13911); bootstrap-stub 18 after xdj-rx3 (#13883)
+    # and xdj-xz (#13887), whose sources are prose naming the PDF, and
+    # allen-heath-xone-96 (#13884), whose source is an HTML support page: none
+    # ends in .pdf, so the grader grades them down rather than up.
+    # Fri 13 Nov 2026: the CDJ-2000NXS2 (#13885) and OPUS-QUAD (#13811) maps each
+    # add one vendor-pdf device and land in either order, so each counts only
+    # once its device is in the store. Fold them into the 13 once both are on main.
+    pending_vendor_pdf = {"cdj-2000nxs2", "opus-quad"} & {d["id"] for d in body["devices"]}
+    assert body["counts"]["bootstrap-stub"] == 18
+    assert body["counts"]["vendor-pdf"] == 13 + len(pending_vendor_pdf)
+    assert body["counts"]["vendor-pdf"] + body["counts"]["mixxx"] == 101 + len(pending_vendor_pdf)
 
 
 @pytest.mark.requirement("CTRL-11712")
@@ -910,6 +921,9 @@ _EVERY_TRIGGER: list[dict[str, Any]] = [
     {"kind": "pad_mode_selected", "deck": 1, "mode": "hot_cue"},
     {"kind": "hot_cue_present", "deck": 1, "slot": "A", "padMode": "hot_cue"},
     {"kind": "channel_cue_enabled", "deck": 1},
+    {"kind": "shift_held"},
+    {"kind": "master_cue_active"},
+    {"kind": "sync_master", "deck": 2},
 ]
 
 

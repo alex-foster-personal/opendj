@@ -27,9 +27,17 @@ pub const FILTER_LP_CEILING_HZ: f64 = 20000.0;
 pub const FILTER_LP_FLOOR_HZ: f64 = 130.0;
 pub const FILTER_HP_FLOOR_HZ: f64 = 30.0;
 pub const FILTER_HP_CEILING_HZ: f64 = 6300.0;
-/// Passed to Web Audio's `BiquadFilterNode.Q`, which for lowpass and highpass
-/// is read in dB (see `dsp::Biquad::lowpass`).
-pub const FILTER_Q: f64 = 0.707;
+/// Mirrors `FILTER_Q_DB`: Q in dB, as Web Audio reads lowpass/highpass Q (see
+/// `dsp::Coeffs::lowpass`). 0.707 dB is linear Q 1.085, a +1.74 dB peak just
+/// inside the corner (+0.71 dB at it), not a flat Butterworth (#9791).
+pub const FILTER_Q_DB: f64 = 0.707;
+/// Mirrors `FILTER_SLOPE_DB_OCT` (FXFILT-09, issue #10010): 12 dB/oct is one
+/// biquad per side, 24 adds a second section at the same corner. FXFILT-02 owns
+/// resonance (#9826) on the first section; the second section's Q never carries it.
+pub const FILTER_SLOPE_DB_OCT: u32 = 12;
+const _: () = assert!(FILTER_SLOPE_DB_OCT == 12 || FILTER_SLOPE_DB_OCT == 24);
+/// Mirrors `FILTER_SECOND_SECTION_Q_DB`: linear Q 1/sqrt(2) read in dB, a flat Butterworth.
+pub const FILTER_SECOND_SECTION_Q_DB: f64 = -3.010299956639812;
 /// Mirrors `FILTER_GLIDE_DOMAIN` in constants.ts: the domain the corner glides
 /// in. The choice is calibration round filter-6 (MIXUX-05).
 pub const FILTER_GLIDE_DOMAIN: GlideDomain = GlideDomain::Hz;
@@ -205,6 +213,30 @@ mod tests {
         let cw = filter_params(1.0);
         assert_eq!((cw.dry, cw.lp_wet, cw.hp_wet), (0.0, 0.0, 1.0));
         assert!((cw.hp_hz - FILTER_HP_CEILING_HZ).abs() < 1e-9);
+    }
+
+    /// Shared with the web law: written from `filterParamsFromKnob` by
+    /// `apps/webui/frontend/tests/unit/filter-law-fixture.test.mjs` (#9791).
+    const FILTER_LAW_FIXTURE: &str = include_str!("../tests/fixtures/filter-law.json");
+
+    #[test]
+    fn filter_law_matches_the_shared_fixture() {
+        // [if] filter_params is off the web law fixture by more than 1e-9 on any field [then] fail, [else stop].
+        let doc: serde_json::Value = serde_json::from_str(FILTER_LAW_FIXTURE).unwrap();
+        let tol = doc["tolerance"].as_f64().unwrap();
+        assert_eq!(tol, 1e-9);
+        let cols: Vec<&str> = doc["columns"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect();
+        assert_eq!(cols, ["knob", "lpHz", "hpHz", "dryGain", "lpWetGain", "hpWetGain"]);
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 103, "101 grid positions plus both dead-zone inner edges");
+        for row in rows {
+            let r: Vec<f64> = row.as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+            let p = filter_params(r[0]);
+            let got = [p.lp_hz, p.hp_hz, p.dry, p.lp_wet, p.hp_wet];
+            for (c, (got, want)) in got.iter().zip(&r[1..]).enumerate() {
+                assert!((got - want).abs() <= tol, "knob {} {}: rust {got}, fixture {want}", r[0], cols[c + 1]);
+            }
+        }
     }
 
     #[test]

@@ -34,6 +34,7 @@ from apps.shared.machine_pressure import (
     LAUNCHING_SHELL_PID_ENV,
     PRESSURE_CHURN_WEIGHT_SWAP,
     PRESSURE_SAMPLE_P95_WALL_MS,
+    PRESSURE_SAMPLE_WALL_WINDOW,
     SHELL_REGISTRATION_FILE_NAME,
     MachinePressureCache,
     ProcessInfo,
@@ -46,6 +47,7 @@ from apps.shared.machine_pressure import (
     read_machine_pressure,
     read_shell_registration,
     sample_wall_p95_ms,
+    sample_wall_within_budget,
 )
 from scripts.diagnostics.probe_process_family import (
     opendj_process_name as probe_opendj_process_name,
@@ -1093,6 +1095,10 @@ def test_opendj_process_name_matches_probe_parser() -> None:
             "ffmpeg",
         ),
         (
+            "/usr/bin/nice -n 10 /Applications/Open DJ.app/Contents/Resources/payload/bin/ffmpeg -nostdin -i x -",
+            "ffmpeg",
+        ),
+        (
             "/Applications/Open DJ.app/Contents/Resources/payload/runtime/bin/python3 "
             "-m apps.analysis.queue_cli --db /d/state.db",
             "analysis-lane",
@@ -1132,6 +1138,81 @@ def test_pressure_response_exposes_p95_without_failing_over_budget() -> None:
     assert "sample_wall_ms" in body
     assert "sample_wall_p95_ms" in body
     assert body["sample_wall_p95_ms"] != 0 or body["sample_wall_ms"] == 0
+
+
+def _stepping_monotonic(step_s: float) -> Any:
+    calls: list[int] = []
+
+    def monotonic() -> float:
+        calls.append(1)
+        return len(calls) * step_s
+
+    return monotonic
+
+
+@pytest.mark.requirement("TESTINFRA-13384")
+def test_full_window_within_budget_passes_the_p95_check() -> None:
+    """[if] a full window of sample walls has p95 <= the budget [then] the verdict is True, [else stop]."""
+    walls = [1.0] * (PRESSURE_SAMPLE_WALL_WINDOW - 1) + [float(PRESSURE_SAMPLE_P95_WALL_MS)]
+
+    assert PRESSURE_SAMPLE_WALL_WINDOW == 20
+    assert sample_wall_within_budget(walls) is True
+
+
+@pytest.mark.requirement("TESTINFRA-13384")
+def test_full_window_over_budget_fails_the_p95_check() -> None:
+    """[if] a full window of sample walls has p95 above the budget [then] the verdict is False, [else stop]."""
+    walls = [1.0] * 18 + [PRESSURE_SAMPLE_P95_WALL_MS + 0.5] * 2
+
+    assert sample_wall_p95_ms(walls) == pytest.approx(PRESSURE_SAMPLE_P95_WALL_MS + 0.5)
+    assert sample_wall_within_budget(walls) is False
+    assert sample_wall_within_budget(walls, budget_ms=10.0) is True
+
+
+@pytest.mark.requirement("TESTINFRA-13384")
+def test_short_window_gives_no_budget_verdict() -> None:
+    """[if] fewer walls than the percentile window exist [then] the verdict is None, not pass or fail, [else stop]."""
+    assert sample_wall_within_budget([]) is None
+    assert sample_wall_within_budget([1.0] * (PRESSURE_SAMPLE_WALL_WINDOW - 1)) is None
+    assert sample_wall_within_budget([99.0] * (PRESSURE_SAMPLE_WALL_WINDOW - 1)) is None
+
+
+@pytest.mark.requirement("TESTINFRA-13384")
+def test_cache_measures_each_sampler_run_against_the_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the cache samples a full window at a fixed wall [then] its verdict follows the budget, [else stop]."""
+    fast = MachinePressureCache()
+    slow = MachinePressureCache()
+    sampler, _ = _counting_sampler(FULL_SAMPLE)
+
+    monkeypatch.setattr(machine_pressure.time, "monotonic", _stepping_monotonic(0.002))
+    for i in range(PRESSURE_SAMPLE_WALL_WINDOW):
+        fast.read(now=i * 10.0, sampler=sampler, vm_stat_reader=lambda: None)
+        if i == PRESSURE_SAMPLE_WALL_WINDOW - 2:
+            assert fast.sample_wall_within_budget() is None
+    monkeypatch.setattr(machine_pressure.time, "monotonic", _stepping_monotonic(0.050))
+    for i in range(PRESSURE_SAMPLE_WALL_WINDOW):
+        body = slow.read(now=i * 10.0, sampler=sampler, vm_stat_reader=lambda: None)
+
+    assert fast.sample_wall_within_budget() is True
+    assert body["sample_wall_p95_ms"] == pytest.approx(50.0)
+    assert slow.sample_wall_within_budget() is False
+
+
+@pytest.mark.requirement("TESTINFRA-13384")
+def test_failed_sample_records_no_wall_and_no_verdict() -> None:
+    """[if] every sample fails before a duration exists [then] no wall, no p95 and no verdict are recorded, [else stop]."""
+    cache = MachinePressureCache()
+
+    def failing() -> dict[str, Any]:
+        raise OSError("sysctl gone")
+
+    for i in range(PRESSURE_SAMPLE_WALL_WINDOW + 1):
+        body = cache.read(now=i * 10.0, sampler=failing, vm_stat_reader=lambda: None)
+
+    assert body["available"] is False
+    assert "sample_wall_ms" not in body
+    assert "sample_wall_p95_ms" not in body
+    assert cache.sample_wall_within_budget() is None
 
 
 # PERF-UI-6785 (Codex on #6785): a shell that ADOPTS a running engine is neither

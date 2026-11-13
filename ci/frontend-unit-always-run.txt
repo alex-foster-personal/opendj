@@ -1,0 +1,15 @@
+# Frontend unit tests (apps/webui/frontend-relative) that every narrowed pull request runs, whatever
+# it changed (scripts/ci_frontend_unit_selection.py `always_run_tests`). Same rule as
+# ci/pr-always-run.txt: a test belongs here when it scans the whole tree (or every test, command
+# or story) instead of importing what it checks, so no file-graph edge reaches it and any PR can
+# break it. Measured Mon 9 Nov 2026 on 108 past PR-head frontend unit failures. A listed test that
+# does not exist fails the selector, which then runs the whole suite.
+
+# Every MENU_COMMANDS id has a palette entry or a recorded exclusion; failed on 24 PRs.
+tests/unit/palette-commands.test.mjs
+# Scans every unit test for source-regex assertions against an allowlist; failed on 9 PRs.
+tests/unit/source-regex-test-ratchet.test.mjs
+# Keeps reference and contract stories apart across every story file; failed on 3 PRs.
+tests/unit/storybook-stories.test.mjs
+# Walks every .ts/.svelte file under src/ for stem-path references; failed with 8367.
+tests/unit/trackify-no-stems.test.mjs

@@ -1,0 +1,13 @@
+{
+  "intro": "intro",
+  "verse": "verse",
+  "build": "build",
+  "chorus": "chorus",
+  "drop": "drop",
+  "breakdown": "breakdown",
+  "bridge": "bridge",
+  "instrumental": "instrumental",
+  "outro": "outro",
+  "silence": "silence",
+  "unknown": "unknown"
+}

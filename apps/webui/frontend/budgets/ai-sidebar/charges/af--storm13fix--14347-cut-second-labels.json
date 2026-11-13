@@ -1,0 +1,9 @@
+{
+  "bytes": 5120,
+  "measured_main": 34123,
+  "measured_with_pr": 38246,
+  "sha": "a7785331af",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13fix--14347-cut-second-labels grows the ai-sidebar surface; measured +4123 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

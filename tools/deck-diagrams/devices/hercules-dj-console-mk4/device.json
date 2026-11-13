@@ -1,0 +1,9 @@
+{
+  "map_name": "DJ Console\\s*Mk\\s*4\\b",
+  "map_const": "HERCULES_DJ_CONSOLE_MK4_MAP",
+  "map_ts": "apps/webui/frontend/src/lib/rb/midi/maps/hercules-dj-console-mk4.ts",
+  "panel_w": 266.0,
+  "panel_d": 185.0,
+  "panel_size_source": "Hercules DJ Console Mk4 Operation Manual and retail specs: Dimensions (W x D x H) 266 x 185 x 63 mm",
+  "display_name": "2-channel computer DJ console"
+}

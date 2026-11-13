@@ -16,7 +16,7 @@
 # --with-requirements packages on top of a `.venv` it finds in the working
 # directory, and that difference is 550 errors against 1356 on one identical
 # commit. See _uv in scripts/quality_gate.py and the guard in
-# tests/test_quality_gate.py.
+# (private path).
 #
 # This file is also the knob for BUYING TYPE FIDELITY BACK. Everything the repo
 # depends on is currently silenced, so a mistyped pydantic field is invisible.
@@ -30,4 +30,4 @@
 # the baseline, and tests/quality/test_mypy_scope.py fails if this pin and the
 # copy in pyproject.toml's dev extra stop matching.
 
-mypy==2.3.1
+mypy==2.4.1

@@ -642,3 +642,15 @@ class TrackFeature:
     title: str | None = None
     last_played_at: datetime | None = None
     never_played: bool = False
+
+
+def harmonic_missing_for_rank(feature: TrackFeature) -> dict[str, list[str]]:
+    """Field gaps when ``feature`` is the reference for ``track_compatibility`` ranking."""
+    missing: dict[str, list[str]] = {"bpm": [], "key": [], "energy": []}
+    if feature.bpm is None:
+        missing["bpm"].append(feature.stable_id)
+    if not feature.key_camelot:
+        missing["key"].append(feature.stable_id)
+    if feature.energy is None:
+        missing["energy"].append(feature.stable_id)
+    return missing

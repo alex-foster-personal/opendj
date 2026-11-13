@@ -27,12 +27,14 @@ import sys
 import time
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
 
-from apps.cloud import asset_store, stem_cache_budget
+from apps.cloud import asset_store, stem_cache_budget, stem_hydration_locks
 from apps.cloud import stem_hydration as stem_hydration_module
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
@@ -47,9 +49,20 @@ from apps.cloud.stem_hydration import (
     load_reserved_ids,
 )
 from apps.cloud.stem_source import (
+    STEM_BUNDLE_PRESIGN_FAILED,
+    STEM_HUB_AUTH_REFUSED,
     STEM_HUB_INDEX_FAILED,
+    STEM_HUB_UNREACHABLE,
     DirectR2Source,
+    HubPresignedSource,
     StemSourceError,
+    hub_transport_failure_kind,
+)
+from apps.sync_hub.transport import (
+    SyncTransportError,
+    is_hub_server_error,
+    is_unreachable,
+    refused,
 )
 from apps.stems.artifacts import load_stem_bundle
 from tests.cloudsync.conftest import InMemoryAssetS3
@@ -294,7 +307,7 @@ def test_hydrate_one_returns_an_error_when_its_owner_marker_cannot_be_published(
     def refuse_replace(src, dst):
         raise PermissionError("marker target is held open")
 
-    monkeypatch.setattr(stem_hydration_module.os, "replace", refuse_replace)
+    monkeypatch.setattr(stem_hydration_locks.os, "replace", refuse_replace)
     outcome = hydrate_one(
         stable_id,
         data_dir=tmp_path / "data",
@@ -606,6 +619,149 @@ class _FailOnSecondPresignSource:
         )
 
 
+class _FailOnFirstPresignSource:
+    """Hub source that fails the first bundle_remote_size probe (zero progress)."""
+
+    mode = "hub_presigned"
+
+    def __init__(self, cfg: CloudConfig, s3: InMemoryAssetS3) -> None:
+        self._direct = DirectR2Source(cfg=cfg, s3=s3)
+
+    def refresh_index(self, data_dir: Path, *, force: bool = False) -> bool:
+        return False
+
+    def refresh_error(self, data_dir: Path) -> str | None:
+        return None
+
+    def bundle_remote_size(
+        self, file_hashes: dict[str, str], *, stable_id: str | None = None
+    ) -> int | None:
+        raise StemSourceError(
+            STEM_HUB_UNREACHABLE,
+            "bundle presign: connection refused",
+        )
+
+    def fetch_bundle_files(
+        self,
+        *,
+        stable_id: str,
+        file_hashes: dict[str, str],
+        tmp_dir: Path,
+    ) -> int:
+        return self._direct.fetch_bundle_files(
+            stable_id=stable_id,
+            file_hashes=file_hashes,
+            tmp_dir=tmp_dir,
+        )
+
+
+_SYNCEXPORT_PARTIAL_BULK = "SYNCEXPORT-14747"
+
+
+@pytest.mark.requirement(_SYNCEXPORT_PARTIAL_BULK)
+def test_bulk_hydrate_preserves_partial_fetched_on_mid_pass_hub_failure(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+) -> None:
+    """[if] first id hydrates then hub fails [then] fetched kept, rest hub_error, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    stable_ids = ["first-track", "second-track", "third-track"]
+    index = {stable_id: _seed_bundle(fake_s3, cfg, stable_id) for stable_id in stable_ids}
+    source = _FailOnSecondPresignSource(cfg, fake_s3)
+
+    report = bulk_hydrate(
+        stable_ids,
+        data_dir=data_dir,
+        source=source,
+        index=index,
+        byte_budget=10**9,
+        stems_dir=stems_dir,
+    )
+    assert report.bytes_fetched > 0
+    assert report.fetched[0].stable_id == "first-track"
+    assert (stems_dir / "first-track" / "manifest.json").is_file()
+    assert {row.stable_id for row in report.skipped} == {"second-track", "third-track"}
+    assert all(row.status == "hub_error" for row in report.skipped)
+
+
+@pytest.mark.requirement(_SYNCEXPORT_PARTIAL_BULK)
+def test_bulk_hydrate_reraises_hub_error_when_no_progress(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+) -> None:
+    """[if] hub fails before any bulk progress [then] bulk_hydrate re-raises, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    stable_ids = ["only-track", "also-track"]
+    index = {sid: _seed_bundle(fake_s3, cfg, sid) for sid in stable_ids}
+    source = _FailOnFirstPresignSource(cfg, fake_s3)
+
+    with pytest.raises(StemSourceError, match="connection refused") as exc_info:
+        bulk_hydrate(
+            stable_ids,
+            data_dir=data_dir,
+            source=source,
+            index=index,
+            byte_budget=10**9,
+            stems_dir=stems_dir,
+        )
+    assert exc_info.value.code == STEM_HUB_UNREACHABLE
+    assert not any((stems_dir / sid).exists() for sid in stable_ids)
+
+
+@pytest.mark.requirement(_SYNCEXPORT_PARTIAL_BULK)
+def test_bulk_hydrate_all_requested_ids_succeed(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+) -> None:
+    """[if] every bulk id can hydrate [then] all land in fetched, none hub_error, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    stable_ids = ["bulk-a", "bulk-b", "bulk-c"]
+    index = {sid: _seed_bundle(fake_s3, cfg, sid) for sid in stable_ids}
+
+    report = bulk_hydrate(
+        stable_ids,
+        data_dir=data_dir,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
+        index=index,
+        byte_budget=10**9,
+        stems_dir=stems_dir,
+    )
+    assert len(report.fetched) == 3
+    assert {o.stable_id for o in report.fetched} == set(stable_ids)
+    assert all(o.status in ("hydrated", "already_local") for o in report.fetched)
+    assert report.bytes_fetched > 0
+    assert all((stems_dir / sid / "manifest.json").is_file() for sid in stable_ids)
+    assert not any(o.status == "hub_error" for o in report.skipped)
+
+
+@pytest.mark.requirement(_SYNCEXPORT_PARTIAL_BULK)
+def test_bulk_hydrate_retains_prior_fetch_when_later_id_digest_fails(
+    tmp_path: Path, fake_s3, cfg: CloudConfig
+) -> None:
+    """[if] a later bulk id fails verify [then] earlier fetches remain on disk, [else stop]."""
+    data_dir = tmp_path / "data"
+    stems_dir = tmp_path / "stems"
+    good_id, bad_id = "good-track", "bad-track"
+    good_entry = _seed_bundle(fake_s3, cfg, good_id)
+    bad_entry = _seed_bundle(fake_s3, cfg, bad_id)
+    bad_entry["vocals.wav"] = "f" * 64
+
+    report = bulk_hydrate(
+        [good_id, bad_id],
+        data_dir=data_dir,
+        source=DirectR2Source(cfg=cfg, s3=fake_s3),
+        index={good_id: good_entry, bad_id: bad_entry},
+        byte_budget=10**9,
+        stems_dir=stems_dir,
+    )
+    assert any(o.stable_id == good_id and o.status == "hydrated" for o in report.fetched)
+    assert (stems_dir / good_id / "manifest.json").is_file()
+    bad_rows = [o for o in report.skipped if o.stable_id == bad_id]
+    assert len(bad_rows) == 1
+    assert bad_rows[0].status == "error"
+    assert not (stems_dir / bad_id).exists()
+
+
 @pytest.mark.requirement("STEM-35")
 def test_bulk_hydrate_marks_remainder_hub_error_after_hub_5xx(
     tmp_path: Path, fake_s3, cfg: CloudConfig
@@ -711,6 +867,133 @@ def test_bundle_remote_size_classifies_head_transport_failure(cfg: CloudConfig):
     source = DirectR2Source(cfg=cfg, s3=s3)
     with pytest.raises(asset_store.AssetStoreError, match="simulated R2 transport failure"):
         source.bundle_remote_size(entry, stable_id=stable_id)
+
+
+# --- hub transport failure classification seam (STEM-35) ---------------------
+
+
+class _ScriptedHubTransport:
+    """Hub transport whose every GET raises one scripted error or returns one body."""
+
+    def __init__(
+        self,
+        *,
+        error: SyncTransportError | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> None:
+        self._error = error
+        self._body = body
+
+    def get(
+        self, path: str, params: Mapping[str, str | Sequence[str]]
+    ) -> dict[str, Any]:
+        """Raise the scripted error, else answer the scripted body."""
+        if self._error is not None:
+            raise self._error
+        assert self._body is not None
+        return self._body
+
+    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Refuse every POST: the classifier seam only exercises GETs."""
+        raise SyncTransportError(f"unexpected POST {path}")
+
+
+def _scripted_hub_source(
+    tmp_path: Path, transport: _ScriptedHubTransport
+) -> HubPresignedSource:
+    """Build a hub-presigned source wired to a scripted transport."""
+    return HubPresignedSource(
+        data_dir=tmp_path,
+        hub_url="http://hub.invalid:8787",
+        machine_id="spoke-test",
+        bearer=None,
+        transport=transport,
+    )
+
+
+def _size_probe_error(
+    tmp_path: Path, error: SyncTransportError
+) -> StemSourceError:
+    """Return the StemSourceError the hub size probe raises for one transport error."""
+    source = _scripted_hub_source(tmp_path, _ScriptedHubTransport(error=error))
+    with pytest.raises(StemSourceError) as excinfo:
+        source.bundle_remote_size({}, stable_id="classified-track")
+    return excinfo.value
+
+
+@pytest.mark.requirement("STEM-35")
+def test_transport_classifiers_split_unreachable_from_hub_answers() -> None:
+    """[if] transport classifiers blur unreachable, 5xx and 401 [then] broken, [else stop]."""
+    unreachable = SyncTransportError("GET /x failed: Connection refused")
+    server_error = refused("GET /x", 502, '{"detail":{"code":"HUB_DOWN"}}')
+    auth_refused = refused("GET /x", 401, '{"detail":{"code":"SYNC_AUTH"}}')
+
+    assert is_unreachable(unreachable) is True
+    assert is_hub_server_error(unreachable) is False
+    assert is_unreachable(server_error) is False
+    assert is_hub_server_error(server_error) is True
+    assert is_unreachable(auth_refused) is False
+    assert is_hub_server_error(auth_refused) is False
+
+
+@pytest.mark.requirement("STEM-35")
+def test_hub_connection_failure_classifies_as_unreachable(tmp_path: Path) -> None:
+    """[if] a hub connection cannot be established [then] the failure kind is unreachable, [else stop]."""
+    exc = _size_probe_error(
+        tmp_path, SyncTransportError("GET /x failed: Connection refused")
+    )
+    assert exc.code == STEM_HUB_UNREACHABLE
+    assert hub_transport_failure_kind(exc) == "unreachable"
+
+
+@pytest.mark.requirement("STEM-35")
+def test_hub_5xx_classifies_as_hub_5xx_not_unreachable(tmp_path: Path) -> None:
+    """[if] a hub returns a 5xx response [then] the failure kind is hub_5xx, [else stop]."""
+    exc = _size_probe_error(
+        tmp_path, refused("GET /x", 503, '{"detail":{"code":"HUB_DOWN"}}')
+    )
+    assert exc.code == STEM_HUB_INDEX_FAILED
+    assert "HTTP 503" in exc.message
+    assert hub_transport_failure_kind(exc) == "hub_5xx"
+
+
+@pytest.mark.requirement("STEM-35")
+def test_hub_auth_refusal_is_not_a_transport_failure(tmp_path: Path) -> None:
+    """[if] a hub rejects credentials [then] it is auth refused, not a transport kind, [else stop]."""
+    exc = _size_probe_error(
+        tmp_path, refused("GET /x", 401, '{"detail":{"code":"SYNC_AUTH"}}')
+    )
+    assert exc.code == STEM_HUB_AUTH_REFUSED
+    assert hub_transport_failure_kind(exc) is None
+
+
+@pytest.mark.requirement("STEM-35")
+def test_local_bundle_validation_error_is_not_a_transport_failure(
+    tmp_path: Path,
+) -> None:
+    """[if] a local bundle validation error occurs [then] no transport kind is assigned, [else stop]."""
+    presign = {
+        "files": [
+            {
+                "filename": "vocals.wav",
+                "content_hash": "b" * 64,
+                "size_bytes": 8,
+                "url": "http://hub.invalid/vocals.wav",
+            }
+        ]
+    }
+    source = _scripted_hub_source(tmp_path, _ScriptedHubTransport(body=presign))
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    with pytest.raises(StemSourceError) as excinfo:
+        source.fetch_bundle_files(
+            stable_id="classified-track",
+            file_hashes={"vocals.wav": "a" * 64},
+            tmp_dir=tmp_dir,
+        )
+    assert excinfo.value.code == STEM_BUNDLE_PRESIGN_FAILED
+    assert "does not match local index" in excinfo.value.message
+    assert hub_transport_failure_kind(excinfo.value) is None
 
 
 # --- concurrent hydration safety (STEM-28) -------------------------------------

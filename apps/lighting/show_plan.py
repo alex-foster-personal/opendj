@@ -27,7 +27,9 @@ from typing import Any, Final, NamedTuple, Protocol, TypeAlias
 
 from apps.autodj.contract import TrackProfile
 from apps.lighting.beat_clock import BEATS_PER_BAR
+from apps.lighting.safety import MAX_FLASHES_PER_SECOND
 from apps.lighting.sections import LightSection, SectionSpan, TrackMood
+from apps.lighting.settings import ENERGY_CURVE_KEY, MOVEMENT_KEY, LightingSettings
 
 LOW_ENERGY_MAX: Final = 0.55
 MID_ENERGY_MAX: Final = 0.80
@@ -208,3 +210,83 @@ def plan_show(
     cues = _base_cues(profile, segments)
     _apply_hits(profile, segments, cues, moments)
     return tuple(cues[beat] for beat in sorted(cues))
+
+
+# ----------------------------------------------------------------------------- energy curve variant (#10107)
+
+
+class EnergyCurve(NamedTuple):
+    exponent: float
+    hit_boost: float
+    strobe: str  # "drops", "build_end" (drops + last build bar) or "build" (drops + every build bar)
+
+
+ENERGY_CURVES: Final[Mapping[str, EnergyCurve]] = {
+    "gentle": EnergyCurve(1.5, 0.20, "drops"),
+    "matched": EnergyCurve(1.0, 0.40, "build_end"),
+    "punchy": EnergyCurve(0.6, 0.60, "build"),
+}
+BAND_LEVEL: Final[Mapping[EffectBand, float]] = {EffectBand.LOW: 0.3, EffectBand.MID: 0.6, EffectBand.HIGH: 0.9}
+STROBE_HZ: Final = MAX_FLASHES_PER_SECOND
+# Bar intensity tops out here so the punchiest hit (+60 percent) still fits under 1.0 unclipped.
+BAR_HEADROOM: Final = 1.0 / 1.6
+
+
+class ShapedCue(NamedTuple):
+    start_beat: int
+    intensity: float
+    strobe_hz: float
+
+
+def _build_bars(profile: TrackProfile, sections: Sequence[SectionSpan], mode: str) -> set[int]:
+    if mode == "drops":
+        return set()
+    bars: set[int] = set()
+    starts = [0 if n == 0 else _nearest_index(profile.downbeats_s, s.start_ms / 1000.0) for n, s in enumerate(sections)]
+    ends = [*starts[1:], len(profile.downbeats_s)]
+    for span, start, end in zip(sections, starts, ends, strict=True):
+        if span.section is LightSection.BUILD and end > start:
+            bars.update(range(start, end) if mode == "build" else (end - 1,))
+    return bars
+
+
+def shape_plan(
+    profile: TrackProfile, sections: Sequence[SectionSpan], plan: ShowPlan, curve: str
+) -> tuple[ShapedCue, ...]:
+    """Intensity and strobe rate per cue under an ``lighting.energy_curve`` value; strobe never above 3 Hz."""
+    shape = ENERGY_CURVES[curve]
+    strobe_bars = _build_bars(profile, sections, shape.strobe)
+    shaped: list[ShapedCue] = []
+    for cue in plan:
+        bar = cue.start_beat // BEATS_PER_BAR
+        if profile.bar_energy is not None:
+            energy = max(0.0, min(1.0, profile.bar_energy[bar]))
+        else:
+            energy = BAND_LEVEL.get(cue.effects, BAND_LEVEL[EffectBand.MID])
+        base = BAR_HEADROOM * energy**shape.exponent
+        hit = cue.effects is EffectBand.HIT
+        intensity = base * (1.0 + shape.hit_boost) if hit else base
+        strobe = hit or (bar in strobe_bars and cue.start_beat % BEATS_PER_BAR == 0)
+        shaped.append(ShapedCue(cue.start_beat, intensity, STROBE_HZ if strobe else 0.0))
+    return tuple(shaped)
+
+
+class SectionVariants:
+    """Latches ``energy_curve`` and ``movement`` at section boundaries so a live change never re-plans a section."""
+
+    def __init__(self, settings: LightingSettings) -> None:
+        self._settings = settings
+        self._current = self._snapshot()
+
+    def _snapshot(self) -> tuple[str, str]:
+        return self._settings.get(ENERGY_CURVE_KEY), self._settings.get(MOVEMENT_KEY)
+
+    @property
+    def current(self) -> tuple[str, str]:
+        """``(energy_curve, movement)`` the running section uses."""
+        return self._current
+
+    def section_boundary(self) -> tuple[str, str]:
+        """Adopt the latest settings for the section that starts now."""
+        self._current = self._snapshot()
+        return self._current

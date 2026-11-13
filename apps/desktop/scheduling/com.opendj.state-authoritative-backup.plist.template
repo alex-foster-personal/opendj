@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEMPLATE: rendered by schedule-install. Nightly local state-authoritative backup.
+     launchd fires at StartCalendarInterval in HOST-LOCAL time (systemd timer uses UTC). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>__LABEL__</string>
+	<key>ProgramArguments</key>
+	<array>
+__PROGRAM_ARGUMENTS__
+	</array>
+	<key>WorkingDirectory</key>
+	<string>__DATA_DIR__</string>
+	<key>StandardOutPath</key>
+	<string>__LOG_DIR__/state-authoritative-backup.launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>__LOG_DIR__/state-authoritative-backup.launchd.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>__HOUR__</integer>
+		<key>Minute</key>
+		<integer>__MINUTE__</integer>
+	</dict>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

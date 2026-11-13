@@ -16,6 +16,6 @@ from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, ToolAnnotations
 
-__all__ = ["MCPServer", "ToolAnnotations", "ToolError"]
+__all__ = ["CallToolResult", "MCPServer", "ToolAnnotations", "ToolError"]

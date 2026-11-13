@@ -814,6 +814,42 @@ test('a body with no member keeps the snapshot; one valid member replaces it', a
 	}
 });
 
+// Issue #13383: the performance screen derives the
+// family from live `members[]` whenever the route sends them, and falls back to
+// the JSONL `by_role_mb` totals only when it does not. Every body is the real
+// route's, with one named change (derived).
+test('[if] a snapshot contains named live members [then] the family is those members, not the role totals', async () => {
+	await withFreshProbe((body) => {
+		const both = derived(body, (b) => (b.by_role_mb = { 'python-engine': 9999 }));
+		const snap = mod.processFamilyFrom(both);
+		assert.ok(snap);
+		assert.deepEqual(
+			snap.members.map((m) => m.label),
+			both.members.map((m) => m.name),
+			'every live member, by its route name'
+		);
+		assert.ok(
+			snap.members.every((m) => m.mb !== 9999),
+			'no member came from the role totals'
+		);
+	});
+});
+
+test('[if] members are absent and role totals exist [then] the family falls back to the role totals', async () => {
+	await withFreshProbe((body) => {
+		const legacy = derived(body, (b) => delete b.members);
+		assert.ok(Object.keys(legacy.by_role_mb).length > 0, 'the real body carries role totals');
+		const snap = mod.processFamilyFrom(legacy);
+		assert.ok(snap);
+		assert.deepEqual(
+			snap.members.map((m) => [m.role, m.mb]),
+			Object.entries(legacy.by_role_mb),
+			'one member per role, with its total'
+		);
+		assert.ok(snap.members.every((m) => m.fromProbe));
+	});
+});
+
 test('refreshes throttle on the last attempt, and a failed attempt is retried after the interval', async () => {
 	const interval = 10_000;
 	await control('POST', '/test/family/exited');

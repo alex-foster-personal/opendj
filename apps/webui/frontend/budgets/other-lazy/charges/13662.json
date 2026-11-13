@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557245,
+  "measured_with_pr": 557462,
+  "sha": "c7e1fff22ae",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13662 changes no frontend source (an Electron preload guard, its test, one requirement file). CI's two builds, main a4c6954544d and the merge c7e1fff22ae, hold the same 249 JS files with the same raw byte length; only the content-hash names inside the import statements differ, and those names gzip 217 B worse on this 161-file surface. That is above the 128 B floor, so the gate asks for a charge; ceiled to KiB.",
+  "payback": "delete at the next rebaseline: the bytes are not code, so nothing has to come back"
+}

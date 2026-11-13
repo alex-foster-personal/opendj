@@ -3,6 +3,8 @@
 	 * K4 (#9396): one overlay ring like VS Code `focusBorder` (1px accent, 2px outset, no shadow).
 	 * Section nodes use a dashed border. Glide vs snap default is spike KS1 (#9399); 90ms transform
 	 * glide here is not the final product decision.
+	 * #12253: the one polite live region for selector changes lives here, always mounted (a region
+	 * inserted with its text is often not read), so no selectable control carries its own.
 	 */
 	import type { SelectorRingTarget } from '$lib/keyboard/selector-ring';
 	import { insetSelectorRingRect, selectorRingTransform } from '$lib/keyboard/selector-ring';
@@ -14,6 +16,9 @@
 	const current = $derived(targetProp === undefined ? selectorRing.target : targetProp);
 </script>
 
+<div class="selector-announce" data-testid="selector-announce" role="status" aria-live="polite">
+	{selectorRing.announcement}
+</div>
 {#if current !== null}
 	{@const box = insetSelectorRingRect(current.rect)}
 	<div
@@ -43,6 +48,17 @@
 		transition:
 			transform 90ms ease-out,
 			opacity 90ms ease-out;
+	}
+	.selector-announce {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	.selector-ring.section {
 		border-style: dashed;

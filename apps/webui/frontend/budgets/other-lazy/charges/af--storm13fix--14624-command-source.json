@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 557761,
+  "measured_with_pr": 559289,
+  "sha": "b460bf2d77",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13fix--14624-command-source (restacked from af--storm13--oj--12602-command-source without #14226) grows the other-lazy surface; measured +1528 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

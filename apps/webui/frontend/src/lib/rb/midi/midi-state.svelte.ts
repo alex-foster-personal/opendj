@@ -11,6 +11,12 @@
  * Requirements (mini-PRD):
  *   ✔︎ this module imports nothing at runtime.
  *     [if] webmidi.svelte.ts lands in the performance bundle again [then ⛔️] broken
+ *   ✔︎ per-device shift never bleeds across controller ids.
+ *     [if] SHIFT held on device A makes device B fire shifted bindings [then ⛔️] broken
+ *   ✔︎ unplug clears only that device's shift entry.
+ *     [if] one device disconnects while others still hold shift [then ⛔️] broken
+ *   ✔︎ release and test reset clear the whole record.
+ *     [if] clearAllShiftHeld or _resetMidiForTests runs with stale entries [then ⛔️] broken
  */
 
 export type MidiPermission = 'unsupported' | 'prompt' | 'granted' | 'denied';

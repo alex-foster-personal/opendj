@@ -30,7 +30,7 @@ from apps.adapters.rekordbox import config as rb_config
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
 from apps.shared.state import play_log
-from apps.shared.state.sync_stamp import canonical_now, parse_canonical
+from apps.shared.state.sync_stamp import SyncStampError, canonical_now, parse_canonical
 
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
@@ -142,17 +142,18 @@ def _imported_last_played_at(conn: sqlite3.Connection, stable_id: str) -> str | 
 
 
 def _later_last_played(imported: str | None, opendj: str | None) -> str | None:
+    """Later of two last-played stamps; a non-canonical one (date-only, naive) loses."""
     if imported is None:
         return opendj
     if opendj is None:
         return imported
     try:
         imp = parse_canonical(imported)
-    except ValueError:
+    except SyncStampError:
         return opendj
     try:
         own = parse_canonical(opendj)
-    except ValueError:
+    except SyncStampError:
         return imported
     return opendj if own >= imp else imported
 

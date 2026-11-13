@@ -47,9 +47,7 @@
 		setAppMode,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
-		setDeckLayoutMode,
 		describeTwoDeckToggle,
-		toggleLyricsGlobal,
 		cycleUiSkin,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
@@ -65,6 +63,11 @@
 	const listViewBullets = builtExplainerBullets('list-view');
 	const fxBullets = plannedExplainerBullets('fx');
 	const FX_INERT_TITLE = plannedTitle('fx');
+	const fxBuiltBullets = builtExplainerBullets('fx-panel');
+	// BEATFX-14: with `fx.beat_rack` on the FX button opens the beat FX panel.
+	const fxPanelAvailable = $derived(beatFxRackEnabled());
+	let fxPanelOpen = $state(false);
+	let fxPanelStyle = $state('');
 	const twoDeck = $derived(describeTwoDeckToggle(uiPrefs.deck_layout));
 	const fourWaveformBullets = builtExplainerBullets('4-waveform-view');
 	const TWO_TRACK_AUTOPLAY_TITLE = builtTitle('autoplay-two-track');
@@ -96,6 +99,7 @@
 	import TopBarAccountCluster from './TopBarAccountCluster.svelte';
 	import { cloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 	import AppPostureChip from './AppPostureChip.svelte';
+	import { describeLightingChip, lightingStatus } from '$lib/rb/lighting-status.svelte';
 	import GigHelperMonitor from './GigHelperMonitor.svelte';
 	import GigHelperPrompt from './GigHelperPrompt.svelte';
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
@@ -108,7 +112,6 @@
 	import OjTopBarButton from './OjTopBarButton.svelte';
 	import TrackInfoHost from './TrackInfoHost.svelte';
 	import WaveQuickSettingsButton from './WaveQuickSettingsButton.svelte';
-	import EdgeSamplerToggle from './sampler/EdgeSamplerToggle.svelte';
 	import {
 		builtExplainerBullets,
 		builtTitle,
@@ -121,6 +124,8 @@
 		featureIconView,
 		type FeatureIconId
 	} from '$lib/rb/feature-icon-cluster.svelte';
+	import { beatFxRackEnabled } from '$lib/rb/beat-fx-flag';
+	import BeatFxPanel from './BeatFxPanel.svelte';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
 	import { TOOLTIP_SKIM_ROW } from '$lib/ui/tooltip-timing';
 	import StemsProgress from './StemsProgress.svelte';
@@ -128,7 +133,7 @@
 	import TransitioningChip from './TransitioningChip.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
-	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
+	import { jobsDrawerToggleCommand, jobsStore } from '$lib/rb/jobs-store.svelte';
 	import MidiPanelLoader from '$lib/components/rb/midi/MidiPanelLoader.svelte';
 	import { maybeAutoEnableMidi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
@@ -142,6 +147,7 @@
 		modeFeatureEnabled
 	} from '$lib/rb/app-mode';
 	import ModeThumbnail from './ModeThumbnail.svelte';
+	import { topbarSelectorNode } from './topbar-selector-node';
 	import { markLibraryModeExit } from '$lib/rb/library-mode-runtime';
 
 	/** ENRICH-01: the route's enrich pill, rendered in flow in this row (a snippet, so this file adds no import). */
@@ -152,6 +158,12 @@
 	 * a feature nobody has built, this one is built and simply not served by
 	 * this daemon. Two different sentences, deliberately not merged. */
 	const jobsUnavailable = $derived(jobsRefusal());
+
+	const isPerformance = $derived($page.url.pathname.startsWith('/performance'));
+	const lightingChip = $derived(
+		lightingStatus.state ? describeLightingChip(lightingStatus.state) : null
+	);
+	$effect(() => (isPerformance ? lightingStatus.start() : undefined));
 
 	let pairingOpen = $state(false);
 	let pairingSnapshot = $state<PairingSnapshot | null>(null);
@@ -332,20 +344,29 @@
 		if (id === '2-deck') return twoDeck.pressed;
 		const view = featureIconView(id);
 		if (view) return uiPrefs.perf_view === view;
-		// FX: no panel is built yet, so it is never on.
+		if (id === 'fx') return fxPanelOpen;
 		return false;
 	}
 
 	function _toggleFeature(id: FeatureIconId): void {
 		if (id === '2-deck') {
-			setDeckLayoutMode(twoDeck.next);
+			void runPerformanceCommandFromUi({
+				type: 'set_deck_layout',
+				layout: twoDeck.next === 'less' ? 'two-deck' : 'four-deck'
+			});
 			return;
 		}
 		const view = featureIconView(id);
 		if (view) {
 			void runPerformanceCommandFromUi({ type: 'set_perf_view', view });
 		}
-		// FX: inert until its panel exists (plannedTitle('fx')); nothing to toggle.
+		if (id === 'fx') _toggleFxPanel();
+	}
+
+	function _toggleFxPanel(): void {
+		const rect = iconClusterEl?.getBoundingClientRect();
+		if (rect) fxPanelStyle = `left:${Math.round(rect.left)}px;top:${Math.round(rect.bottom + 5)}px`;
+		fxPanelOpen = !fxPanelOpen;
 	}
 
 	function _placeFeatureExtra(): void {
@@ -647,7 +668,12 @@
 		<StemsProgress />
 	{/if}
 
-	<details class="mode-picker" bind:this={modePickerEl} use:modePickerToggle>
+	<details
+		class="mode-picker"
+		bind:this={modePickerEl}
+		use:modePickerToggle
+		use:topbarSelectorNode={{ name: 'mode', disabled: false }}
+	>
 		<summary class="mode-dd" aria-label="Choose app mode" title={modePickerTitle}>
 			{activeMode.label.toUpperCase()}
 			<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
@@ -675,6 +701,14 @@
 		</div>
 	</details>
 	<AppPostureChip showRecordControl={$page.url.pathname.startsWith('/performance')} />
+	{#if isPerformance && lightingChip}
+		<span
+			class="lighting-chip lighting-{lightingChip.state}"
+			data-testid="lighting-status-chip"
+			data-state={lightingChip.state}
+			title={lightingChip.title}>{lightingChip.label}</span
+		>
+	{/if}
 	<GigHelperMonitor />
 	<GigHelperPrompt />
 
@@ -696,6 +730,7 @@
 			onclick={_openFeatureMenuFromCluster}
 			onkeydown={_onFeatureClusterKey}
 			bind:this={iconClusterEl}
+			use:topbarSelectorNode={{ name: 'layout', disabled: false }}
 		>
 			<!-- list-view icon with dropdown caret -->
 			<ControlExplainer title="List view" bullets={listViewBullets} tooltip={TOOLTIP_SKIM_ROW}>
@@ -722,16 +757,30 @@
 					</svg>
 				</button>
 			</ControlExplainer>
-			<!-- FX panel toggle -->
-			<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" tooltip={TOOLTIP_SKIM_ROW}>
-				<button
-					type="button"
-					class="tb-icon fx rb-inert"
-					disabled
-					aria-disabled="true"
-					inert={!featureIconSingleClick()}
-					aria-label="FX panel">FX</button>
-			</ControlExplainer>
+			<!-- FX panel toggle: the planned control until `fx.beat_rack` is on -->
+			{#if fxPanelAvailable}
+				<ControlExplainer title="FX panel" bullets={fxBuiltBullets} demo="fx" tooltip={TOOLTIP_SKIM_ROW}>
+					<button
+						type="button"
+						class="tb-icon fx"
+						class:on={fxPanelOpen}
+						aria-pressed={fxPanelOpen}
+						inert={!featureIconSingleClick()}
+						aria-label="FX panel"
+						onclick={_toggleFxPanel}>FX</button>
+				</ControlExplainer>
+			{:else}
+				<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" tooltip={TOOLTIP_SKIM_ROW}>
+					<button
+						type="button"
+						class="tb-icon fx rb-inert"
+						disabled
+						aria-disabled="true"
+						inert={!featureIconSingleClick()}
+						aria-label="FX panel">FX</button
+					>
+				</ControlExplainer>
+			{/if}
 			<!-- Split view and grid view are unbuilt: HIDDEN for V1 rather than shown
 			     disabled (JIK, Thu 1 Oct 2026). Their planned-explainers entries stay
 			     so the copy is ready when they are built. -->
@@ -750,7 +799,10 @@
 					aria-keyshortcuts="Meta+2 Control+2 Meta+4 Control+4"
 					onclick={(event) => {
 						event.stopPropagation();
-						setDeckLayoutMode(twoDeck.next);
+						void runPerformanceCommandFromUi({
+				type: 'set_deck_layout',
+				layout: twoDeck.next === 'less' ? 'two-deck' : 'four-deck'
+			});
 					}}
 				>
 					<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -775,7 +827,8 @@
 					aria-pressed={uiPrefs.perf_view === 'waveform'}
 					data-testid="perf-view-waveform"
 					inert={!featureIconSingleClick()}
-					onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'waveform' })}
+					onclick={() =>
+						void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'waveform' })}
 				>
 					<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
 						{#each WAVE_ICON_ROWS as row (row.cy)}
@@ -809,7 +862,8 @@
 						aria-pressed={uiPrefs.perf_view === 'phase-scope'}
 						data-testid="perf-view-phase-scope"
 						inert={!featureIconSingleClick()}
-						onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-scope' })}
+						onclick={() =>
+							void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-scope' })}
 					>
 						<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 							<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
@@ -832,7 +886,8 @@
 						aria-pressed={uiPrefs.perf_view === 'phase-meter'}
 						data-testid="perf-view-phase-meter"
 						inert={!featureIconSingleClick()}
-						onclick={() => void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-meter' })}
+						onclick={() =>
+							void runPerformanceCommandFromUi({ type: 'set_perf_view', view: 'phase-meter' })}
 					>
 						<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 							<circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" />
@@ -848,7 +903,12 @@
 			</div>
 		</div>
 		{#if featureMenuOpen && !featureIconSingleClick()}
-			<div class="feature-menu" style={featureMenuStyle} bind:this={featureMenuEl} aria-label="Feature components">
+			<div
+				class="feature-menu"
+				style={featureMenuStyle}
+				bind:this={featureMenuEl}
+				aria-label="Feature components"
+			>
 				<p class="feature-menu-heading">Components</p>
 				{#each FEATURE_ICON_ROWS as row (row.row)}
 					<div class="feature-menu-row">
@@ -859,8 +919,8 @@
 								class="feature-toggle"
 								class:on={_featurePressed(icon.id)}
 								aria-pressed={_featurePressed(icon.id)}
-								disabled={icon.id === 'fx'}
-								title={icon.id === 'fx' ? FX_INERT_TITLE : undefined}
+								disabled={icon.id === 'fx' && !fxPanelAvailable}
+								title={icon.id === 'fx' && !fxPanelAvailable ? FX_INERT_TITLE : undefined}
 								onclick={(event) => {
 									event.stopPropagation();
 									_toggleFeature(icon.id);
@@ -873,6 +933,9 @@
 					Core stays on the top row. More components fill row 2, then row 3.
 				</p>
 			</div>
+		{/if}
+		{#if fxPanelOpen && fxPanelAvailable}
+			<BeatFxPanel style={fxPanelStyle} onclose={() => (fxPanelOpen = false)} />
 		{/if}
 	</div>
 
@@ -908,7 +971,10 @@
 	<!-- dead-center feedback thumbs (PREF-02). The vibe meter that sat between
 	     them was removed, R10, Wed 7 Oct 2026. First-open panel placement:
 	     data-feedback-thumbs-anchor on FeedbackThumbs. -->
-	<div class="thumbs-slot topbar-slot-thumbs">
+	<div
+		class="thumbs-slot topbar-slot-thumbs"
+		use:topbarSelectorNode={{ name: 'thumbs', disabled: false }}
+	>
 		<FeedbackThumbs />
 	</div>
 
@@ -921,6 +987,7 @@
 		aria-label="Create pairing"
 		title={pairingBlocked ?? 'Create pairing from two decks'}
 		disabled={pairingBlocked !== null}
+		use:topbarSelectorNode={{ name: 'pairing', disabled: pairingBlocked !== null }}
 		onclick={() => void _openPairing()}
 	>
 		<span class="pair-long">Create pairing</span><span class="pair-short" aria-hidden="true"
@@ -936,6 +1003,7 @@
 		title={uiPrefs.beat_sync_max
 			? 'BeatSyncMax ON - Beat Sync is on for every loaded deck and each new load; downbeats stay BAR-locked on every seek. A deck SYNC press still turns that deck off until its next load'
 			: 'BeatSyncMax OFF - turning it on turns Beat Sync on for every loaded deck. Turning it off leaves each deck synced or not, as it is'}
+		use:topbarSelectorNode={{ name: 'beat-sync-max', disabled: false }}
 		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
 	>
 		BeatSyncMax
@@ -959,7 +1027,9 @@
 			class:on={uiPrefs.lyrics_global}
 			aria-pressed={uiPrefs.lyrics_global}
 			aria-describedby="lyr-menu-status"
-			onclick={toggleLyricsGlobal}
+			use:topbarSelectorNode={{ name: 'lyrics', disabled: false }}
+			onclick={() =>
+				void runPerformanceCommandFromUi({ type: 'set_lyrics_global', enabled: !uiPrefs.lyrics_global })}
 		>
 			LYR
 		</button>
@@ -987,7 +1057,9 @@
 					>
 						Stage
 					</button>
-					<p class="ap-status" id="lyr-menu-stage-status" data-testid="lyr-menu-stage-status">{stageTitle}</p>
+					<p class="ap-status" id="lyr-menu-stage-status" data-testid="lyr-menu-stage-status">
+						{stageTitle}
+					</p>
 				</div>
 			</div>
 		{/if}
@@ -1006,6 +1078,7 @@
 		class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 		data-custom-tip=""
 		bind:this={autoPlayWrapEl}
+		use:topbarSelectorNode={{ name: 'autoplay', disabled: false }}
 		onpointerenter={_showAutoPlayMenu}
 		onpointerleave={_hideAutoPlayMenu}
 		onfocusin={_showAutoPlayMenu}
@@ -1191,10 +1264,12 @@
 		class:on={uiPrefs.show_pads}
 		aria-pressed={uiPrefs.show_pads}
 		data-testid="topbar-pad-toggle"
+		use:topbarSelectorNode={{ name: 'pads', disabled: false }}
 		title={uiPrefs.show_pads
 			? 'PAD ON - every deck shows its 2x4 hot-cue pad bank. Click to hide the pads (hot cues stay on the waveforms, the overview strip, MIDI and the hotkeys)'
 			: 'PAD OFF - the hot-cue pad banks are hidden on every deck. Click to show them'}
-		onclick={() => void runPerformanceCommandFromUi({ type: 'show_pads', enabled: !uiPrefs.show_pads })}
+		onclick={() =>
+			void runPerformanceCommandFromUi({ type: 'show_pads', enabled: !uiPrefs.show_pads })}
 	>
 		PAD
 	</button>
@@ -1210,7 +1285,8 @@
 			'Engine jobs: what the daemon is running right now (live over the jobs.updated topic)'}
 		aria-label="Jobs drawer"
 		aria-expanded={jobsStore.drawerOpen}
-		onclick={toggleJobsDrawer}
+		use:topbarSelectorNode={{ name: 'jobs', disabled: jobsUnavailable !== null }}
+		onclick={() => void runPerformanceCommandFromUi(jobsDrawerToggleCommand())}
 	>
 		JOBS
 	</button>
@@ -1223,7 +1299,9 @@
 	     the evictable utility slot; the overlay and its load failure mount
 	     outside it, so an agent's track_info_toggle still shows them where the
 	     width tiers or LESS view hide the slot (Sol P1 4350988015). -->
-	<span class="info-slot topbar-slot-utility"
+	<span
+		class="info-slot topbar-slot-utility"
+		use:topbarSelectorNode={{ name: 'track-info', disabled: false }}
 		><TrackInfoButton
 			ontoggle={() => void runPerformanceCommandFromUi({ type: 'track_info_toggle' })}
 		/></span
@@ -1236,7 +1314,10 @@
 	<span class="free-badge" title={plannedTitle('free-badge')}>Free</span>
 
 	<!-- SETNOTE-6340g: the set-notes app upgrades this tag once it loads (lib/set-notes/toggle-element.ts). -->
-	<set-notes-toggle class="topbar-slot-pinned"></set-notes-toggle>
+	<set-notes-toggle
+		class="topbar-slot-pinned"
+		use:topbarSelectorNode={{ name: 'set-notes', disabled: false }}
+	></set-notes-toggle>
 
 	<button
 		type="button"
@@ -1245,6 +1326,7 @@
 		data-skin-current={uiPrefs.ui_skin}
 		title={skinCycleTitle(uiPrefs.ui_skin)}
 		aria-label={skinCycleTitle(uiPrefs.ui_skin)}
+		use:topbarSelectorNode={{ name: 'skin', disabled: false }}
 		onclick={cycleUiSkin}
 	>
 		<!-- One glyph per skin (SKIN_BUTTON_ICON_SVG in ui-skin.ts): static, trusted markup. -->
@@ -1254,13 +1336,13 @@
 	</button>
 
 	<WaveQuickSettingsButton />
-	<EdgeSamplerToggle />
 
 	<button
 		type="button"
 		class="tb-icon theme-toggle topbar-slot-pinned"
 		title="Settings (Cmd+,)"
 		aria-label="Open settings"
+		use:topbarSelectorNode={{ name: 'settings', disabled: false }}
 		onclick={() => openSettings()}
 	>
 		<svg
@@ -1305,6 +1387,7 @@
 			onpointermove={handleMasterMove}
 			onpointerup={handleMasterUp}
 			onkeydown={handleMasterKeyDown}
+			use:topbarSelectorNode={{ name: 'master', disabled: false }}
 		>
 			<div class="master-track"></div>
 			<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
@@ -1375,6 +1458,7 @@
 		aria-label="master mute"
 		aria-pressed={isMasterMuted()}
 		data-mute-reason={masterMuteReason() ?? undefined}
+		use:topbarSelectorNode={{ name: 'mute', disabled: false }}
 		title={isMasterMuted()
 			? `${masterMuteReason() ?? ''} Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).`
 			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
@@ -1655,10 +1739,14 @@
 		   [1416px, 1423px] in a 1px elementFromPoint sweep (the input's centre hit
 		   the skin toggle), so 1448px is 1423px plus the same 25px margin. */
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
-		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster > :global(.explainer:has(.tb-view)),
+		.rb-topbar:not(.view-chosen):not(.single-click)
+			.icon-cluster
+			> :global(.explainer:has(.tb-view)),
 		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster-extra,
 		.rb-topbar .link-btn,
-		.rb-topbar:not(.pads-off) .topbar-slot-pad { display: none; }
+		.rb-topbar:not(.pads-off) .topbar-slot-pad {
+			display: none;
+		}
 	}
 	@media (max-width: 1257px) {
 		/* New tier. Status first (see the note above), and the chrome the 825px
@@ -1760,7 +1848,9 @@
 	.rb-topbar.less-view .topbar-slot-utility,
 	.rb-topbar.less-view .free-badge,
 	.rb-topbar.less-view .lyr-stage-row,
-	.rb-topbar.less-view :global(.cmd-entry) { display: none; }
+	.rb-topbar.less-view :global(.cmd-entry) {
+		display: none;
+	}
 	/* The overflow rows hold the live phase views (TOPVIEW-02/03): hidden in LESS
 	   only at the default view, so a chosen phase view keeps its way back. */
 	.rb-topbar.less-view:not(.view-chosen):not(.single-click) .icon-cluster-extra {
@@ -1806,10 +1896,14 @@
 	}
 	@media (max-height: 799px) and (max-width: 1512px) {
 		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
-		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster > :global(.explainer:has(.tb-view)),
+		.rb-topbar:not(.view-chosen):not(.single-click)
+			.icon-cluster
+			> :global(.explainer:has(.tb-view)),
 		.rb-topbar:not(.view-chosen):not(.single-click) .icon-cluster-extra,
 		.rb-topbar .link-btn,
-		.rb-topbar:not(.pads-off) .topbar-slot-pad { display: none; }
+		.rb-topbar:not(.pads-off) .topbar-slot-pad {
+			display: none;
+		}
 	}
 	/* READ-ONLY status only. The Gig/Prep posture buttons and the refresh-analysis
 	   button are controls, and a short window is Playwright's default 1280x720
@@ -2190,6 +2284,10 @@
 		border: 1px solid var(--rb-border);
 		padding: 2px 4px;
 	}
+	.tb-icon.fx.on {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
+	}
 	.tb-icon.mute-btn {
 		border: 1px solid var(--rb-border);
 		cursor: pointer;
@@ -2483,4 +2581,17 @@
 		transition-duration: 0.01ms;
 	}
 
+	.lighting-chip {
+		font-size: 11px;
+		padding: 0 6px;
+		border-radius: 4px;
+		opacity: 0.85;
+		white-space: nowrap;
+	}
+	.lighting-on {
+		color: var(--ok, #4caf50);
+	}
+	.lighting-no_feed {
+		color: var(--warn, #e0a030);
+	}
 </style>

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import sqlite3
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import pytest
 
+from apps.lyrics import fuzzy_match
 from apps.lyrics.cache import LyricLine, Lyrics, cache_path, write
 from apps.lyrics.fuzzy_match import (
     LYRIC_FUZZY_SIMILARITY_THRESHOLD,
     best_lyric_line,
     lyric_text_matches_fuzzy,
+    merge_fts_and_fuzzy,
 )
 from apps.lyrics.search_index import index_batch, search_documents
 from apps.lyrics.search_snippet import matched_snippet
@@ -82,3 +86,60 @@ def test_documented_similarity_threshold_is_pinned() -> None:
     )
     assert line is not None
     assert "moonlight" in line.text.lower()
+
+
+def _plain_index(rows: list[tuple[str, str]]) -> sqlite3.Connection:
+    """In-memory stand-in for the ``lyrics_fts`` table with the two columns fuzzy search reads."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE lyrics_fts (stable_id TEXT, searchable_text TEXT)")
+    conn.executemany("INSERT INTO lyrics_fts VALUES (?, ?)", rows)
+    return conn
+
+
+@pytest.mark.requirement("SEARCH-NAV-12002")
+def test_fuzzy_index_pass_scores_each_distinct_word_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] many index rows repeat one vocabulary [then] scoring is bounded by vocabulary not corpus, [else stop]."""
+    vocabulary = [f"word{index:02d}" for index in range(20)] + ["moonlight", "tonight", "dancing"]
+    rows = [
+        (f"track-{doc}", " ".join(vocabulary[(doc + k) % len(vocabulary)] for k in range(400))) for doc in range(300)
+    ]
+    calls = 0
+    real_matcher = fuzzy_match.SequenceMatcher
+
+    def counting_matcher(*args: object, **kwargs: object) -> SequenceMatcher:
+        """Count every SequenceMatcher built by the fuzzy pass."""
+        nonlocal calls
+        calls += 1
+        return real_matcher(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(fuzzy_match, "SequenceMatcher", counting_matcher)
+    conn = _plain_index(rows)
+    try:
+        hits, total = merge_fts_and_fuzzy(conn, "zzzzqqqq moonlght", [], 0, limit=10)
+    finally:
+        conn.close()
+    assert (hits, total) == ([], 0)
+    assert calls <= len(vocabulary) * 2
+
+
+@pytest.mark.requirement("SEARCH-NAV-12002")
+def test_memoised_fuzzy_pass_agrees_with_per_document_matcher() -> None:
+    """[if] the memoised index pass runs [then] it returns exactly the per-document matcher hits and total, [else stop]."""
+    texts = [
+        "floating in the moonlight tonight",
+        "dancing in the moonlite",
+        "nothing to see here",
+        "moon light tonite",
+        "the moonlight is gone tonight",
+        "",
+    ]
+    rows = [(f"track-{index}", text) for index, text in enumerate(texts)]
+    for query in ("moonlght", "moonlight tonight", "moon tonite", "zzzzqqqq", "dancing moonlight"):
+        expected = [stable_id for stable_id, text in rows if lyric_text_matches_fuzzy(query, text)]
+        conn = _plain_index(rows)
+        try:
+            hits, total = merge_fts_and_fuzzy(conn, query, [], 0, limit=2)
+        finally:
+            conn.close()
+        assert hits == expected[:2], query
+        assert total == len(expected), query

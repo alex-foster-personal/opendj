@@ -53,6 +53,8 @@ export interface BeatFxQuantizePlan {
 /** When a transition starts: the next boundary of min(beats, 1 beat) with quantize on and a grid, else at once. */
 export function planQuantizedTransition(input: BeatFxQuantizeInput): BeatFxQuantizePlan {
 	const { quantize, gridBeatsSec, nowSec, beats } = input;
+	if (!Number.isFinite(nowSec))
+		throw new RangeError(`beat fx nowSec must be a finite number; got ${String(nowSec)}`);
 	if (!quantize) return { state: 'off', atSec: nowSec };
 	const boundary = nextQuantizeBoundarySec(gridBeatsSec, nowSec, beats);
 	if (boundary === null) return { state: 'no_grid', atSec: nowSec };
@@ -120,6 +122,7 @@ export function buildBeatFxRelease(
 	target: BeatFxReleaseTarget
 ): BeatFxRelease {
 	const echo = buildEchoKernel(ctx, {
+		mode: 'echo',
 		maxDelaySec: BEAT_FX_RELEASE_MAX_DELAY_SEC,
 		feedback: BEAT_FX_RELEASE_FEEDBACK,
 		loopHpHz: BEAT_FX_RELEASE_LOOP_HP_HZ,

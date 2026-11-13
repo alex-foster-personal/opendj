@@ -19,10 +19,13 @@
  *   wall travels without saying so
  * - if finish() closes on the BOOT preflight reading then the root layout
  *   re-raises setup the moment it closes and Start playing does nothing
+ * - if invalid tempo is copied to the redirect then broken (issue #13096)
+ * - if onboarding drops tempo query on boot redirect then broken (#13096)
  */
 import assert from 'node:assert/strict';
-import { after, before, beforeEach, test } from 'node:test';
+import { after, before, beforeEach, describe, test } from 'node:test';
 
+import { loadRuneModule } from './load-rune-module.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 import { engineHealth, jsonResponse } from './setup-fixtures.mjs';
 
@@ -510,6 +513,121 @@ async function settlesWithin(promise, ms, what) {
 test('the setup read deadline defaults to 20 s', () => {
 	assert.equal(mod.SETUP_READ_TIMEOUT_MS, 20_000);
 	assert.equal(wizard.readTimeoutMs, 20_000);
+});
+
+const RUNE_ENTRY =
+	"export { setupWizard, SETUP_READ_TIMEOUT_MS } from '$lib/setup/wizard.svelte';";
+
+/**
+ * Runtime export names from tests/unit/fixtures/setup-wizard-entry.ts (Object.keys
+ * only; type-only exports are invisible). Regenerate by loading the entry in a
+ * one-off node probe when the fixture graph changes.
+ */
+const EXPECTED_ENTRY_EXPORTS = [
+	'FOLDER_STAGE_LABELS',
+	'ONBOARDING_TEMPO_SEARCH_KEYS',
+	'SETUP_CODES',
+	'SETUP_IMPORT_KIND',
+	'SETUP_READ_TIMEOUT_MS',
+	'STAGE_LABELS',
+	'STEP_TITLES',
+	'TERMINAL',
+	'WIZARD_STEPS',
+	'_resetPreflightForTests',
+	'accessCaveat',
+	'advanceRefusal',
+	'agentAccessDetail',
+	'appendTempoSearchToRoute',
+	'backRefusal',
+	'blockerAgentDetail',
+	'blockerSentence',
+	'capabilities',
+	'checkPreflight',
+	'currentFolderScan',
+	'derivedHarnessByProbe',
+	'derivedHarnessIdentityProbe',
+	'detectRekordbox',
+	'eventsRefusal',
+	'fatalBlockers',
+	'filterValidTempoSearchParams',
+	'finalSetupRefusal',
+	'finalSetupRefusalAgent',
+	'folderAdvanceRefusal',
+	'folderIsImportable',
+	'folderVerdict',
+	'formatBytes',
+	'getConfiguredFolders',
+	'getFolderCandidates',
+	'getPermissions',
+	'getSetupJob',
+	'getSetupStatus',
+	'getStemsSetup',
+	'humanBackRefusal',
+	'humanRefusal',
+	'importPct',
+	'importableFolderPathsFromRows',
+	'isFatalBlocker',
+	'jobsRefusal',
+	'libraryJobsRefusal',
+	'needsSetupForEmptyLibrary',
+	'newFolderRow',
+	'nextStep',
+	'nextStepFor',
+	'normalizeSetupFolderPath',
+	'panelSwapNeedsHeadingFocus',
+	'preflightGate',
+	'preserveUrlSearchOnRedirect',
+	'previousStep',
+	'previousStepFor',
+	'probeSetupCapabilities',
+	'progressRefusal',
+	'readDaemonFlavor',
+	'readGoogleOAuthConfigured',
+	'scanFolder',
+	'setConfiguredFolders',
+	'setDismissed',
+	'setupProbePending',
+	'setupRefusal',
+	'setupWizard',
+	'startFolderImport',
+	'startImport',
+	'stepAnnouncement',
+	'stepCount',
+	'stepIndex',
+	'stepPosition',
+	'visibleSteps',
+	'wizardAnnouncement'
+];
+
+describe('derived harness shim (issue #13097)', () => {
+	test('$derived identity and .by probes from setup-wizard-entry', () => {
+		assert.equal(mod.derivedHarnessIdentityProbe, 42);
+		assert.equal(mod.derivedHarnessByProbe, 'by');
+	});
+
+	test('setup-wizard-entry export surface', () => {
+		assert.deepEqual(Object.keys(mod).sort(), EXPECTED_ENTRY_EXPORTS);
+	});
+
+	test('setupWizard instance surface matches overlay reads', () => {
+		assert.equal(typeof wizard.step, 'string');
+		assert.ok('source' in wizard);
+		assert.ok('status' in wizard);
+		assert.ok('detection' in wizard);
+		assert.ok('folderRows' in wizard);
+		assert.ok('detectState' in wizard);
+		assert.ok('statusRefreshJobId' in wizard);
+		assert.ok('busy' in wizard);
+		assert.ok('statusRefreshError' in wizard);
+		assert.ok('error' in wizard);
+		assert.ok('errorDiagnostic' in wizard);
+	});
+
+	test('setup wizard module compiles with live Svelte runes (no node:test shim)', async () => {
+		const live = await loadRuneModule(RUNE_ENTRY);
+		assert.equal(live.SETUP_READ_TIMEOUT_MS, 20_000);
+		assert.equal(typeof live.setupWizard.step, 'string');
+	});
 });
 
 test('a status read that never answers is aborted at the deadline and ends failed (Mac check 3a)', async () => {
@@ -1689,4 +1807,41 @@ test('a failed re-read says so and keeps the status it had', async () => {
 
 	assert.equal(wizard.error, 'state db is gone');
 	assert.equal(wizard.status.last_import, null, 'previous status must survive a failure');
+});
+
+test('onboarding redirect with tempo selection preserves valid tempo query values', () => {
+	const { appendTempoSearchToRoute, filterValidTempoSearchParams } = mod;
+	const filtered = filterValidTempoSearchParams(
+		'?tempo_regular=128&tempo_min=120&tempo_max=130'
+	);
+	assert.equal(filtered, '?tempo_regular=128&tempo_min=120&tempo_max=130');
+	assert.equal(
+		appendTempoSearchToRoute('/performance', '?tempo_regular=128&tempo_min=120&tempo_max=130'),
+		'/performance?tempo_regular=128&tempo_min=120&tempo_max=130'
+	);
+});
+
+test('onboarding redirect without tempo fields leaves host route bare', () => {
+	const { appendTempoSearchToRoute, filterValidTempoSearchParams } = mod;
+	assert.equal(filterValidTempoSearchParams(''), '');
+	assert.equal(filterValidTempoSearchParams('?noise=1'), '');
+	assert.equal(appendTempoSearchToRoute('/performance', ''), '/performance');
+	assert.equal(appendTempoSearchToRoute('/performance', '?noise=1'), '/performance');
+});
+
+test('invalid tempo values are omitted from redirect tempo query', () => {
+	const { appendTempoSearchToRoute, filterValidTempoSearchParams } = mod;
+	// if invalid tempo is copied to the redirect then broken
+	assert.equal(
+		filterValidTempoSearchParams('?tempo_regular=abc&tempo_min=140&tempo_max=130'),
+		''
+	);
+	assert.equal(
+		appendTempoSearchToRoute('/performance', '?tempo_regular=abc&tempo_min=140&tempo_max=130'),
+		'/performance'
+	);
+	assert.equal(
+		filterValidTempoSearchParams('?tempo_regular=128&tempo_min=140&tempo_max=130'),
+		'?tempo_regular=128'
+	);
 });

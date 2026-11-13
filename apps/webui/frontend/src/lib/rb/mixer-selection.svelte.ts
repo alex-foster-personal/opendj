@@ -7,7 +7,8 @@ import { singleSelectedDeck } from './focused-deck';
 import { noteRecentDeck } from './recent-deck';
 import type { MixerDeckPairId } from './midi/midi-types';
 
-const PAIR_DECKS: Record<MixerDeckPairId, readonly [DeckId, DeckId]> = {
+/** The two decks each FLX10-style pair select button toggles between. */
+export const MIXER_DECK_PAIR_DECKS: Readonly<Record<MixerDeckPairId, readonly [DeckId, DeckId]>> = {
 	'1-3': [1, 3],
 	'2-4': [2, 4]
 };
@@ -90,10 +91,11 @@ export function onDeckLoadStart(deck: DeckId): void {
 	resetToSingle(deck);
 }
 
-/** FLX10-style deck pair select from MIDI: toggle or pick one deck in the
- * pair while keeping the other pair's selection (pin a675881be6c8). */
+/** FLX10-style deck pair select: toggle or pick one deck in the pair while
+ * keeping the other pair's selection (pin a675881be6c8). MIDI and agents reach
+ * it through the `mixer_deck_pair_select` performance command (#13228). */
 export function midiSelectDeckPair(pair: MixerDeckPairId, deck?: DeckId): void {
-	const [a, b] = PAIR_DECKS[pair];
+	const [a, b] = MIXER_DECK_PAIR_DECKS[pair];
 	const other = OTHER_PAIR[pair];
 	const kept = mixerSelection.selected.filter((d) => other.includes(d));
 	let next: DeckId;
@@ -106,7 +108,7 @@ export function midiSelectDeckPair(pair: MixerDeckPairId, deck?: DeckId): void {
 		const active = mixerSelection.selected.find((d) => d === a || d === b);
 		next = active === a ? b : a;
 	}
-	mixerSelection.selected = [...kept, next].sort((x, y) => x - y);
+	_setSelected([...kept, next].sort((x, y) => x - y));
 	mixerSelection.clickedDeck = singleSelectedDeck(mixerSelection.selected);
 	noteRecentDeck(next);
 }

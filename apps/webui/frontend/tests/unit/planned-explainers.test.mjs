@@ -139,10 +139,15 @@ describe('planned explainers', () => {
 		assert.deepEqual(Object.keys(mod.BUILT_CONTROLS).sort(), [
 			'4-waveform-view',
 			'autoplay-two-track',
+			'fx-panel',
 			'information',
 			'list-view',
+			'pane-next-track',
+			'pane-prev-track',
 			'scope-view-1',
-			'scope-view-2'
+			'scope-view-2',
+			'single-column-layout',
+			'split-column-layout'
 		]);
 		const topbar = readFileSync(
 			fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),

@@ -23,6 +23,20 @@
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
+	import {
+		commandedMoveLanding,
+		commandedMovePresentation
+	} from '$lib/rb/commanded-move-runner.svelte';
+	import {
+		COMMANDED_GHOST_VARIANT,
+		COMMANDED_SETTLE_VARIANT,
+		FADER_SETTLE_PX,
+		commandedGhostStyle,
+		commandedSettleStyle,
+		commandedSettleVars
+	} from '$lib/rb/commanded-move-presentation';
+	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
+	import { readVariant } from '$lib/rb/prefs.svelte';
 	import { valueText } from '$lib/a11y/value-text';
 	import {
 		KNOB_CFG,
@@ -83,6 +97,23 @@
 		takeoverGhost === null ? null : (1 - takeoverGhost.value) * Math.max(1, trackH - THUMB_H)
 	);
 	const ghostTopPx = $derived(ghostThumbTopPx(deckId, trackH, THUMB_H));
+	// D6 (#9717): a commanded move's target mark; the fill is its progress. Display only.
+	const commanded = $derived(commandedMovePresentation(controlId));
+	const commandedStyle = $derived(commandedGhostStyle(readVariant(COMMANDED_GHOST_VARIANT.id)));
+	const commandedTopPx = $derived(
+		commanded === null ? null : (1 - commanded.target) * Math.max(1, trackH - THUMB_H)
+	);
+	// #14036: a landed move's settle on the thumb, a CSS keyframe only; never the value or aria.
+	// A rising value moves the thumb up (negative y), so the overshoot side is flipped.
+	const landing = $derived(commandedMoveLanding(controlId));
+	const settleVars = $derived(
+		landing === null
+			? null
+			: commandedSettleVars(FADER_SETTLE_PX, landing.direction === 1 ? -1 : 1, 'px', {
+					reducedMotion: prefersReducedMotion(),
+					style: commandedSettleStyle(readVariant(COMMANDED_SETTLE_VARIANT.id))
+				})
+	);
 	const showGuidance = $derived(guidanceVisible(deckId));
 	const rejoinGlow = $derived(rejoinGlowActive(deckId));
 
@@ -253,6 +284,9 @@
 	data-testid={`channel-${deckId}-fader`}
 	data-knob-id={controlId}
 	data-takeover-ghost={takeoverGhost === null ? undefined : takeoverGhost.value}
+	data-commanded-target={commanded?.target}
+	data-commanded-progress={commanded?.progress}
+	data-commanded-settle={settleVars === null ? undefined : landing?.direction}
 	aria-orientation="vertical"
 	aria-valuemin={0}
 	aria-valuemax={1}
@@ -288,7 +322,29 @@
 	{:else if takeoverGhostTopPx !== null}
 		<div class="rb-fader-ghost" style={`top: ${takeoverGhostTopPx}px;`}></div>
 	{/if}
-	<div class="rb-fader-thumb" style={`top: ${thumbTopPx}px;`}></div>
+	{#if commanded !== null && commandedTopPx !== null}
+		<div
+			class="rb-fader-commanded-target"
+			data-testid={`commanded-ghost-${controlId}`}
+			style={`top: ${commandedTopPx}px; height: ${THUMB_H}px;`}
+		>
+			{#if commandedStyle === 'ghost-arc'}
+				<div
+					class="rb-fader-commanded-progress"
+					data-testid={`commanded-progress-${controlId}`}
+					style={`width: ${(commanded.progress * 100).toFixed(1)}%;`}
+				></div>
+			{/if}
+		</div>
+	{/if}
+	{#key landing?.seq}
+		<div
+			class="rb-fader-thumb"
+			class:commanded-settling={settleVars !== null}
+			data-testid={settleVars === null ? undefined : `commanded-settle-${controlId}`}
+			style={`top: ${thumbTopPx}px;${settleVars === null ? '' : ` ${settleVars}`}`}
+		></div>
+	{/key}
 	<AnimRunningDot animKey={controlId} />
 	{#if showGuidance && ghostTopPx !== null}
 		<FaderRejoinGuidance fromY={ghostTopPx + THUMB_H / 2} toY={thumbTopPx + THUMB_H / 2} trackWidth={30} />
@@ -320,9 +376,60 @@
 		pointer-events: none;
 	}
 
+	.rb-fader-commanded-target {
+		position: absolute;
+		left: 2px;
+		right: 2px;
+		box-sizing: border-box;
+		border: 1px dashed var(--rb-accent);
+		border-radius: 2px;
+		opacity: 0.7;
+		pointer-events: none;
+	}
+	.rb-fader-thumb.commanded-settling {
+		animation: commanded-settle-fader var(--settle-ms) linear;
+	}
+	@keyframes commanded-settle-fader {
+		0% {
+			transform: translateY(var(--settle-0));
+		}
+		25% {
+			transform: translateY(var(--settle-1));
+		}
+		50% {
+			transform: translateY(var(--settle-2));
+		}
+		75% {
+			transform: translateY(var(--settle-3));
+		}
+		100% {
+			transform: translateY(var(--settle-4));
+		}
+	}
+	.rb-fader-commanded-progress {
+		height: 100%;
+		background: var(--rb-accent);
+		opacity: 0.45;
+		pointer-events: none;
+	}
+
 	.rb-fader:focus-visible {
 		/* A11Y-11403: keyboard focus ring paired with this file's outline reset. */
 		outline: 2px solid var(--rb-focus-ring);
 		outline-offset: 2px;
+	}
+
+	/* A11Y-11811: reduced motion (OS or Appearance); mirrors app.css, as Knob.svelte does. */
+	@media (prefers-reduced-motion: reduce) {
+		:where(*) {
+			animation-duration: 0.01ms;
+			animation-iteration-count: 1;
+			transition-duration: 0.01ms;
+		}
+	}
+	:global(html[data-reduce-motion]) :where(*) {
+		animation-duration: 0.01ms;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
 	}
 </style>

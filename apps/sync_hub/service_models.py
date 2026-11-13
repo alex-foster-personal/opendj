@@ -13,7 +13,7 @@ request rather than being remembered from ``hello``.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -313,6 +313,26 @@ class HashPendingResponse(BaseModel):
     wire_version: int
 
 
+class R2CapabilityModel(BaseModel):
+    """Whether this hub can presign R2 assets, measured (CLOUDSYNC-4686b).
+
+    ``state`` is what one presigned GET of the stem index showed: SERVING,
+    ABSENT (no R2 variables in the process), FAILED (R2 refused it) or
+    UNKNOWN (no answer). ``verdict`` is DEGRADED when the hub cannot presign
+    and assets are indexed. Never carries a URL or a credential.
+    """
+
+    state: Literal["SERVING", "ABSENT", "FAILED", "UNKNOWN"]
+    reason: str
+    verdict: Literal["OK", "DEGRADED", "UNKNOWN"]
+    verdict_reason: str
+    #: None when no process on this data dir ever fetched the index.
+    indexed_stem_bundles: int | None
+    stem_count_source: Literal["r2", "last_known", "unmeasured"]
+    indexed_lyric_assets: int
+    measured_at: str
+
+
 class StatusResponse(BaseModel):
     hub_machine_id: str
     schema_version: int
@@ -326,6 +346,8 @@ class StatusResponse(BaseModel):
     #: hub reports False and None: it never consults a source.
     hosted: bool
     entitlement_provider: str | None
+    #: None unless the serving process is a hub (``MDT_IS_HUB=1``).
+    r2: R2CapabilityModel | None = None
 
 
 class SyncRowSampleModel(BaseModel):
@@ -375,6 +397,7 @@ __all__ = [
     "MachineModel",
     "PullResponse",
     "PushRequest",
+    "R2CapabilityModel",
     "PushResponse",
     "RowModel",
     "STALE_CHECK_MAX_CANDIDATES",

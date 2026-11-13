@@ -21,11 +21,13 @@
  * `(private path)` section 2 and
  * `01-beat-fx.md` section 4.3.
  */
-import { lfoCycleSeconds } from './mod-fx-lfo';
+import { lfoCycleSeconds, TRIPLET_CYCLE_BEATS, type TripletCycleBeats } from './mod-fx-lfo';
 
 /** Cut cycle lengths in beats (A9 range, plus 3/4 from main's color ECHO). */
 export const TRANS_CUT_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 3 / 4, 1, 2, 4, 8, 16] as const;
-export type TransCutBeats = (typeof TRANS_CUT_BEATS)[number];
+/** Triplet cut cycles, the mod FX LFO's triplet set (1/12 to 12/3 beats, issue #10016). */
+export const TRANS_TRIPLET_CUT_BEATS = TRIPLET_CYCLE_BEATS;
+export type TransCutBeats = (typeof TRANS_CUT_BEATS)[number] | TripletCycleBeats;
 
 /** Free (grid-less) cut cycle bounds in milliseconds (A9 TIME range). */
 export const TRANS_TIME_MS = Object.freeze({ min: 10, max: 16000 });
@@ -74,11 +76,12 @@ function _assertInRange(
 	}
 }
 
-/** Throws unless `beats` is one of TRANS_CUT_BEATS. */
+/** Throws unless `beats` is one of TRANS_CUT_BEATS or TRANS_TRIPLET_CUT_BEATS. */
 export function assertTransCutBeats(beats: number): asserts beats is TransCutBeats {
-	if (!(TRANS_CUT_BEATS as readonly number[]).includes(beats)) {
+	const duple = (TRANS_CUT_BEATS as readonly number[]).includes(beats);
+	if (!duple && !(TRANS_TRIPLET_CUT_BEATS as readonly number[]).includes(beats)) {
 		throw new Error(
-			`trans-gate: beats must be one of ${TRANS_CUT_BEATS.join(', ')}, got ${String(beats)}`
+			`trans-gate: beats must be one of ${TRANS_CUT_BEATS.join(', ')} or triplet ${TRANS_TRIPLET_CUT_BEATS.join(', ')}, got ${String(beats)}`
 		);
 	}
 }

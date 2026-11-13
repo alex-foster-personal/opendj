@@ -34,8 +34,8 @@ pub fn wave_band_gains(sr: f64, eq: [f64; 3], filter: f64) -> [f64; 3] {
         Coeffs::highshelf(sr, mixer::EQ_FREQ_HIGH_HZ, db[2]),
     ];
     let fp = mixer::filter_params(filter);
-    let lp = Coeffs::lowpass(sr, fp.lp_hz, mixer::FILTER_Q);
-    let hp = Coeffs::highpass(sr, fp.hp_hz, mixer::FILTER_Q);
+    let lp = Coeffs::lowpass(sr, fp.lp_hz, mixer::FILTER_Q_DB);
+    let hp = Coeffs::highpass(sr, fp.hp_hz, mixer::FILTER_Q_DB);
     WAVE_BAND_CENTRES_HZ.map(|centre| {
         let f = centre.min(sr * MAX_CENTRE_OF_SR);
         let eq_mag: f64 = eq_chain.iter().map(|c| c.magnitude_at(sr, f)).product();
@@ -152,7 +152,7 @@ mod tests {
     fn the_filter_knob_folds_in_as_a_band_gain() {
         // Full CCW: lowpass at 130 Hz. Highs gone, mids heavily cut, lows kept.
         let lpf = wave_band_gains(SR, FLAT, 0.0);
-        let lp = Coeffs::lowpass(SR, mixer::FILTER_LP_FLOOR_HZ, mixer::FILTER_Q);
+        let lp = Coeffs::lowpass(SR, mixer::FILTER_LP_FLOOR_HZ, mixer::FILTER_Q_DB);
         assert!(close(lpf[1], measured_gain(&[lp], 1000.0), 2e-3), "{lpf:?}");
         assert!(lpf[2] < 0.01 && lpf[1] < 0.05 && lpf[0] > 0.7, "{lpf:?}");
         // Full CW: highpass at 6.3 kHz. Lows and mids gone, highs kept.

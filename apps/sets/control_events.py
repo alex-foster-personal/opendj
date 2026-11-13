@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Literal
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 
 from . import control_ids as ids
 from .manifest import now_iso
@@ -87,6 +87,10 @@ class RawControlStamp:
 
 class ControlSeqError(ValueError):
     """Gap or reorder in the per-session seq stream."""
+
+
+class ControlEventsCorruptError(ValueError):
+    """A persisted ``controls.jsonl`` row is unreadable or fails v2 validation."""
 
 
 class ControlsJsonl:
@@ -242,6 +246,19 @@ def parse_control_event_v2(record: dict[str, Any]) -> ControlEventV2:
     )
 
 
+def read_session_control_events(session_dir: Path) -> list[ControlEventV2]:
+    """Return a session's persisted v2 control events, schema-validated, in ascending seq order."""
+    events: list[ControlEventV2] = []
+    try:
+        for record in ControlsJsonl(session_dir / "controls.jsonl").read_lines():
+            event = parse_control_event_v2(record)
+            event.validate()
+            events.append(event)
+    except (ValueError, ValidationError) as exc:
+        raise ControlEventsCorruptError(f"controls.jsonl in {session_dir.name!r} is corrupt: {exc}") from exc
+    return sorted(events, key=lambda event: event.seq)
+
+
 def append_control_jsonl(session_dir: Path, event: ControlEventV2) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
     path = session_dir / "controls.jsonl"
@@ -257,16 +274,18 @@ def utc_wall_clock(now: datetime | None = None) -> str:
 
 
 __all__ = [
+    "V2_KINDS",
+    "V2_SOURCES",
     "ControlEventV2",
+    "ControlEventsCorruptError",
     "ControlSeqError",
     "ControlsJsonl",
     "RawControlStamp",
-    "V2_KINDS",
-    "V2_SOURCES",
     "append_control_jsonl",
-    "assign_session",
     "assert_seq_gap_free",
+    "assign_session",
     "coalesce_continuous",
     "parse_control_event_v2",
+    "read_session_control_events",
     "utc_wall_clock",
 ]

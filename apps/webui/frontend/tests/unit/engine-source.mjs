@@ -65,6 +65,7 @@ export const ENGINE_SOURCE_PATHS = [
 	'lib/rb/audio-engine-stem-routing.ts',
 	'lib/rb/audio-context-instrumentation.ts',
 	'lib/rb/beat-sync-math.ts',
+	'lib/rb/crossfader-gain-law.ts',
 	'lib/rb/press-stamp.ts',
 	'lib/rb/deck-audio-snapshot.ts',
 	'lib/player/beatgrid-resync-guards.ts',

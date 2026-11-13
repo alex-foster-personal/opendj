@@ -22,6 +22,8 @@
 	} from '$lib/rb/pad-fx-mode';
 	import { beatFxUnitAvailability, sendBeatFxUnitCommand } from '$lib/rb/beat-fx-unit-port.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { deckPadSelId } from './deck-pad-selector-ids';
 
 	let { deckId, mode }: { deckId: DeckId; mode: PadFxModeId } = $props();
 
@@ -127,6 +129,11 @@
 					data-pad-fx-mode={mode}
 					data-active={active === i}
 					disabled={reason !== null}
+					use:selectorNode={{
+						id: deckPadSelId(deckId, i + 1),
+						kind: 'leaf',
+						enabled: reason === null
+					}}
 					title={reason ?? liveTitle(p)}
 					onpointerdown={(e) => engage(i, e.pointerId)}
 					onpointerup={(e) => letGo(i, e.pointerId)}

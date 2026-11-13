@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373178,
+  "measured_with_pr": 373614,
+  "sha": "6978e909d5",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--9717-commanded-target-ghost grows the library surface; measured +436 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -130,7 +130,9 @@ def test_feedback_harvest_dry_run_without_leading_dashdash_parses(
     justfile, now stripped the same way. Confirm argparse accepts the flag
     with no reachable daemon, rather than rejecting it as an unrecognized
     positional the way `just feedback-harvest -- --dry-run` did before."""
-    monkeypatch.setattr("scripts.feedback_harvest._discover", lambda *a, **k: [])
+    # main() discovers through _discover_with_probes; stubbing the older _discover
+    # left the real probe running, so a host with a live feedback daemon answered.
+    monkeypatch.setattr("scripts.feedback_harvest._discover_with_probes", lambda *a, **k: ([], []))
     result = feedback_harvest_main(["--dry-run", "--skip-silver"])
     assert result == 1
 

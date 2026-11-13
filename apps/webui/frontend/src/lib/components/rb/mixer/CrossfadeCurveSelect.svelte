@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { setCrossfadeCurve, uiPrefs, type CrossfadeCurve } from '$lib/rb/prefs.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { crossfadeCurveSelectorId } from './mixer-extra-selector-ids';
 
 	const OPTIONS: { value: CrossfadeCurve; label: string; disabled?: boolean }[] = [
 		{ value: 'magic', label: 'magic crossfader' },
@@ -21,12 +23,17 @@
 <select
 	class="xf-curve"
 	aria-label="crossfade curve"
+	use:selectorNode={{ id: crossfadeCurveSelectorId(), kind: 'leaf', enabled: true }}
 	title={`${selectedLabel}. ${plannedTitle('crossfade-curve')}`}
 	value={uiPrefs.crossfade_curve}
 	onchange={handleChange}
 >
 	{#each OPTIONS as option (option.value)}
-		<option value={option.value} disabled={option.disabled} title={option.disabled ? `${option.label}: ${plannedTitle('crossfade-curve')}` : option.label}>
+		<option
+			value={option.value}
+			disabled={option.disabled}
+			title={option.disabled ? `${option.label}: ${plannedTitle('crossfade-curve')}` : option.label}
+		>
 			{option.label}
 		</option>
 	{/each}

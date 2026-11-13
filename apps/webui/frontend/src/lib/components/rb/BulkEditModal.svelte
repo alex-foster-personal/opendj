@@ -6,6 +6,9 @@
 	import {
 		MIXED_READOUT,
 		bulkEditFieldValues,
+		bulkEditPayload,
+		initialFieldText,
+		isApplyChord,
 		type BulkEditRowFields
 	} from '$lib/rb/bulk-edit-values';
 	import { pushToast } from '$lib/stores.svelte';
@@ -25,99 +28,57 @@
 		onapplied: () => void;
 	} = $props();
 
-	const { rating: ratingConsensus, notes: notesConsensus } = bulkEditFieldValues(
-		stableIds,
-		rows
-	);
-
-	function _ratingToText(value: number | null): string {
-		return value === null ? '' : String(value);
-	}
+	// LIBM-63: a mixed field is a read-only "Multiple" readout until its Set box is ticked;
+	// the readout text is never an input value, and an unticked field is left out of the PATCH.
+	const {
+		rating: ratingConsensus,
+		notes: notesConsensus,
+		comments: commentsConsensus
+	} = bulkEditFieldValues(stableIds, rows);
 
 	let setRating = $state(false);
 	let ratingText = $state(
-		ratingConsensus.kind === 'shared' ? _ratingToText(ratingConsensus.value) : ''
+		initialFieldText(ratingConsensus, (value) => (value === null ? '' : String(value)))
 	);
 	let setNotes = $state(false);
-	let notes = $state(notesConsensus.kind === 'shared' ? notesConsensus.value : '');
+	let notes = $state(initialFieldText(notesConsensus, (value) => value));
 	let setGenre = $state(false);
 	let genre = $state('');
 	let setComments = $state(false);
-	let comments = $state('');
+	let comments = $state(initialFieldText(commentsConsensus, (value) => value));
 	let tagsAdd = $state('');
 	let tagsRemove = $state('');
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 
-	function onSetRatingToggle(checked: boolean): void {
-		setRating = checked;
-		if (ratingConsensus.kind === 'mixed') {
-			ratingText = '';
-		}
-	}
-
-	function onSetNotesToggle(checked: boolean): void {
-		setNotes = checked;
-		if (notesConsensus.kind === 'mixed') {
-			notes = '';
-		}
-	}
-
-	function _splitTags(raw: string): string[] {
-		return raw
-			.split(',')
-			.map((t) => t.trim())
-			.filter((t) => t !== '');
-	}
-
-	function _parseRating(): number | null {
-		const trimmed = ratingText.trim();
-		if (trimmed === '') {
-			return null;
-		}
-		const parsed = Number(trimmed);
-		if (!Number.isFinite(parsed)) {
-			return null;
-		}
-		return parsed;
+	// LIBM-64: Ctrl+Enter (Cmd+Enter) in a field runs the one apply path.
+	function onFieldKeydown(event: KeyboardEvent): void {
+		if (!isApplyChord(event)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		void apply();
 	}
 
 	async function apply(): Promise<void> {
-		const add = _splitTags(tagsAdd);
-		const remove = _splitTags(tagsRemove);
-		if (
-			!setRating &&
-			!setNotes &&
-			!setGenre &&
-			!setComments &&
-			add.length === 0 &&
-			remove.length === 0
-		) {
-			error = 'set at least one field to apply';
+		if (busy) return;
+		const result = bulkEditPayload({
+			stableIds,
+			etags,
+			rating: { set: setRating, text: String(ratingText ?? '') },
+			notes: { set: setNotes, text: notes },
+			genre: { set: setGenre, text: genre },
+			comments: { set: setComments, text: comments },
+			tagsAdd,
+			tagsRemove
+		});
+		if (!result.ok) {
+			error = result.error;
 			return;
-		}
-		let rating: number | undefined;
-		if (setRating) {
-			const parsed = _parseRating();
-			if (parsed === null) {
-				error = 'enter a valid rating to apply';
-				return;
-			}
-			rating = parsed;
 		}
 		busy = true;
 		error = null;
 		try {
-			const res = await bulkEditTracks({
-				stable_ids: stableIds,
-				expected_etags: etags,
-				...(setRating && rating !== undefined ? { rating } : {}),
-				...(setNotes ? { notes } : {}),
-				...(setGenre ? { genre } : {}),
-				...(setComments ? { comments } : {}),
-				...(add.length > 0 ? { tags_add: add } : {}),
-				...(remove.length > 0 ? { tags_remove: remove } : {})
-			});
+			const res = await bulkEditTracks(result.patch);
 			pushToast(`bulk edit applied to ${res.applied_count} track(s)`, 'info');
 			onapplied();
 		} catch (exc) {
@@ -138,7 +99,7 @@
 <EditSuiteModal title={`Bulk Edit - ${stableIds.length} track(s)`} {onclose}>
 	<div class="be-form">
 		<label class="be-field">
-			<input type="checkbox" checked={setRating} onchange={(e) => onSetRatingToggle(e.currentTarget.checked)} />
+			<input type="checkbox" bind:checked={setRating} />
 			Rating
 			{#if ratingConsensus.kind === 'mixed' && !setRating}
 				<span class="be-mixed-readout">{MIXED_READOUT}</span>
@@ -149,40 +110,68 @@
 					max="5"
 					bind:value={ratingText}
 					disabled={!setRating}
+					onkeydown={onFieldKeydown}
 				/>
 			{/if}
 		</label>
 		<label class="be-field">
-			<input type="checkbox" checked={setNotes} onchange={(e) => onSetNotesToggle(e.currentTarget.checked)} />
+			<input type="checkbox" bind:checked={setNotes} />
 			Notes
 			{#if notesConsensus.kind === 'mixed' && !setNotes}
 				<span class="be-mixed-readout">{MIXED_READOUT}</span>
 			{:else}
-				<input type="text" bind:value={notes} disabled={!setNotes} placeholder="new notes text" />
+				<input
+					type="text"
+					bind:value={notes}
+					disabled={!setNotes}
+					placeholder="new notes text"
+					onkeydown={onFieldKeydown}
+				/>
 			{/if}
 		</label>
 		<label class="be-field">
 			<input type="checkbox" bind:checked={setGenre} />
 			Genre
-			<input type="text" bind:value={genre} disabled={!setGenre} placeholder="new genre text" />
+			<input
+				type="text"
+				bind:value={genre}
+				disabled={!setGenre}
+				placeholder="new genre text"
+				onkeydown={onFieldKeydown}
+			/>
 		</label>
 		<label class="be-field">
 			<input type="checkbox" bind:checked={setComments} />
 			Comments
-			<input
-				type="text"
-				bind:value={comments}
-				disabled={!setComments}
-				placeholder="new comments text"
-			/>
+			{#if commentsConsensus.kind === 'mixed' && !setComments}
+				<span class="be-mixed-readout">{MIXED_READOUT}</span>
+			{:else}
+				<input
+					type="text"
+					bind:value={comments}
+					disabled={!setComments}
+					placeholder="new comments text"
+					onkeydown={onFieldKeydown}
+				/>
+			{/if}
 		</label>
 		<label class="be-field">
 			Add tags
-			<input type="text" bind:value={tagsAdd} placeholder="comma,separated,tags" />
+			<input
+				type="text"
+				bind:value={tagsAdd}
+				placeholder="comma,separated,tags"
+				onkeydown={onFieldKeydown}
+			/>
 		</label>
 		<label class="be-field">
 			Remove tags
-			<input type="text" bind:value={tagsRemove} placeholder="comma,separated,tags" />
+			<input
+				type="text"
+				bind:value={tagsRemove}
+				placeholder="comma,separated,tags"
+				onkeydown={onFieldKeydown}
+			/>
 		</label>
 	</div>
 

@@ -532,20 +532,16 @@ class JobsStore {
 			this.busyId = null;
 		}
 	}
-
-	toggleDrawer(): void {
-		this.drawerOpen = !this.drawerOpen;
-	}
-
-	closeDrawer(): void {
-		this.drawerOpen = false;
-	}
 }
 
 /** The one jobs store. */
 export const jobsStore = new JobsStore();
 
-/** TopBar toggle, mirroring toggleMidiPanel. */
-export function toggleJobsDrawer(): void {
-	jobsStore.toggleDrawer();
+/** PERFDRAWER-12580: the JOBS button's toggle as a typed performance command,
+ * so a click and an agent's drawer_open / drawer_close take the same path. */
+export function jobsDrawerToggleCommand(): {
+	type: 'drawer_open' | 'drawer_close';
+	drawer: 'jobs';
+} {
+	return { type: jobsStore.drawerOpen ? 'drawer_close' : 'drawer_open', drawer: 'jobs' };
 }

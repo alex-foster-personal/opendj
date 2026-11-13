@@ -6,6 +6,9 @@
 // [if] the tempo vanishing mid-effect drops or changes the last anchor [then] broken
 // [if] modFxView rows lack effect, beats, cycle_ms, tempo_bpm, lfo_phase or inert_reason [then] broken
 // [if] the poll timer runs with no live instance [then] broken
+// [if] an anchored LFO re-anchors or crossfades on playhead jitter within the 50 ms jump band [then] broken
+// [if] a new beatgrid revision does not replace the anchor with one locked to the new grid [then] broken
+// [if] invalid cycleBeats or time_ms is accepted at engage, or leaves an instance or poll behind [then] broken
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, mock, test } from 'node:test';
 
@@ -222,6 +225,77 @@ describe('mod fx live anchor', () => {
 		} finally {
 			mock.timers.reset();
 		}
+	});
+
+	// An anchored LFO ignores playhead jitter: no re-post, no crossfade, the phase stays on the first anchor.
+	test('playhead jitter inside the jump band keeps the first anchor', () => {
+		setDeck(1);
+		const port = fakePort();
+		live.attachModFx(1, port);
+		assert.deepEqual(port.posted[0], lfo.lfoAnchor(grid120(), 20, 120, 10, 4));
+		let truthMs = player.deckStates[1].position_ms;
+		const jitterMs = [20, -20, 15, -18, 0, 20, -20, 10, -5, 19, -19, 0];
+		for (const offset of jitterMs) {
+			port.context.currentTime += 0.25;
+			truthMs += 250;
+			player.deckStates[1].position_ms = truthMs + offset;
+			live._tickModFxForTests();
+		}
+		assert.equal(port.posted.length, 1);
+		assert.equal(port.crossfades, 0);
+		const [row] = live.modFxView();
+		assert.equal(row.lfo_phase, lfo.lfoPhase(port.posted[0], port.context.currentTime));
+		assert.equal(row.inert_reason, null);
+	});
+
+	// A replaced beatgrid (re-analysis or grid edit) re-locks the anchor to the new grid with one crossfade.
+	test('a new grid revision replaces the anchor', () => {
+		setDeck(1);
+		const port = fakePort();
+		live.attachModFx(1, port);
+		advance(1, port, 0.25);
+		live._tickModFxForTests();
+		assert.equal(port.posted.length, 1);
+		const shifted = grid120().map((beat) => ({ ...beat, t: beat.t + 0.125 }));
+		player.deckStates[1].anlz = { beatgrid: { beats: shifted } };
+		advance(1, port, 0.25);
+		live._tickModFxForTests();
+		assert.equal(port.posted.length, 2);
+		assert.equal(port.crossfades, 1);
+		assert.deepEqual(
+			port.posted[1],
+			lfo.lfoAnchor(
+				shifted,
+				player.deckStates[1].position_ms / 1000,
+				120,
+				port.context.currentTime,
+				4
+			)
+		);
+		advance(1, port, 0.25);
+		live._tickModFxForTests();
+		assert.equal(port.posted.length, 2);
+		assert.equal(port.crossfades, 1);
+	});
+
+	// Bad cycleBeats or time_ms throws by field name at engage and leaves no instance or poll behind.
+	test('invalid timing input fails fast and leaves nothing live', () => {
+		setDeck(1);
+		const bad = [
+			[{ cycleBeats: 3 }, /cycleBeats/],
+			[{ timeMs: 5 }, /timeMs/],
+			[{ timeMs: 40000 }, /timeMs/],
+			[{ timeMs: Number.NaN }, /timeMs/]
+		];
+		for (const [opts, pattern] of bad) {
+			const port = fakePort(opts);
+			assert.throws(() => live.attachModFx(1, port), pattern);
+			assert.equal(port.posted.length, 0);
+		}
+		setDeck(2, { beats: null, bpm: null });
+		assert.throws(() => live.attachModFx(2, fakePort({ cycleBeats: 0 })), /cycleBeats/);
+		assert.deepEqual(live.modFxView(), []);
+		assert.equal(live._modFxPollLiveForTests(), false);
 	});
 
 	test('fail fast on a bad deck or port', () => {

@@ -107,6 +107,7 @@ HTTP_ALL: tuple[str, ...] = (
     "live_child",
     "live_mapping",
     "looks_like_score",
+    "loop_engaged",
     "match_live_trim_db",
     "mix_windows",
     "next_transition",

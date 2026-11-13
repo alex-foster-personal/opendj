@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 33897,
+  "measured_with_pr": 37174,
+  "sha": "5e41d0db55",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--13711-oj-agent-sidebar-glass grows the ai-sidebar surface; measured +3277 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

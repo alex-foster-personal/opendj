@@ -312,6 +312,12 @@ store-credentials` profile name. Tauri's bundler **cannot** consume one:
   it accepts only `APPLE_API_*` or `APPLE_ID`/`APPLE_PASSWORD`/
   `APPLE_TEAM_ID` (verified in tauri-bundler 2.9.4), so `just dmg` runs
   `notarytool submit --wait` then `stapler staple` itself.
+- `MDT_MACOS_NOTARY_KEYCHAIN` -> the keychain FILE holding that profile,
+  passed to every `notarytool` call as `--keychain`, and REQUIRED to notarize
+  (OPS-3944). notarytool would otherwise read the default (login) keychain,
+  which is locked in any headless session. A build host gets it from
+  `build_host_signing.sh apply`; a GUI Mac whose profile is in its login
+  keychain sets it to `$HOME/Library/Keychains/login.keychain-db`.
 
 **They are all-or-nothing, and refusal is the default.** Either both are set,
 or the build stops. Setting one without the other is refused before the build
@@ -375,6 +381,22 @@ xattr -dr com.apple.quarantine "/Applications/Open DJ.app"
 
 v1 is Apple Silicon only, by decision. An Intel Mac cannot run this
 artifact at all. `just dmg` prints the architecture it produced.
+
+### Scheduled authoritative backup
+
+The shell does not run backups. Opt in from the engine data dir (see
+`apps/shared/engine_data_dir.py`) with the shared CLI and templates under
+``apps/desktop/scheduling/``:
+
+```sh
+uv run python -m apps.shared.state_authoritative_backup schedule-install \
+  --data-dir <DATA_DIR> \
+  --python <PAYLOAD>/bin/opendj-python
+uv run python -m apps.shared.state_authoritative_backup schedule-inspect --data-dir <DATA_DIR>
+```
+
+`just state-authoritative-backup-schedule-install` wraps the install step for dev checkouts
+(uses ``sys.executable``). See `(private path)`.
 
 productName: `Open DJ`
 identifier: `com.opendj.desktop`

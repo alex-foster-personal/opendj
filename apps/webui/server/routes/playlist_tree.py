@@ -2,6 +2,9 @@
 
   * ``GET /api/v1/playlist-tree/order``  -> the stored order
   * ``PUT /api/v1/playlist-tree/order``  {order: [playlist_id, ...]} -> stored order
+  * ``GET /api/v1/playlist-tree/pins``   -> pinned playlist ids (LIBM-87, issue #12320)
+  * ``PUT /api/v1/playlist-tree/pins/{playlist_id}``    -> pin it (404 when no such playlist)
+  * ``DELETE /api/v1/playlist-tree/pins/{playlist_id}`` -> unpin it
 
 The tree reads the result through ``GET /api/v1/playlists`` (``seq``), so this
 router only owns the write and a read-back. It lives at ``/playlist-tree``,
@@ -21,8 +24,9 @@ from pydantic import BaseModel, Field
 from apps.shared.events import publish
 
 from .. import playlist_tree_order as tree_order
+from .. import playlist_tree_pins as tree_pins
 from ..backend import StateBackend
-from ..deps import get_library_data_dir, get_write_state
+from ..deps import get_library_data_dir, get_read_state, get_write_state
 
 router = APIRouter(prefix="/playlist-tree", tags=["playlists-write"])
 MOUNT_UNDER_API_PREFIX = True
@@ -88,3 +92,78 @@ def put_playlist_tree_order(
         ) from exc
     publish("library.changed", {"kind": "playlists", "ids": order})
     return PlaylistTreeOrderOut(order=order)
+
+
+class PlaylistTreePinsOut(BaseModel):
+    pins: list[str] = Field(
+        description="Pinned playlist ids in pin order; pins of playlists that no longer exist are left out."
+    )
+
+
+def _load_pins(path: Path) -> list[str]:
+    try:
+        return tree_pins.load_pins(path)
+    except tree_order.PlaylistTreeOrderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "playlist_tree_pins_unreadable", "message": str(exc)},
+        ) from exc
+
+
+def _save_pins(path: Path, pins: list[str]) -> None:
+    try:
+        tree_pins.save_pins(path, pins)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "playlist_tree_pins_unwritable", "message": f"could not store the playlist pins: {exc}"},
+        ) from exc
+
+
+def _live_ids(backend: StateBackend) -> set[str]:
+    return {pl.playlist_id for pl in backend.list_playlists()}
+
+
+@router.get("/pins", response_model=PlaylistTreePinsOut)
+def get_playlist_tree_pins(
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> PlaylistTreePinsOut:
+    pins = _load_pins(tree_pins.path_for(data_dir))
+    return PlaylistTreePinsOut(pins=tree_pins.live_pins(pins, _live_ids(backend)))
+
+
+@router.put("/pins/{playlist_id}", response_model=PlaylistTreePinsOut)
+def pin_playlist(
+    playlist_id: str,
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> PlaylistTreePinsOut:
+    live_ids = _live_ids(backend)
+    if playlist_id not in live_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "playlist_not_found", "message": f"no playlist {playlist_id!r} to pin"},
+        )
+    path = tree_pins.path_for(data_dir)
+    pins = _load_pins(path)
+    if playlist_id not in pins:
+        pins.append(playlist_id)
+        _save_pins(path, pins)
+        publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return PlaylistTreePinsOut(pins=tree_pins.live_pins(pins, live_ids))
+
+
+@router.delete("/pins/{playlist_id}", response_model=PlaylistTreePinsOut)
+def unpin_playlist(
+    playlist_id: str,
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+    backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> PlaylistTreePinsOut:
+    path = tree_pins.path_for(data_dir)
+    pins = _load_pins(path)
+    if playlist_id in pins:
+        pins.remove(playlist_id)
+        _save_pins(path, pins)
+        publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
+    return PlaylistTreePinsOut(pins=tree_pins.live_pins(pins, _live_ids(backend)))

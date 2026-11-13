@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import * as vm from 'node:vm';
 
 const electronRoot = path.join(__dirname, '..', '..');
 const mainTs = fs.readFileSync(path.join(electronRoot, 'src', 'main.ts'), 'utf8');
@@ -36,6 +37,86 @@ test('LINK-96 electron preload sets data-titlebar overlay on macOS before page i
 		beforeInit,
 		/if\s*\(\s*init\s*!==\s*null\s*\)[\s\S]*setAttribute\(\s*['"]data-titlebar['"]/
 	);
+});
+
+type FakeElement = { attributes: Record<string, string>; setAttribute(name: string, value: string): void };
+type FakeDocument = {
+	documentElement: FakeElement | null;
+	listeners: Record<string, () => void>;
+	addEventListener(type: string, fn: () => void): void;
+};
+
+function fakeElement(): FakeElement {
+	const attributes: Record<string, string> = {};
+	return { attributes, setAttribute: (name, value) => void (attributes[name] = value) };
+}
+
+function fakeDocument(documentElement: FakeElement | null): FakeDocument {
+	const listeners: Record<string, () => void> = {};
+	return { documentElement, listeners, addEventListener: (type, fn) => void (listeners[type] = fn) };
+}
+
+/**
+ * Run the compiled preload on a pretend macOS with a stubbed `electron`. As in Electron, the function handed to
+ * `executeInMainWorld` runs at once against the page's document, and a throw there comes back into the preload
+ * and stops it. Returns whether the preload got as far as its page-init request, which is where the bootstrap
+ * page learns its engine origin.
+ */
+function runPreloadOnMac(document: FakeDocument): { reachedPageInit: boolean } {
+	const compiled = fs.readFileSync(path.join(electronRoot, 'dist', 'preload.js'), 'utf8');
+	let reachedPageInit = false;
+	const electron = {
+		contextBridge: {
+			executeInMainWorld: (spec: { func: () => void }): void => {
+				vm.runInNewContext(`(${String(spec.func)})()`, { document });
+			},
+			exposeInMainWorld: (): void => {}
+		},
+		ipcRenderer: {
+			sendSync: (channel: string): null => {
+				if (channel === 'opendj:page-init') reachedPageInit = true;
+				return null;
+			},
+			invoke: async (): Promise<null> => null,
+			on: (): void => {},
+			send: (): void => {}
+		}
+	};
+	vm.runInNewContext(compiled, {
+		require: (name: string) => {
+			assert.equal(name, 'electron', 'a sandboxed preload may only require electron');
+			return electron;
+		},
+		exports: {},
+		module: { exports: {} },
+		process: { platform: 'darwin' },
+		console
+	});
+	return { reachedPageInit };
+}
+
+test('ELECTRON-13662 the preload reaches page-init when the page has no document element yet', () => {
+	// A preload runs before the document element exists. An unguarded setAttribute threw there, stopped the
+	// preload, and left the bootstrap page on "cannot reach its engine" (set build da92dbd1, Mon 9 Nov 2026;
+	// main after #13607, Thu 12 Nov 2026).
+	const document = fakeDocument(null);
+	let outcome = { reachedPageInit: false };
+	assert.doesNotThrow(() => {
+		outcome = runPreloadOnMac(document);
+	}, 'if the title bar mark throws then the rest of the preload never runs');
+	assert.ok(outcome.reachedPageInit, 'if the preload stops before page-init then the page never learns its engine origin');
+	assert.ok(document.listeners.DOMContentLoaded, 'if nothing waits for the document then the mark is never set');
+	const html = fakeElement();
+	document.documentElement = html;
+	document.listeners.DOMContentLoaded();
+	assert.equal(html.attributes['data-titlebar'], 'overlay');
+});
+
+test('ELECTRON-13662 the title bar mark is set at once when the document element already exists', () => {
+	const html = fakeElement();
+	const { reachedPageInit } = runPreloadOnMac(fakeDocument(html));
+	assert.equal(html.attributes['data-titlebar'], 'overlay');
+	assert.ok(reachedPageInit);
 });
 
 test('LINK-96 top bar uses WebKit drag regions only under the overlay attribute', () => {

@@ -26,6 +26,10 @@ from apps.shared.rekordbox_writeback import WRITE_SURFACES
 ENABLE_DESTRUCTIVE_ENV = "OPENDJ_MCP_ENABLE_DESTRUCTIVE"
 AGENT_AUDIO_ENV = "OPENDJ_AGENT_AUDIO"
 AGENT_AUDIO_MODES: tuple[str, ...] = ("muted", "live")
+# Persona cli-mcp loops (issues #3067, #11277) call only these MCP tools.
+PERSONA_MCP_TOOLS: frozenset[str] = frozenset({"status", "app_state", "command", "library"})
+UPDATE_APPLY_TOOL = "update_apply"
+MASTER_MUTE_VERB_ARGS: dict[str, Any] = {"verb": "master_mute", "args": ["true"]}
 #: The safety mute: ``persist: False`` silences this run only. Persisting it
 #: would write master_muted into the shared ui-prefs.json, and every browser
 #: that loads the app next (including the maintainer's headed one) would start muted.
@@ -36,6 +40,8 @@ _DESTRUCTIVE_PATH_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("DELETE", re.compile(r"^/api/v1/.*")),
     ("POST", re.compile(r"^/api/v1/ingest/")),
     ("POST", re.compile(r"^/api/v1/playlists/[^/]+/tracks$")),
+    # LIBM-53: the delete custom method can move the track's audio file to the trash.
+    ("POST", re.compile(r"^/api/v1/tracks/[^/]+:delete$")),
 )
 
 _WRITEBACK_HTTP_MARKERS: tuple[str, ...] = tuple(
@@ -260,6 +266,59 @@ def guard_library_request(method: str, path: str, environ: Mapping[str, str] | N
                 path=path,
                 method=upper,
             )
+
+
+def command_order_from_arguments(arguments: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return the AGENT-03 order a MCP ``command`` call names, if it can be parsed."""
+    order = arguments.get("order")
+    if isinstance(order, dict):
+        return order
+    verb = arguments.get("verb")
+    if not isinstance(verb, str) or not verb:
+        return None
+    raw_args = arguments.get("args")
+    if raw_args is None:
+        rest: list[str] = []
+    elif isinstance(raw_args, list):
+        rest = [str(item) for item in raw_args]
+    else:
+        return None
+    from apps.opendj_cli.orders import single
+    from apps.opendj_cli.verbs import InvocationError, parse_invocation
+
+    try:
+        return single(parse_invocation([verb, *rest]))
+    except InvocationError:
+        return None
+
+
+def command_arguments_start_audible_play(arguments: Mapping[str, Any]) -> bool:
+    """True when a persona ``command`` call would start audible output."""
+    order = command_order_from_arguments(arguments)
+    if order is None:
+        return False
+    return order_starts_audible_play(order)
+
+
+def guard_persona_tool(tool: str, *, allow_destructive: bool) -> None:
+    """Refuse persona steps that leave the cli-mcp surface or call ``update_apply``."""
+    if tool == UPDATE_APPLY_TOOL:
+        raise SafetyRefusal(
+            "persona_update_apply_forbidden",
+            "persona cli-mcp runs never call update_apply; use update_check only",
+        )
+    if tool not in PERSONA_MCP_TOOLS:
+        raise SafetyRefusal(
+            "persona_tool_forbidden",
+            f"persona cli-mcp runs only call {', '.join(sorted(PERSONA_MCP_TOOLS))}, not {tool!r}",
+        )
+
+
+def guard_persona_library(method: str, path: str, *, allow_destructive: bool) -> None:
+    """Refuse destructive library HTTP before the MCP server unless the run opted in."""
+    if allow_destructive:
+        return
+    guard_library_request(method, path)
 
 
 def engine_error_code(detail: object, status_code: int) -> str:

@@ -110,6 +110,70 @@ def _incoming(conn: sqlite3.Connection) -> list[protocol.RowChange]:
     ]
 
 
+def _seed_unpresent_library(conn: sqlite3.Connection, count: int) -> None:
+    """``count`` inferred rows with no mergeable identity keys (#11267)."""
+    conn.executemany(
+        "INSERT INTO tracks(stable_id, stable_id_tier, title, created_at, updated_at, origin_device_id)"
+        " VALUES (?, 'inferred', ?, ?, ?, ?)",
+        [(f"stored-{i}", f"stored {i}", _T0, _T0, _DEV_A) for i in range(count)],
+    )
+    conn.commit()
+
+
+def _incoming_unpresent(conn: sqlite3.Connection) -> list[protocol.RowChange]:
+    """Hash-pending applies: no identity lookup on the hub (#11267)."""
+    return [
+        protocol.RowChange(
+            table="tracks",
+            pk=(f"incoming-{i}",),
+            values=_values(
+                conn,
+                "tracks",
+                stable_id=f"incoming-{i}",
+                stable_id_tier="inferred",
+                title=f"incoming {i}",
+                created_at=_T0,
+                updated_at=_T1,
+                origin_device_id=_DEV_B,
+                deleted_at=None,
+            ),
+            hash_pending=True,
+        )
+        for i in range(INCOMING_ROWS)
+    ]
+
+
+def _apply_steps_unpresent(conn: sqlite3.Connection, apply: Apply) -> int:
+    """VM steps applying unpresent hash-pending incoming rows."""
+    steps = 0
+
+    def _count() -> int:
+        nonlocal steps
+        steps += 1
+        return 0
+
+    changes = _incoming_unpresent(conn)
+    conn.set_progress_handler(_count, 1)
+    try:
+        for change in changes:
+            apply(conn, [change])
+    finally:
+        conn.set_progress_handler(None, 1)
+    return steps
+
+
+def _steps_at_unpresent(tmp_path: Path, count: int, apply: Apply, *, drop_indexes: bool = False) -> int:
+    conn = _open_hub(tmp_path / f"unpresent-{count}-{drop_indexes}")
+    try:
+        _seed_unpresent_library(conn, count)
+        if drop_indexes:
+            for index in IDENTITY_INDEXES:
+                conn.execute(f"DROP INDEX IF EXISTS {index}")
+        return _apply_steps_unpresent(conn, apply)
+    finally:
+        conn.close()
+
+
 def _apply_steps(conn: sqlite3.Connection, apply: Apply) -> int:
     """SQLite VM steps spent applying the incoming rows, one row per call."""
     steps = 0
@@ -158,6 +222,20 @@ def test_per_row_apply_work_does_not_grow_with_the_library(tmp_path: Path, apply
         f"{SMALL_LIBRARY} stored tracks and {large} against {LARGE_LIBRARY} "
         f"({growth:.1f}x for {LARGE_LIBRARY // SMALL_LIBRARY}x the library). "
         "Something on the per-row apply path scans the tracks table (#4397)."
+    )
+
+
+@pytest.mark.requirement("CLOUDSYNC-13655")
+@pytest.mark.parametrize("apply_name", sorted(APPLIES))
+def test_unpresent_inferred_apply_work_does_not_grow_with_the_library(tmp_path: Path, apply_name: str) -> None:
+    """[if] 5 unpresent inferred rows apply on 2000 stored [then] VM steps stay bounded, [else stop]."""
+    apply = APPLIES[apply_name]
+    small = _steps_at_unpresent(tmp_path, SMALL_LIBRARY, apply)
+    large = _steps_at_unpresent(tmp_path, LARGE_LIBRARY, apply)
+    growth = large / small
+    assert growth <= MAX_GROWTH, (
+        f"{apply_name}: unpresent apply grew {growth:.1f}x from {SMALL_LIBRARY} to "
+        f"{LARGE_LIBRARY} stored tracks ({small} -> {large} VM steps, #11267)."
     )
 
 

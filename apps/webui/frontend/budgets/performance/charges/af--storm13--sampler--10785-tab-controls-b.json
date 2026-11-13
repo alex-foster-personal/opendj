@@ -1,0 +1,9 @@
+{
+  "bytes": 9216,
+  "measured_main": 483140,
+  "measured_with_pr": 491831,
+  "sha": "530429b4bb",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10785-tab-controls-b grows the performance surface; measured +8691 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

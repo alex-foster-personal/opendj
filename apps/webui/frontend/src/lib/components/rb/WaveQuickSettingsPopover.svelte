@@ -10,6 +10,10 @@
 	 * exact path the Settings overlay and the AI apply use. So a change here
 	 * shows in Settings at once and the reverse, and persists through the same
 	 * ui-prefs PUT.
+	 *
+	 * WAVEQS-8348d keyboard dialog: Tab and Shift+Tab cycle through every control
+	 * inside it (the shared focusTrap), Escape closes it and puts focus back on
+	 * the glyph, and a pointer press outside it closes it.
 	 */
 	import { onMount, tick } from 'svelte';
 	import SettingNumberStepper from '$lib/components/settings/SettingNumberStepper.svelte';
@@ -18,6 +22,7 @@
 	import type { SettingDef } from '$lib/settings/catalog-types';
 	import { applySettingChange, isAllowedSettingKey, readSettingValue } from '$lib/settings/apply';
 	import { openSettings } from '$lib/settings/hotkeys';
+	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 	import {
 		WAVE_QS_GROUPS,
@@ -29,6 +34,9 @@
 	} from '$lib/components/settings/settings-catalog';
 
 	let { anchor, onclose }: { anchor: HTMLElement; onclose: () => void } = $props();
+
+	/** The first OPTION control, never the header's All settings button. */
+	const FIRST_OPTION = '.wqs-group select, .wqs-group input:not(:disabled)';
 
 	let panelEl: HTMLDivElement | undefined = $state();
 	let panelStyle = $state('visibility:hidden');
@@ -100,9 +108,7 @@
 			})
 			.then(() => {
 				if (!mounted) return;
-				const first = panelEl?.querySelector<HTMLElement>(
-					'.wqs-group select, .wqs-group input:not(:disabled)'
-				);
+				const first = panelEl?.querySelector<HTMLElement>(FIRST_OPTION);
 				if (first === undefined || first === null)
 					throw new Error('waveform quick settings: no option control to focus');
 				first.focus();
@@ -138,6 +144,7 @@
 	role="dialog"
 	aria-label="Waveform quick settings"
 	style={panelStyle}
+	use:focusTrap={{ initialFocus: FIRST_OPTION }}
 >
 	<header class="wqs-head">
 		<span class="wqs-title">Waveform</span>

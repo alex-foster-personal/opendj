@@ -59,12 +59,20 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         "tags",
         "genre",
         "comments",
+        # Issue #10029: the file's own year (int) and record label (str),
+        # written at folder import and tag refresh for the Year and Label columns.
+        "year",
+        "label",
         # PREF-01: {"regular": float|None, "min": float|None, "max": float|None}.
         "tempo_pref",
         # GRIDFLAG-04: true while the user has hidden this track's beatgrid
         # flag ("I know, stop telling me"). A bool, set from the Err column or
         # PUT /beatgrid-flags/{id}/dismissed.
         "grid_flag_dismissed",
+        # Issue #9737: the track colour label, rekordbox ColorID 1..8 or null
+        # (cleared), set from the library row menu or PATCH /tracks/{stable_id}.
+        # An Open DJ edit wins over the rekordbox ColorID on every row read.
+        "color_id",
         # NOWP-11487: true while the user hides this track's identity from
         # tracklists and now-playing (shown as ID - ID). A bool, Open DJ only,
         # never written back to rekordbox.
@@ -78,6 +86,9 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         # GRID-OCTAVE-02: {"v": 1, "source": "own"|"mik"|null}, the user's pick
         # where our tempo and Mixed In Key's disagree (apps/shared/state/tempo_pick.py).
         "grid_tempo_pick",
+        # GRIDEDIT-9763: {"v": 1, "locked": bool}, the user's beatgrid lock
+        # (apps/shared/state/grid_lock.py).
+        "grid_lock",
         # KEY-10229: {"v": 1, "key": "6A"|null}, the user's typed key from the
         # library cell (apps/shared/state/key_edit.py).
         "key_edit",
@@ -93,6 +104,11 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         "classical",
         # Parent #345 Niche mode: user waveform regions + structure suggestion verdicts.
         "niche_labels",
+        # LIBM-67b: {"v": 1, "title", "artists", "album"} a file import last wrote
+        # onto the tracks row. A stored value that still equals it follows a tag
+        # reload; one that differs is the user's correction and is kept
+        # (apps/shared/state/ingest/folder.py merge_reloaded_identity).
+        "file_identity",
     }
 )
 

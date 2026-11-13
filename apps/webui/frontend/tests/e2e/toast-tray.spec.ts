@@ -317,6 +317,9 @@ test('a later toast copy re-arms the comment pin with the newest report', async 
 
 	const first = await raise(page, 'first toast arm', 'error');
 	await page.locator(`[data-toast-copy="${first}"]`).click();
+	// The copy is async (settings read, clipboard write) and arms the pin as its
+	// last step, the same step that shows the copied note. Peek only after it.
+	await expect(page.locator(`[data-toast-copied="${first}"]`)).toBeVisible();
 	const firstArm = await page.evaluate(
 		async ([ctxMod]) => {
 			const mod = await import(/* @vite-ignore */ ctxMod as string);
@@ -329,6 +332,7 @@ test('a later toast copy re-arms the comment pin with the newest report', async 
 
 	const second = await raise(page, 'second toast arm', 'warn');
 	await page.locator(`[data-toast-copy="${second}"]`).click();
+	await expect(page.locator(`[data-toast-copied="${second}"]`)).toBeVisible();
 	const secondArm = await page.evaluate(
 		async ([ctxMod]) => {
 			const mod = await import(/* @vite-ignore */ ctxMod as string);

@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 373180,
+  "measured_with_pr": 374111,
+  "sha": "e26c4b70bc",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle PR 14801 (round 3 direct-commit, 145 members) grows the library surface: measured +931 B gzip over its merge base e42ba640cf9, both built on one host; ceiled to KiB plus the rebaseline rule's 1 KiB, because CI's Linux build of the same tree read up to about 400 B apart from this host's. Member charge files carried in the bundle restate part of the same growth, so the absolute ceiling double counts it until the next rebaseline.",
+  "payback": "none planned; the growth is the members' own code on this surface, folded at the next rebaseline"
+}

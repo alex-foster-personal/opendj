@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373188,
+  "measured_with_pr": 373613,
+  "sha": "6f2835c776",
+  "date": "Fri 13 Nov 2026",
+  "reason": "#13727 registers the four taste-variant settings rows in the catalogue (def-only modules plus defineVariantSetting, no DSP); measured +425 B gzip over main; ceiled to KiB.",
+  "payback": "each variant row is retired by a one-line constants PR once the maintainer picks a default (epic #10045)"
+}

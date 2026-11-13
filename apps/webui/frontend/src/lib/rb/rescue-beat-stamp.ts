@@ -17,7 +17,8 @@ export type RescueBeatStamp =
 			position_ms: number;
 	  };
 
-function beatCoordinate(beats: readonly Pick<AnlzBeat, 't'>[], time: number): number | null {
+/** Fractional beat index of `time` on the grid; null outside it. */
+export function beatCoordinate(beats: readonly Pick<AnlzBeat, 't'>[], time: number): number | null {
 	if (beats.length < 2 || time < beats[0].t || time > beats[beats.length - 1].t) return null;
 	let low = 0;
 	let high = beats.length - 1;

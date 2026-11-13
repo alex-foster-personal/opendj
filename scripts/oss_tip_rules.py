@@ -601,3 +601,7 @@ def _rule_accepts(rule: str, match: re.Match[str], preceding: str = "") -> bool:
         # DNS is case-insensitive; so is the allowlist it is compared against.
         return match.group(1).lower() not in _ALLOWED_TAILNETS
     return True
+
+
+# Real library data in test fixtures (issue #11397): classes and scanners live in
+# scripts.fixture_real_content_rules; this module supplies home-path shapes only.

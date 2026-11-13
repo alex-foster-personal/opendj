@@ -293,8 +293,31 @@
 		setSettingsQuery((e.currentTarget as HTMLInputElement).value);
 	}
 
+	/** What each action row last reported (or why it failed), by row id, shown under the row (#12988). */
+	let actionResults = $state<Record<string, string>>({});
+
+	/** Runs an action row's safe API call (a status read or a dry run) and keeps its sentence for the row. */
+	async function runActionRow(def: SettingDef): Promise<void> {
+		if (def.control.kind !== 'action') return;
+		const action = def.control.action;
+		actionResults = { ...actionResults, [def.id]: 'Running...' };
+		let message: string;
+		try {
+			const { runSettingAction } = await import('$lib/settings/ratings-sync-actions');
+			message = await runSettingAction(action);
+		} catch (exc) {
+			message = `${def.label} did not run: ${exc instanceof Error ? exc.message : String(exc)}`;
+		}
+		actionResults = { ...actionResults, [def.id]: message };
+	}
+
 	function activateSetting(def: SettingDef, e?: Event): void {
 		if (!def.implemented) return;
+		if (def.control.kind === 'action') {
+			e?.preventDefault();
+			void runActionRow(def);
+			return;
+		}
 		if (def.control.kind === 'link') {
 			e?.preventDefault();
 			closeSettings();
@@ -321,7 +344,7 @@
 			return;
 		}
 		if (!def.implemented) return;
-		if (def.control.kind === 'link' && (e.key === 'Enter' || e.key === ' ')) {
+		if ((def.control.kind === 'link' || def.control.kind === 'action') && (e.key === 'Enter' || e.key === ' ')) {
 			e.preventDefault();
 			activateSetting(def, e);
 			return;
@@ -694,6 +717,8 @@
 												>
 													Open
 												</a>
+											{:else if def.control.kind === 'action'}
+												<button type="button" aria-label={`Run ${def.label}`} onclick={() => void runActionRow(def)}>Run</button>
 											{:else if def.control.kind === 'number'}
 												<div class="so-number">
 													<input
@@ -753,6 +778,9 @@
 										<p class="so-detail so-unavailable" role="alert">{settingUnavailable(def.id)}</p>
 									{/if}
 									<p class="so-detail">{def.detail}</p>
+									{#if actionResults[def.id] !== undefined}
+										<p class="so-detail" role="status" data-testid="settings-action-result">{actionResults[def.id]}</p>
+									{/if}
 									{#if def.id === 'audio_engine' && showEngineRestart}
 										<button
 											type="button"

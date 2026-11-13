@@ -44,6 +44,8 @@
 	import { padModeFor } from '$lib/rb/pad-mode-state.svelte';
 	import { isPadFxModeId } from '$lib/rb/pad-fx-presets';
 	import PadFxBank from './PadFxBank.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { deckPadSelId, hotCueUndoSelId, padNumberForSlot } from './deck-pad-selector-ids';
 
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
 	const SESSION_TIP = ' (this session only - the stick is never written)';
@@ -306,6 +308,7 @@
 							class:loop={entry.cue !== null && entry.cue.is_loop}
 							class:inert-mapping={entry.cue === null && deck.stable_id === null}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
+							use:selectorNode={{ id: deckPadSelId(deck.deck_id, padNumberForSlot(entry.slot)), kind: 'leaf', enabled: busySlot !== entry.slot && renameSlot !== entry.slot }}
 							aria-busy={pending}
 							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
 							data-testid={`hot-cue-${deck.deck_id}-${entry.slot}`}
@@ -439,7 +442,7 @@
 		the very click that started the write and make the operator press UNDO
 		twice. Repeat presses are safe without it: undoLastMutation serializes
 		on the same busy-slot tail and the second one finds its token spent. -->
-		<button class="rb-lit-button undo" aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} title={`Undo last hot-cue change on slot ${undo.slot}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
+		<button class="rb-lit-button undo" use:selectorNode={{ id: hotCueUndoSelId(deck.deck_id), kind: 'leaf', enabled: true }} aria-busy={pending} aria-label={`undo hot cue deck ${deck.deck_id}`} title={`Undo last hot-cue change on slot ${undo.slot}`} data-testid={`undo-hot-cue-deck-${deck.deck_id}`} onclick={undoLastMutation}>
 			UNDO {undo.slot}
 		</button>
 	{/if}

@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 373163,
+  "measured_with_pr": 376633,
+  "sha": "6322ec2173",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--9745-history-view grows the library surface; measured +3470 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

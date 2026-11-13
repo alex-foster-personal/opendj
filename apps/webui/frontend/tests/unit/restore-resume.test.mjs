@@ -8,6 +8,8 @@
 // [if] a re-promoted tab's first restore was cut short [then] it loads the URL's empty decks, each its own id
 // [if] a deck is already loaded when the restore resumes [then] it is left alone
 // [if] the resume runs [then] the URL keeps all four ids
+// [if] a deck restore really fails [then] one named toast per deck gives the next step, not the raw error
+// [if] a deck restore really fails [then] its tile is cleared (unload), not left half-loaded
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -195,7 +197,7 @@ for (const resumeInterruptedRestore of [true, false])
 		}
 		assert.deepEqual(unhandled, []);
 		const restoreToasts = stores.toasts.filter((toast) =>
-			String(toast.message).startsWith('session restore deck')
+			/could not be restored/.test(String(toast.message))
 		);
 		assert.deepEqual(
 			restoreToasts.map((toast) => toast.message),
@@ -203,3 +205,49 @@ for (const resumeInterruptedRestore of [true, false])
 			'and no error toast per remaining deck'
 		);
 	});
+
+async function runFailing() {
+	stores.toasts.length = 0;
+	const state = engine({});
+	const out = await run(
+		{},
+		{
+			dispatch: async (command) => {
+				if (command.type === 'load') {
+					state.decks[command.deck].stable_id = command.stable_id;
+					if (command.deck === 2 || command.deck === 3) throw new Error('raw engine boom');
+				}
+				if (command.type === 'unload') state.decks[command.deck].stable_id = null;
+				unloads.push(command);
+				return state;
+			},
+			query: () => state
+		}
+	);
+	return { out, state };
+}
+const unloads = [];
+
+test('#13771: a deck whose restore really fails gets one named toast with the next step, not the raw error', async () => {
+	await runFailing();
+	const messages = stores.toasts.map((toast) => String(toast.message));
+	const failed = messages.filter((m) => /could not be restored/.test(m));
+	assert.deepEqual(failed, [
+		'Deck 2 could not be restored, so it was cleared. Load the track again from the browser.',
+		'Deck 3 could not be restored, so it was cleared. Load the track again from the browser.'
+	]);
+	assert.ok(!messages.some((m) => m.includes('raw engine boom')));
+});
+
+test('#13771: a deck whose restore really fails has its tile cleared, the others stay loaded', async () => {
+	unloads.length = 0;
+	const { state } = await runFailing();
+	assert.deepEqual(
+		unloads.filter((c) => c.type === 'unload').map((c) => c.deck),
+		[2, 3]
+	);
+	assert.equal(state.decks[2].stable_id, null);
+	assert.equal(state.decks[3].stable_id, null);
+	assert.equal(state.decks[1].stable_id, URL_IDS[1]);
+	assert.equal(state.decks[4].stable_id, URL_IDS[4]);
+});

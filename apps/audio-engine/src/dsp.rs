@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn filters_clamped_to_nyquist_have_no_marginal_poles() {
         let sr = 8000.0;
-        let q = crate::mixer::FILTER_Q;
+        let q = crate::mixer::FILTER_Q_DB;
         assert_eq!(Coeffs::lowpass(sr, 20000.0, q), Coeffs::IDENTITY);
         assert_eq!(Coeffs::lowpass(sr, 4000.0, q), Coeffs::IDENTITY);
         assert_eq!(Coeffs::highpass(sr, 6300.0, q), Coeffs::ZERO);

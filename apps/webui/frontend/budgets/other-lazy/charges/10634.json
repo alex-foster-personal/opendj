@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557258,
+  "measured_with_pr": 557531,
+  "sha": "ce8d3291a6",
+  "date": "Fri 13 Nov 2026",
+  "reason": "#10634 adds the test:unit:files script to package.json for the CI unit-test selector; the bundle carries package.json, so the surface grows by the new script line. Measured +273 B gzip by the PR's own CI run against main.",
+  "payback": "none planned; the growth is one script line"
+}

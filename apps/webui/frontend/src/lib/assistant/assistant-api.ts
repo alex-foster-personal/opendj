@@ -27,12 +27,15 @@
  */
 
 import { API_BASE } from '$lib/api/base';
+import type { ProviderCatalogHit, ProviderCatalogHitLabel } from '$lib/assistant/agent-contract';
 import type { components } from '$lib/api-types';
 
 /** The two endpoints, spelled once. */
 export const ASSISTANT_STATUS_PATH = '/api/v1/assistant/status';
 export const ASSISTANT_CHAT_PATH = '/api/v1/assistant/chat';
 export const ASSISTANT_INSTANT_PREVIEW_PATH = '/api/v1/assistant/instant/preview';
+export const ASSISTANT_PROVIDER_POLICY_PATH = '/api/v1/assistant/provider-policy';
+export const ASSISTANT_LABEL_PROVIDER_HIT_PATH = '/api/v1/assistant/label-provider-hit';
 
 /** The env var the engine reads its key from. Named in the UI verbatim so a
  * user can act on the message without hunting through docs. Mirrors
@@ -115,6 +118,34 @@ export async function getAssistantStatus(signal?: AbortSignal): Promise<Assistan
 }
 
 /** Whether `text` would run as an instant command: the engine's own rules, no model or key. */
+export interface ProviderPolicy {
+	catalog_prompt: string;
+	parent_review_required: string[];
+	fixture_transcripts: Array<{ provider: string; catalog_constraint: string; transcript: string }>;
+}
+
+export async function getProviderPolicy(signal?: AbortSignal): Promise<ProviderPolicy> {
+	const response = await fetch(`${API_BASE}${ASSISTANT_PROVIDER_POLICY_PATH}`, {
+		signal: signal ?? null
+	});
+	if (!response.ok) throw await assistantRefusal(response);
+	return (await response.json()) as ProviderPolicy;
+}
+
+export async function labelProviderHit(
+	hit: ProviderCatalogHit,
+	signal?: AbortSignal
+): Promise<ProviderCatalogHitLabel> {
+	const response = await fetch(`${API_BASE}${ASSISTANT_LABEL_PROVIDER_HIT_PATH}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(hit),
+		signal: signal ?? null
+	});
+	if (!response.ok) throw await assistantRefusal(response);
+	return (await response.json()) as ProviderCatalogHitLabel;
+}
+
 export async function previewInstant(text: string, signal: AbortSignal): Promise<boolean> {
 	const response = await fetch(`${API_BASE}${ASSISTANT_INSTANT_PREVIEW_PATH}`, {
 		method: 'POST',

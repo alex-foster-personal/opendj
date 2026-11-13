@@ -20,6 +20,7 @@ export type BrokenTrackList = components['schemas']['BrokenTrackList'];
 export type RelocateCandidate = components['schemas']['RelocateCandidateOut'];
 export type RelocateCandidateList = components['schemas']['RelocateCandidateList'];
 export type RelocateApplyResult = components['schemas']['RelocateApplyOut'];
+export type MissingRemoveResult = components['schemas']['MissingRemoveOut'];
 
 export class RelocateApplyError extends Error {
 	constructor(
@@ -96,4 +97,14 @@ export async function applyRelocate(
 		}
 		throw error;
 	}
+}
+
+/**
+ * LIBM-78b (issue #12316): remove the selected Missing Tracks rows from the
+ * library in one call. The server re-checks that every row is still missing
+ * and refuses the whole batch (409 not_missing) otherwise; files stay on disk.
+ */
+export async function removeMissingTracks(stableIds: string[]): Promise<MissingRemoveResult> {
+	if (stableIds.length === 0) throw new RangeError('removeMissingTracks: select at least one row');
+	return unwrap(api.POST('/api/v1/reconcile/broken:remove', { body: { stable_ids: stableIds } }));
 }

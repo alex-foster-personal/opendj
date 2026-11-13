@@ -38,11 +38,13 @@ afterEach(() => {
 	mod._resetPageGoingAwayForTests();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
 	errors = [];
 	console.error = (...args) => errors.push(args.map(String).join(' '));
 	globalThis.fetch = async (request) => {
 		const url = typeof request === 'string' ? request : request.url;
+		// A legacy daemon: the capability probe clears the library job queue.
+		if (url.includes('/api/v1/health')) return jsonResponse({ status: 'ok' });
 		if (url.includes('/api/v1/library-jobs')) {
 			return jsonResponse(
 				{ detail: { code: 'list_failed', message: 'Internal Server Error' } },
@@ -51,6 +53,8 @@ beforeEach(() => {
 		}
 		throw new Error(`unexpected fetch: ${url}`);
 	};
+	mod.capabilities._resetForTests();
+	await mod.capabilities.probe();
 });
 
 test('refresh resolves and logs when listLibraryJobs fails on a live page', async () => {

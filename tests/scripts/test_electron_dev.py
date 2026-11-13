@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import os
 import socket
+import subprocess
 import sys
 from pathlib import Path
 
@@ -512,3 +513,135 @@ def test_a_reaped_leaders_group_is_still_stopped_when_a_tracked_member_holds_it(
         for member in (tracked, untracked):
             with contextlib.suppress(psutil.NoSuchProcess):
                 member.kill()
+
+
+def _sleeper() -> subprocess.Popen[bytes]:
+    """A live stand-in for the Electron window."""
+    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+
+
+@pytest.mark.requirement("PERF-DIAG-9545")
+def test_the_window_registers_in_the_backend_data_dir_as_the_shell_does(tmp_path: Path) -> None:
+    """[if] the window starts [then] .engine.parent holds its pid, mode 0600, and read_shell_registration accepts it, [else stop]."""
+    import stat
+
+    from apps.shared.machine_pressure import read_shell_registration
+    from scripts.electron_dev import ShellRegistrar, shell_registration_dir
+
+    data_dir = shell_registration_dir(str(tmp_path / "state" / "state.db"))
+    assert data_dir == tmp_path
+    window = _sleeper()
+    try:
+        ShellRegistrar(data_dir).record(window.pid)
+        path = tmp_path / ".engine.parent"
+        assert path.read_text(encoding="utf-8") == f"{window.pid}\n"
+        if os.name == "posix":
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        registration = read_shell_registration(tmp_path)
+    finally:
+        window.kill()
+        window.wait(10)
+    assert registration.status == "accepted", registration
+    assert registration.pid == window.pid
+
+
+@pytest.mark.requirement("PERF-DIAG-9545")
+def test_a_relaunch_rewrites_the_registration_and_a_clean_exit_removes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a shell edit relaunches the window [then] the file names the new pid, and the exit removes it, [else stop]."""
+    import scripts.electron_dev as dev
+    from apps.shared.machine_pressure import read_shell_registration
+
+    first = _sleeper()
+    spawned: list[subprocess.Popen[bytes]] = []
+    seen: dict[str, object] = {}
+    stamps = iter([frozenset({("a.ts", 2.0)})])
+
+    def spawn(argv: list[str], *, service: str, env: dict[str, str], register) -> subprocess.Popen[bytes]:
+        """Start a stand-in window instead of Electron."""
+        process = _sleeper()
+        spawned.append(process)
+        register(process)
+        return process
+
+    def stamp(_src: Path) -> frozenset[tuple[str, float]]:
+        """Report one shell edit, then, with the relaunched window up, check it and close it."""
+        try:
+            return next(stamps)
+        except StopIteration:
+            seen["text"] = (tmp_path / ".engine.parent").read_text(encoding="utf-8")
+            seen["registration"] = read_shell_registration(tmp_path)
+            spawned[0].kill()
+            spawned[0].wait(10)
+            return frozenset({("a.ts", 2.0)})
+
+    def stop(process: subprocess.Popen[bytes], what: str) -> None:
+        """Stop a stand-in window."""
+        process.kill()
+        process.wait(10)
+
+    monkeypatch.setattr(dev, "WATCH_POLL_S", 0.0)
+    monkeypatch.setattr(dev, "_spawn", spawn)
+    monkeypatch.setattr(dev, "_wait_for", lambda *a, **k: None)
+    monkeypatch.setattr(dev, "_build_shell", lambda *a: True)
+    monkeypatch.setattr(dev, "_stop", stop)
+    monkeypatch.setattr(dev, "shell_sources_stamp", stamp)
+
+    registrar = dev.ShellRegistrar(tmp_path)
+    registrar.record(first.pid)
+    windows = [first]
+    try:
+        dev._watch_shell(
+            windows,
+            _plan(tmp_path),
+            cdp="http://127.0.0.1:1",
+            shell=dev.ShellBuild(["tsc"], tmp_path, frozenset({("a.ts", 1.0)}), {}),
+            no_watch=False,
+            started=[],
+            registrar=registrar,
+        )
+    finally:
+        for process in [first, *spawned]:
+            if process.poll() is None:
+                process.kill()
+                process.wait(10)
+    assert first.returncode is not None  # the old window was stopped for the relaunch
+    assert seen["text"] == f"{spawned[0].pid}\n"
+    registration = seen["registration"]
+    assert registration.status == "accepted", registration
+    assert registration.pid == spawned[0].pid
+
+    registrar.clear()
+    assert not (tmp_path / ".engine.parent").exists()
+
+
+@pytest.mark.requirement("PERF-DIAG-9545")
+def test_a_run_not_owning_the_backend_writes_nothing_and_never_removes_anothers(tmp_path: Path) -> None:
+    """[if] no owned backend names a data dir [then] nothing is written, and a rewritten file outlives the exit, [else stop]."""
+    from scripts.electron_dev import ShellRegistrar, shell_registration_dir
+
+    unowned = ShellRegistrar(shell_registration_dir(None))
+    unowned.record(os.getpid())
+    unowned.clear()
+    assert list(tmp_path.iterdir()) == []
+
+    ours = ShellRegistrar(tmp_path)
+    ours.record(os.getpid())
+    (tmp_path / ".engine.parent").write_text("1\n", encoding="utf-8")  # another shell registered since
+    ours.clear()
+    assert (tmp_path / ".engine.parent").read_text(encoding="utf-8") == "1\n"
+
+
+@pytest.mark.requirement("PERF-DIAG-9545")
+def test_the_backend_env_never_carries_the_parent_pid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the backend env is built [then] OPENDJ_PARENT_PID is absent even when inherited, [else stop]."""
+    import argparse
+
+    from scripts.electron_dev import _backend_env
+
+    monkeypatch.setenv("OPENDJ_PARENT_PID", str(os.getpid()))
+    args = argparse.Namespace(fixture=False, data_dir=tmp_path)
+    env = _backend_env(args, backend_port=8400, frontend_port=9400, backend_up=True)
+    assert "OPENDJ_PARENT_PID" not in env
+    assert env["MDT_DATA_DIR"] == str(tmp_path.resolve())

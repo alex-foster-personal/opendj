@@ -79,7 +79,6 @@ tests/reconcile/test_link_repair.py
 tests/reconcile/test_link_repair_live.py
 tests/reconcile/test_list_broken.py
 tests/reconcile/test_locate.py
-tests/reconcile/test_relink.py
 tests/reconcile/test_remove_track.py
 (private path)
 tests/scripts/test_desktop_lane_config.py
@@ -219,7 +218,6 @@ tests/test_analysis_backlog.py
 (private path)
 tests/test_analysis_route.py
 tests/test_analysis_run_classification.py
-tests/test_apply_analysis.py
 tests/test_apply_cues.py
 tests/test_apply_ratings.py
 tests/test_codex_followups_b.py
@@ -234,7 +232,6 @@ tests/test_cue_comparison.py
 tests/test_ratings_persistence.py
 tests/test_rb_cues.py
 tests/test_rb_writer.py
-(private path)
 (private path)
 tests/test_sync_diff.py
 tests/test_sync_safety.py

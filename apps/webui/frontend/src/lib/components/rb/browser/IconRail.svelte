@@ -7,6 +7,8 @@
 	// iTunes / Devices text tabs) are gone.
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import LibrarySourceMenu from './LibrarySourceMenu.svelte';
+	import { tagListBadge, tagListRailTip } from '$lib/tag-list/tag-list-pane';
+	import { EXPLORER_TIP } from '$lib/explorer/explorer-pane';
 
 	/** The bottom bar's export/eject wording (BrowserPanel.svelte), so both entry points say the same thing. */
 	const USB_EXPORT_TIP = 'Export / eject - open the USB screen to write an export to a stick or eject it';
@@ -18,8 +20,11 @@
 		d: string;
 		mode: 'fill' | 'stroke';
 		source?: 'spotify';
-		action?: 'record' | 'collection' | 'usb';
+		action?: 'record' | 'collection' | 'usb' | 'history' | 'tag_list' | 'explorer';
 	}
+
+	/** PLAYS-9745: the stopwatch entry's tooltip (rekordbox History, mimicked). */
+	const HISTORY_TIP = 'History - every night you played, newest first; open one to see its tracks in play order and save it as a playlist';
 
 	let {
 		source,
@@ -32,6 +37,13 @@
 		recordingStoppable = true,
 		onrecord = () => {},
 		onusb = () => {},
+		historyOpen = false,
+		onhistory = () => {},
+		tagListCount = null,
+		tagListOpen = false,
+		ontaglist = () => {},
+		explorerOpen = false,
+		onexplorer = () => {},
 		recordable = true,
 		recordingAvailable = true
 	}: {
@@ -50,6 +62,20 @@
 		onrecord?: () => void;
 		/** USBEXP-9746: opens the USB export screen (the bottom bar's export/eject path). */
 		onusb?: () => void;
+		/** PLAYS-9745: the History list holds the tree slot (the stopwatch reads lit). */
+		historyOpen?: boolean;
+		/** PLAYS-9745: opens the play History list in the tree slot. */
+		onhistory?: () => void;
+		/** Issue #10028: tracks on the Tag List (the badge); null while unread. */
+		tagListCount?: number | null;
+		/** Issue #10028: the active pane shows the Tag List (the tag reads lit). */
+		tagListOpen?: boolean;
+		/** Issue #10028: opens the Tag List in the active pane. */
+		ontaglist?: () => void;
+		/** Issue #9747: the Explorer folder tree holds the tree slot (the folder reads lit). */
+		explorerOpen?: boolean;
+		/** Issue #9747: opens the Explorer folder tree in the tree slot. */
+		onexplorer?: () => void;
 		/** False hides REC whatever the recording flag says (Library mode). */
 		recordable?: boolean;
 		/** Whether the build allows recording (the sets.recording flag). The parent reads the flag, so this component never touches the backend while it renders. */
@@ -83,12 +109,27 @@
 		},
 		{
 			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a).
-			// Planned entry (PARITY-TODO, id play-history): set sessions exist in
-			// apps/sets; the in-browser list is not built, so this glyph stays inert.
-			plannedId: 'play-history',
+			// PLAYS-9745: opens play History (one list per night) in the tree slot.
+			tip: HISTORY_TIP,
 			color: 'currentColor',
 			d: 'M6.5 1.5h3M8 1.5v2M8 3.5a5 5 0 1 1 0 10a5 5 0 1 1 0-10M8 8.5V5.5M8 8.5l2 1.5',
-			mode: 'stroke'
+			mode: 'stroke',
+			action: 'history'
+		},
+		{
+			// Issue #10028: price tag with a hole, rekordbox's Tag List entry (mimicked).
+			color: 'currentColor',
+			d: 'M2.5 2.5h5l6 6l-5 5l-6-6zM5.5 4.6a0.9 0.9 0 1 1 0 1.8a0.9 0.9 0 1 1 0-1.8',
+			mode: 'stroke',
+			action: 'tag_list'
+		},
+		{
+			// Issue #9747: an open folder, rekordbox's Explorer entry (mimicked).
+			tip: EXPLORER_TIP,
+			color: 'currentColor',
+			d: 'M1.5 4h4.5l1.5 1.5h7v7.5h-13zM1.5 7h13',
+			mode: 'stroke',
+			action: 'explorer'
 		},
 		{
 			tip: 'Set recording - configure sources, then press Start recording',
@@ -108,6 +149,9 @@
 		{@const isRecord = icon.action === 'record'}
 		{@const isHome = icon.action === 'collection'}
 		{@const isUsb = icon.action === 'usb'}
+		{@const isHistory = icon.action === 'history'}
+		{@const isTagList = icon.action === 'tag_list'}
+		{@const isExplorer = icon.action === 'explorer'}
 		{@const isInert = icon.source === undefined && icon.action === undefined}
 		{@const tip = isRecord
 			? (recordingTip ??
@@ -118,19 +162,21 @@
 					: (icon.tip ?? 'Start set recording')))
 			: isInert && icon.plannedId !== undefined
 				? plannedTitle(icon.plannedId)
-				: (icon.tip ?? '')}
+				: isTagList
+					? tagListRailTip(tagListCount)
+					: (icon.tip ?? '')}
 		<button
 			class="rail-btn"
-			data-testid={isHome ? 'rail-collection-home' : isUsb ? 'rail-usb-export' : undefined}
+			data-testid={isHome ? 'rail-collection-home' : isUsb ? 'rail-usb-export' : isHistory ? 'rail-history' : isTagList ? 'rail-tag-list' : isExplorer ? 'rail-explorer' : undefined}
 			class:rb-inert={isInert}
 			class:recording={isRecord && recording}
 			class:waiting={isRecord && recordingWaiting}
-			class:active={icon.source === 'spotify' && source === 'spotify'}
+			class:active={(icon.source === 'spotify' && source === 'spotify' && !historyOpen) || (isHistory && historyOpen) || (isTagList && tagListOpen) || (isExplorer && explorerOpen)}
 			disabled={isInert || (isRecord && (recordingBusy || (recording && !recordingStoppable)))}
 			title={tip}
 			aria-label={tip}
-			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : isRecord ? recording : undefined}
-			onclick={isHome ? oncollection : icon.source === 'spotify' ? onspotify : isRecord ? onrecord : isUsb ? onusb : undefined}
+			aria-pressed={icon.source === 'spotify' ? source === 'spotify' && !historyOpen : isRecord ? recording : isHistory ? historyOpen : isTagList ? tagListOpen : isExplorer ? explorerOpen : undefined}
+			onclick={isHome ? oncollection : icon.source === 'spotify' ? onspotify : isHistory ? onhistory : isRecord ? onrecord : isUsb ? onusb : isTagList ? ontaglist : isExplorer ? onexplorer : undefined}
 		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
 				{#if icon.mode === 'stroke'}
@@ -144,6 +190,9 @@
 					<path class="spotify-arcs" d={SPOTIFY_ARCS_D} fill="none" stroke-width="1.1" stroke-linecap="round" />
 				{/if}
 			</svg>
+			{#if isTagList && tagListBadge(tagListCount) !== ''}
+				<span class="rail-badge" data-testid="rail-tag-list-count">{tagListBadge(tagListCount)}</span>
+			{/if}
 		</button>
 	{/each}
 	</LibrarySourceMenu>
@@ -172,6 +221,24 @@
 		border: none;
 		color: var(--rb-text-dim);
 		cursor: pointer;
+	}
+	/* Issue #10028: the Tag List count, bottom-right over the tag glyph. */
+	.rail-btn:has(.rail-badge) {
+		position: relative;
+	}
+	.rail-badge {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+		min-width: 9px;
+		padding: 0 1px;
+		border-radius: 3px;
+		background: var(--rb-accent);
+		color: var(--rb-on-accent, #fff);
+		font-size: 7px;
+		line-height: 9px;
+		font-variant-numeric: tabular-nums;
+		pointer-events: none;
 	}
 	.spotify-arcs {
 		stroke: var(--rb-rail-spotify-arc);

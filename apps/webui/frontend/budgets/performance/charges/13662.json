@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 483625,
+  "measured_with_pr": 483715,
+  "sha": "c7e1fff22ae",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13662 changes no frontend source. Same cause as its other-lazy charge: the two builds differ only in content-hash names, which gzip 90 B worse on this 63-file surface on the measured run. Every new head redraws those names, so a draw above the 128 B floor is possible; this charge keeps a start-up repair from waiting on a second run; ceiled to KiB.",
+  "payback": "delete at the next rebaseline: the bytes are not code, so nothing has to come back"
+}

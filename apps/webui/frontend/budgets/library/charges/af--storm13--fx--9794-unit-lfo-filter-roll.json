@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 373178,
+  "measured_with_pr": 375490,
+  "sha": "1cfddd77ac",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--fx--9794-unit-lfo-filter-roll grows the library surface; measured +2312 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

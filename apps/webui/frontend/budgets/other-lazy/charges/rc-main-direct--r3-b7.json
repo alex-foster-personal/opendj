@@ -1,0 +1,9 @@
+{
+  "bytes": 9216,
+  "measured_main": 588122,
+  "measured_with_pr": 596532,
+  "sha": "e92dd3990c",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 7 (PR 14925, branch rc-main-direct--r3-b7) grows the other-lazy surface by its 67 members' code: measured +8410 B gzip at e92dd3990c over main 1f00621aaf (bundle 6's merge commit) built on the same machine, ceiled to KiB with room for a different runner. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

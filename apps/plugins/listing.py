@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.plugins.manifest import CAPABILITY_KINDS, is_sha256
-from apps.plugins.providers import store_surface
+from apps.plugins.providers import STABLE_API_KINDS, store_surface
 
 LISTING_STATUSES: tuple[str, ...] = ("stable", "beta", "experiment", "deprecated")
 SCREENSHOT_THEMES: tuple[str, ...] = ("dark", "light", "any")
@@ -54,7 +54,7 @@ MAX_SCREENSHOT_PIXELS: int = 4096 * 4096
 MEDIA_TYPES: dict[str, str] = {"png": "image/png", "webp": "image/webp"}
 
 _LISTING_REQUIRED = frozenset({"tagline", "problem", "you_can", "how_it_works", "limits", "status", "screenshots"})
-_LISTING_OPTIONAL = frozenset({"capability_kind"})
+_LISTING_OPTIONAL = frozenset({"capability_kind", "provider_owner", "official_docs_url", "allowed_use_review"})
 _LISTING_KEYS = _LISTING_REQUIRED | _LISTING_OPTIONAL
 _SHOT_KEYS = frozenset({"path", "sha256", "size", "width", "height", "alt", "theme"})
 
@@ -99,6 +99,9 @@ class Listing:
     status: str
     screenshots: tuple[Screenshot, ...]
     capability_kind: str | None = None
+    provider_owner: str | None = None
+    official_docs_url: str | None = None
+    allowed_use_review: str | None = None
 
     @property
     def store_surface(self) -> str | None:
@@ -119,6 +122,10 @@ class Listing:
         if self.capability_kind is not None:
             out["capability_kind"] = self.capability_kind
             out["store_surface"] = self.store_surface
+        for key in ("provider_owner", "official_docs_url", "allowed_use_review"):
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
         return out
 
 
@@ -194,6 +201,17 @@ def listing_from_dict(raw: Any, plugin_id: str) -> Listing:
     if capability_kind is not None:
         if not isinstance(capability_kind, str) or capability_kind not in CAPABILITY_KINDS:
             raise ListingError(f"listing 'capability_kind' must be one of {list(CAPABILITY_KINDS)}")
+    provider_owner = _optional_text(raw, "provider_owner", 120)
+    official_docs_url = _optional_https_url(raw, "official_docs_url")
+    allowed_use_review = _optional_text(raw, "allowed_use_review", 2000)
+    if capability_kind in STABLE_API_KINDS:
+        for key, value in (
+            ("provider_owner", provider_owner),
+            ("official_docs_url", official_docs_url),
+            ("allowed_use_review", allowed_use_review),
+        ):
+            if value is None:
+                raise ListingError(f"listing {key!r} is required when capability_kind is {capability_kind!r}")
     return Listing(
         tagline=_text(raw, "tagline", 80),
         problem=_text(raw, "problem", 1500),
@@ -203,7 +221,25 @@ def listing_from_dict(raw: Any, plugin_id: str) -> Listing:
         status=status,
         screenshots=tuple(_screenshot(s, plugin_id) for s in shots),
         capability_kind=capability_kind,
+        provider_owner=provider_owner,
+        official_docs_url=official_docs_url,
+        allowed_use_review=allowed_use_review,
     )
+
+
+def _optional_text(raw: dict[str, Any], key: str, max_len: int) -> str | None:
+    if key not in raw:
+        return None
+    return _text(raw, key, max_len)
+
+
+def _optional_https_url(raw: dict[str, Any], key: str) -> str | None:
+    if key not in raw:
+        return None
+    value = _text(raw, key, 500)
+    if not value.startswith("https://"):
+        raise ListingError(f"listing {key!r} must be an https:// URL")
+    return value
 
 
 def sniff_media_type(data: bytes) -> str | None:

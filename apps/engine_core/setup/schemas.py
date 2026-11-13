@@ -41,6 +41,20 @@ def normalize_setup_folder_path(raw: str) -> str:
     return normalise_path_prefix(expanded)
 
 
+def checked_folder_root(entry: str) -> str:
+    """The canonical form of one submitted folder root, or ValueError when it is not a canonical absolute path.
+
+    A ``..`` segment is refused even inside an absolute path: the walk would
+    run somewhere other than the folder the string names, and two spellings
+    of one folder would pass the duplicate check as different roots.
+    """
+    if not entry or not Path(entry).is_absolute():
+        raise ValueError(f"folder must be an absolute path, got {entry!r}")
+    if ".." in Path(entry).parts:
+        raise ValueError(f"folder must be a canonical path with no '..' segment, got {entry!r}")
+    return normalize_setup_folder_path(entry)
+
+
 class FileProbeOut(BaseModel):
     """One real path and whether it is actually there."""
 
@@ -129,6 +143,13 @@ class LastImportOut(BaseModel):
     unreadable_music_roots: list[str] = Field(default_factory=list)
 
 
+class UnplayableRejectionOut(BaseModel):
+    """One allowlisted file the folder import probe refused."""
+
+    path: str
+    reason: str
+
+
 class FolderLastImportOut(BaseModel):
     """What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.
 
@@ -147,6 +168,7 @@ class FolderLastImportOut(BaseModel):
     files_dataless: int
     files_without_tags: int
     files_rejected_unplayable: int = 0
+    unplayable_rejections: list[UnplayableRejectionOut] = Field(default_factory=list)
     tracks: int
     tracks_written: int
     tracks_without_analysis: int
@@ -268,9 +290,7 @@ class FolderImportIn(BaseModel):
         normalized: list[str] = []
         seen: set[str] = set()
         for entry in value:
-            if not entry or not Path(entry).is_absolute():
-                raise ValueError(f"folder must be an absolute path, got {entry!r}")
-            canon = normalize_setup_folder_path(entry)
+            canon = checked_folder_root(entry)
             if canon in seen:
                 raise ValueError(
                     f"duplicate folder path after normalization: {canon!r}"
@@ -294,9 +314,7 @@ class FolderWatchIn(BaseModel):
         normalized: list[str] = []
         seen: set[str] = set()
         for entry in value:
-            if not entry or not Path(entry).is_absolute():
-                raise ValueError(f"folder must be an absolute path, got {entry!r}")
-            canon = normalize_setup_folder_path(entry)
+            canon = checked_folder_root(entry)
             if canon in seen:
                 raise ValueError(f"duplicate folder path after normalization: {canon!r}")
             seen.add(canon)
@@ -377,5 +395,7 @@ __all__ = [
     "SetupStatusOut",
     "StemTierOut",
     "StemsSetupOut",
+    "checked_folder_root",
+    "UnplayableRejectionOut",
     "normalize_setup_folder_path",
 ]

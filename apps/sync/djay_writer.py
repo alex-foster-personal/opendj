@@ -29,9 +29,14 @@ from __future__ import annotations
 import struct
 from collections.abc import Iterable
 
+from apps.shared.djay_db import (
+    AmbiguousRatingFieldError,
+    extract_schema_indexed_uint8,
+    locate_color_index_value_offset,
+    locate_rating_value_offset,
+)
 from apps.shared.normalised import NormalisedCue
 from apps.shared.rb_color_palette import rgb_to_color_index
-from apps.sync.tsaf_writer import locate_rating_tag_in_tail
 
 _CUE_CLASS = b"ADCMediaItemCuePoint"
 _LOOP_CLASS = b"ADCMediaItemLoopRegion"
@@ -150,6 +155,21 @@ def _find_insertion_point(blob: bytes) -> int:
     return n
 
 
+def is_patchable_tsaf_blob(blob: bytes | None) -> bool:
+    """Return True only for a non-empty TSAF blob with a safe tail insertion boundary.
+
+    The boundary is a ``0x0b 0x05`` terminator chunk in the tail window or a
+    trailing ``0x00`` byte; without one a splice could corrupt the blob.
+    """
+    if not blob or blob[:4] != b"TSAF":
+        return False
+    n = len(blob)
+    for i in range(n - 2, max(0, n - 60) - 1, -1):
+        if blob[i] == 0x0B and blob[i + 1] == 0x05:
+            return True
+    return blob[-1] == 0x00
+
+
 def _patch_array(blob: bytes, field_name: bytes, encoded_array: bytes) -> bytes:
     """Insert or replace a ``0x0b`` array field inside ``blob``."""
     span = _scan_array_span(blob, field_name)
@@ -178,18 +198,25 @@ def patch_loop_regions(blob: bytes, new_loops: Iterable[NormalisedCue]) -> bytes
 
 
 def patch_rating(blob: bytes, rating: int) -> bytes:
-    """Set the tail ``0x0f <1..5>`` rating marker.
+    """Set the blob's single rating field.
 
-    - If an existing marker exists in the last 30 bytes, replace the value.
+    - If exactly one rating field exists (schema-indexed, else the legacy
+      tail marker), replace its value byte.
     - Else insert ``0x0f <rating> 0x08 rating 0x00`` before the tail
       terminator block.
+    - Raises :class:`AmbiguousRatingFieldError` (blob untouched) when more
+      than one candidate rating field exists.
+    - Raises ``ValueError`` for a rating outside the integer 0..5 domain
+      (no silent clamping).
     """
+    rating = int(rating)
+    if not 0 <= rating <= 5:
+        raise ValueError(f"rating {rating} is outside the 0..5 domain")
     if not blob:
         return blob
-    rating = max(0, min(5, int(rating)))
-    tag_offset = locate_rating_tag_in_tail(blob)
-    if tag_offset is not None:
-        return blob[: tag_offset + 1] + bytes([rating]) + blob[tag_offset + 2 :]
+    value_offset = locate_rating_value_offset(blob)
+    if value_offset is not None:
+        return blob[:value_offset] + bytes([rating]) + blob[value_offset + 1 :]
     # Insert new.
     insert_at = _find_insertion_point(blob)
     new_field = _emit_uint8(rating) + _emit_string("rating")
@@ -225,7 +252,24 @@ def patch_key_signature_index(blob: bytes, idx: int) -> bytes:
 
 
 def patch_color_index(blob: bytes, idx: int) -> bytes:
-    return _patch_scalar_before_field(blob, b"colorIndex", _emit_uint8(idx))
+    """Replace the schema-indexed ``0x0f <uint8> 0x05 <color idx>`` value in place.
+
+    Refuses (raises ``ValueError``) when the schema lacks ``colorIndex``, when no
+    indexed value token exists, when multiple tokens exist, or when the patched
+    blob no longer decodes the written uint8.
+    """
+    idx = int(idx)
+    if not 0 <= idx <= 7:
+        raise ValueError(f"colorIndex {idx} is outside the 0..7 domain")
+    if not blob:
+        raise ValueError("empty blob has no parseable colorIndex token")
+    value_offset = locate_color_index_value_offset(blob)
+    if value_offset is None:
+        raise ValueError("blob has no parseable schema-indexed colorIndex token")
+    new_blob = blob[:value_offset] + bytes([idx]) + blob[value_offset + 1 :]
+    if extract_schema_indexed_uint8(new_blob, "colorIndex") != idx:
+        raise ValueError("patched blob does not read back the written colorIndex")
+    return new_blob
 
 
 def patch_tags(blob: bytes, tags: str) -> bytes:
@@ -237,6 +281,7 @@ def patch_start_point(blob: bytes, seconds: float) -> bytes:
 
 
 __all__ = [
+    "AmbiguousRatingFieldError",
     "encode_cue_point",
     "encode_loop_region",
     "encode_cue_array",

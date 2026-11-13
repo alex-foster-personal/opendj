@@ -9,7 +9,6 @@ from apps.analysis_beatgrid.meter import (
     DEFAULT_BEATS_PER_BAR,
     STATUS_MEASURED,
     STATUS_UNMEASURED,
-    MeterEstimate,
     estimate_beats_per_bar,
 )
 
@@ -48,21 +47,19 @@ def test_synthetic_six_eight_spacing_is_measured_six_not_silent_four():
 
 
 @pytest.mark.requirement("METER-12679")
-def test_six_eight_may_also_be_reported_as_three_with_compound_note():
-    """[if] spacing vote is 6 [then] 3 with compound_6_8 note is an allowed reading, [else stop]."""
+def test_six_eight_estimator_output_reports_six_with_spacing_vote_and_no_compound_note():
+    """[if] spacing vote is 6 [then] real output is 6 measured with no compound note, [else stop]."""
     beats = _grid(36)
     downbeats = _downbeats_every(beats, 6)
-    primary = estimate_beats_per_bar(beats, downbeats)
-    alternate = MeterEstimate(
-        3,
-        STATUS_MEASURED,
-        compound_meter_note=COMPOUND_METER_NOTE_6_8,
-        n_closed_bars=primary.n_closed_bars,
-        spacing_vote=6,
-    )
-    assert primary.beats_per_bar == 6
-    assert alternate.beats_per_bar == 3
-    assert alternate.compound_meter_note == COMPOUND_METER_NOTE_6_8
+
+    meter = estimate_beats_per_bar(beats, downbeats)
+
+    assert meter.beats_per_bar == 6
+    assert meter.beats_per_bar_status == STATUS_MEASURED
+    assert meter.spacing_vote == 6
+    assert meter.n_closed_bars == 5
+    assert meter.compound_meter_note is None
+    assert meter.compound_meter_note != COMPOUND_METER_NOTE_6_8
 
 
 @pytest.mark.requirement("METER-12679")

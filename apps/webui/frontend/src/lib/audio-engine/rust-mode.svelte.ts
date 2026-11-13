@@ -41,6 +41,7 @@
  * panels, feedback, hot-cue editing, preview) runs on the page as before.
  */
 
+import { beatFxRustRefusal } from '$lib/rb/beat-fx-unit';
 import { colorFxRustRefusal } from '$lib/rb/color-fx.svelte';
 import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
@@ -105,7 +106,11 @@ export const PAGE_DECIDED: ReadonlySet<string> = new Set([
 /** Every command this mode takes from the page. Hot-cue save, clear, restore
  * and trigger stay the page's own and reach the engine through
  * `rustHotCueDriver`; preview plays on the page's own preview player. */
-export const ENGINE_COMMANDS: ReadonlySet<string> = new Set(['load', ...FORWARDED, ...PAGE_DECIDED]);
+export const ENGINE_COMMANDS: ReadonlySet<string> = new Set([
+	'load',
+	...FORWARDED,
+	...PAGE_DECIDED
+]);
 
 /** Page features whose implementation reaches into the Web Audio engine's
  * own clock, buffers or devices. Refused by name in this mode. */
@@ -131,6 +136,7 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'headphone_calibrate',
 	'headphone_calibrate_abort',
 	'headphone_alignment_mode',
+	'headphone_calibration_probe',
 	'master_delay_ms',
 	'auto_play_next_arm',
 	'auto_play_next_cancel',
@@ -139,6 +145,8 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'rescue_stop_all',
 	// DECKUX-6794 J1: the snapped jump plans on the page engine's clock first.
 	'grid_jump',
+	// Issue #10263: the section jump plans on the page engine's clock and phrases too.
+	'section_jump',
 	// DECKUX-10478: the pending LOOP IN point and RELOOP memory are page-engine deck state; native port is a follow-up.
 	'loop_in',
 	'loop_out',
@@ -199,7 +207,9 @@ export function engineRestartNeeded(): boolean {
  * `?engine=` when the URL carries one (it would outrank the saved choice),
  * else a plain reload. Pure, so the button and the agent bridge share it.
  */
-export function engineRestartTarget(href: string): { kind: 'assign'; href: string } | { kind: 'reload' } {
+export function engineRestartTarget(
+	href: string
+): { kind: 'assign'; href: string } | { kind: 'reload' } {
 	const url = new URL(href);
 	if (!url.searchParams.has('engine')) return { kind: 'reload' };
 	url.searchParams.delete('engine');
@@ -215,7 +225,9 @@ export function engineRestartTarget(href: string): { kind: 'assign'; href: strin
 export function restartToLoadEngine(): void {
 	if (typeof window === 'undefined') throw new Error('restartToLoadEngine: no page to restart');
 	if (!rustMode.committed) {
-		throw new Error('restartToLoadEngine: this page runs no engine; the saved engine starts when the performance page loads');
+		throw new Error(
+			'restartToLoadEngine: this page runs no engine; the saved engine starts when the performance page loads'
+		);
 	}
 	if (!engineRestartNeeded()) {
 		throw new Error('restartToLoadEngine: the saved engine is already the one this page runs');
@@ -232,7 +244,9 @@ export function restartToLoadEngine(): void {
  * The engine a page uses when nothing has chosen one: Rust inside the Electron
  * shell, Web Audio in a browser tab or the Tauri shell.
  */
-export function defaultEngineChoice(scope: { readonly [key: string]: unknown } = globalThis): EngineChoice {
+export function defaultEngineChoice(
+	scope: { readonly [key: string]: unknown } = globalThis
+): EngineChoice {
 	return nativeShellKind(scope) === 'electron' ? 'rust' : 'webaudio';
 }
 
@@ -287,7 +301,10 @@ function _remember(choice: EngineChoice, onSaved: () => void = () => {}): void {
 			onSaved();
 		},
 		(error: unknown) => {
-			reportSettingSaveError(`Audio engine choice not saved; the next launch keeps the previous engine: ${String(error)}`, error);
+			reportSettingSaveError(
+				`Audio engine choice not saved; the next launch keeps the previous engine: ${String(error)}`,
+				error
+			);
 		}
 	);
 }
@@ -380,6 +397,9 @@ export async function executeInRustEngine(
 	if (!rustMode.enabled) return false;
 	const type = command.type;
 	if (WEB_AUDIO_ONLY.has(type)) {
+		// BEATFX-13: a beat_fx that names an effect is refused by that effect's name (issue #9794).
+		if (command.type === 'beat_fx' && command.effect !== undefined)
+			throw new Error(beatFxRustRefusal(command.effect));
 		throw new Error(
 			`RUST_ENGINE_UNAVAILABLE: ${type} is not available with the Rust engine yet - see PARITY-TODO`
 		);

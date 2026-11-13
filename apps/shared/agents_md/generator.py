@@ -180,8 +180,13 @@ class MissingColumnDocsError(RuntimeError):
     """A live table or column has no curated description in column_docs.py.
 
     This is the drift guard: generating an AGENTS.md that silently omits a
-    column's meaning is impossible by construction.
+    column's meaning is impossible by construction. ``missing`` names each
+    undocumented ``table.column`` (or whole table) so a caller can report it.
     """
+
+    def __init__(self, message: str, *, missing: tuple[str, ...]) -> None:
+        super().__init__(message)
+        self.missing = missing
 
 
 class ForeignAgentsMdError(RuntimeError):
@@ -298,7 +303,8 @@ def _check_coverage(tables: list[TableInfo]) -> None:
         f"apps/database/column_docs.py is missing {len(missing)} "
         "description(s) for tables/columns live in this database. Add "
         "them before regenerating AGENTS.md -- this is the drift guard "
-        "doing its job, not a bug:\n" + "\n".join(f"  - {item}" for item in missing)
+        "doing its job, not a bug:\n" + "\n".join(f"  - {item}" for item in missing),
+        missing=tuple(missing),
     )
 
 

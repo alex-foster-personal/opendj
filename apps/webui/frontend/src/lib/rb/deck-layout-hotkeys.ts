@@ -80,3 +80,7 @@ export function installDeckLayoutHotkeys(): () => void {
 // layout module, sizes the mixer column without a new fan-out edge (quality
 // ratchet frontend.max_fan_out on +page.svelte).
 export { mixerColumnPx } from '$lib/rb/mixer-width';
+
+// Issue #9432: same reason (fan-out ratchet) for the large-library toggle.
+export { installLargeLibraryHotkey } from '$lib/rb/large-library-hotkey';
+export { largeLibrary } from '$lib/rb/large-library.svelte';

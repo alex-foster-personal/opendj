@@ -112,7 +112,7 @@ test('all playing but none on-air falls back to lowest id', () => {
 
 test('the crossfade law here still matches the one the engine applies', () => {
 	const engineLaw = engineBlockAfter(
-		'function _xfGainFor(assign: CrossfaderAssign, x: number): number {'
+		'export function crossfaderGainFor(assign: CrossfaderAssign, x: number): number {'
 	);
 	for (const expression of [
 		"if (assign === 'THRU') return 1;",

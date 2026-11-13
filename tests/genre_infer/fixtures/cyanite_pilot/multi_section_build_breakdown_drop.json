@@ -1,0 +1,20 @@
+{
+  "status_code": 200,
+  "turnaround_ms": 13001.3,
+  "stable_id": "pilot-drop-05",
+  "headers": {
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "0",
+    "x-ratelimit-reset": "1731340800",
+    "retry-after": "3600"
+  },
+  "body": {
+    "modelVersion": "auto-tagging-2.0",
+    "tags": [{"tag": "EDM", "score": 0.86}],
+    "segments": [
+      {"start": 0, "end": 45000, "scores": {"energy": 0.4}},
+      {"start": 45000, "end": 75000, "scores": {"energy": 0.2}},
+      {"start": 75000, "end": 120000, "scores": {"energy": 0.95}}
+    ]
+  }
+}

@@ -45,6 +45,8 @@
 	import { deckHasPhaseCapableBeatGrid } from '$lib/player/grid-features';
 	import LoopSafetyControls from './LoopSafetyControls.svelte';
 	import LoopSourceMenu from './LoopSourceMenu.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { loopClusterSelId } from './deck-pad-selector-ids';
 
 	let {
 		deck,
@@ -284,6 +286,7 @@
 <div
 	class="loop-cluster"
 	role="group"
+	use:selectorNode={{ id: loopClusterSelId(deckId), kind: 'leaf', enabled: true }}
 	aria-label={`loop controls deck ${deckId}`}
 	onpointerenter={() => armLoopHover(deckId)}
 	onpointerleave={() => clearLoopHover(deckId)}

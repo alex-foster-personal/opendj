@@ -1,6 +1,6 @@
 """Selection lanes, lane results, and the own-producer backend naming scheme.
 
-`specs/native-analysis-v1.md` section 3 splits native analysis into five
+`(private path)` section 3 splits native analysis into five
 SELECTION LANES (the packages of D5, not the scoring rows of section 2):
 ``beatgrid`` (grid, downbeat, BPM and tempo-change together), ``key`` (key
 and key-change), ``waveform``, ``loudness`` and ``vocal``. Grid and BPM are
@@ -321,6 +321,18 @@ def semver_key(version: str) -> tuple[int, int, int, int, tuple[Any, ...]]:
     )
 
 
+def enrichment_segment_windows_from_key(
+    payload: Mapping[str, Any], *, duration_s: float | None = None
+) -> list[dict[str, int]]:
+    """Own key-segment windows for enrichment claim attachment."""
+    from apps.analysis_key import segments as key_segments
+
+    segments_block = payload.get("segments", {})
+    if not isinstance(segments_block, Mapping):
+        return []
+    return key_segments.structure_windows_for_claims(dict(segments_block), duration_s=duration_s)
+
+
 __all__ = [
     "LANES",
     "LANE_STATUSES",
@@ -338,4 +350,5 @@ __all__ = [
     "semver_key",
     "validate_lane_payload",
     "validate_lane_result",
+    "enrichment_segment_windows_from_key",
 ]

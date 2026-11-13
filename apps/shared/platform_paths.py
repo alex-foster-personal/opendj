@@ -645,6 +645,19 @@ class AssetResolver:
         # (pin ad59ac). Containment still runs through :meth:`_contained`; this
         # only dedupes the mapping pass repeated for every row on a page.
         self._library: dict[tuple[str, int | None], MappedPath] = {}
+        #: The process-default map, loaded once for this pass. A caller that
+        # hands no ``path_map`` in used to reload and re-validate path-map.json
+        # for every distinct asset path on the page (2.5 ms of interpreter-lock
+        # work each on a 66 KB map, the Fri 13 Nov 2026 hang). Same lifetime as
+        # the other two memos: nothing outlives the object.
+        self._default_map: PathMap | None = None
+
+    def _pass_map(self, path_map: PathMap | None) -> PathMap:
+        if path_map is not None:
+            return path_map
+        if self._default_map is None:
+            self._default_map = load_path_map()
+        return self._default_map
 
     def resolve_asset_path(
         self, asset_path: str, *, path_map: PathMap | None = None
@@ -654,7 +667,7 @@ class AssetResolver:
         lib_key = (asset_path, pm_id)
         mapped = self._library.get(lib_key)
         if mapped is None:
-            mapped = resolve_library_path(asset_path, path_map=path_map)
+            mapped = resolve_library_path(asset_path, path_map=self._pass_map(path_map))
             self._library[lib_key] = mapped
         if mapped.resolved is None:
             return mapped

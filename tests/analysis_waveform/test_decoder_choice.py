@@ -103,7 +103,13 @@ def test_the_engine_matches_ffmpeg_to_one_step_on_a_stereo_file(tmp_path: Path, 
 def test_the_engine_reads_a_mono_full_scale_sine_at_zero_dbfs_not_pinned(
     tmp_path: Path, engine_bin: Path
 ) -> None:
-    """[if] a 0 dBFS sine still pins the low band at 255 [then] fail, [else stop]."""
+    """[if] a mono full-scale 60 Hz sine through the forced engine reads half-scale [then] fail, [else stop].
+
+    Forces ``engine`` (not auto) so the WAV repo-debug carve-out cannot mask the
+    path. 0 dBFS maps to ~128 peak bytes under +6 dBFS headroom (NATIVE-12711 /
+    PR #12711), not 255; upper bound 145 rejects pinning. Guards #13346; landed
+    #8895, updated #12711.
+    """
     _engine_or_skip()
     if not os.environ.get(BIN_ENV, "").strip():
         assert decode.resolve_engine() == str(engine_bin), (
@@ -115,6 +121,7 @@ def test_the_engine_reads_a_mono_full_scale_sine_at_zero_dbfs_not_pinned(
     peaks = decode.decode_peaks_from("engine", source).astype(int)
     steady = peaks[len(peaks) // 4 : -len(peaks) // 4]
     got = int(steady[:, 0].max())
+    # Half-scale mono would land near 64 and fail the lower bound.
     assert 110 <= got <= 145, (
         f"mono full-scale 60 Hz low band read {got}, expected ~128 for 0 dBFS "
         f"with +6 dBFS headroom, not pinned at 255"

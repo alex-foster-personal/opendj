@@ -98,14 +98,15 @@ import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio
 import {
 	beginDeckLoad,
 	failedDeckLoadMessage,
+	publishDeckLoadKpiWhenWon,
 	recordDeckLoad,
+	recordDeckLoadKpiWhenToken,
 	rethrowLibraryTrackLookupError,
 	reportDeckLoadFailure,
-	splitDeckLoadStageMap,
 	warnShortDurationOnLoad
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import { beatSyncReenableAction, createSyncDriftMonitor, gridBarPhaseTrusted, isSyncDrifting, measureSyncDrift, SYNC_DRIFT_CHECK_INTERVAL_MS, SYNC_DRIFT_TAG, SYNC_RESNAP_TAG, syncDriftFields, type SyncDriftMeasure, type SyncLogValue } from '$lib/rb/sync-drift';
+import { beatSyncReenableAction, createSyncDriftMonitor, gridBarPhaseTrusted, isSyncDrifting, measureSyncDrift, resnapOutcomeFields, SYNC_DRIFT_CHECK_INTERVAL_MS, SYNC_DRIFT_TAG, SYNC_RESNAP_TAG, syncDriftFields, type SyncDriftMeasure, type SyncLogValue } from '$lib/rb/sync-drift';
 import { emitSyncLog } from '$lib/rb/sync-log-sink';
 import { awaitPresentedStop, bindAudioEngineSilenceProbes, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePositionSample, notePresentationClock, notePresentationTickFailure, presentedSampleAtMs, readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall, ScheduledSteps, validAnchor, type PositionAnchor, type RecordedAnchor, presentationTickFailure } from '$lib/rb/engine-clock-reports';
 import {
@@ -128,13 +129,11 @@ import { notifyPerformanceArmedContextReset } from '$lib/rb/performance-armed-co
 import { buildDeckChannelGraph, recreateFromEngineAccess, type DeckChannelNodes as _ChannelNodes, masterSilenceIsCommanded, masterBusSilenceIsCommanded, masterBusPathGain, autoGainLinear, parseDjOutputProfile, resolveDjOutputProfile, wireAudioOutputTopology, type DjOutputProfile, clearDjOutputResolution, publishDjOutputResolution, ENGINE_RECOVERED_PRESS_PLAY, GRAPH_REBUILD_EXHAUSTED_MESSAGE, GRAPH_REBUILD_RETRY_DELAYS_MS, planResumeAfterRebuild, rebuildGraphWithRetries, reattachingDeckMessage, markEngineRecoveryStop , applyColorKnob, applyTrimStage, publishDeckAutoGain, registerAutoGainApplier, settleTrackAutoGain , setDeckAutoGainUserOffset , setAutoGainLiveGuard, deckAutoGain, freshTrackAutoGain } from '$lib/rb/deck-channel-graph';
 import { FILTER_APPLY_KIND, FADER_APPLY_KIND, XFADER_APPLY_KIND, STEM_MUTE_APPLY_KIND, STEM_SOLO_APPLY_KIND, applyEqRamp, armSeekPresentedFromPressMark, logEqApply, logMixerApply, measurePressToScheduleMs, outputLatencyIfDevice, scheduleRowFacts, watchOutputDevice } from '$lib/rb/press-stamp';
 import {
-	ConflictError,
 	fetchAnlz,
 	fetchAnlzBypassingHttpCache,
 	fetchAudioArrayBuffer,
 	fetchHotCueSlots,
 	getTrack,
-	saveTrackRating,
 	RbApiError
 } from '$lib/rb/api-rb';
 import { normalizeRating } from '$lib/rating';
@@ -171,7 +170,9 @@ import {
 	computeFollowerSyncPlan,
 	displayLoopFrom,
 	computeQuantizedLaunchArm,
+	ownedReanchorTempoTarget,
 	planPhaseCompensatedReanchor,
+	REANCHOR_RAMP_DURATION_SEC,
 	playbackBpm,
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
@@ -201,6 +202,7 @@ import {
 	planDeckGridJump,
 	unlockedFollowerNotice
 } from '$lib/player/grid-features';
+import { planSectionJump, type SectionJumpDirection, type SectionJumpPlan } from '$lib/rb/section-jump';
 import {
 	beatSyncMaxFollowers,
 	planSeekSync,
@@ -230,7 +232,7 @@ import {
 	unavailableStemDeckState,
 	connectStemFxSend, type StemBuffers
 } from '$lib/rb/stem-graph';
-import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
+import { applyStemControl, applyStemEqMode, scheduleStemGain } from '$lib/rb/stem-engine-controls';
 import { createFidelityGuard, startFidelityGuardLoop } from '$lib/rb/fidelity-guard-runtime';
 import { createMasterStereoTap, sampleFidelity, type GuardDeckView, type MasterStereoTap } from '$lib/rb/fidelity-guard-tap';
 import { reportClientError } from '$lib/client-error-reporting';
@@ -238,8 +240,6 @@ import { applyTrackLoadChannelReset, captureStemCarry } from '$lib/rb/track-load
 import { clearLoadedTrackFields } from '$lib/rb/loaded-track-fields';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
 import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
-import type { EngineDeckId } from '$lib/rb/deck-id';
-import { isShadowDeck } from '$lib/rb/deck-id';
 import { markSyncJoinPress, parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -248,6 +248,7 @@ import { planMemoryCueCall, type MemoryCueCallDirection, type MemoryCueCallPlan 
 import { hotCuesFromSlots as _hotCuesFromSlots } from '$lib/rb/hot-cue-from-anlz';
 import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/player/transport/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
+import { crossfaderGainFor } from '$lib/rb/crossfader-gain-law';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
 	assertUnitRange,
@@ -417,6 +418,7 @@ export { upgradeDeckStemsForTest };
 // $lib/rb/audio-engine.svelte keeps working unchanged.
 
 export { DECK_IDS, ENGINE_DECK_IDS, SHADOW_DECK_IDS, PITCH_RANGES, detachProcessorForDisposal };
+export { query, rateDeckTrack, type EngineAddressingRow } from './audio-engine-deck-reads';
 export { beatSyncMaxFollowers, planSeekSync, seekSyncMaster, syncChangeRequiresReschedule, syncMayWriteTempo, type SeekSyncPlan };
 export type { PitchRange };
 export {
@@ -1012,7 +1014,7 @@ function _ensureGraph(): AudioContext {
 				externalMerger: _externalMerger,
 				routing,
 				cueSum: headphones.cueSum,
-				xfGainFor: _xfGainFor,
+				xfGainFor: crossfaderGainFor,
 				onDeck: (deck, nodes, tap) => {
 					_rt[deck].nodes = nodes;
 					_meterTaps[deck] = tap;
@@ -1038,19 +1040,12 @@ function _ensureGraph(): AudioContext {
 	}
 }
 
-/** Equal-power crossfade gain for one bus assignment at position x (0..1). */
-function _xfGainFor(assign: CrossfaderAssign, x: number): number {
-	if (assign === 'THRU') return 1;
-	if (assign === 'A') return Math.cos((x * Math.PI) / 2);
-	return Math.cos(((1 - x) * Math.PI) / 2);
-}
-
 function _applyCrossfader(): void {
 	const x = mixerState.crossfader;
 	for (const deck of DECK_IDS) {
 		const nodes = _rt[deck].nodes;
 		if (nodes === null) continue;
-		_setParam(nodes.xf.gain, _xfGainFor(mixerState.channels[deck].assign, x));
+		_setParam(nodes.xf.gain, crossfaderGainFor(mixerState.channels[deck].assign, x));
 	}
 }
 
@@ -1117,32 +1112,6 @@ export function keySyncPreview(deck: DeckId): KeySyncPreview | null {
 		source.key_sync_mode
 	);
 	return { masterDeck, targetManualShiftSemitones, deltaSemitones: targetManualShiftSemitones - baseline };
-}
-
-/** Set the loaded deck track's rating (deck-header pin 4de63478782c). Same
- * PATCH /tracks/{sid} + If-Match path as the library rating cell
- * (BrowserPanel._patchRating) - deck-header just has no ETag of its own to
- * carry, so it always fetches one fresh first. A race where a different
- * track loads onto this deck while the request is in flight is guarded by
- * re-checking stable_id before writing the result back. A USB stick track's
- * rating is a session edit with no request (USB Play spec decision 2). */
-export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
-	const stable_id = deckStates[deck].stable_id;
-	if (stable_id === null) return;
-	try {
-		const rating = await saveTrackRating(stable_id, next);
-		// Every path awaits (a request, or the stick store's on-demand import).
-		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = normalizeRating(rating);
-	} catch (exc) {
-		if (exc instanceof ConflictError) {
-			if (deckStates[deck].stable_id === stable_id) {
-				deckStates[deck].rating = normalizeRating(exc.current.rating ?? null);
-			}
-			pushToast('rating conflict: track changed elsewhere - showing current value', 'error');
-			return;
-		}
-		pushToast(`rating update failed: ${String(exc)}`, 'error');
-	}
 }
 
 /** True while the rAF-driven presentation clock has not caught up to the last
@@ -2563,7 +2532,13 @@ async function _scheduleReanchoredFollower(
 		throw new Error(`sync re-anchor: engine session changed before deck ${deck} scheduled`);
 	}
 	const fromTempoRatio = _tempoAt(deck, syncAt);
-	const { startPositionSec, steps: ramp } = planPhaseCompensatedReanchor(inputSec, fromTempoRatio, toTempoRatio);
+	const bounds = _tempoBounds(deck);
+	const ownedTarget = ownedReanchorTempoTarget(toTempoRatio, bounds.min, bounds.max);
+	const { startPositionSec, steps: ramp } = planPhaseCompensatedReanchor(
+		inputSec,
+		fromTempoRatio,
+		ownedTarget
+	);
 	const generation = _bumpReanchorOperation(deck);
 	_claimReanchorRampOwner(deck, generation);
 	let scheduledInputSec: number;
@@ -2582,7 +2557,42 @@ async function _scheduleReanchoredFollower(
 		throw error;
 	}
 	await _continueTempoRamp(deck, syncAt, ramp.slice(1), masterTempoEnabled, generation);
+	if (
+		_reanchorOperationIsCurrent(deck, generation) &&
+		_syncOwnsFollowerTempo(deck) &&
+		Math.abs(deckStates[deck].pitch - ownedTarget) > 1e-9
+	) {
+		await _scheduleDeck(
+			deck,
+			syncAt + REANCHOR_RAMP_DURATION_SEC,
+			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+			true,
+			ownedTarget,
+			masterTempoEnabled,
+			undefined,
+			undefined,
+			undefined,
+			generation
+		);
+	}
 	return scheduledInputSec;
+}
+
+/** Lands an interrupted re-anchor on its owned queue target before master role changes. */
+async function _settleInterruptedOwnedTempoRamp(deck: DeckId): Promise<void> {
+	const rt = _rt[deck];
+	const st = deckStates[deck];
+	if (!st.playing || _ctx === null) return;
+	const target = rt.pending.at(-1)?.tempoRatio ?? rt.controlTempoRatio;
+	if (Math.abs(st.pitch - target) <= 1e-9) return;
+	await _scheduleDeck(
+		deck,
+		_futureScheduleTime(deck),
+		(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+		true,
+		target,
+		st.master_tempo_enabled
+	);
 }
 
 /** Remaining tail of an awaited re-anchor ramp. Position is deliberately left to
@@ -3001,7 +3011,7 @@ async function _resnapFollowersOfMaster(master: DeckId): Promise<void> {
 		throw error;
 	}
 	for (const f of followers) {
-		emitSyncLog(SYNC_RESNAP_TAG, f, { outcome: 'snapped', trigger: 'master_reenable', ..._syncLogFields(master, f, before.get(f) ?? null, 'before_') });
+		emitSyncLog(SYNC_RESNAP_TAG, f, { ...resnapOutcomeFields(deckStates[f].sync_error), trigger: 'master_reenable', ..._syncLogFields(master, f, before.get(f) ?? null, 'before_') });
 	}
 }
 
@@ -3137,9 +3147,14 @@ const _stemControlDeps = {
 	requireLoaded: _requireLoaded,
 	getChannel: (d: DeckId) => mixerState.channels[d],
 	heldStems: (d: DeckId) => _rt[d].heldNeutralStems?.processor ?? null,
-	engageHeldStems: _engageHeldNeutralStems
+	engageHeldStems: _engageHeldNeutralStems, cancelStemStep: (d: DeckId, stem: StemControl) => _steps.cancelPlain(`stem:${d}:${stem}`, null) // #14376: a manual gain write wins over a waiting step
 };
 
+/** #14043: a plan stem_gain step on the bar's sample; the deck's stem mirror takes it when it lands. */
+function _scheduleStemStep(deck: DeckId, stem: StemControl, value: number, atContextSec: number, stepId: string): void {
+	let land: (() => void) | null = null;
+	_steps.schedule(stepId, `stem:${deck}:${stem}`, atContextSec, (at) => { land = scheduleStemGain(deck, stem, value, at, _stemControlDeps); }, () => { land?.(); _maybeHandoffOnAir(); });
+}
 // ------------------------------------------------------------- the engine
 
 /** Singleton Web Audio engine implementing the AudioEngine contract, plus
@@ -3326,8 +3341,7 @@ class RbAudioEngine implements AudioEngine {
 			stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
 			stages.failedAt = perfMs();
-			st.last_load_stages = { ...splitDeckLoadStageMap(stages).stagesMs };
-			recordDeckLoad('deck-load-fail', stages, deck, candidateStemState, spanId);
+			recordDeckLoadKpiWhenToken(token, rt.loadToken, st, stages, 'deck-load-fail', deck, candidateStemState, spanId);
 			if (processor !== null) {
 				try {
 					await processor.dispose();
@@ -3469,14 +3483,13 @@ class RbAudioEngine implements AudioEngine {
 			// A swap failure is still a load that STARTED; without this the span
 			// beginDeckLoad opened never closes and later rows report stale solo=0 (#1658 review).
 			stages.total = perfMs();
-			recordDeckLoad('deck-load-fail-swap', stages, deck, candidateStemState, spanId);
+			recordDeckLoadKpiWhenToken(token, rt.loadToken, st, stages, 'deck-load-fail-swap', deck, candidateStemState, spanId);
 			if (token === rt.loadToken) _restartStrandedUpgrades(deck); // same rule as the catch above: a superseded load leaves this to its successor
 			throw exc;
 		});
 		stages.total = perfMs();
-		st.last_load_latency_ms = stages.total;
+		if (!publishDeckLoadKpiWhenWon(token, rt.loadToken, st, stable_id, stages)) return;
 		st.load_generation += 1;
-		st.last_load_stages = { ...splitDeckLoadStageMap(stages).stagesMs };
 		if (rt.loadToken === token && st.stable_id === stable_id) applyTrackLoadChannelReset(mixerState.channels[deck], { setFader: (v) => this.setFader(deck, v), setTrim: (v) => this.setTrim(deck, v), setFilter: (v) => this.setFilter(deck, v), setEq: (band, v) => this.setEq(deck, band, v) }); // DECKGAP-7691: only for the load that won
 		recordDeckLoad(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState, spanId);
 		warnShortDurationOnLoad(deck, candidateTrack, candidateAnlz, candidateBuffer);
@@ -4084,7 +4097,13 @@ class RbAudioEngine implements AudioEngine {
 	async beatJump(deck: DeckId, beats: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'beatJump');
 		const grid = requireBeatGrid(st, 'beatJump');
-		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
+		const rt = _rt[deck];
+		// Playing: anchor on the schedule-projected playhead so back-to-back jumps
+		// compound (e09c63131832). Paused: the published cursor only
+		// (PERF-12839 / PERF-14877), never a control-clock projection.
+		const anchorMs = rt.desiredActive
+			? _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000
+			: st.position_ms;
 		await this._beatJumpFrom(deck, st, grid, anchorMs, beats);
 	}
 
@@ -4096,6 +4115,22 @@ class RbAudioEngine implements AudioEngine {
 		const plan = planDeckGridJump(st, grid, anchorMs, bars, _rt[deck].desiredActive);
 		if (plan.kind === 'seek') await this.quantizedSeek(deck, plan.targetMs, true);
 		else if (plan.kind === 'jump') await this._beatJumpFrom(deck, st, grid, anchorMs, plan.deltaBeats, true);
+		return plan;
+	}
+
+	/** Issue #10263: seek to the next or previous analysed section start on its
+	 * downbeat (section-jump.ts). The target is already a downbeat, so the
+	 * deck's coarser quantize grid is skipped; a refusal moves nothing. */
+	async sectionJump(deck: DeckId, direction: SectionJumpDirection): Promise<SectionJumpPlan> {
+		const { st } = _requireLoaded(deck, 'sectionJump');
+		const positionSec = _projectPositionAt(deck, _futureScheduleTime(deck));
+		const plan = planSectionJump({
+			positionSec,
+			direction,
+			phrases: st.anlz?.phrases ?? [],
+			beats: st.anlz?.beatgrid?.beats ?? []
+		});
+		if (plan.kind === 'seek') await this.quantizedSeek(deck, plan.targetMs, true);
 		return plan;
 	}
 
@@ -4524,7 +4559,10 @@ class RbAudioEngine implements AudioEngine {
 		);
 		const gridlessHandover = handoverMixesWithoutBeatSync(st, followers.length);
 		if (gridlessHandover && !st.playing && !_rt[deck].desiredActive) return;
-		if (previousMaster !== deck) _bumpReanchorOperation(deck);
+		if (previousMaster !== deck) {
+			_bumpReanchorOperation(deck);
+			await _settleInterruptedOwnedTempoRamp(deck);
+		}
 		_assignMaster(deck, 'manual');
 		if (gridlessHandover) {
 			_mixWithoutBeatSync(deck, followers, pushToast, recordPerfEvent, _clearSyncError); // PLAY-28: a gridless master stands too
@@ -4659,8 +4697,9 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	/** AGENT-30: a fader or EQ step that starts on `atContextSec`; the mirror (and the level handoff) take it when it lands. */
-	scheduleStep(deck: DeckId, control: 'fader' | EqBand, value: number, atContextSec: number, stepId: string, nodes = _rt[deck].nodes, ch = mixerState.channels[deck]): void {
+	scheduleStep(deck: DeckId, control: 'fader' | EqBand | { stem: StemControl }, value: number, atContextSec: number, stepId: string, nodes = _rt[deck].nodes, ch = mixerState.channels[deck]): void {
 		assertUnitRange('scheduleStep value', value);
+		if (typeof control === 'object') return _scheduleStemStep(deck, control.stem, value, atContextSec, stepId); // #14043
 		const param = nodes === null ? null : control === 'fader' ? nodes.fader.gain : control === 'low' ? nodes.low.gain : control === 'mid' ? nodes.mid.gain : nodes.high.gain; if (param === null) throw new Error(`no_audio_param: deck ${deck} has no audio graph, so step ${stepId} has no ${control} AudioParam to automate`); // Sol P1 #7594: refused, never queued with no audio
 		const key = control === 'fader' ? `fader:${deck}` : `eq:${deck}:${control}`;
 		const startAudio = (at: number) => control === 'fader' ? param.setTargetAtTime(value, at, PARAM_SMOOTH_S) : applyEqRamp(param, eqDbFromKnob(value), at, PARAM_SMOOTH_S);
@@ -4782,33 +4821,6 @@ class RbAudioEngine implements AudioEngine {
 			_scheduleDeck(deck, sharedWhen, (effectiveWhen) => _projectPositionAt(deck, effectiveWhen), false);
 		await withPauseOrigin('command', () => Promise.all(decks.map(stop)));
 	}
-}
-
-export interface EngineAddressingRow {
-	deck: EngineDeckId;
-	/** True when this slot is shown on the performance mixer (1-4 only). */
-	visible: boolean;
-	loaded: boolean;
-	playing: boolean;
-	position_ms: number;
-}
-
-/** Read model for agents and Rust mode: all engine slots, shadow rows stay inaudible on the UI. */
-export function query(): { decks: EngineAddressingRow[]; live_decks: readonly DeckId[]; engine_decks: readonly EngineDeckId[] } {
-	const decks: EngineAddressingRow[] = ENGINE_DECK_IDS.map((deck) => {
-		if (isShadowDeck(deck)) {
-			return { deck, visible: false, loaded: false, playing: false, position_ms: 0 };
-		}
-		const st = deckStates[deck];
-		return {
-			deck,
-			visible: true,
-			loaded: st.stable_id !== null,
-			playing: st.playing,
-			position_ms: st.position_ms
-		};
-	});
-	return { decks, live_decks: DECK_IDS, engine_decks: ENGINE_DECK_IDS };
 }
 
 /** The singleton engine every /performance unit imports. */

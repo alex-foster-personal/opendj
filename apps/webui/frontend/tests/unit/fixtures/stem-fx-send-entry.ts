@@ -2,7 +2,7 @@
  * STEMPERF-11663 entry: the stem controls, the stem processor class and the
  * performance command parser in one bundle, so `instanceof` holds across them.
  */
-export { applyStemControl } from '$lib/rb/stem-engine-controls';
+export { applyStemControl, scheduleStemGain } from '$lib/rb/stem-engine-controls';
 export {
 	AlignedStemDeckProcessor,
 	createDefaultStemControls,

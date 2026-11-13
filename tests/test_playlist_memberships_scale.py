@@ -287,6 +287,48 @@ def test_bulk_cap(client: TestClient, db_path: Path) -> None:
     assert all(row[0] not in remove_two for row in after_live)
 
 
+@pytest.mark.requirement("LIBM-13767")
+def test_add_over_cap_rejected_before_store(client: TestClient) -> None:
+    """[if] items:add receives 1001 stable ids for an unknown playlist [then] 422 bulk_limit, not 404, [else stop]."""
+    r = client.post(
+        "/api/v1/playlists/pl-missing/items:add",
+        json={"stable_ids": [f"t-unknown-{i}" for i in range(1001)]},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "bulk_limit"
+    assert "1000" in r.json()["message"]
+
+
+@pytest.mark.requirement("LIBM-13767")
+def test_remove_over_cap_rejected_before_store(client: TestClient) -> None:
+    """[if] items:remove receives 1001 item ids for an unknown playlist [then] 422 bulk_limit, not 404, [else stop]."""
+    r = client.post(
+        "/api/v1/playlists/pl-missing/items:remove",
+        json={"item_ids": [f"item-{i}" for i in range(1001)]},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "bulk_limit"
+    assert "1000" in r.json()["message"]
+
+
+@pytest.mark.requirement("LIBM-13767")
+def test_remove_exactly_cap_succeeds(client: TestClient, db_path: Path) -> None:
+    """[if] items:remove receives exactly 1000 live item ids [then] all 1000 are removed in one call, [else stop]."""
+    pid, _etag = _seed_500_playlist(client, db_path)
+    r_add = client.post(
+        f"/api/v1/playlists/{pid}/items:add",
+        json={"stable_ids": EXTRA_IDS[:1000]},
+    )
+    assert r_add.status_code == 200, r_add.text
+    live = _ordered_live(db_path, pid)
+    r = client.post(
+        f"/api/v1/playlists/{pid}/items:remove",
+        json={"item_ids": [row[0] for row in live[:1000]]},
+    )
+    assert r.status_code == 200, r.text
+    assert len(_ordered_live(db_path, pid)) == SCALE + 1000 - 1000
+
+
 def test_rename_then_add_no_precondition(client: TestClient, db_path: Path) -> None:
     pid, etag = _seed_500_playlist(client, db_path)
     r_rename = client.patch(
@@ -303,12 +345,18 @@ def test_rename_then_add_no_precondition(client: TestClient, db_path: Path) -> N
 
 
 @pytest.mark.requirement("LIBM-08")
-def test_readd_after_remove(client: TestClient, db_path: Path) -> None:
-    """[if] a removed track is re-added [then] a new item id is issued, [else stop]."""
+def test_same_stable_id_readded_after_items_remove(
+    client: TestClient,
+    db_path: Path,
+) -> None:
+    """[if] the same stable id is re-added after removal [then] a new live item_id is issued, [else stop]."""
     pid, _etag = _seed_500_playlist(client, db_path)
     live = _ordered_live(db_path, pid)
     target = live[0]
-    r_rm = client.delete(f"/api/v1/playlists/{pid}/items/{target[0]}")
+    r_rm = client.post(
+        f"/api/v1/playlists/{pid}/items:remove",
+        json={"item_ids": [target[0]]},
+    )
     assert r_rm.status_code == 200, r_rm.text
     tombstone = next(row for row in _dump_all(db_path, pid) if row[0] == target[0])
     assert tombstone[6] is not None
@@ -321,6 +369,34 @@ def test_readd_after_remove(client: TestClient, db_path: Path) -> None:
     assert len(new_rows) == 1
     assert new_rows[0][0] != target[0]
     assert tombstone in _dump_all(db_path, pid)
+
+
+@pytest.mark.requirement("LIBM-08")
+def test_playlist_read_after_readd_one_live_membership(
+    client: TestClient,
+    db_path: Path,
+) -> None:
+    """[if] the playlist is read after the re-add [then] one live row remains and one tombstone, [else stop]."""
+    pid, _etag = _seed_500_playlist(client, db_path)
+    target = _ordered_live(db_path, pid)[0]
+    client.post(
+        f"/api/v1/playlists/{pid}/items:remove",
+        json={"item_ids": [target[0]]},
+    )
+    added = client.post(
+        f"/api/v1/playlists/{pid}/items:add",
+        json={"stable_ids": ["t-000"]},
+    ).json()["added"]
+    new_item_id = added[0]["item_id"]
+    detail = client.get(f"/api/v1/playlists/{pid}")
+    assert detail.status_code == 200, detail.text
+    t000_on_wire = [t for t in detail.json()["tracks"] if t["stable_id"] == "t-000"]
+    assert len(t000_on_wire) == 1
+    assert t000_on_wire[0]["item_id"] == new_item_id
+    stable_rows = [row for row in _dump_all(db_path, pid) if row[1] == "t-000"]
+    assert len(stable_rows) == 2
+    assert sum(1 for row in stable_rows if row[6] is None) == 1
+    assert sum(1 for row in stable_rows if row[6] is not None) == 1
 
 
 def test_all_tracks_lists_once(client: TestClient, db_path: Path) -> None:

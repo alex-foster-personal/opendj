@@ -123,12 +123,12 @@ def _run_control_process(
         encoding="utf-8",
     )
     plugin = ["-p", "scripts.pytest_child_coverage"] if label_children else []
+    # Hermetic child: an inherited COVERAGE_FILE (full-ci shards, 54b7e4e809) overrides the rc data_file.
     env = {
-        **os.environ,
+        **{k: v for k, v in os.environ.items() if not k.startswith("COVERAGE_")},
         "PYTHONPATH": f"{tmp_path}{os.pathsep}{REPO_ROOT}",
         child.CORE_DIR_ENV: str(tmp_path / "cores"),
     }
-    env.pop("COVERAGE_PROCESS_CONFIG", None)
     return subprocess.run(
         [
             sys.executable,
@@ -323,6 +323,25 @@ def test_a_new_run_clears_leftover_coverage_fragments(tmp_path: Path) -> None:
     census.clear_run_inputs(tmp_path)
     assert not stale.exists()
     assert not (tmp_path / "census.json").exists()
+
+
+def test_a_census_run_does_not_pass_outer_coverage_settings_to_pytest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the parent pytest exports COVERAGE_FILE [then] a census child uses its rc data file, [else stop]."""
+    captured: dict[str, dict[str, str]] = {}
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["env"] = kwargs["env"]  # type: ignore[assignment]
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setenv("COVERAGE_FILE", ".coverage.outer-shard")
+    monkeypatch.setenv("COVERAGE_PROCESS_START", "outer.rc")
+    monkeypatch.setattr(census.subprocess, "run", fake_run)
+
+    census.run_suite(["tests/scripts"], 1, tmp_path)
+
+    assert not any(key.startswith("COVERAGE_") for key in captured["env"])
 
 
 @pytest.mark.requirement("DEVOPS-21")

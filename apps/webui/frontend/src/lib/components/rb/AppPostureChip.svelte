@@ -14,6 +14,7 @@
 	import { usePerformanceRecorderChrome } from '$lib/sets/performance-recorder-chrome.svelte';
 	import { setRecordingEnabled } from '$lib/sets/recording-flag';
 	import { pushToast } from '$lib/stores.svelte';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	let {
 		showRecordControl = false
@@ -55,7 +56,12 @@
 </script>
 
 <div class="posture-wrap">
-	<div class="posture-chip" role="group" aria-label="Resource posture">
+	<div
+		class="posture-chip"
+		role="group"
+		aria-label="Resource posture"
+		use:topbarSelectorNode={{ name: 'posture', disabled: false }}
+	>
 		<button
 			type="button"
 			class="posture-btn"
@@ -93,6 +99,7 @@
 				data-testid="topbar-record-control"
 				aria-pressed={chrome.rail.recording}
 				disabled={chrome.recorderBusy}
+				use:topbarSelectorNode={{ name: 'recorder', disabled: chrome.recorderBusy }}
 				title={recordTitle}
 				onclick={() => void handleRecordClick()}
 			>

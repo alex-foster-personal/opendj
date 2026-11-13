@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 520303,
+  "measured_with_pr": 520465,
+  "sha": "1fa1aba692",
+  "date": "Thu 12 Nov 2026",
+  "reason": "PR #13640 regenerates api-types.ts for Cyanite plugin HTTP routes; +162 B gzip on other-lazy (CI bundle budgets)",
+  "payback": "none planned; OpenAPI client types live on the shared lazy surface"
+}

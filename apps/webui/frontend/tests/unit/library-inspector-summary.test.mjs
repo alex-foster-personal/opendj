@@ -231,7 +231,7 @@ test('an open conflict holds the save queue and keeps its own patch', () => {
 
 test('Library mode mounts no recorder and no MIDI audio entry', () => {
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(panel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} recordable=\{library === null\} \/>/);
+	assert.match(panel, /<PerformanceRecorderRail \{source\} onspotify=\{selectSpotifySource\} oncollection=\{selectCollectionSource\} \{historyOpen\} onhistory=\{selectHistorySource\} tagListCount=\{tagList\.tagListCount\.value\} tagListOpen=\{tagList\.isTagListId\(pane\.playlist_id\)\} ontaglist=\{openTagListUi\} \{explorerOpen\} onexplorer=\{selectExplorerSource\} recordable=\{library === null\} \/>/);
 	const tray = panel.slice(panel.indexOf('{#if library === null}\n\t\t\t\t<button\n\t\t\t\t\ttype="button"\n\t\t\t\t\tclass="tray-midi"'));
 	assert.ok(tray.length > 0 && tray.indexOf('headphone_output_acquire') < tray.indexOf('{/if}'), 'the MIDI entry is not gated');
 	const rail = readFileSync(`${SRC}/lib/components/rb/browser/PerformanceRecorderRail.svelte`, 'utf8');

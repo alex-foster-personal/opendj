@@ -17,6 +17,17 @@ export interface CitationRef {
 
 export type StreamingBubbleRole = 'assistant';
 
+/** Presentational tool-step status for ToolTrace (mid-stream, before `done`). */
+export type ToolTraceStepStatus = 'running' | 'ok' | 'failed';
+
+export const TOOL_TRACE_STEP_STATUSES: readonly ToolTraceStepStatus[] = ['running', 'ok', 'failed'];
+
+export interface ToolStepRef {
+	id: string;
+	name: string;
+	status: ToolTraceStepStatus;
+}
+
 export interface ChatKitComponents {
 	CitationPill: Component<{ citation: CitationRef }>;
 	StreamingBubble: Component<{
@@ -25,6 +36,26 @@ export interface ChatKitComponents {
 		streaming?: boolean;
 		role?: StreamingBubbleRole;
 	}>;
+	ToolTrace: Component<{
+		steps?: ToolStepRef[];
+		/** When true, the assistant stream is still open (no terminal `done` yet). */
+		streaming?: boolean;
+	}>;
+}
+
+export function toolTraceStepTitle(status: ToolTraceStepStatus): string {
+	switch (status) {
+		case 'running':
+			return 'Tool running';
+		case 'ok':
+			return 'Tool finished';
+		case 'failed':
+			return 'Tool failed';
+		default: {
+			const _exhaustive: never = status;
+			throw new Error(`unknown tool trace status: ${String(_exhaustive)}`);
+		}
+	}
 }
 
 /** Append one streamed token delta without dropping prior partial text. */

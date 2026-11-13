@@ -139,6 +139,7 @@ async function render(page: Page, opts: RenderOpts): Promise<RenderResult> {
 			player.start(0);
 
 			const kernel = mod.buildEchoKernel(ctx, {
+				mode: 'echo',
 				maxDelaySec: mod.COLOR_FX_ECHO_MAX_DELAY_SEC,
 				feedback,
 				loopHpHz: mod.ECHO_LOOP_HP_HZ,
@@ -152,16 +153,16 @@ async function render(page: Page, opts: RenderOpts): Promise<RenderResult> {
 			player.connect(kernel.input);
 
 			if (subject === 'bypass') {
-				kernel.input.disconnect(kernel.softClip);
+				kernel.loopSum.disconnect(kernel.softClip);
 				kernel.softClip.disconnect();
-				kernel.input.connect(kernel.lines[0]);
-				kernel.input.connect(kernel.lines[1]);
+				kernel.loopSum.connect(kernel.lines[0]);
+				kernel.loopSum.connect(kernel.lines[1]);
 			}
 
 			const merger = ctx.createChannelMerger(2);
 			merger.connect(ctx.destination);
 			kernel.output.connect(merger, 0, 0);
-			kernel.input.connect(merger, 0, 1);
+			kernel.loopSum.connect(merger, 0, 1);
 
 			kernel.setTime(divisionBeats * beat, 0);
 

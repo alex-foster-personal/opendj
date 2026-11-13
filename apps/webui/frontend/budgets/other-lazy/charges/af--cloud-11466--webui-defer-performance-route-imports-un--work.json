@@ -1,0 +1,9 @@
+{
+  "bytes": 24576,
+  "measured_main": 516811,
+  "measured_with_pr": 541380,
+  "sha": "d8d0f19bb8",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11466--webui-defer-performance-route-imports-un--work grows the other-lazy surface; measured +24569 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

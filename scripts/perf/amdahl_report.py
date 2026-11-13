@@ -130,6 +130,10 @@ class LoadRecord:
     """Contested fetch group (#705): data is trustworthy, load STAYS in the
     aggregate, but no floor/parallel split exists so only the ceiling
     (per-load and pooled) is withheld -- narrower than `anomalous`."""
+    service_timed: bool = False
+    """Contested fetch group split by per-member `service_ms` from the
+    engine's Server-Timing header (PERF-DIAG-9990): queueing = stage ms minus
+    service ms, so the ceiling is computed rather than withheld."""
     stem_layout_pending: bool = False
     """Row's own `labels.stemLayout` was `pending`: async stem upgrade had
     already started as of write time (#705, amdahl_report.py:300)."""
@@ -187,6 +191,28 @@ def _json_ceiling(parallel_fraction: float) -> float | None:
 
 
 # ------------------------------------------------------------------ build
+
+
+def _service_split_parallel_ms(row: dict[str, Any], stages: dict[str, Any]) -> float | None:
+    """Parallelizable fetch ms from Server-Timing service times, or None when
+    any contested member lacks a finite `service_ms` (PERF-DIAG-9990).
+
+    One single-worker engine serves the members back to back, so at best
+    the group shrinks to its longest member's service time: everything else
+    the wall spent on service (queueing excluded) could overlap."""
+
+    service_raw = row.get("service_ms")
+    members = [name for name in FETCH_GROUP_STAGES if name in stages]
+    if not isinstance(service_raw, dict) or len(members) < 2 or "fetchWall" not in stages:
+        return None
+    service: list[float] = []
+    for name in members:
+        value = service_raw.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            return None
+        service.append(min(float(value), float(stages[name])))
+    busy_ms = min(sum(service), float(stages["fetchWall"]))
+    return max(0.0, busy_ms - max(service))
 
 
 def _pop_current_awaiting(
@@ -252,18 +278,20 @@ def _ingest_deck_load_row(join: _Join, row: dict[str, Any], key: tuple[str | Non
     residual_material = abs(model.residual_ms) > MATERIAL_RESIDUAL_MS
     if residual_material:
         notes["nonzero_residual_loads"] += 1
+    service_parallel_ms = _service_split_parallel_ms(row, stages) if model.contested_fetch_group else None
 
     record = LoadRecord(
         sid=key[0],
         deck=row.get("deck"),
         kind=family,
         total_ms=model.total_ms,
-        parallel_ms=model.parallelizable_ms,
+        parallel_ms=model.parallelizable_ms + (service_parallel_ms or 0.0),
         residual_ms=model.residual_ms,
         fetch_members_ms={name: float(value) for name, value in stages.items() if name in FETCH_GROUP_STAGES},
         fetch_wall_ms=float(stages["fetchWall"]) if "fetchWall" in stages else None,
         anomalous=bool(load_unclassified) or residual_material,
-        ceiling_unknown=model.contested_fetch_group,
+        ceiling_unknown=model.contested_fetch_group and service_parallel_ms is None,
+        service_timed=service_parallel_ms is not None,
         stem_layout_pending=(isinstance(row.get("labels"), dict) and row["labels"].get("stemLayout") == "pending"),
     )
     join.records.append(record)

@@ -124,7 +124,10 @@ class PathAvailabilityRefresher:
     def _flush(self, paths: Sequence[str]) -> None:
         now = time.monotonic()
         namespace = path_index.resolver_namespace(self._data_dir)
-        measured = {path: path_index.measure_logical_path(path) for path in paths}
+        path_map = path_index.load_path_map(self._data_dir)
+        measured = {
+            path: path_index.measure_logical_path(path, path_map=path_map) for path in paths
+        }
         if not measured:
             return
         with config._FILE_EXISTS_LOCK:

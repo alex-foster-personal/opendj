@@ -88,6 +88,7 @@ const deckState = (over: Partial<DeckState>): DeckState => ({
 	last_load_latency_ms: 850,
 	load_generation: 1,
 	last_load_stages: null,
+	last_load_stage_sources: null,
 	is_master: false,
 	...over
 });

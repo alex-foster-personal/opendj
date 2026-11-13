@@ -25,6 +25,7 @@ the same history the model saw. An upstream failure once the stream is open is a
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
@@ -65,12 +66,28 @@ UPSTREAM_ERROR_CODE: str = "assistant_upstream_error"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=30.0, pool=10.0)
 
 AGENT_SYSTEM_PROMPT: str = (
-    "You are the Open DJ assistant, inside a local-first DJ app. You act only "
-    "through the tools you are given, which call this engine's own HTTP API: "
-    "read status, the open performance page and the library freely; library "
-    "writes and performance commands are shown to the user, who approves or "
-    "declines each one. Be brief. Never say something happened unless a tool "
+    "OJ is your name: you are the DJ assistant inside Open DJ, a local-first DJ "
+    "app, which draws you as a glass of orange juice. Keep a plain, friendly tone. "
+    "You act only through the tools you are given, which call this engine's own "
+    "HTTP API: read status, the open performance page and the library freely; "
+    "library writes and performance commands are shown to the user, who approves "
+    "or declines each one. Be brief. Never say something happened unless a tool "
     "result says it did, and say plainly when a tool failed or was declined."
+)
+
+#: Heads the capability map, one ``- name: first sentence`` line per tool the turn offers.
+CAPABILITY_MAP_HEADER: str = "What you can do (tool: what it does):"
+
+#: A sentence ends at . ! or ? followed by a capital letter or the end; ``e.g. /api`` does not end one.
+_SENTENCE_END = re.compile(r"[.!?](?=\s+[A-Z]|\s*$)")
+
+PROVIDER_CATALOG_PROMPT: str = (
+    "When a suggestion comes from a music-intelligence or production-library "
+    "provider (Epidemic Sound, Soundstripe, or any other licensed catalog), "
+    "you must name the provider and its catalog constraint on every hit. Call "
+    "label_provider_hit before presenting the track. Never describe a "
+    "production-library result as a track already in the user's owned library; "
+    "those hits are catalog-only until the user licenses and imports them."
 )
 
 
@@ -125,15 +142,34 @@ def _one_line(text: str) -> str:
     return "".join(" " if c.isspace() or unicodedata.category(c)[0] == "C" else c for c in text)
 
 
-def system_prompt(context: Sequence[ContextRef]) -> str:
-    """The agent prompt, plus the things the user pointed at, if any.
+def _first_sentence(text: str) -> str:
+    """The first sentence of ``text`` on one line, or all of it when it has no sentence end."""
+    flat = _one_line(text).strip()
+    end = _SENTENCE_END.search(flat)
+    return flat[: end.end()] if end else flat
+
+
+def capability_map(tools: Sequence[ToolSpec]) -> str:
+    """What the turn's tools can do, one line each, so a new tool needs no prompt edit."""
+    lines = "\n".join(f"- {spec.name}: {_first_sentence(spec.description)}" for spec in tools)
+    return f"{CAPABILITY_MAP_HEADER}\n{lines}"
+
+
+def system_prompt(context: Sequence[ContextRef], tools: Sequence[ToolSpec]) -> str:
+    """The agent prompt, the map of the turn's tools, and the things the user pointed at, if any.
 
     Each chip renders on one line, so a label cannot open a prompt section.
     """
-    if not context:
-        return AGENT_SYSTEM_PROMPT
-    refs = "\n".join(f"- {ref.kind} {_one_line(ref.id)}: {_one_line(ref.label)}" for ref in context)
-    return f"{AGENT_SYSTEM_PROMPT}\n\nThe user attached these to the conversation (kind id: label):\n{refs}"
+    sections = [AGENT_SYSTEM_PROMPT]
+    # PLUG-13651: the catalog rule names label_provider_hit, so it rides only a turn that offers it.
+    if any(tool.name == "label_provider_hit" for tool in tools):
+        sections.append(PROVIDER_CATALOG_PROMPT)
+    if tools:
+        sections.append(capability_map(tools))
+    if context:
+        refs = "\n".join(f"- {ref.kind} {_one_line(ref.id)}: {_one_line(ref.label)}" for ref in context)
+        sections.append(f"The user attached these to the conversation (kind id: label):\n{refs}")
+    return "\n\n".join(sections)
 
 
 def _wire_history(history: Sequence[AgentMessage], system: str = AGENT_SYSTEM_PROMPT) -> list[dict[str, Any]]:
@@ -383,7 +419,7 @@ async def _events(
 
     if upstream is None or choice.model is None:
         raise ValueError(f"tier {choice.tier} needs an upstream and a model")
-    async for event in _model_rounds(loop, upstream, choice.model, system_prompt(payload.context), tools):
+    async for event in _model_rounds(loop, upstream, choice.model, system_prompt(payload.context, tools), tools):
         yield event
 
 
@@ -433,9 +469,12 @@ async def run_agent(
 
 __all__ = [
     "AGENT_SYSTEM_PROMPT",
+    "CAPABILITY_MAP_HEADER",
+    "PROVIDER_CATALOG_PROMPT",
     "UPSTREAM_ERROR_CODE",
     "Turn",
     "UpstreamError",
+    "capability_map",
     "complete",
     "held_calls",
     "run_agent",

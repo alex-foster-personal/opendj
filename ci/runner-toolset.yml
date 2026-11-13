@@ -116,7 +116,7 @@ entries:
   #----- base system (Essential or near-essential, pinned for drift) ---------
   - {name: bash, kind: apt, version: "5.2.21-2ubuntu4", source: agentbox, provides: [bash], needed_by: [all], install: "apt-get install -y bash", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' bash | grep ^ii"}
   - {name: dash, kind: apt, version: "0.5.12-6ubuntu5", source: agentbox, provides: [sh], needed_by: [all], install: "apt-get install -y dash", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' dash | grep ^ii"}
-  - {name: coreutils, kind: apt, version: "9.4-3ubuntu6.3", source: agentbox, provides: [], needed_by: [all], install: "apt-get install -y coreutils", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' coreutils | grep ^ii", notes: "its executables are allowlisted in the completeness test rather than listed here"}
+  - {name: coreutils, kind: apt, version: "9.4-3ubuntu6.3", source: agentbox, provides: [uname], needed_by: [all], install: "apt-get install -y coreutils", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' coreutils | grep ^ii", notes: "its executables are allowlisted in the completeness test rather than listed here; uname listed for KNOWN_MISSES parity after perf_squeeze.sh is scanned (#11345)"}
   - {name: findutils, kind: apt, version: "4.9.0-5build1", source: agentbox, provides: [find, xargs], needed_by: [all], install: "apt-get install -y findutils", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' findutils | grep ^ii"}
   - {name: grep, kind: apt, version: "3.11-4build1", source: agentbox, provides: [grep], needed_by: [all], install: "apt-get install -y grep", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' grep | grep ^ii"}
   - {name: sed, kind: apt, version: "4.9-2ubuntu0.24.04.1", source: agentbox, provides: [sed], needed_by: [all], install: "apt-get install -y sed", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' sed | grep ^ii"}
@@ -323,6 +323,16 @@ entries:
     install: "let astral-sh/setup-uv populate /opt/hostedtoolcache/uv/<version>/x86_64"
     verify: "d=$(ls -d /opt/hostedtoolcache/uv/*/x86_64.complete | sort -V | tail -1) && \"${d%.complete}/uv\" --version"
     notes: "the workflows do not pin a uv version (setup-uv has no `version:` input), so each run resolves the latest release; this is a floor, not a pin"
+  - name: toolcache-uvx
+    kind: toolcache
+    version: "0.12.19"
+    match: min
+    source: agentbox
+    provides: [uvx]
+    needed_by: [periodic]
+    install: "comes with toolcache-uv: astral-sh/setup-uv puts uvx beside uv in /opt/hostedtoolcache/uv/<version>/x86_64"
+    verify: "d=$(ls -d /opt/hostedtoolcache/uv/*/x86_64.complete | sort -V | tail -1) && \"${d%.complete}/uvx\" --version"
+    notes: "full-ci.yml runs the pinned coverage through uvx to combine the shard data; same release as toolcache-uv, so the same floor"
   - name: toolcache-sccache
     kind: toolcache
     version: "0.17.0"

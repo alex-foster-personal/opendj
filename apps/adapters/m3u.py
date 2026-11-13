@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 
-def _file_uri_to_path(uri: str) -> str:
+def file_uri_to_path(uri: str) -> str:
     """A ``file://`` URI as a native path: keeps a Windows drive letter and a UNC host."""
     parsed = urlparse(uri)
     host = "" if parsed.netloc.lower() in ("", "localhost") else parsed.netloc
@@ -23,7 +23,7 @@ def _file_uri_to_path(uri: str) -> str:
 
 def _line_to_path(line: str, base_dir: Path) -> str:
     if line.lower().startswith("file://"):
-        return _file_uri_to_path(line)
+        return file_uri_to_path(line)
     candidate = Path(line)
     return os.path.normpath(candidate if candidate.is_absolute() else base_dir / candidate)
 

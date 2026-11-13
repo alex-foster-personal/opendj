@@ -55,6 +55,10 @@ class RbRowMeta:
     # ImagePath is included in the bulk listing query so artwork availability
     # can be decided without a second /rb-meta request per visible table row.
     image_path: str | None = None
+    # LIBUX-13803: djmdContent.DateCreated, the day rekordbox added the track.
+    date_created: str | None = None
+    # Issue #9737: djmdContent.ColorID, the track colour label 1..8 (0 or null: none).
+    color_id: int | None = None
 
 
 __all__ = ["RbContent", "RbRowMeta", "VendorUsbMention", "VendorUsbSource"]

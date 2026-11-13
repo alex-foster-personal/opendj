@@ -13,6 +13,8 @@
  *     deck starts playing [⛔️ if a deck playing re-enables it].
  *   [if] a PLAY-08 stall is up when idle passes the threshold [then] the banner stays [⛔️ if lost].
  *   [if] bug #58: the ENGINE stopped the decks [then] no idle clock runs and no stall is raised.
+ *   [if] a recovered deck plays and the user then stops it ordinarily [then] the normal idle clock
+ *     raises no-deck-playing [⛔️ if the old recovery tag still holds the clock off] (issue #12197).
  *   [if] AutoPlay runs out of candidates (no-compatible-track) and the decks then run to their ends
  *     [then] AutoPlay is still enabled and the stall names the exhaustion [⛔️ if it reads "disabled"]
  *     (silver, Tue 6 Oct 2026 09:11Z).
@@ -101,6 +103,7 @@ test('shouldRaiseAutoPlaySilentStall waits for thirty seconds of idle', () => {
 	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, source_stable_id: '' }), false);
 	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, enabled: false }), false);
 	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, armed_empty_active: true }), false);
+	assert.equal(shouldRaiseAutoPlaySilentStall({ ...base, engine_recovery_stop: 'graph-rebuild-failed' }), false);
 });
 
 test('trackAutoPlayIdleClock starts once and holds while idle, and stops for every non-idle reason', () => {
@@ -259,6 +262,38 @@ test('RUNNING it: an engine-recovery stop raises no idle stall, and the tag clea
 		playMaster(mod);
 		await settle();
 		assert.equal(mod.engineRecoveryStopReason(), null, 'a deck playing again ends the recovery stop');
+	});
+});
+
+// REQ: PLAY-17
+/** Issue #12197: a recovery stop and a later ordinary stop produce distinct AutoPlay outcomes. */
+test('RUNNING it: after a recovery stop clears, an ordinary stop disarms on the normal clock (issue #12197)', async () => {
+	await withAutoPlay(async (mod) => {
+		playMaster(mod);
+		await settle();
+		stopEveryDeck(mod);
+		mod.markEngineRecoveryStop('graph-rebuild-failed');
+		await settle();
+		mock.timers.tick(LONG_IDLE_MS);
+		await settle();
+		assert.equal(mod.readAutoPlayStall(), null, 'precondition: the recovery stop raised no stall');
+		playMaster(mod);
+		await settle();
+		assert.equal(mod.engineRecoveryStopReason(), null, 'precondition: playback cleared the tag');
+		assert.equal(mod.readAutoPlayMirrorStatus().autoplay_armed, true, 'the recovered deck is armed again');
+		stopEveryDeck(mod);
+		await settle();
+		mock.timers.tick(mod.AUTO_PLAY_SILENT_STALL_MS + 1);
+		await settle();
+		assert.equal(mod.readAutoPlayStall()?.reason, 'no-deck-playing', 'an ordinary stop takes the normal idle path');
+		assert.deepEqual(
+			{
+				enabled: mod.uiPrefs.auto_play_enabled,
+				armed: mod.readAutoPlayMirrorStatus().autoplay_armed,
+				reason: mod.readAutoPlayMirrorStatus().autoplay_disarm_reason
+			},
+			{ enabled: true, armed: false, reason: 'no-deck-playing' }
+		);
 	});
 });
 

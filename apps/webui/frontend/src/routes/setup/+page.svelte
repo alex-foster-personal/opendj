@@ -5,12 +5,20 @@
 	import { onMount } from 'svelte';
 
 	import { goto } from '$app/navigation';
+	import { beginSoftNavigationHandoff } from '$lib/api/lifecycle-abort';
+	import { page } from '$app/stores';
 	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { preserveUrlSearchOnRedirect } from '$lib/setup/wizard-rules';
 
 	onMount(() => {
 		openSetupOverlay();
-		void goto(SETUP_HOST_ROUTE, { replaceState: true });
+		const endHandoff = beginSoftNavigationHandoff();
+		void goto(preserveUrlSearchOnRedirect(SETUP_HOST_ROUTE, $page.url.search), {
+			replaceState: true
+		}).finally(() => {
+			queueMicrotask(endHandoff);
+		});
 	});
 </script>
 

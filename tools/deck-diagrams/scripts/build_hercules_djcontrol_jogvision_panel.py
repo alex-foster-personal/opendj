@@ -2,6 +2,8 @@
 
 Trace: Hercules DJControl Jogvision Quick Start Guide (DJCJogvision_QSG_EN.pdf), page 4 top-panel
 figure, rendered at 300 dpi (plate crop 1308 x 1050 px; plate ink box x 70..1180, y 95..705).
+Pads, SHIFT/SYNC/CUE/PLAY and the crossfader were retraced on Fri 13 Nov 2026 (issue #13558) so
+no pad box covers a transport button; plate px = page px minus (78, 125).
 
 Run: uv run --locked python tools/deck-diagrams/scripts/build_hercules_djcontrol_jogvision_panel.py
 """
@@ -26,7 +28,7 @@ MM_PER_PX_X = round(PANEL_W_MM / (PLATE_PX["x1"] - PLATE_PX["x0"] + 1), 5)
 MM_PER_PX_Y = MM_PER_PX_X
 SOURCE_PDF_SHA256 = "98c2bc3df2149aa1a5ea21387c465458201a1a89c203e13fdc82f7c9a22b1987"
 SOURCE_IMAGE_SHA256 = "0424fbeacb9d766b6eb9a7869d4e0a5780ea0c3d2508683353e03e5e21b60cb3"
-REPEAT_SPREAD_MM = 0.8
+REPEAT_SPREAD_MM = 0.2
 TRACE_DATE = "Thu 12 Nov 2026"
 TRACE_ISSUE = "#10934"
 
@@ -66,47 +68,41 @@ _PX: dict[str, tuple[int, int, int, int]] = {
     "ch2-eq-low": (718, 316, 792, 390),
     "ch2-eq-mid": (718, 232, 792, 306),
     "ch2-fader": (718, 458, 792, 598),
-    "crossfader": (480, 590, 829, 659),
-    "d1-cue": (314, 568, 370, 648),
-    "d1-hot-cue-a": (92, 530, 167, 614),
-    "d1-hot-cue-b": (168, 530, 243, 614),
-    "d1-hot-cue-c": (244, 530, 319, 614),
-    "d1-hot-cue-d": (320, 530, 395, 614),
-    "d1-hot-cue-e": (92, 615, 167, 699),
-    "d1-hot-cue-f": (168, 615, 243, 699),
-    "d1-hot-cue-g": (244, 615, 319, 699),
-    "d1-hot-cue-h": (320, 615, 395, 699),
+    "crossfader": (580, 600, 684, 655),
+    "d1-cue": (344, 607, 395, 645),
+    "d1-hot-cue-a": (90, 562, 149, 620),
+    "d1-hot-cue-b": (160, 562, 219, 620),
+    "d1-hot-cue-c": (90, 633, 149, 692),
+    "d1-hot-cue-d": (160, 633, 219, 692),
     "d1-jog-c1-cc64": (100, 181, 399, 519),
     "d1-jog-c1-cc65": (100, 181, 399, 519),
     "d1-load-1": (538, 168, 612, 218),
     "d1-pitch": (92, 104, 129, 399),
-    "d1-play-toggle": (371, 568, 427, 648),
-    "d1-sync-toggle": (257, 568, 313, 648),
-    "d2-cue": (880, 568, 936, 648),
-    "d2-hot-cue-a": (1083, 530, 1158, 614),
-    "d2-hot-cue-b": (1007, 530, 1082, 614),
-    "d2-hot-cue-c": (931, 530, 1006, 614),
-    "d2-hot-cue-d": (855, 530, 930, 614),
-    "d2-hot-cue-e": (1083, 615, 1158, 699),
-    "d2-hot-cue-f": (1007, 615, 1082, 699),
-    "d2-hot-cue-g": (931, 615, 1006, 699),
-    "d2-hot-cue-h": (855, 615, 930, 699),
+    "d1-play-toggle": (412, 607, 465, 645),
+    "d1-shift": (234, 610, 275, 645),
+    "d1-sync-toggle": (290, 613, 327, 642),
+    "d2-cue": (902, 607, 954, 645),
+    "d2-hot-cue-a": (1042, 562, 1100, 620),
+    "d2-hot-cue-b": (1114, 562, 1171, 620),
+    "d2-hot-cue-c": (1042, 633, 1100, 692),
+    "d2-hot-cue-d": (1114, 633, 1171, 692),
     "d2-jog-c2-cc64": (851, 181, 1150, 519),
     "d2-jog-c2-cc65": (851, 181, 1150, 519),
     "d2-load-2": (637, 168, 711, 218),
     "d2-pitch": (1121, 104, 1158, 399),
-    "d2-play-toggle": (823, 568, 879, 648),
-    "d2-sync-toggle": (937, 568, 993, 648),
+    "d2-play-toggle": (972, 607, 1024, 645),
+    "d2-shift": (792, 610, 834, 645),
+    "d2-sync-toggle": (848, 613, 884, 642),
 }
 
 _PX_REPEAT: dict[str, tuple[int, int, int, int]] = {
     "browse-encoder": (564, 289, 694, 419),
     "ch1-eq-high": (462, 152, 528, 218),
-    "crossfader": (484, 594, 825, 655),
+    "crossfader": (582, 602, 682, 653),
     "d1-jog-c1-cc64": (104, 185, 395, 515),
     "d1-pitch": (96, 108, 125, 395),
-    "d1-play-toggle": (375, 572, 423, 644),
-    "d2-cue": (882, 572, 938, 644),
+    "d1-play-toggle": (413, 608, 464, 644),
+    "d2-cue": (903, 608, 953, 645),
 }
 
 
@@ -142,8 +138,9 @@ def _at(cid: str) -> tuple[float, float, float, float]:
         raise SystemExit(f"[ERROR] missing _PX entry for {cid!r}") from e
 
 
-_HOT_FIG = "abcdefgh"
-_HOT_SLOT = "ABCDEFGH"
+# The unit has four physical pads per deck (QSG figure 3); slots E-H (0x14-0x17) have no pad.
+_HOT_FIG = "abcd"
+_HOT_SLOT = "ABCD"
 
 
 def _deck(deck: 1 | 2) -> list[Control]:
@@ -152,9 +149,37 @@ def _deck(deck: 1 | 2) -> list[Control]:
     jog_tag = "c1" if deck == 1 else "c2"
     deck_rows: list[tuple[str, str, str, str, str, str, Wire, Wire | None]] = [
         ("26", "pitch", "fader", "PITCH", "Tempo range slider", "deck", Wire(ch, "cc", 0x02), None),
-        ("5", "sync-toggle", "button", "SYNC", "Beat sync on", "deck", Wire(ch, "note", 0x30), None),
-        ("6", "cue", "button", "CUE", "Return to the cue point", "deck", Wire(ch, "note", 0x31), None),
-        ("7", "play-toggle", "button", "PLAY/PAUSE", "Start or pause", "deck", Wire(ch, "note", 0x32), None),
+        (
+            "4",
+            "shift",
+            "button",
+            "SHIFT",
+            "Hold for each control's second function",
+            "deck",
+            Wire(ch, "note", 0x56),
+            None,
+        ),
+        ("5", "sync-toggle", "button", "SYNC", "Beat sync on", "deck", Wire(ch, "note", 0x30), Wire(ch, "note", 0x35)),
+        (
+            "6",
+            "cue",
+            "button",
+            "CUE",
+            "Return to the cue point",
+            "deck",
+            Wire(ch, "note", 0x31),
+            Wire(ch, "note", 0x36),
+        ),
+        (
+            "7",
+            "play-toggle",
+            "button",
+            "PLAY/PAUSE",
+            "Start or pause",
+            "deck",
+            Wire(ch, "note", 0x32),
+            Wire(ch, "note", 0x37),
+        ),
         (
             "1",
             f"jog-{jog_tag}-cc64",
@@ -163,7 +188,7 @@ def _deck(deck: 1 | 2) -> list[Control]:
             "Scratch wheel (relative CC)",
             "deck",
             Wire(ch, "cc", 0x40),
-            None,
+            Wire(ch, "cc", 0x42),
         ),
         (
             "1",
@@ -173,7 +198,7 @@ def _deck(deck: 1 | 2) -> list[Control]:
             "Scratch wheel alternate CC",
             "deck",
             Wire(ch, "cc", 0x41),
-            None,
+            Wire(ch, "cc", 0x43),
         ),
     ]
     for fig, tail, typ, label, does, section, wire, shift in deck_rows:
@@ -196,7 +221,7 @@ def _deck(deck: 1 | 2) -> list[Control]:
                 h,
                 "performance",
                 Wire(ch, "note", 0x10 + i),
-                None,
+                Wire(ch, "note", 0x18 + i),
             )
         )
     load_cid = f"d{deck}-load-{deck}"
@@ -214,7 +239,7 @@ def _deck(deck: 1 | 2) -> list[Control]:
             h,
             "browse",
             Wire(ch, "note", 0x51),
-            None,
+            Wire(ch, "note", 0x53),
         )
     )
     return out
@@ -222,6 +247,7 @@ def _deck(deck: 1 | 2) -> list[Control]:
 
 def _channel(deck: 1 | 2) -> list[Control]:
     ch = deck
+    shifted = {"ch-cue": Wire(ch, "note", 0x38)}
     defs = [
         ("10", "eq-high", "knob", "TREBLE", "EQ high band", Wire(ch, "cc", 0x03)),
         ("10", "eq-mid", "knob", "MEDIUM", "EQ mid band", Wire(ch, "cc", 0x04)),
@@ -233,7 +259,7 @@ def _channel(deck: 1 | 2) -> list[Control]:
     for fig, tail, typ, label, does, wire in defs:
         cid = f"ch{deck}-{tail}"
         x, y, w, h = _at(cid)
-        out.append(Control(cid, fig, typ, label, f"{does} (deck {deck})", x, y, w, h, "mixer", wire, None))
+        out.append(Control(cid, fig, typ, label, f"{does} (deck {deck})", x, y, w, h, "mixer", wire, shifted.get(tail)))
     return out
 
 
@@ -266,7 +292,7 @@ def _globals() -> list[Control]:
         h,
         "browse",
         Wire(1, "cc", 0x4E),
-        None,
+        Wire(1, "cc", 0x4F),
     )
     return [cross, browse]
 
@@ -379,7 +405,8 @@ def build() -> dict[str, object]:
             ),
         },
         "out_of_scope": [
-            "Firmware SHIFT rows are hints only: no shift_midi pairing on this map",
+            "Firmware SHIFT rows are hints only: shifted controls pair a shift_midi wire the map leaves inert",
+            "Hot cues E-H (0x14-0x17): the unit has four pads per deck, so only slots A-D get a pad",
             "LOOP, FX, SAMPLER, AIR and global utility buttons remain map hints, not panel controls",
             "Front and rear panel jacks, AIR IR sensor, and in-jog LCD bitmaps",
             "VU meters and pad MODE selectors send no bound MIDI in the P0 map",

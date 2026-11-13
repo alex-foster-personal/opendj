@@ -28,11 +28,13 @@ from apps.analysis.selection import PROJECTION_FIELDS, Selection, field_column_s
 from apps.shared.smartlists import (
     FIELD_TYPES,
     LOGICAL_OPS,
+    TOP_N_OP,
     SmartlistRuleError,
     validate_rule,
 )
 from apps.shared.state.play_log import PLAY_KIND
 from apps.smartlists.order_by import ORDER_BY_SQL
+from apps.smartlists.text_fields import TEXT_FIELDS, compile_text_predicate
 
 # Keep aligned with materializer.DEFAULT_MARKER_PREFIX (avoid import cycle).
 _SMARTLIST_PLAYLIST_PREFIX = "[SL] "
@@ -187,6 +189,9 @@ def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]
     if field == "paired_with":
         return _compile_paired_with(op, value)
 
+    if field in TEXT_FIELDS:
+        return compile_text_predicate(field, op, value)
+
     if field in ("play_count", "duration_s", "playlist_count"):
         col = _smartlist_field_sql(field)
         return _compile_scalar_op(field, op, col, value, FIELD_TYPES[field])
@@ -205,6 +210,26 @@ def _compile_predicate(node: dict, selection: Selection) -> tuple[str, list[Any]
     return _compile_scalar_op(field, op, col, value, ftype)
 
 
+def _compile_top_n(node: dict, selection: Selection) -> tuple[str, list[Any]]:
+    """LIBM-85: keep the first ``n`` live matches by the sort field, ties broken newest-first then by stable id."""
+    sort_field = node["sort_field"]
+    if sort_field in PROJECTION_FIELDS:
+        sort_col = field_column_sql(sort_field, selection)
+    else:
+        sort_col = _TRACKS_NATIVE.get(sort_field) or _eav_scalar(sort_field)
+    if "children" in node:
+        inner_sql, params = compile_rule(node["children"][0], selection=selection)
+    else:
+        inner_sql, params = "1", []
+    # The subquery re-binds ``tracks`` so the child's correlated columns read the inner row.
+    sql = (
+        "tracks.stable_id IN (SELECT tracks.stable_id FROM tracks WHERE tracks.deleted_at IS NULL AND ("
+        + inner_sql
+        + f") ORDER BY {sort_col} DESC, tracks.created_at DESC, tracks.stable_id ASC LIMIT ?)"
+    )
+    return sql, [*params, int(node["n"])]
+
+
 def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
     """Compile a validated rule to ``(where_sql, params)`` under ``selection``.
 
@@ -213,6 +238,8 @@ def compile_rule(rule: dict, *, selection: Selection) -> tuple[str, list[Any]]:
     data and return rows, which is a wrong answer that looks like a right
     one. The caller has a connection; it can resolve the real selection.
     """
+    if rule.get("op") == TOP_N_OP:
+        return _compile_top_n(rule, selection)
     if "op" in rule and rule["op"] in LOGICAL_OPS:
         op = rule["op"]
         if op == "not":

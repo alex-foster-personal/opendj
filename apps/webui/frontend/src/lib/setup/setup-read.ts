@@ -5,7 +5,7 @@
  */
 
 import { LIBRARY_ATTACHED_CHECK_ID, needsSetupForEmptyLibrary } from '../preflight/fresh-install';
-import { preflightGate } from '../preflight/preflight.svelte';
+import { checkPreflight, preflightGate } from '../preflight/preflight.svelte';
 import { humanFinishLibraryMissing, humanFinishUnconfirmed } from './present';
 
 export function errorMessage(exc: unknown): string {
@@ -16,6 +16,11 @@ export function errorMessage(exc: unknown): string {
  * stops waiting and says the search did not finish. Detection on a large
  * collection answers in well under a second; 20 s is a stall, not a slow disk. */
 export const SETUP_READ_TIMEOUT_MS = 20_000;
+
+/** Re-read startup checks after setup closes; wizard calls this, not preflight.svelte. */
+export async function refreshPreflightAfterSetupClose(): Promise<void> {
+	await checkPreflight();
+}
 
 /** Thrown when a read hits its deadline. Carries the endpoint for agents. */
 export class SetupReadTimeout extends Error {}

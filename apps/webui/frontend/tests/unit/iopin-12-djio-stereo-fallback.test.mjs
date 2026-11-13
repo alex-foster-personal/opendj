@@ -622,7 +622,7 @@ describe('IOPIN-12 wiring check: the fallback is visible in the I/O panel and to
 		panel.ioSurface.open = true;
 		const noop = () => {};
 		const props = Object.fromEntries(
-			['onmix', 'onlevel', 'ondelay', 'onrefresh', 'onacquire', 'onselect', 'onmaster', 'oninput', 'onmode', 'oncalibrate', 'onAlignmentMode'].map((name) => [name, noop])
+			['onmix', 'onlevel', 'ondelay', 'onrefresh', 'onacquire', 'onselect', 'onmaster', 'oninput', 'onmode', 'oncalibrate', 'onAlignmentMode', 'onprobe'].map((name) => [name, noop])
 		);
 		try {
 			return panel.render(panel.Panel, { props: { state: panel.mixerState.headphones, ...props } }).body;

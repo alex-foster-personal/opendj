@@ -15,6 +15,7 @@ export type AutoPlayBrowserRowLike = {
 	key: string | null;
 	bpm: number | null;
 	file_exists?: boolean | null;
+	has_beatgrid?: boolean;
 	title?: string | null;
 	artist?: string | null;
 };
@@ -31,6 +32,7 @@ export function autoPlayTrackRowsFromBrowser(
 		key: r.key,
 		bpm: r.bpm,
 		file_exists: r.file_exists === true,
+		...(typeof r.has_beatgrid === 'boolean' ? { has_beatgrid: r.has_beatgrid } : {}),
 		...(r.title === undefined ? {} : { title: r.title }),
 		...(r.artist === undefined ? {} : { artist: r.artist })
 	}));

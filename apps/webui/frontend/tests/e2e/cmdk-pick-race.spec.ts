@@ -28,6 +28,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 import type { DeckId } from '../../src/lib/rb/deck-id';
+import { openCmdkBar } from './support/open-cmdk-bar';
 
 declare global {
 	interface Window {
@@ -55,6 +56,25 @@ async function deckTrack(page: Page, deck: DeckId): Promise<string | null> {
 
 /** Rows already picked: each scenario takes a pending row no earlier one used. */
 const used = new Set<string>();
+/** The first cold `GET /tracks/index` body, replayed so later bar opens keep the same pending rows. */
+let coldIndexBody: string | null = null;
+
+async function installColdIndexReplay(page: Page): Promise<void> {
+	await page.route('**/api/v1/tracks/index**', async (route) => {
+		if (coldIndexBody === null) {
+			const response = await route.fetch();
+			const body = await response.text();
+			if (body.includes('AVAILABILITY_PENDING')) coldIndexBody = body;
+			await route.fulfill({ response });
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: coldIndexBody
+		});
+	});
+}
 
 /**
  * Open Cmd K on the fixture, hold rb-meta for the first pending row no earlier
@@ -63,22 +83,34 @@ const used = new Set<string>();
  */
 async function pickPendingRow(page: Page, deck: DeckId): Promise<{ picked: string; rival: string; meta: { asked: Promise<void>; release: () => void } }> {
 	const input = page.getByTestId('command-bar-input');
-	// The v2 bar (cmdk.v2 on through the fixture's own feature-flags.json), not the shipped one.
-	// It loads on demand after the flags are read, so its key listener can land a moment after
-	// the IPC does: press until it opens rather than once.
-	await expect(async () => {
-		await page.keyboard.press('Control+k');
-		await expect(page.locator('#cmdk2-list')).toBeVisible({ timeout: 1_000 });
-	}).toPass({ timeout: 30_000 });
-	await expect(input).toBeFocused();
+	await openCmdkBar(page);
 	await input.fill('Pick Race');
 	const rows = page.locator('[data-testid="command-bar-row"]');
-	await expect(rows.first()).toBeVisible();
-	const listed = await rows.evaluateAll((all) =>
-		all.map((row) => ({ id: row.getAttribute('data-stable-id'), availability: row.getAttribute('data-availability') }))
-	);
-	const pending = listed.filter((row) => row.availability === 'AVAILABILITY_PENDING' && row.id !== null).map((row) => row.id!);
-	const picked = pending.find((id) => !used.has(id));
+	let listed: Array<{ id: string | null; availability: string | null }> = [];
+	let pending: string[] = [];
+	let picked: string | undefined;
+	await expect
+		.poll(
+			async () => {
+				if (await page.locator('#cmdk2-list').getByText('Loading the collection...').isVisible().catch(() => false)) {
+					return null;
+				}
+				if ((await rows.count()) === 0) return null;
+				listed = await rows.evaluateAll((all) =>
+					all.map((row) => ({
+						id: row.getAttribute('data-stable-id'),
+						availability: row.getAttribute('data-availability')
+					}))
+				);
+				pending = listed
+					.filter((row) => row.availability === 'AVAILABILITY_PENDING' && row.id !== null)
+					.map((row) => row.id!);
+				picked = pending.find((id) => !used.has(id));
+				return picked ?? null;
+			},
+			{ timeout: 60_000, message: 'wait for a cold AVAILABILITY_PENDING Pick Race row' }
+		)
+		.not.toBeNull();
 	if (picked === undefined) {
 		throw new Error(
 			`UNAVAILABLE: the engine served no unused AVAILABILITY_PENDING row on its cold index (${pending.length} pending of ${listed.length} listed); the race cannot be run`
@@ -89,8 +121,15 @@ async function pickPendingRow(page: Page, deck: DeckId): Promise<{ picked: strin
 	// The bar loads onto its target deck: the default target is deck 1, so step it with the deck keys.
 	await page.keyboard.press(`Alt+${deck}`);
 	const meta = await holdRoute(page, `**/api/v1/tracks/${picked}/rb-meta`);
-	await page.locator(`[data-testid="command-bar-row"][data-stable-id="${picked}"]`).click();
-	await meta.asked;
+	const row = page.locator(`[data-testid="command-bar-row"][data-stable-id="${picked}"]`);
+	await expect(async () => {
+		await row.dispatchEvent('click');
+		// v2 default-on: a row click opens the deck picker before rb-meta starts; commit the load.
+		if (await page.getByTestId('command-bar-picker').isVisible().catch(() => false)) {
+			await page.keyboard.press('Enter');
+		}
+		await meta.asked;
+	}).toPass({ timeout: 30_000 });
 	// The pick is waiting on rb-meta, so nothing has loaded yet.
 	await page.waitForTimeout(500);
 	expect(await deckTrack(page, deck), 'the pick waits on rb-meta before it loads').toBeNull();
@@ -110,6 +149,7 @@ test.describe('Cmd K pick race (CMDK-16)', () => {
 		test.setTimeout(180_000);
 		page = await browser.newPage();
 		await page.goto('/performance', { timeout: 170_000 });
+		await installColdIndexReplay(page);
 		await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, { timeout: 170_000 });
 	});
 
@@ -118,7 +158,7 @@ test.describe('Cmd K pick race (CMDK-16)', () => {
 	});
 
 	test('a pick with nothing racing it loads once rb-meta answers (positive control)', async () => {
-		test.fixme(true, 'positive control times out, see #13527');
+		test.setTimeout(120_000);
 		const deck: DeckId = 1;
 		const { picked, meta } = await pickPendingRow(page, deck);
 		meta.release();

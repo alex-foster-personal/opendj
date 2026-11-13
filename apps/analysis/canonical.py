@@ -32,7 +32,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from apps.shared.state import analysis_stale
+from apps.shared.state import analysis_stale, grid_lock
 
 from .lanes import LANES, LaneResult, SemverError, parse_own_backend, semver_key
 from .record import AnalysisRecord
@@ -218,8 +218,19 @@ def recompute_canonical(
             ) from exc
         return (version_key, _PRODUCER_RANK[parsed.producer])
 
+    current = canonical_pointer(conn, stable_id, lane)
+    # GRIDEDIT-9763: a locked grid keeps the record it names while that record
+    # is still eligible. The new record is stored all the same; it simply does
+    # not become the grid the deck draws until unlocked.
+    if (
+        lane == "beatgrid"
+        and current is not None
+        and any((backend, version) == current for backend, version, _ in candidates)
+        and grid_lock.read(conn, stable_id)
+    ):
+        return current
     winner = max(candidates, key=rank)
-    if canonical_pointer(conn, stable_id, lane) == (winner[0], winner[1]):
+    if current == (winner[0], winner[1]):
         # Identical pointer: leave the row, and its timestamp, alone. That
         # stamp is folded into the track's public updated_at and therefore
         # its ETag, so rewriting it on a semantically unchanged re-run would

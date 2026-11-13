@@ -1,4 +1,4 @@
-"""AGENT-02 UI-mirror HTTP contract.
+"""AGENT-02 UI-mirror HTTP contract (issues #13282, #2154).
 
 [if] a client has not opened the performance page [then] GET returns 409 with
      client_open false, never an empty document.

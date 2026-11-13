@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state.events import FakeEventBus
+from apps.shared.state.ids import stable_id
 from apps.shared.state.ingest import folder, folder_rescan
 from apps.shared.state.ingest.path_identity import (
     live_inferred_by_path_key,
@@ -151,7 +152,7 @@ def test_path_identity_reuses_the_oldest_live_inferred_id(state_conn, tmp_path: 
 @pytest.mark.requirement("LIBM-12770")
 def test_resolve_rb_existing_stable_id_prefers_vendor_link(state_conn, tmp_path: Path) -> None:
     """[if] vendor V is linked [then] resolve_rb reuses that id, [else stop]."""
-    music, dest = _copy_real_mp3(tmp_path)
+    music, _dest = _copy_real_mp3(tmp_path)
     writer = _writer(state_conn)
     folder.ingest_folder(writer, [music], dry_run=False)
     sid = _live_sids(state_conn)[0]
@@ -170,3 +171,88 @@ def test_resolve_rb_existing_stable_id_prefers_vendor_link(state_conn, tmp_path:
     assert resolved == (sid, "inferred")
     minted, _tier = resolve_inferred_stable_id(str(alt), 0.0, live_inferred_by_path_key(state_conn))
     assert minted != sid
+
+
+def _seed_hash_row(writer: StateWriter, *, path: str, content_hash: str, rb_vendor: str | None) -> tuple[str, str]:
+    sid, tier = stable_id(isrc=None, abs_path=path, mtime=1.0)
+    writer.upsert_track(
+        stable_id=sid,
+        stable_id_tier=tier,
+        title="hash-seed",
+        artists=[],
+        album=None,
+        isrc=None,
+        duration_ms=1000,
+        file_path=path,
+        content_hash=content_hash,
+        audio_hash=None,
+    )
+    if rb_vendor is not None:
+        writer.set_vendor_id(sid, "rekordbox", rb_vendor)
+    return sid, tier
+
+
+@pytest.mark.requirement("LIBM-12770")
+def test_resolve_rb_hash_reuse_skips_row_claimed_by_other_present_vendor(state_conn, tmp_path: Path) -> None:
+    """[if] two present rb ids share hash [then] second does not reuse first, [else stop]."""
+    content_hash = "d" * 64
+    writer = _writer(state_conn)
+    _seed_hash_row(
+        writer,
+        path=str(tmp_path / "claimed.mp3"),
+        content_hash=content_hash,
+        rb_vendor="rb-A",
+    )
+    writer.close()
+    resolved = resolve_rb_existing_stable_id(
+        state_conn,
+        "rb-B",
+        content_hash,
+        None,
+        present_rb_vendor_ids={"rb-A", "rb-B"},
+    )
+    assert resolved is None
+
+
+@pytest.mark.requirement("LIBM-12770")
+def test_resolve_rb_hash_reuse_allows_unlinked_row(state_conn, tmp_path: Path) -> None:
+    """[if] hash row has no vendor link [then] hash reuse succeeds, [else stop]."""
+    content_hash = "e" * 64
+    writer = _writer(state_conn)
+    seeded_sid, seeded_tier = _seed_hash_row(
+        writer,
+        path=str(tmp_path / "unlinked.mp3"),
+        content_hash=content_hash,
+        rb_vendor=None,
+    )
+    writer.close()
+    resolved = resolve_rb_existing_stable_id(
+        state_conn,
+        "rb-new",
+        content_hash,
+        None,
+        present_rb_vendor_ids={"rb-new"},
+    )
+    assert resolved == (seeded_sid, seeded_tier)
+
+
+@pytest.mark.requirement("LIBM-12770")
+def test_resolve_rb_hash_reuse_allows_stale_vendor_claim(state_conn, tmp_path: Path) -> None:
+    """[if] linked vendor is absent from present set [then] hash reuse succeeds, [else stop]."""
+    content_hash = "f" * 64
+    writer = _writer(state_conn)
+    seeded_sid, seeded_tier = _seed_hash_row(
+        writer,
+        path=str(tmp_path / "stale-link.mp3"),
+        content_hash=content_hash,
+        rb_vendor="rb-A",
+    )
+    writer.close()
+    resolved = resolve_rb_existing_stable_id(
+        state_conn,
+        "rb-B",
+        content_hash,
+        None,
+        present_rb_vendor_ids={"rb-B"},
+    )
+    assert resolved == (seeded_sid, seeded_tier)

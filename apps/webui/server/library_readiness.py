@@ -23,10 +23,10 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from apps.adapters.rekordbox import config as rb_config
-from apps.adapters.rekordbox.paths import resolve_asset_path
 from apps.analysis.record import AnalysisRecord
 from apps.analysis_waveform.local_waveform import local_preview_strip
 from apps.shared.platform_paths import AssetResolver
+from apps.shared.state.db import open_ro
 from apps.webui.server.rb_vendor_pkg.anlz import preview_strip
 from apps.webui.server.rb_vendor_pkg.own_beatgrid_overlay import _beatgrid_payload
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
@@ -225,13 +225,19 @@ def _cached_pqtz(stable_id: str) -> tuple[BeatgridStatus, list[dict[str, Any]]] 
 
 
 def _peek_pqtz(
-    stable_id: str, analysis_data_path: str
+    stable_id: str, analysis_data_path: str, resolver: AssetResolver
 ) -> tuple[BeatgridStatus, list[dict[str, Any]]] | None:
-    """Rekordbox PQTZ grid, or None when no ANLZ file exists (fall through)."""
+    """Rekordbox PQTZ grid, or None when no ANLZ file exists (fall through).
+
+    One ANLZ cache read or one ANLZ parse per track: the full readiness scan
+    pays that on purpose, a listing page never does (see
+    :func:`_stored_grid_presence`). ``resolver`` is the scan's, so the path
+    map is loaded once per pass rather than once per track.
+    """
     cached = _cached_pqtz(stable_id)
     if cached is not None:
         return cached
-    mapped = resolve_asset_path(analysis_data_path)
+    mapped = resolver.resolve_asset_path(analysis_data_path)
     if mapped.resolved is None or not mapped.resolved.is_file():
         return None
     try:
@@ -253,10 +259,22 @@ def _peek_pqtz(
     return "ok", beats
 
 
-def _fill_canonical(conn: sqlite3.Connection, index: _AnalysisIndex) -> None:
+def _scoped(column: str, ids: Sequence[str] | None) -> tuple[str, list[str]]:
+    """SQL ``AND column IN (...)`` plus params for a member set; empty for the whole library."""
+    if ids is None:
+        return "", []
+    return f" AND {column} IN ({','.join('?' * len(ids))})", list(ids)
+
+
+def _fill_canonical(
+    conn: sqlite3.Connection, index: _AnalysisIndex, ids: Sequence[str] | None = None
+) -> None:
     pointers: dict[str, list[tuple[str, str, str]]] = {}
+    scope, params = _scoped("stable_id", ids)
     for sid, lane, backend, version in conn.execute(
         "SELECT stable_id, lane, backend, backend_version FROM analysis_canonical"
+        f" WHERE 1=1{scope}",
+        params,
     ):
         pointers.setdefault(str(sid), []).append(
             (str(lane), str(backend), str(version))
@@ -266,7 +284,8 @@ def _fill_canonical(conn: sqlite3.Connection, index: _AnalysisIndex) -> None:
         "FROM analysis_canonical c LEFT JOIN analysis a "
         "ON a.stable_id = c.stable_id AND a.backend = c.backend "
         "AND a.backend_version = c.backend_version "
-        "WHERE c.lane = 'beatgrid'"
+        f"WHERE c.lane = 'beatgrid'{_scoped('c.stable_id', ids)[0]}",
+        params,
     ):
         index.own_grid[str(sid)] = _own_lane_grid(raw)
     for sid, rows in pointers.items():
@@ -275,12 +294,15 @@ def _fill_canonical(conn: sqlite3.Connection, index: _AnalysisIndex) -> None:
         index.version[sid] = (chosen[1], chosen[2])
 
 
-def _fill_legacy(conn: sqlite3.Connection, index: _AnalysisIndex) -> None:
+def _fill_legacy(
+    conn: sqlite3.Connection, index: _AnalysisIndex, ids: Sequence[str] | None = None
+) -> None:
+    scope, params = _scoped("stable_id", ids)
     for sid, backend, version, raw in conn.execute(
         "SELECT stable_id, backend, backend_version, record_json FROM analysis "
-        "WHERE backend NOT LIKE ? ESCAPE '\\' "
+        f"WHERE backend NOT LIKE ? ESCAPE '\\'{scope} "
         "ORDER BY analyzed_at DESC, backend ASC, backend_version DESC",
-        (_OWN_BACKEND_LIKE,),
+        (_OWN_BACKEND_LIKE, *params),
     ):
         key = str(sid)
         if key in index.legacy:
@@ -292,7 +314,9 @@ def _fill_legacy(conn: sqlite3.Connection, index: _AnalysisIndex) -> None:
         index.version.setdefault(key, (str(backend), str(version)))
 
 
-def _load_analysis_index(conn: sqlite3.Connection) -> _AnalysisIndex:
+def _load_analysis_index(
+    conn: sqlite3.Connection, ids: Sequence[str] | None = None
+) -> _AnalysisIndex:
     names = {
         row[0]
         for row in conn.execute(
@@ -302,34 +326,86 @@ def _load_analysis_index(conn: sqlite3.Connection) -> _AnalysisIndex:
     }
     if "analysis" not in names:
         return _AnalysisIndex()
+    scope, params = _scoped("stable_id", ids)
     index = _AnalysisIndex(
         has_row={
-            row[0] for row in conn.execute("SELECT DISTINCT stable_id FROM analysis")
+            row[0]
+            for row in conn.execute(
+                f"SELECT DISTINCT stable_id FROM analysis WHERE 1=1{scope}", params
+            )
         }
     )
     if "analysis_canonical" in names:
-        _fill_canonical(conn, index)
-    _fill_legacy(conn, index)
+        _fill_canonical(conn, index, ids)
+    _fill_legacy(conn, index, ids)
     return index
+
+
+def _analysis_data_path(sid: str, rb_meta: dict[str, Any]) -> str | None:
+    meta = rb_meta.get(sid)
+    return getattr(meta, "analysis_data_path", None) if meta is not None else None
 
 
 def _beatgrid_for(
     sid: str,
     index: _AnalysisIndex,
     rb_meta: dict[str, Any],
+    resolver: AssetResolver,
 ) -> tuple[BeatgridStatus, list[dict[str, Any]]]:
     if sid in index.own_grid:
         return index.own_grid[sid]
-    meta = rb_meta.get(sid)
-    adp = getattr(meta, "analysis_data_path", None) if meta is not None else None
+    adp = _analysis_data_path(sid, rb_meta)
     if adp:
-        peeked = _peek_pqtz(sid, adp)
+        peeked = _peek_pqtz(sid, adp, resolver)
         if peeked is not None:
             return peeked
     record = index.legacy.get(sid)
     if record is not None:
         return _legacy_grid(record)
     return "missing", []
+
+
+def _stored_grid_presence(
+    sid: str, index: _AnalysisIndex, rb_meta: dict[str, Any]
+) -> bool | None:
+    """Beat-grid presence from state.db facts alone; None when only the ANLZ file knows.
+
+    The listing page (PLAY-5884) answers from the own-lane grid and the legacy
+    record, both already read in bulk. A rekordbox track with neither keeps its
+    grid in its ANLZ file, and reading that file per row is what
+    :func:`_peek_pqtz` does for the full scan: on a page of 100 rows it is 100
+    path resolves plus 100 file parses per request, which on the Air's 16,082
+    track library joined the start-up scans in starving the library routes
+    (Fri 13 Nov 2026). Such a track is reported unknown (``None``), which
+    AutoPlay ranks as gridded; only a known ``False`` goes last.
+    """
+    if sid in index.own_grid:
+        return index.own_grid[sid][0] == "ok"
+    if _analysis_data_path(sid, rb_meta):
+        return None
+    record = index.legacy.get(sid)
+    if record is not None:
+        return _legacy_grid(record)[0] == "ok"
+    return False
+
+
+def beatgrid_presence(state_db: Path, stable_ids: Sequence[str]) -> dict[str, bool | None]:
+    """PLAY-5884: per member, True when it has a usable beat grid, read for that member set only.
+
+    Reads state.db for the member set and nothing else: no path-map load, no
+    per-track file or JSON read. ``None`` marks a rekordbox track whose grid
+    was not looked up (see :func:`_stored_grid_presence`).
+    """
+    ids = list(dict.fromkeys(stable_ids))
+    if not ids or not state_db.exists():
+        return {}
+    conn = open_ro(state_db)
+    try:
+        index = _load_analysis_index(conn, ids)
+    finally:
+        conn.close()
+    rb_meta = bulk_rb_meta(ids, state_db_path=state_db)
+    return {sid: _stored_grid_presence(sid, index, rb_meta) for sid in ids}
 
 
 def _waveform_ok(sid: str, rb_meta: dict[str, Any], resolver: AssetResolver) -> bool:
@@ -500,7 +576,7 @@ def query_library_readiness(
     counts = _empty_counts()
     matched: list[LibraryReadinessItem] = []
     for sid in present_ids:
-        beatgrid, beats = _beatgrid_for(sid, index, rb_meta)
+        beatgrid, beats = _beatgrid_for(sid, index, rb_meta, resolver)
         waveform: WaveformStatus = (
             "ok" if _waveform_ok(sid, rb_meta, resolver) else "missing"
         )

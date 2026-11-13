@@ -217,7 +217,11 @@ test('a user offset is written and its answer published to every deck holding th
 });
 
 test('the trim stage multiplies in auto gain at graph build and on every knob move', () => {
-	const graph = readFrontendSource('src/lib/rb/deck-channel-graph.ts');
+	// #12665: the per-deck build moved into the shared deck-channel-graph-core.ts.
+	const graph =
+		readFrontendSource('src/lib/rb/deck-channel-graph.ts') +
+		'\n' +
+		readFrontendSource('src/lib/rb/deck-channel-graph-core.ts');
 	assert.match(graph, /return trimKnob \* TRIM_MAX_GAIN \* autoGainLinear\(deck\);/);
 	assert.match(graph, /trim\.gain\.value = trimStageGain\(ch\.trim, deck\);/);
 	assert.match(

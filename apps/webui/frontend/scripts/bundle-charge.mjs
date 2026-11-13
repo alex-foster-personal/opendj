@@ -28,13 +28,17 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUDGETS_DIR, ceilToKiB, chargeBranchId, checkCharge } from './bundle-budget-load.mjs';
+import {
+	BUDGETS_DIR,
+	ceilToKiB,
+	chargeBranchId,
+	checkCharge,
+	noiseFloorBytes
+} from './bundle-budget-load.mjs';
 
-export { chargeBranchId };
-
-// Same floor as PR_DELTA_NOISE_BYTES in scripts/bundle-budget.mjs: the gate passes a delta up to
-// the PR's own charges plus this, so growth at or under it needs no charge.
-export const NOISE_BYTES = 128;
+// The gate's own per-surface floor (scripts/bundle-budget-load.mjs): the gate passes a delta up to
+// the PR's own charges plus noiseFloorBytes(main bytes), so growth at or under it needs no charge.
+export { chargeBranchId, noiseFloorBytes };
 const FRONTEND = fileURLToPath(new URL('../', import.meta.url));
 const GATE = fileURLToPath(new URL('./bundle-budget.mjs', import.meta.url));
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -49,15 +53,15 @@ export function chargeDate(now = new Date()) {
 
 /**
  * Pure: one verdict per surface in `current.totals`. A surface whose growth over `baseline` is
- * beyond NOISE_BYTES gets a schema-valid charge (growth ceiled to KiB); every other surface gets
- * `charge: null`. A surface missing from the baseline is new and is left to the rebaseline rule.
+ * beyond noiseFloorBytes(baseline bytes) gets a schema-valid charge (growth ceiled to KiB);
+ * every other surface gets `charge: null`. A surface missing from the baseline is new and is left to the rebaseline rule.
  */
 export function planCharges({ baseline, current, branch, sha, date }) {
 	return Object.entries(current.totals).map(([surface, { bytes }]) => {
 		const before = baseline.totals[surface]?.bytes;
 		if (before === undefined) return { surface, delta: null, charge: null };
 		const delta = bytes - before;
-		if (delta <= NOISE_BYTES) return { surface, delta, charge: null };
+		if (delta <= noiseFloorBytes(before)) return { surface, delta, charge: null };
 		const charge = {
 			bytes: ceilToKiB(delta),
 			measured_main: before,
@@ -94,6 +98,29 @@ export function applyCharges(plan, { budgetsDir, branch }) {
 
 // ---------------------------------------------------------------- shell ---
 
+/**
+ * Resolve how to launch pnpm without a bare `pnpm` (AGENTS.md: launch by resolved path). Under
+ * `pnpm bundle:charge`, pnpm sets npm_execpath to its own entry: a JS CLI runs through this node
+ * (`process.execPath`), so a Windows `pnpm.cmd` shim is never needed; a standalone binary runs
+ * directly. Outside pnpm, POSIX falls back to `pnpm` on PATH and Windows refuses with a hint.
+ */
+export function pnpmInvocation(args, env = process.env, platform = process.platform) {
+	const entry = env.npm_execpath;
+	if (entry && /pnpm/i.test(entry)) {
+		if (/\.(c|m)?js$/i.test(entry)) return { file: process.execPath, args: [entry, ...args] };
+		return { file: entry, args };
+	}
+	if (platform === 'win32')
+		throw new Error('run this as `pnpm bundle:charge` so pnpm can be launched by resolved path');
+	return { file: 'pnpm', args };
+}
+
+/** Run pnpm with `args` in `cwd` through the resolved entry point, streaming its output. */
+function _pnpm(cwd, ...args) {
+	const { file, args: argv } = pnpmInvocation(args);
+	execFileSync(file, argv, { cwd, stdio: 'inherit' });
+}
+
 function _git(cwd, ...args) {
 	return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
@@ -124,8 +151,8 @@ function _measureMergeBase(baseSha, scratch) {
 	_git(FRONTEND, 'worktree', 'add', '--detach', tree, baseSha);
 	try {
 		const dir = join(tree, 'apps/webui/frontend');
-		execFileSync('pnpm', ['install', '--frozen-lockfile'], { cwd: dir, stdio: 'inherit' });
-		execFileSync('pnpm', ['build'], { cwd: dir, stdio: 'inherit' });
+		_pnpm(dir, 'install', '--frozen-lockfile');
+		_pnpm(dir, 'build');
 		return _measure(dir, baseSha, join(scratch, 'base-measure.json'));
 	} finally {
 		_git(FRONTEND, 'worktree', 'remove', '--force', tree);
@@ -150,8 +177,7 @@ function main(argv) {
 		let current;
 		if (value('--current')) current = JSON.parse(readFileSync(value('--current'), 'utf8'));
 		else {
-			if (!argv.includes('--skip-build'))
-				execFileSync('pnpm', ['build'], { cwd: FRONTEND, stdio: 'inherit' });
+			if (!argv.includes('--skip-build')) _pnpm(FRONTEND, 'build');
 			current = _measure(FRONTEND, sha, join(scratch, 'measure.json'));
 		}
 		let baseline;

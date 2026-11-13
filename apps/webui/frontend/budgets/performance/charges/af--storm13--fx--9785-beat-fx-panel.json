@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 483124,
+  "measured_with_pr": 484631,
+  "sha": "932c367897",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--fx--9785-beat-fx-panel grows the performance surface; measured +1507 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

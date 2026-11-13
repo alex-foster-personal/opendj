@@ -7,7 +7,7 @@
  * - if the top bar has a standalone .topbar-slot-stage again, then Stage is back in the row
  * - if hover or keyboard focus on LYR stops opening the menu, then Stage is unreachable
  * - if LYR keeps a native title beside the menu, then it shows two explainers (W14)
- * - if clicking LYR stops toggling lyrics_global, then the menu broke LYR itself
+ * - if clicking LYR stops toggling lyrics_global through set_lyrics_global, then the menu broke LYR itself
  * - if the menu's Stage button is not disabled with its reason when no deck is loaded, then broken
  */
 import assert from 'node:assert/strict';
@@ -57,9 +57,12 @@ test('LYR has one explainer: the menu, never a native title too', () => {
 	assert.match(markup, /id="lyr-menu-status"[^>]*>\{lyrTitle\}</);
 });
 
-test('clicking LYR still toggles lyrics_global', () => {
+test('clicking LYR dispatches the typed set_lyrics_global command', () => {
 	const lyr = between(markup, 'class="bsm-toggle topbar-slot-lyr"', '</button>');
-	assert.match(lyr, /onclick=\{toggleLyricsGlobal\}/);
+	assert.match(
+		lyr,
+		/onclick=\{\(\) =>\s*void runPerformanceCommandFromUi\(\{\s*type: 'set_lyrics_global',\s*enabled: !uiPrefs\.lyrics_global\s*\}\)\}/
+	);
 	assert.match(lyr, /aria-pressed=\{uiPrefs\.lyrics_global\}/);
 });
 
@@ -68,6 +71,6 @@ test('Stage in the menu keeps its old behavior and says why it is disabled', () 
 	assert.match(stage, /disabled=\{stageTarget === null\}/);
 	assert.match(stage, /onclick=\{_openStageFromTopBar\}/);
 	assert.match(stage, /aria-describedby="lyr-menu-stage-status"/);
-	assert.match(markup, /id="lyr-menu-stage-status"[^>]*>\{stageTitle\}</);
+	assert.match(markup, /id="lyr-menu-stage-status"[^>]*>\s*\{stageTitle\}\s*</);
 	assert.match(TOPBAR, /'Stage - load a track onto a deck first'/);
 });

@@ -6,6 +6,9 @@ Regression one-liners:
   * if POST undo on an empty stack is not 409 nothing_to_undo then broken
   * if a sneaky live mutation does not 409 conflict on undo then broken
   * if GET /playlist-history without state.db is not 503 then broken
+  * if redo onto a playlist changed since the undo is not a clean 409 conflict leaving live and history untouched then broken
+  * if redo after a new edit dropped the redo entry is not 409 nothing_to_redo with live unchanged then broken
+  * if a valid undo then redo does not restore the exact membership order then broken
 """
 
 from __future__ import annotations
@@ -195,3 +198,107 @@ def test_503_without_state_db(tmp_path: Path) -> None:
         assert r.status_code == 503
         assert r.json()["detail"]["error"] == "state_db_missing"
     playlist_write.close_store(app)
+
+
+def test_stale_redo_409_conflict_leaves_live_and_history(
+    client: TestClient,
+    db_path: Path,
+) -> None:
+    """Redo onto a playlist revised since the undo refuses cleanly without mutating anything."""
+    body, etag = _create(client, "Warmup")
+    pid = body["playlist_id"]
+    put = client.put(
+        f"/api/v1/playlists/{pid}/tracks",
+        json={"stable_ids": ["t-001"]},
+        headers={"If-Match": etag},
+    )
+    assert put.status_code == 200, put.text
+    undone = client.post("/api/v1/playlist-history/undo")
+    assert undone.status_code == 200, undone.text
+    with PlaylistStore(db_path, bus=FakeEventBus()) as sneaky:
+        sneaky.replace_memberships(
+            pid,
+            ["t-003"],
+            expected_etag=undone.headers["ETag"],
+            record_edit=False,
+        )
+    history_before = client.get("/api/v1/playlist-history").json()
+    assert history_before["can_redo"] is True
+
+    conflict = client.post("/api/v1/playlist-history/redo")
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["error"] == "conflict"
+    assert conflict.json()["current"]["items"] == ["t-003"]
+    assert client.get(f"/api/v1/playlists/{pid}").json()["items"] == ["t-003"]
+    assert client.get("/api/v1/playlist-history").json() == history_before
+
+
+def test_redo_after_new_edit_409_nothing_to_redo(client: TestClient) -> None:
+    """A fresh edit after undo drops the redo entry, so redo is a clean 409 with live unchanged."""
+    body, etag = _create(client, "Warmup")
+    pid = body["playlist_id"]
+    renamed = client.patch(
+        f"/api/v1/playlists/{pid}",
+        json={"name": "Peak"},
+        headers={"If-Match": etag},
+    )
+    assert renamed.status_code == 200, renamed.text
+    undone = client.post("/api/v1/playlist-history/undo")
+    assert undone.status_code == 200, undone.text
+    assert client.get("/api/v1/playlist-history").json()["can_redo"] is True
+    put = client.put(
+        f"/api/v1/playlists/{pid}/tracks",
+        json={"stable_ids": ["t-004", "t-002"]},
+        headers={"If-Match": undone.headers["ETag"]},
+    )
+    assert put.status_code == 200, put.text
+    history_before = client.get("/api/v1/playlist-history").json()
+    assert history_before["can_redo"] is False
+    live_before = client.get(f"/api/v1/playlists/{pid}").json()
+
+    redo = client.post("/api/v1/playlist-history/redo")
+    assert redo.status_code == 409, redo.text
+    assert redo.json() == {"error": "nothing_to_redo"}
+    assert redo.headers.get("ETag") is None
+    assert client.get(f"/api/v1/playlists/{pid}").json() == live_before
+    assert live_before["name"] == "Warmup"
+    assert live_before["items"] == ["t-004", "t-002"]
+    assert client.get("/api/v1/playlist-history").json() == history_before
+
+
+def test_undo_redo_round_trip_restores_exact_order(client: TestClient) -> None:
+    """Undo then redo of a reorder restores the exact non-sorted membership order."""
+    body, etag = _create(client, "Warmup")
+    pid = body["playlist_id"]
+    first = client.put(
+        f"/api/v1/playlists/{pid}/tracks",
+        json={"stable_ids": ["t-001", "t-002", "t-003", "t-004"]},
+        headers={"If-Match": etag},
+    )
+    assert first.status_code == 200, first.text
+    reorder = ["t-003", "t-001", "t-004", "t-002"]
+    second = client.put(
+        f"/api/v1/playlists/{pid}/tracks",
+        json={"stable_ids": reorder},
+        headers={"If-Match": first.headers["ETag"]},
+    )
+    assert second.status_code == 200, second.text
+
+    undone = client.post("/api/v1/playlist-history/undo")
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["current"]["items"] == ["t-001", "t-002", "t-003", "t-004"]
+    assert client.get(f"/api/v1/playlists/{pid}").json()["items"] == [
+        "t-001",
+        "t-002",
+        "t-003",
+        "t-004",
+    ]
+
+    redone = client.post("/api/v1/playlist-history/redo")
+    assert redone.status_code == 200, redone.text
+    assert redone.json()["current"]["items"] == reorder
+    assert redone.headers.get("ETag") == redone.json()["etag"]
+    live = client.get(f"/api/v1/playlists/{pid}")
+    assert live.json()["items"] == reorder
+    assert live.headers.get("ETag") == redone.headers.get("ETag")
+    assert client.get("/api/v1/playlist-history").json()["can_redo"] is False

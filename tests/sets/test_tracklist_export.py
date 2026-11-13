@@ -305,7 +305,7 @@ def test_render_cue_with_and_without_segments(sets_root: Path) -> None:
     state, sess = _seed_sqlite_session(sets_root, events=events)
     tl = build_tracklist("s1", sets_root=sets_root, state=state)
     no_seg = render_tracklist(tl, "cue")
-    assert 'FILE "s1.wav" WAVE' in no_seg
+    assert "FILE " not in no_seg
     assert "INDEX 01 00:00:00" in no_seg
     assert "INDEX 01 05:10:00" in no_seg
 

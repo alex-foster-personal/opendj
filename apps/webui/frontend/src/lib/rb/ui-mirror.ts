@@ -113,6 +113,11 @@ export function buildUiMirror(): Record<string, unknown> {
 		master_deck: state.master_deck,
 		master_mode: state.master_mode,
 		master_reason: state.master_reason,
+		// #12280: the command status an agent reads a refusal from, text and stable code.
+		last_error: state.last_error,
+		last_error_code: state.last_error_code,
+		// #12272: whether the hotkeys overlay is open (opendj hotkeys_overlay confirms against it).
+		hotkeys_overlay_open: state.hotkeys_overlay_open,
 		transition: state.transition,
 		agent_plan: readAgentPlanMirror(),
 		// AGENT-48: whether the last AutoPlay Next ran the planner or the fixed loop, and why.
@@ -130,6 +135,8 @@ export function buildUiMirror(): Record<string, unknown> {
 		auto_gain: state.auto_gain,
 		// COLORFX-04: per deck, the color knob's effect, echo division and timing.
 		color_fx: state.color_fx,
+		// BEATFX-12: the beat FX unit, its division timing, release hold and last refusal.
+		beat_fx: state.beat_fx,
 		// DL-2 (#9429): app_state.layout - the resizable regions set_layout_size / reset_layout move.
 		layout: state.layout,
 		decks: Object.fromEntries(
@@ -164,7 +171,9 @@ export function buildUiMirror(): Record<string, unknown> {
 				// PLAY-18: the deck's last stop and its cause; user_pause is true only
 				// when a person stopped it. The engine logs each new one on ingest.
 				last_stop: readLastDeckStop(deck.deck_id),
-				load_error: deckLoadErrors[Number(id) as DeckId] ?? null
+				load_error: deckLoadErrors[Number(id) as DeckId] ?? null,
+				command_error: deck.command_error,
+				command_error_code: deck.command_error_code
 			}])
 		),
 		browser: {
@@ -174,7 +183,9 @@ export function buildUiMirror(): Record<string, unknown> {
 			selected_row: state.browser.selected_row,
 			visible_rows_count: _visibleRowsCount(),
 			// Observe `browser.load.complete` to wait for a whole list.
-			load: state.browser.load
+			load: state.browser.load,
+			// Issue #10043: the mounted pane's Track Filter bar state, null with no track table.
+			filter: state.browser.filter
 		},
 		toasts: [
 			...toasts.map((toast) => ({ id: toast.logId, kind: toast.kind, message: toast.message })),

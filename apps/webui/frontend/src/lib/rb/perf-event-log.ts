@@ -446,6 +446,7 @@ export function recordPerfTiming(
 	deck: 1 | 2 | 3 | 4 | null = null,
 	labels?: Record<string, string>,
 	facts?: Record<string, number>,
+	blocking_stages?: Record<string, number>,
 	series?: Record<string, number[]>
 ): void {
 	const stageBits = _stageSummary(stages, facts);
@@ -474,6 +475,7 @@ export function recordPerfTiming(
 		severity: 'info',
 		stages: { ...stages },
 		...(facts === undefined || Object.keys(facts).length === 0 ? {} : { facts: { ...facts } }),
+		...(blocking_stages === undefined ? {} : { blocking_stages: { ...blocking_stages } }),
 		...(labels === undefined ? {} : { labels: { ...labels } }),
 		...seriesCopy
 	});
@@ -580,6 +582,7 @@ export function recordDeckLoadTiming(
 	deck: 1 | 2 | 3 | 4 | null,
 	stems: StemLoadFacts,
 	extraLabels?: Record<string, string>,
+	blocking_stages?: Record<string, number>,
 	facts?: Record<string, number>
 ): void {
 	const { stemmed, labels } = _stemLoadTelemetry(stems);
@@ -590,8 +593,28 @@ export function recordDeckLoadTiming(
 		stages,
 		deck,
 		extraLabels === undefined ? labels : { ...labels, ...extraLabels },
-		Object.keys(stageFacts).length === 0 ? undefined : stageFacts
+		Object.keys(stageFacts).length === 0 ? undefined : stageFacts,
+		blocking_stages
 	);
+}
+
+/** Merge stem-path KPI timings into the latest matching deck-load row (issue #11142). */
+export function supplementDeckLoadBlockingStages(
+	deck: 1 | 2 | 3 | 4,
+	stableIdPrefix: string,
+	blockingPatch: Readonly<Record<string, number>>
+): boolean {
+	if (Object.keys(blockingPatch).length === 0) return false;
+	for (let i = _events.length - 1; i >= 0; i--) {
+		const row = _events[i];
+		if (row.deck !== deck || !row.kind.startsWith('deck-load sid=')) continue;
+		if (!row.kind.includes(stableIdPrefix)) continue;
+		row.blocking_stages = { ...(row.blocking_stages ?? {}), ...blockingPatch };
+		_unflushed = true;
+		_scheduleFlush();
+		return true;
+	}
+	return false;
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {

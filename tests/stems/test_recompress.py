@@ -62,7 +62,7 @@ except ImportError:
 from apps.stems import recompress as rc
 from apps.stems.artifacts import load_stem_bundle
 from apps.stems.stem_encode import encode_mp3
-from apps.cloud.stem_index import MANIFEST_FILENAME, entry_from_bundle_dir, load_cached_index, save_cached_index
+from apps.cloud.stem_index import INDEX_CACHE_FILENAME, MANIFEST_FILENAME, entry_from_bundle_dir, load_cached_index, save_cached_index
 from tests.stems.recompress_support import (
     FRAMES,
     PARTS,
@@ -1032,7 +1032,9 @@ def test_a_live_pass_over_a_symlinked_stem_root_works_and_backs_up_on_its_disk(t
     from apps.cloud.stem_cache_budget import EVICTION_CLAIM_LOCK_DIR_NAME
 
     locks = {LOCK_DIR_NAME, EVICTION_CLAIM_LOCK_DIR_NAME}
-    on_data_disk = {p.name for p in (data / "state").iterdir()} - locks - {rc.SWAP_JOURNAL_DIR_NAME, "stems"}
+    # 1355bbf640 (Wed 11 Nov 2026) records the download index cache under the data dir after a live swap.
+    allowed = {rc.SWAP_JOURNAL_DIR_NAME, "stems", INDEX_CACHE_FILENAME}
+    on_data_disk = {p.name for p in (data / "state").iterdir()} - locks - allowed
     assert not on_data_disk, f"nothing but the lock files and swap journal on the data dir's disk: {on_data_disk}"
 
 

@@ -92,7 +92,7 @@ export function pickNeighbour(
 	return best;
 }
 
-function _topLeftChild(children: readonly SelectorNode[]): SelectorNode {
+function _topmostChild(children: readonly SelectorNode[]): SelectorNode {
 	let pick = children[0];
 	for (let i = 1; i < children.length; i++) {
 		const c = children[i];
@@ -111,29 +111,66 @@ function _topLeftChild(children: readonly SelectorNode[]): SelectorNode {
 	return pick;
 }
 
+/** Rejects NaN, infinite or negative-size rects so spatial scoring stays deterministic (#12542). */
+function _assertValidRect(node: SelectorNode): void {
+	const { x, y, width, height } = node.rect;
+	for (const [name, value] of [
+		['x', x],
+		['y', y],
+		['width', width],
+		['height', height]
+	] as const) {
+		if (!Number.isFinite(value)) {
+			throw new Error(`Non-finite rect.${name} on selector node ${node.id}: ${value}`);
+		}
+	}
+	if (width < 0 || height < 0) {
+		throw new Error(`Negative rect size on selector node ${node.id}: ${width}x${height}`);
+	}
+}
+
+/**
+ * Reading order: the first row is every child whose top sits above the topmost child's
+ * bottom edge, so a centred row of mixed-height controls (the topbar) starts at its left
+ * end rather than at its tallest control (#13700). The leftmost of that row wins.
+ */
+function _topLeftChild(children: readonly SelectorNode[]): SelectorNode {
+	const top = _topmostChild(children);
+	const rowBottom = top.rect.y + top.rect.height;
+	let pick = top;
+	for (const c of children) {
+		if (c === top || c.rect.y >= rowBottom) continue;
+		if (c.rect.x < pick.rect.x) {
+			pick = c;
+			continue;
+		}
+		if (c.rect.x === pick.rect.x && c.rect.y < pick.rect.y) {
+			pick = c;
+		}
+	}
+	return pick;
+}
+
 export function createSelectorTree(
 	nodes: readonly SelectorNode[],
 	initialId: string
 ): SelectorTree {
 	const byId = new Map<string, SelectorNode>();
 	for (const node of nodes) {
+		_assertValidRect(node);
 		if (byId.has(node.id)) {
 			throw new Error(`Duplicate selector node id: ${node.id}`);
 		}
 		byId.set(node.id, node);
 	}
 	for (const node of nodes) {
-		if (node.parentId !== null && !byId.has(node.parentId)) {
+		if (node.parentId === null) continue;
+		const parent = byId.get(node.parentId);
+		if (parent === undefined) {
 			throw new Error(`Unknown parentId on node ${node.id}: ${node.parentId}`);
 		}
-		if (node.parentId !== null) {
-			const parent = byId.get(node.parentId);
-			if (parent === undefined) {
-				throw new Error(`Unknown parentId on node ${node.id}: ${node.parentId}`);
-			}
-			if (parent.kind === 'leaf') {
-				throw new Error(`Node ${node.id} may not parent under leaf ${parent.id}`);
-			}
+		if (parent.kind === 'leaf') {
+			throw new Error(`Node ${node.id} may not parent under leaf ${parent.id}`);
 		}
 	}
 	if (!byId.has(initialId)) {

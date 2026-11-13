@@ -1,7 +1,7 @@
 // requirement: PADFX-11718
 // [if] a default bank does not have 8 presets with the JSON labels in order [then] broken
 // [if] a malformed preset file loads without naming the offending entry [then] broken
-// [if] an unregistered effect (roll) is live, or echo is not [then] broken
+// [if] an unregistered effect (trans) is live, or echo or a registered roll is not [then] broken
 // [if] pointer down/up does not send beat_fx enabled true then enabled false for the deck [then] broken
 // [if] a second held pad does not replace the first (last pad wins) [then] broken
 // [if] a Release FX press does not turn the other held pads off, or hold/toggle is ignored [then] broken
@@ -89,13 +89,18 @@ test('malformed files throw naming the entry', () => {
 test('readiness: echo and release echo live, unregistered effects and amount presets inert with reasons', () => {
 	const bank = presets.padFxBank('pad-fx-1');
 	assert.deepEqual(presets.padFxPresetReadiness(bank[0]), { live: true });
-	assert.deepEqual(presets.padFxPresetReadiness(bank[2]), {
+	// BEATFX-14398 registered roll, so its preset comes live; trans is still unregistered.
+	assert.ok(beatFx.BEAT_FX_EFFECTS.includes('roll'));
+	assert.deepEqual(presets.padFxPresetReadiness(bank[2]), { live: true });
+	assert.equal(bank[4].effect, 'trans');
+	assert.ok(!beatFx.BEAT_FX_EFFECTS.includes('trans'));
+	assert.deepEqual(presets.padFxPresetReadiness(bank[4]), {
 		live: false,
-		reason: 'ROLL 1/4: effect roll is not in the beat FX registry yet'
+		reason: 'TRANS 1/8: effect trans is not in the beat FX registry yet'
 	});
 	assert.deepEqual(presets.padFxPresetReadiness(bank[6]), {
 		live: false,
-		reason: 'REVERB 50: effect reverb is not in the beat FX registry yet'
+		reason: 'REVERB 50: beat FX has no amount parameter yet'
 	});
 	assert.deepEqual(presets.padFxPresetReadiness(bank[7]), { live: true });
 });
@@ -154,7 +159,8 @@ test('arrows step beats through the division list, clamp, and restore on release
 
 test('controller refuses inert, double, unheld and out-of-range pads', () => {
 	const c = ctl('pad-fx-1');
-	assert.throws(() => c.press(2), /ROLL 1\/4: effect roll is not in the beat FX registry yet/);
+	assert.deepEqual(ctl('pad-fx-1').press(2), [on('roll', 0.25)], 'registered roll engages');
+	assert.throws(() => c.press(4), /TRANS 1\/8: effect trans is not in the beat FX registry yet/);
 	c.press(0);
 	assert.throws(() => c.press(0), /already held/);
 	assert.throws(() => c.release(3), /not held/);

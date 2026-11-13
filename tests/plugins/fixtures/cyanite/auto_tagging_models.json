@@ -1,0 +1,36 @@
+{
+  "method": "GET",
+  "path": "/library-tracks/libtr_demo/models",
+  "status": 200,
+  "headers": {
+    "x-ratelimit-limit": "120",
+    "x-ratelimit-remaining": "118",
+    "x-ratelimit-reset": "1731340800",
+    "retry-after": "0"
+  },
+  "body": {
+    "items": [
+      {
+        "version": "MainGenreV2",
+        "tags": ["house", "electronicDance"],
+        "scores": {"house": 0.82, "electronicDance": 0.71}
+      },
+      {
+        "version": "MoodSimpleV2",
+        "tags": ["energetic"],
+        "scores": {"energetic": 0.77}
+      },
+      {
+        "version": "transformerCaption",
+        "caption": "A driving house track with steady four-on-the-floor drums."
+      },
+      {
+        "version": "SegmentationV1",
+        "sections": [
+          {"startSeconds": 0.0, "endSeconds": 32.0, "label": "intro"},
+          {"startSeconds": 32.0, "endSeconds": 128.0, "label": "drop"}
+        ]
+      }
+    ]
+  }
+}

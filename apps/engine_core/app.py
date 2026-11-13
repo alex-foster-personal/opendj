@@ -410,10 +410,12 @@ def _create_state_store(cfg: EngineConfig) -> Path:
 
 
 def _drop_api_routes(app: FastAPI, prefix: str) -> int:
+    # PLATFORM-12937: exact path, not startswith, so replacing the legacy
+    # /api/v1/health keeps its sibling /api/v1/health/live liveness route.
     kept = [
         route
         for route in app.router.routes
-        if not (isinstance(route, APIRoute) and route.path.startswith(prefix))
+        if not (isinstance(route, APIRoute) and route.path == prefix)
     ]
     dropped = len(app.router.routes) - len(kept)
     app.router.routes[:] = kept

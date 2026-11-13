@@ -14,6 +14,9 @@
 # selection on #4871 (a one-file test change selected 1 module and skipped it; red at that head).
 (private path)
 
+# Publish-gate real library fixture classes (#11397): audit_fixture_real_content walks indexed blobs.
+tests/scripts/test_fixture_real_content_gate.py
+
 # Doc-path leak control walks tests/fixtures/security/doc-path-leak-control from REPO and runs the CLI with cwd=REPO.
 tests/scripts/test_doc_path_leak.py
 
@@ -99,6 +102,13 @@ tests/scripts/test_shell_construct_lint.py
 tests/quality/test_importlinter_contracts.py
 (private path)
 tests/quality/test_module_surface_contract.py
+tests/quality/test_module_surface_contract_enforcement.py
+tests/quality/test_module_surface_contract_source_reads.py
+tests/quality/test_module_surface_contract_call_loads.py
+tests/quality/test_module_surface_contract_dynamic_interpreter.py
+tests/quality/test_module_surface_contract_dynamic_tree.py
+tests/quality/test_module_surface_contract_declarations.py
+tests/quality/test_module_surface_contract_declarations_tree.py
 tests/quality/test_autodj_module_contract.py
 # FILETREE.md must name every tracked top-level entry; it lists git's whole index (#5829).
 tests/quality/test_filetree.py

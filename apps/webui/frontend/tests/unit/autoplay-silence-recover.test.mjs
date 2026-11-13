@@ -66,6 +66,64 @@ test('resolveAutoPlaySourceForTick uses the paused master during recovery', () =
 	recover.resetAutoPlaySilenceRecovery();
 });
 
+test('resolveAutoPlaySourceForTick clears recovery when no paused master exists', () => {
+	// Intent: no-source recovery must clear the flag so PLAY-09 can run instead of staying armed.
+	recover.noteAutoPlaySilenceDropout({ has_playable_next: true });
+	assert.equal(recover.isSilenceRecovering(), true);
+	const snaps = [
+		{ id: 1, is_master: false, playing: false, stable_id: 'a', position_ms: 1000, duration_ms: 2000 },
+		{ id: 2, is_master: true, playing: false, stable_id: null, position_ms: 0, duration_ms: null }
+	];
+	const resolved = recover.resolveAutoPlaySourceForTick(snaps, autoPlay.pickSourceDeck);
+	assert.equal(resolved.source, null);
+	assert.equal(resolved.remainingOverride, null);
+	assert.equal(recover.isSilenceRecovering(), false);
+	recover.resetAutoPlaySilenceRecovery();
+});
+
+test('resolveAutoPlaySourceForTick keeps recovery armed while a paused master is the source', () => {
+	// Intent: a paused master source keeps recovery set until a follower play is dispatched.
+	recover.noteAutoPlaySilenceDropout({ has_playable_next: true });
+	const snaps = [
+		{ id: 1, is_master: true, playing: false, stable_id: 'a', position_ms: 1000, duration_ms: 2000 },
+		{ id: 2, is_master: false, playing: false, stable_id: null, position_ms: 0, duration_ms: null }
+	];
+	const resolved = recover.resolveAutoPlaySourceForTick(snaps, autoPlay.pickSourceDeck);
+	assert.equal(resolved.source?.id, 1);
+	assert.equal(resolved.remainingOverride, 0);
+	assert.equal(recover.isSilenceRecovering(), true);
+	recover.noteAutoPlayFollowerPlayDispatched();
+	assert.equal(recover.isSilenceRecovering(), false);
+	recover.resetAutoPlaySilenceRecovery();
+});
+
+test('cleared no-source recovery does not re-arm on the next tick', () => {
+	// Intent: once cleared, the next tick sees no recovery source even if a paused master appears.
+	recover.noteAutoPlaySilenceDropout({ has_playable_next: true });
+	const noMaster = [
+		{ id: 1, is_master: false, playing: false, stable_id: null, position_ms: 0, duration_ms: null },
+		{ id: 2, is_master: false, playing: false, stable_id: null, position_ms: 0, duration_ms: null }
+	];
+	recover.resolveAutoPlaySourceForTick(noMaster, autoPlay.pickSourceDeck);
+	assert.equal(recover.isSilenceRecovering(), false);
+	const pausedMaster = [
+		{ id: 1, is_master: true, playing: false, stable_id: 'a', position_ms: 1000, duration_ms: 2000 },
+		{ id: 2, is_master: false, playing: false, stable_id: null, position_ms: 0, duration_ms: null }
+	];
+	const next = recover.resolveAutoPlaySourceForTick(pausedMaster, autoPlay.pickSourceDeck);
+	assert.equal(next.source, null);
+	assert.equal(next.remainingOverride, null);
+	assert.equal(recover.isSilenceRecovering(), false);
+	recover.resetAutoPlaySilenceRecovery();
+});
+
+test('noteAutoPlaySilenceDropout does not arm recovery without a playable next track', () => {
+	// Intent: no next track means PLAY-09 applies and recovery never arms.
+	recover.resetAutoPlaySilenceRecovery();
+	recover.noteAutoPlaySilenceDropout({ has_playable_next: false });
+	assert.equal(recover.isSilenceRecovering(), false);
+});
+
 test('simulateAutoPlayChain still walks three handoffs after a recovery re-arm', () => {
 	const playlist = compatibleFeed();
 	const bounds = autoPlay.tempoBoundsFromPitchRange(16);

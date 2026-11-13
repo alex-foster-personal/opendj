@@ -38,9 +38,10 @@ def get_live_stems_capability(
     if deck_count is None:
         return body
     try:
-        body["plan"] = plan_live_stems(capability, deck_count=deck_count, bpm=bpm).to_dict()
+        plan = plan_live_stems(capability, deck_count=deck_count, bpm=bpm)
     except LiveStemsCapabilityError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    body["plan"] = plan.to_dict()
     return body
 
 

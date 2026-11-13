@@ -11,6 +11,7 @@ export type SearchableBrowserRow = {
 	key: string | null;
 	genre: string | null;
 	album?: string | null;
+	label?: string | null;
 	bpm: number | null;
 	rating: number | null;
 	rb_meta?: { genre?: string | null } | null;
@@ -26,6 +27,7 @@ export function searchableTrackFromBrowserRow(row: SearchableBrowserRow): Search
 		key_forms: keyForms(row.key),
 		genre: listingGenre(row),
 		album: row.album ?? null,
+		label: row.label ?? null,
 		bpm: row.bpm,
 		rating: normalizeRating(row.rating)
 	};

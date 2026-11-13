@@ -20,7 +20,8 @@ const deleted = (playlist_id: string, name: string, track_count: number): Delete
 	deleted_at: '2026-10-12T21:04:00Z',
 	updated_at: '2026-10-12T21:04:00Z',
 	vendor: 'rekordbox',
-	vendor_pl_id: playlist_id
+	vendor_pl_id: playlist_id,
+	etag: `"etag-${playlist_id}"`
 });
 
 const sampleRows = [deleted('pl-7', 'Old Warmup', 32), deleted('pl-9', 'Test Crate', 4)];

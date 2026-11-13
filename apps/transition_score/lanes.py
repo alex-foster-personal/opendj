@@ -15,6 +15,8 @@ Requirements:
   ✔︎ an in-flight ramp interrupted by a later set or ramp on the same knob is cut at that bar and the new move
       starts from the value then
   ✔︎ an event the curves cannot place (an unknown at, a ramp on another clock) raises LaneError, never skipped
+  ✔︎ each source profile states its energy provenance (MIK, relative fallback or none); a cross-track energy step is
+      given only when both sides carry a MIK scalar, since relative energy has no cross-track scale (fan-out 17, 5d)
 Acceptance:
   [if] a deck render is missing [then ⛔️] LaneError naming the missing deckN.wav
   [if] a ramp is clocked on a deck other than the outgoing one [then ⛔️] LaneError
@@ -30,7 +32,7 @@ import wave
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 
@@ -41,6 +43,12 @@ DRAWN_KNOBS: tuple[str, ...] = ("fader", "eq_low", "filter")
 #: A deck's power-on knob values (deck.rs Deck::new): unity fader, centered EQ and filter.
 POWER_ON: dict[str, float] = {"fader": 1.0, "eq_low": 0.5, "filter": 0.5}
 MAX_COLUMNS: int = 4000
+EnergySource = Literal["mik", "relative", "none"]
+_LACKING: dict[str, str] = {
+    "mik": "a MIK series but no MIK track level",
+    "relative": "relative energy only",
+    "none": "no energy evidence",
+}
 
 
 class LaneError(ValueError):
@@ -63,6 +71,46 @@ class DeckLane:
 class Lanes:
     duration_s: float
     decks: list[DeckLane]
+
+
+@dataclass(frozen=True)
+class ProfileEnergy:
+    stable_id: str
+    #: mik: a served MIK series or scalar; relative: only the waveform bar energy, normalized per track; none: neither.
+    source: EnergySource
+    mik_level: int | None
+
+
+@dataclass(frozen=True)
+class LaneEnergy:
+    out: ProfileEnergy
+    in_: ProfileEnergy
+    #: In minus out MIK track level; None unless both sides carry a MIK scalar (relative energy is never compared).
+    cross_track_step: int | None
+    note: str
+
+
+# -----------------------------------------------------------------------------
+# energy provenance
+# -----------------------------------------------------------------------------
+def profile_energy(profile: TrackProfile) -> ProfileEnergy:
+    """Which energy evidence one profile carries: MIK first, the per-track relative waveform energy next, else none."""
+    if profile.mik_bar_level is not None or profile.mik_level is not None:
+        source: EnergySource = "mik"
+    elif profile.bar_energy is not None:
+        source = "relative"
+    else:
+        source = "none"
+    return ProfileEnergy(profile.stable_id, source, profile.mik_level)
+
+
+def lane_energy(out_profile: TrackProfile, in_profile: TrackProfile) -> LaneEnergy:
+    """Both profiles' energy provenance and the MIK step between them, only when both MIK scalars exist."""
+    out, in_ = profile_energy(out_profile), profile_energy(in_profile)
+    if out.mik_level is not None and in_.mik_level is not None:
+        return LaneEnergy(out, in_, in_.mik_level - out.mik_level, "MIK track levels on both sides: comparable")
+    lacking = [f"{side.stable_id} has {_LACKING[side.source]}" for side in (out, in_) if side.mik_level is None]
+    return LaneEnergy(out, in_, None, "cross-track energy not compared: " + "; ".join(lacking))
 
 
 # -----------------------------------------------------------------------------
@@ -229,8 +277,7 @@ def knob_curves(
             before = (
                 ramp.start_val
                 if span <= 0.0
-                else ramp.start_val
-                + (ramp.target - ramp.start_val) * (bar - ramp.start_bar) / span
+                else ramp.start_val + (ramp.target - ramp.start_val) * (bar - ramp.start_bar) / span
             )
             before = round(before, 10)
             points.pop()

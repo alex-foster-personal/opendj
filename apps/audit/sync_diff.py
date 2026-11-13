@@ -7,13 +7,14 @@ import sys
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from apps.audit.matches_csv import DEFAULT_MIN_MATCH_CONFIDENCE, iter_match_pairs
 from apps.audit.rekordbox_db_util import close_db_quietly
 from apps.shared import paths
 from apps.shared.normalised import NormalisedAnalysis
-from apps.sync.conflict import resolve_conflict
+from apps.sync.conflict import DEFAULT_WINDOW_DAYS, parse_window_days, resolve_conflict
 
 
 @dataclass(slots=True, frozen=True)
@@ -43,6 +44,9 @@ def build_analysis_diff(
     pairs: Iterable[tuple[str, str]],
     *,
     prefer: str = "newest",
+    rating_window_days: int = DEFAULT_WINDOW_DAYS,
+    rb_rating_modified_by_id: dict[str, datetime | None] | None = None,
+    djay_rating_modified_by_uuid: dict[str, datetime | None] | None = None,
 ) -> tuple[list[DiffRow], list[DiffRow]]:
     analysis_rows: list[DiffRow] = []
     rating_rows: list[DiffRow] = []
@@ -57,13 +61,15 @@ def build_analysis_diff(
             # Codex P04-01: pass per-side modified timestamps so
             # ``prefer="newest"`` actually uses newest-wins instead of
             # silently collapsing to RB-default.
+            # SYNC-12979: prefer the track rows' own modification stamps.
             res = resolve_conflict(
                 "rating",
                 rb_r or 0,
                 djay_r or 0,
-                rb_mtime,
-                djay_mtime,
+                (rb_rating_modified_by_id or {}).get(rb_id) or rb_mtime,
+                (djay_rating_modified_by_uuid or {}).get(djay_uuid) or djay_mtime,
                 prefer=prefer,
+                newest_window_days=rating_window_days,
             )
             rating_rows.append(
                 DiffRow(
@@ -155,6 +161,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--prefer", choices=["rb", "djay", "newest"], default="newest")
     parser.add_argument("--include-cues", action="store_true")
+    parser.add_argument(
+        "--rating-conflict-window-days",
+        type=parse_window_days,
+        default=DEFAULT_WINDOW_DAYS,
+        help="last-modified-wins window for rating conflicts, in whole days (> 0)",
+    )
     args = parser.parse_args(argv)
 
     if not args.matches.exists():
@@ -179,7 +191,13 @@ def main(argv: list[str] | None = None) -> int:
 
     pairs = list(iter_match_pairs(args.matches, min_confidence=args.min_confidence))
     analysis_rows, rating_rows = build_analysis_diff(
-        rb_analysis, djay_analysis, rb_ratings, djay_ratings, pairs, prefer=args.prefer
+        rb_analysis,
+        djay_analysis,
+        rb_ratings,
+        djay_ratings,
+        pairs,
+        prefer=args.prefer,
+        rating_window_days=args.rating_conflict_window_days,
     )
     write_diff_csv(analysis_rows, args.out_dir / "analysis-diff.csv")
     write_diff_csv(rating_rows, args.out_dir / "ratings-diff.csv")

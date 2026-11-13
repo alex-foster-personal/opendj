@@ -199,9 +199,15 @@ export function installOutputRebind(
 				// suspend, so a context that was already suspended (a genuine drop whose
 				// statechange is still queued) is still reported and recovered.
 				releaseExpectedSuspend = beginExpectedSuspend(ctx);
-				await withAudioContextIoTimeout('suspend', ctx.suspend(), ioTimeoutMs);
+				await withAudioContextIoTimeout('suspend', ctx.suspend(), ioTimeoutMs, {
+					setTimeout: effects.setTimeout,
+					clearTimeout: effects.clearTimeout
+				});
 			}
-			await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs);
+			await withAudioContextIoTimeout('resume', ctx.resume(), ioTimeoutMs, {
+				setTimeout: effects.setTimeout,
+				clearTimeout: effects.clearTimeout
+			});
 			effects.recordPerfEvent('audio-output-rebound', `output re-bound after ${reason}`, 'info');
 			effects.pushToast(`Audio output re-bound (${reason})`, 'info');
 		} catch (error: unknown) {

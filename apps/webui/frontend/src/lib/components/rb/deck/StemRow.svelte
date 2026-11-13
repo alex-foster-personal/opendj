@@ -11,12 +11,15 @@
 		stemChipLevelView,
 		stemChipWheelParams
 	} from '$lib/rb/stem-chip-level';
+	// A fill only shows while the stem-set loads, and !ready already disables the chip then.
+	import { stemChipFill, stemChipFillAttr } from '$lib/rb/stem-chip-fill';
 	import { stemCssColor } from '$lib/rb/stem-colors';
 	import type { SeparateActionView } from '$lib/rb/stem-separate-view';
 	import { stemStatusView } from '$lib/rb/stem-status';
 	import { quickModeActive, type StemQuickMode } from '$lib/rb/stem-quick-mode';
 	import type { StemControl } from '$lib/rb/stem-types';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import { optionalSelectorNode, stemRowLeaf } from './deck-stem-selector-ids';
 
 	let {
 		deck,
@@ -30,7 +33,8 @@
 		onSeparate,
 		stemsResetOn = false,
 		onOpenResetConfig = () => {},
-		onQuickMode
+		onQuickMode,
+		selectorPrefix = null
 	}: {
 		deck: DeckState;
 		pending: boolean;
@@ -53,6 +57,9 @@
 		/** STEMPERF-11695: apply an ACA / INST / ALL quick mode. The deck passes it;
 		 * the mixer strip does not, so its row stays narrow. */
 		onQuickMode?: (mode: StemQuickMode) => Promise<void>;
+		/** #14471: selector group id for one leaf per button (the deck passes `deck.<n>.stems`);
+		 * null registers no selector nodes (the mixer strip registers its own stem leaves). */
+		selectorPrefix?: string | null;
 	} = $props();
 
 	const QUICK: readonly { mode: StemQuickMode; label: string; tip: string }[] = [
@@ -120,12 +127,15 @@
 	<span class="mute">MUTE</span>
 	{#each visibleStems as stem (stem.id)}
 		{@const level = stemChipLevelView(deck.stems.controls[stem.id].gain)}
+		{@const fill = stemChipFill(deck.stems, stem.id)}
+		<div class="sel-leaf" use:optionalSelectorNode={stemRowLeaf(selectorPrefix, stem.id, ready && !unavailable(stem.id))}>
 		<button
 			class="chip"
 			class:muted={deck.stems.controls[stem.id].muted}
 			class:solo={deck.stems.controls[stem.id].solo}
 			class:unavailable={unavailable(stem.id)}
 			disabled={!ready || unavailable(stem.id)}
+			data-fill={stemChipFillAttr(fill)}
 			aria-busy={pending}
 			title={chipTip(stem.id, stem.label)}
 			aria-label={`${stem.label} stem mute deck ${deck.deck_id}; Shift+click solo`}
@@ -148,11 +158,14 @@
 			})}
 		>
 			{testIdScope === 'channel' ? stem.label.slice(0, 3) : stem.label}
+			{#if fill === 'indeterminate'}<span class="fill sweep" aria-hidden="true"></span>{:else if fill !== null}<span class="fill" aria-hidden="true" style={`height:${fill * 100}%`}></span>{/if}
 			{#if !level.unity}<span class="level" aria-hidden="true" style={`height:${level.barPx}px`}></span>{/if}
 		</button>
+		</div>
 	{/each}
 	{#if onQuickMode !== undefined}
 		{#each QUICK as q (q.mode)}
+			<div class="sel-leaf" use:optionalSelectorNode={stemRowLeaf(selectorPrefix, `quick.${q.mode}`, ready)}>
 			<button
 				type="button"
 				class="quick"
@@ -169,8 +182,10 @@
 			>
 				{q.label}
 			</button>
+			</div>
 		{/each}
 	{/if}
+	<div class="sel-leaf" use:optionalSelectorNode={stemRowLeaf(selectorPrefix, 'reset', true)}>
 	<button
 		type="button"
 		class="reset-cfg"
@@ -183,8 +198,10 @@
 	>
 		RST
 	</button>
+	</div>
 	{#if onLoad !== undefined && view.label !== ''}
 		{#if view.action !== null}
+			<div class="sel-leaf" use:optionalSelectorNode={stemRowLeaf(selectorPrefix, 'load', true)}>
 			<button
 				class="status action"
 				class:failed={view.name === 'error'}
@@ -198,6 +215,7 @@
 			>
 				{view.label}
 			</button>
+			</div>
 		{:else}
 			<span
 				class="status"
@@ -212,6 +230,7 @@
 			</span>
 		{/if}
 		{#if view.name === 'none' && separate !== null && onSeparate !== undefined}
+			<div class="sel-leaf" use:optionalSelectorNode={stemRowLeaf(selectorPrefix, 'separate', !separate.disabled)}>
 			<button
 				class="status action separate"
 				disabled={separate.disabled}
@@ -223,6 +242,7 @@
 			>
 				{separate.label}
 			</button>
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -233,6 +253,10 @@
 		align-items: center;
 		gap: 4px;
 		flex: 0 0 auto;
+	}
+	/* #14471: a selector leaf wraps exactly one button and takes no box, so the row lays out as before. */
+	.sel-leaf {
+		display: contents;
 	}
 	.mute {
 		font-size: var(--rb-fs-label);
@@ -263,6 +287,26 @@
 		bottom: 0;
 		background: var(--chip-color);
 		pointer-events: none;
+	}
+	/* #10331: stem-set fetch progress, a bottom-up tint in the chip's colour. */
+	.chip .fill {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: color-mix(in srgb, var(--chip-color) 25%, transparent);
+		pointer-events: none;
+	}
+	.chip .fill.sweep {
+		height: 100%;
+		animation: stem-chip-sweep 2.4s ease-in-out infinite;
+	}
+	@keyframes stem-chip-sweep {
+		0%, 100% { clip-path: inset(100% 0 0 0); }
+		50% { clip-path: inset(0 0 0 0); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.chip .fill.sweep { animation: none; opacity: 0.5; }
 	}
 	.chip.muted {
 		background: transparent;

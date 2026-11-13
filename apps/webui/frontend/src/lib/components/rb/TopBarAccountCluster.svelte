@@ -6,6 +6,7 @@
 	import ControlExplainer from '$lib/components/rb/deck/ControlExplainer.svelte';
 	import { TOOLTIP_HEADPHONE_CLUSTER } from '$lib/ui/tooltip-timing';
 	import { auth } from '$lib/auth.svelte';
+	import { topbarSelectorNode } from './topbar-selector-node';
 
 	// `signedIn` is relayed to the parent as a bindable so TopBar can derive
 	// its own showClock (CHROME-06) without importing `auth` itself, which
@@ -41,7 +42,11 @@
 	bullets={menuOpen ? [] : loginGatedBullets}
 	tooltip={TOOLTIP_HEADPHONE_CLUSTER}
 >
-	<span class="login-cluster" class:signed-in={auth.user !== null}>
+	<span
+		class="login-cluster"
+		class:signed-in={auth.user !== null}
+		use:topbarSelectorNode={{ name: 'account', disabled: false }}
+	>
 		{@render children()}
 	</span>
 </ControlExplainer>

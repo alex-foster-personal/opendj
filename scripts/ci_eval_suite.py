@@ -293,6 +293,28 @@ def _existing_pr(runner: CommandRunner, target: str, branch: str) -> dict[str, A
     return {"number": int(payload["number"]), "url": payload["url"]}
 
 
+def _require_matching_remote_case(
+    runner: CommandRunner,
+    campaign: dict[str, Any],
+    case: dict[str, Any],
+    checkout: Path,
+) -> None:
+    """Refuse to reuse a fetched remote branch whose marker is not this campaign case."""
+    shown = runner.run(["git", "show", f"FETCH_HEAD:{case['marker']}"], cwd=checkout, check=False)
+    try:
+        marker = json.loads(shown.stdout) if shown.returncode == 0 else {}
+    except json.JSONDecodeError:
+        marker = {}
+    if not isinstance(marker, dict) or (marker.get("case_id"), marker.get("run_id")) != (
+        case["id"],
+        campaign["run_id"],
+    ):
+        raise CampaignError(
+            f"remote branch conflict: origin/{case['branch']} exists but is not case "
+            f"{case['id']} of run {campaign['run_id']}; refusing to reuse or overwrite it"
+        )
+
+
 def _ensure_pushed_case(
     runner: CommandRunner,
     campaign: dict[str, Any],
@@ -301,6 +323,7 @@ def _ensure_pushed_case(
 ) -> str:
     if _remote_branch_sha(runner, checkout, case["branch"]):
         runner.run(["git", "fetch", "origin", case["branch"]], cwd=checkout)
+        _require_matching_remote_case(runner, campaign, case, checkout)
         runner.run(
             ["git", "switch", "--force-create", case["branch"], "FETCH_HEAD"],
             cwd=checkout,

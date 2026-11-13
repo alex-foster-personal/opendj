@@ -110,13 +110,17 @@ test('TopBar mounts the drawer behind exactly one toggle', () => {
 	assert.match(topbar, /import JobsDrawer from '\$lib\/components\/rb\/JobsDrawer\.svelte'/);
 	assert.match(
 		topbar,
-		/import \{ jobsStore, toggleJobsDrawer \} from '\$lib\/rb\/jobs-store\.svelte'/
+		/import \{ jobsDrawerToggleCommand, jobsStore \} from '\$lib\/rb\/jobs-store\.svelte'/
 	);
-	assert.match(topbar, /onclick=\{toggleJobsDrawer\}/);
+	// PERFDRAWER-12580: the toggle is an ordinary performance command, shared with agents.
+	assert.match(
+		topbar,
+		/onclick=\{\(\) => void runPerformanceCommandFromUi\(jobsDrawerToggleCommand\(\)\)\}/
+	);
 	assert.match(topbar, /aria-expanded=\{jobsStore\.drawerOpen\}/);
 	assert.equal(topbar.match(/<JobsDrawer \/>/g)?.length, 1, 'mounted exactly once');
 	assert.equal(
-		topbar.match(/toggleJobsDrawer/g)?.length,
+		topbar.match(/jobsDrawerToggleCommand/g)?.length,
 		2,
 		'one import plus one call site, no second toggle'
 	);

@@ -186,9 +186,8 @@ composition_roots =
 ; list of required modules, which imports a dotted name's parents); the scripts entries are
 ; dev tools that load by path or by computed name (this gate's contract reader, spec loaders
 ; of sibling files, a tool runner, a remote worker, a sitecustomize syntax check). scripts.ci_plan_sources
-; loads nothing: it is the CI planner's static reader, and its tables map each loader name to the
-; module that defines it (`PROVIDERS["import_module"]`) so a call counts only through that binding;
-; the names are the data it matches, so they cannot be written as tested-only text. scripts.ci_test_selection_rules
+; was split under #10958: importlib.util.resolve_name lives in ci_plan_sources_loader_graph; the
+; facade only re-exports. scripts.ci_test_selection_rules
 ; loads nothing either: it reads test files' ASTs to decide selection, and its frozensets name `__import__`,
 ; `import_module`, `exec`, `eval` and `compile` as the calls it looks for (Sat 31 Oct 2026). apps.plugins.host is the
 ; plugin store's loader: a plugin's module name comes from its signed catalog entry, so it is data (#6522).
@@ -199,6 +198,8 @@ composition_roots =
 ; images import it as a top-level module with only the standard library on hand (#9250).
 ; apps.webui.server.app_wiring discovers the route modules that set
 ; MOUNT_UNDER_API_PREFIX, so a new route needs no hand list (#9493).
+; apps.engine_core.assistant.oj_tools collects every submodule's TOOLS, so a new typed OJ
+; tool is one new file and parallel tool PRs never edit a shared list (#13768).
 ; scripts.arch_contract_schema was split under #10948; the dynamic loads
 ; (importlib.import_module of a contract package, sys.modules lookups) now
 ; live in arch_contract_schema_kinds, _tooling and _values. The facade only
@@ -212,6 +213,7 @@ dynamic_loaders =
     apps.analysis.queue_cli
     apps.analysis_bench.cli
     apps.analysis_bench.scorers
+    apps.engine_core.assistant.oj_tools
     apps.open_dj.registry
     apps.plugins.host
     apps.sets.classify
@@ -224,7 +226,7 @@ dynamic_loaders =
     scripts.arch_contract_schema_values
     scripts.bench.four_stem_common
     scripts.build_engine_payload
-    scripts.ci_plan_sources
+    scripts.ci_plan_sources_loader_graph
     scripts.ci_stale_install_guard
     scripts.ci_test_selection_rules
     scripts.lyrics_stem_coverage

@@ -28,6 +28,8 @@
 	import { effectiveWaveformDesign } from '$lib/rb/ui-skin';
 	import ControlExplainer from './ControlExplainer.svelte';
 	import { TOOLTIP_ISOLATED } from '$lib/ui/tooltip-timing';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { jogSelId } from './deck-transport-jog-selector-ids';
 	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
 	import { devicePixelRatioNow, startDevicePixelRatioWatch } from '$lib/ui/device-pixel-ratio.svelte';
 	import { readPalette, resolveStripWaveformKind } from '$lib/components/rb/wave/render';
@@ -315,9 +317,13 @@
 	});
 </script>
 
+	<!-- #14331: the dial readout and each side button are their own selector leaves under
+	     deck.<n>.jog. A pending press keeps its leaf; a structurally disabled button drops it.
+	     The quantize grid options live in Q's portalled popover, outside the selector tree. -->
 	<div class="jog" role="group" aria-label={`jog controls deck ${deck.deck_id}`}>
 	<div
 		class="dial-wrap"
+		use:selectorNode={{ id: jogSelId(deck.deck_id, 'dial'), kind: 'leaf', enabled: true }}
 		class:jog-off-tempo={offTempoTitle !== null}
 		class:dial-playing={deck.audible}
 		class:dial-radial-wave={showRadialCanvas}
@@ -426,6 +432,7 @@
 	</div>
 
 	<div class="side-buttons">
+		<div class="sel-leaf" use:selectorNode={{ id: jogSelId(deck.deck_id, 'quantize'), kind: 'leaf', enabled: !gridless }}>
 		<ControlExplainer title={qTitle} bullets={qGridBullets} tooltip={TOOLTIP_ISOLATED}>
 			{#snippet action()}
 				<div class="q-grid-options" role="group" aria-label={`quantize grid deck ${deck.deck_id}`}>
@@ -471,6 +478,8 @@
 				{qLabel}
 			</button>
 		</ControlExplainer>
+		</div>
+		<div class="sel-leaf" use:selectorNode={{ id: jogSelId(deck.deck_id, 'slip'), kind: 'leaf', enabled: true }}>
 		<ControlExplainer title={slipTitle} bullets={slipBullets} demo="slip" tooltip={TOOLTIP_ISOLATED}>
 			<button
 				class="rb-lit-button"
@@ -487,6 +496,8 @@
 				SLIP
 			</button>
 		</ControlExplainer>
+		</div>
+		<div class="sel-leaf" use:selectorNode={{ id: jogSelId(deck.deck_id, 'master-tempo'), kind: 'leaf', enabled: true }}>
 		<button
 			class="rb-lit-button"
 			class:lit={deck.master_tempo_enabled}
@@ -508,6 +519,8 @@
 		>
 			MT
 		</button>
+		</div>
+		<div class="sel-leaf" use:selectorNode={{ id: jogSelId(deck.deck_id, 'auto-cue'), kind: 'leaf', enabled: !rustMode.enabled }}>
 		<button
 			class="rb-lit-button"
 			class:lit={uiPrefs.deck_autocue && !rustMode.enabled}
@@ -522,6 +535,8 @@
 		>
 			AU
 		</button>
+		</div>
+		<div class="sel-leaf" use:selectorNode={{ id: jogSelId(deck.deck_id, 'manual-tempo'), kind: 'leaf', enabled: deck.stable_id !== null }}>
 		<button
 			class="rb-lit-button"
 			class:lit={tempoEditAt !== null}
@@ -539,6 +554,7 @@
 		>
 			MA
 		</button>
+		</div>
 	</div>
 </div>
 
@@ -684,6 +700,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+	}
+	/* A column flex box keeps its one button stretched to the column width, as before. */
+	.sel-leaf {
+		display: flex;
+		flex-direction: column;
 	}
 	.side-buttons button {
 		min-width: 34px;

@@ -6,6 +6,7 @@ Regression one-liners:
   * if self-drop (source == dest) does not 422 then broken
   * if an interrupt between dest and source writes leaves both lists dirty then broken
   * if a stale dest etag 409s but source was already written then broken
+  * if a move naming a non-member of source writes either list then broken
 """
 
 from __future__ import annotations
@@ -357,6 +358,72 @@ def test_unknown_stable_id_422_neither_written(client: TestClient) -> None:
     assert r.status_code == 422, r.text
     assert _get_items(client, pid_a) == ["t-001"]
     assert _get_items(client, pid_b) == ["t-002"]
+
+
+def test_move_member_not_in_source_422_neither_written(client: TestClient) -> None:
+    """A move naming one id that is not in the source rejects and leaves both lists unchanged."""
+    pid_a, etag_a = _create(client, "A")
+    pid_b, etag_b = _create(client, "B")
+    etag_a = _put_tracks(client, pid_a, etag_a, ["t-001", "t-002"])
+    etag_b = _put_tracks(client, pid_b, etag_b, ["t-003"])
+
+    r = _transfer(
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-001", "t-004"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
+    )
+    assert r.status_code == 422, r.text
+    assert "t-004" in r.text
+    assert _get_items(client, pid_a) == ["t-001", "t-002"]
+    assert _get_items(client, pid_b) == ["t-003"]
+    assert _get_etag(client, pid_a) == etag_a
+    assert _get_etag(client, pid_b) == etag_b
+
+
+def test_multi_row_move_preserves_request_order_and_source_rest(client: TestClient) -> None:
+    """A valid multi-row move appends in request order to dest and removes exactly those rows from source."""
+    pid_a, etag_a = _create(client, "A")
+    pid_b, etag_b = _create(client, "B")
+    etag_a = _put_tracks(client, pid_a, etag_a, ["t-001", "t-002", "t-003"])
+    etag_b = _put_tracks(client, pid_b, etag_b, ["t-004"])
+
+    r = _transfer(
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-003", "t-001"],
+        mode="move",
+        source_id=pid_a,
+        source_etag=etag_a,
+    )
+    assert r.status_code == 200, r.text
+    assert _get_items(client, pid_b) == ["t-004", "t-003", "t-001"]
+    assert _get_items(client, pid_a) == ["t-002"]
+
+
+def test_multi_row_copy_keeps_source_and_skips_present(client: TestClient) -> None:
+    """A valid multi-row copy appends only missing rows to dest and leaves source untouched."""
+    pid_a, etag_a = _create(client, "A")
+    pid_b, etag_b = _create(client, "B")
+    etag_a = _put_tracks(client, pid_a, etag_a, ["t-001", "t-002", "t-003"])
+    etag_b = _put_tracks(client, pid_b, etag_b, ["t-002"])
+
+    r = _transfer(
+        client,
+        pid_b,
+        etag_b,
+        stable_ids=["t-003", "t-002", "t-001"],
+        mode="add",
+        source_id=pid_a,
+    )
+    assert r.status_code == 200, r.text
+    assert _get_items(client, pid_b) == ["t-002", "t-003", "t-001"]
+    assert _get_items(client, pid_a) == ["t-001", "t-002", "t-003"]
+    assert _get_etag(client, pid_a) == etag_a
 
 
 def test_unknown_source_playlist_404(client: TestClient) -> None:

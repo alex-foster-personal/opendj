@@ -31,7 +31,7 @@
 // requirement: BEATFX-10766
 // requirement: BEATFX-10766b
 import { expect, test, type Page } from '@playwright/test';
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -39,7 +39,6 @@ import {
 	SLIP_RETURN_CLICK_VETO,
 	assertBlendWindowClean
 } from '../../src/lib/rb/slip-return-blend';
-import { nextQuantizeBoundarySec } from '../../src/lib/rb/beat-fx';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SR = 48_000;
@@ -78,6 +77,25 @@ type RenderResult = {
 
 const q = (sec: number): number => (Math.round((sec * SR) / QUANTUM) * QUANTUM) / SR;
 
+/**
+ * esbuild plugin resolving Vite's `?url` import to a path string. The beat FX
+ * effect registry behind `beat-fx` reaches the BIT CRUSH worklet's `?url`
+ * import; nothing here builds that effect, so the path is never fetched.
+ */
+const viteUrlSuffixPlugin: Plugin = {
+	name: 'vite-url-suffix',
+	setup(esbuild) {
+		esbuild.onResolve({ filter: /\?url$/ }, (args) => ({
+			path: args.path,
+			namespace: 'vite-url-suffix'
+		}));
+		esbuild.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
+			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
+			loader: 'js'
+		}));
+	}
+};
+
 async function releaseBundle(): Promise<string> {
 	const result = await build({
 		stdin: {
@@ -96,9 +114,28 @@ async function releaseBundle(): Promise<string> {
 		globalName: 'beatFxRelease',
 		platform: 'browser',
 		write: false,
-		logLevel: 'silent'
+		logLevel: 'silent',
+		plugins: [viteUrlSuffixPlugin]
 	});
 	return result.outputFiles[0].text;
+}
+
+/**
+ * The next quantize boundary, asked of the page's bundle: `beat-fx` needs a
+ * bundler for the `?url` import its effect registry reaches, so this file
+ * cannot import it directly.
+ */
+async function quantizeBoundarySec(page: Page, nowSec: number, beats: number): Promise<number> {
+	return page.evaluate(
+		({ grid, nowSec, beats }) => {
+			const mod = (globalThis as unknown as { beatFxRelease: Bundle }).beatFxRelease;
+			const boundary = mod.nextQuantizeBoundarySec(grid, nowSec, beats);
+			if (boundary === null)
+				throw new Error(`no quantize boundary at ${nowSec} s for ${beats} beats`);
+			return boundary;
+		},
+		{ grid: GRID, nowSec, beats }
+	);
 }
 
 async function render(page: Page, plan: RenderPlan): Promise<RenderResult> {
@@ -145,6 +182,7 @@ async function render(page: Page, plan: RenderPlan): Promise<RenderResult> {
 			dry.connect(out);
 
 			const beatFx = mod.buildEchoKernel(ctx, {
+				mode: 'echo',
 				maxDelaySec: 2,
 				feedback: mod.BEAT_FX_RELEASE_FEEDBACK,
 				loopHpHz: mod.BEAT_FX_RELEASE_LOOP_HP_HZ,
@@ -289,7 +327,7 @@ test.describe('beat FX quantize and Release FX (real audio)', () => {
 				[onPlan!, nowQ, 'ON'],
 				[offPlan, offNow, 'OFF']
 			] as const) {
-				const expected = nextQuantizeBoundarySec(GRID, now, beats)! * SR;
+				const expected = (await quantizeBoundarySec(page, now, beats)) * SR;
 				const dep = firstDeparture(sendProbe, Math.floor(now * SR));
 				const offsetMs = Math.abs(dep - expected) / (SR / 1000);
 				console.log(`${label} beats=${beats} offset_ms=${offsetMs.toFixed(3)}`);
@@ -379,7 +417,7 @@ test.describe('beat FX quantize and Release FX (real audio)', () => {
 		const beats = 1 / 2;
 		const t0 = q(GRID0 + 4.2 * BEAT_SEC);
 		const t1 = q(GRID0 + 6.3 * BEAT_SEC);
-		const expected = nextQuantizeBoundarySec(GRID, t1, beats)!;
+		const expected = await quantizeBoundarySec(page, t1, beats);
 
 		const dcResult = await render(page, {
 			signal: 'dc',

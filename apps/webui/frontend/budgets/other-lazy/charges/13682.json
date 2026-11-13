@@ -1,0 +1,9 @@
+{
+	"bytes": 256,
+	"measured_main": 557197,
+	"measured_with_pr": 557336,
+	"sha": "ac8605eb6f",
+	"date": "Thu 12 Nov 2026",
+	"reason": "PR #13682 is e2e-only (ControlExplainer portal selector fix, #13524); other-lazy gzip measured +139 B vs merge-base on CI, above the 128 B noise floor with zero production source diff.",
+	"payback": "none; charge absorbs nondeterministic gzip delta on an e2e spec-only PR"
+}

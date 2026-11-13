@@ -955,16 +955,21 @@ test('control (overshoot): an ended job is probed once per track, and another tr
 
 test('the deck wires the probe to every ended covering job and passes its answer to the button', async () => {
 	const { readFile } = await import('node:fs/promises');
-	const source = await readFile(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url), 'utf8');
+	const deck = await readFile(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url), 'utf8');
+	const effects = await readFile(new URL('../../src/lib/rb/deck-effects.svelte.ts', import.meta.url), 'utf8');
 	assert.match(
-		source,
-		/new SeparateEndProbe\(\s*async \(stableId\) =>\s*separateId === stableId &&\s*lookForBundle\(\{\s*run: async \(\) => \(await runPerformanceCommandFromUi\(\{ type: 'stem_load', deck: deckId, stable_id: stableId \}\)\)\.ok,\s*settled: stemsSettled,\s*holds: \(\) => deck\.stable_id === stableId\s*\}\),/,
+		effects,
+		/new SeparateEndProbe\(\s*async \(stableId\) =>\s*deckSeparateId\(deckId\) === stableId &&\s*lookForBundle\(\{\s*run: async \(\) =>\s*\(\s*await runPerformanceCommandFromUi\(\{\s*type: 'stem_load',\s*deck: deckId,\s*stable_id: stableId\s*\}\)\s*\)\.ok,\s*settled: \(\) => _stemsSettled\(deckId\),\s*holds: \(\) => getDeckState\(deckId\)\.stable_id === stableId\s*\}\),/,
 		'the probe waits for the stem load it started and answers only for the track the deck still holds'
 	);
-	assert.match(source, /if \(deck\.stems\.status !== 'loading'\) return Promise\.resolve\(\);/);
-	assert.match(source, /separateProbeFailed\(separation, separateId\)/);
-	assert.match(source, /separation\.noteNoStems\(separateId\);\s*void separateProbe\.observe\(separateId, separation\.job\(separateId\)\)/);
-	assert.doesNotMatch(source, /status === 'succeeded' && reloadedForJob/);
+	assert.match(effects, /if \(getDeckState\(deckId\)\.stems\.status !== 'loading'\) return Promise\.resolve\(\);/);
+	assert.match(deck, /separateProbeFailed\(separation, separateId\)/);
+	assert.match(
+		effects,
+		/separation\.noteNoStems\(separateId\);\s*void separateProbe\.observe\(separateId, separation\.job\(separateId\)\)/
+	);
+	assert.doesNotMatch(deck, /status === 'succeeded' && reloadedForJob/);
+	assert.doesNotMatch(effects, /status === 'succeeded' && reloadedForJob/);
 });
 
 // Codex 4301903359 (#6819): stem_load returns once the deck STARTED its
@@ -1163,11 +1168,18 @@ test('the deck CHECK STEMS click looks again rather than separating', async () =
 
 test('neither the dispatcher nor the deck imports the separation store statically', async () => {
 	const { readFile } = await import('node:fs/promises');
-	for (const file of ['src/lib/rb/performance-ipc.svelte.ts', 'src/lib/components/rb/Deck.svelte']) {
+	for (const file of [
+		'src/lib/rb/performance-ipc.svelte.ts',
+		'src/lib/components/rb/Deck.svelte',
+		'src/lib/rb/deck-effects.svelte.ts'
+	]) {
 		const source = await readFile(new URL(`../../${file}`, import.meta.url), 'utf8');
 		const statics = [...source.matchAll(/^\s*import\s+(?!type\b)[^;]*?from\s+'([^']+)'/gm)].map((m) => m[1]);
 		assert.ok(statics.length > 5, `${file}: the import scan found its imports`);
-		assert.ok(statics.includes('$lib/rb/stem-separation-port'), `${file} reaches the store through the port`);
+		const needsPort = file.endsWith('performance-ipc.svelte.ts') || file.endsWith('deck-effects.svelte.ts');
+		if (needsPort) {
+			assert.ok(statics.includes('$lib/rb/stem-separation-port'), `${file} reaches the store through the port`);
+		}
 		assert.ok(!statics.includes('$lib/rb/stem-separate.svelte'), `${file} must not import the store statically`);
 		assert.ok(!statics.includes('$lib/rb/stem-separate-view'), `${file}: the button's words load with the store`);
 	}
@@ -1319,9 +1331,12 @@ test('before the store loads, the deck says what separateActionView would, in th
 
 test('the deck shows the port\'s load failure text, not its own', async () => {
 	const { readFile } = await import('node:fs/promises');
-	const source = await readFile(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url), 'utf8');
-	assert.match(source, /separationLoadError = stemSeparationLoadError\(\)/);
-	assert.doesNotMatch(source, /could not be loaded/);
+	const deck = await readFile(new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url), 'utf8');
+	const effects = await readFile(new URL('../../src/lib/rb/deck-effects.svelte.ts', import.meta.url), 'utf8');
+	assert.match(effects, /slot\.loadError = stemSeparationLoadError\(\)/);
+	assert.doesNotMatch(effects, /could not be loaded/);
+	assert.match(deck, /separationLoadError = \$derived\(deckSeparation\(deckId\)\.loadError\)/);
+	assert.doesNotMatch(deck, /could not be loaded/);
 });
 
 // --- STEM-77: only this engine's library covers the deck ------------------

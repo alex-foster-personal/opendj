@@ -23,9 +23,15 @@
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
-	import { bannerSyncError, deckErrorIds, noteDeckError } from '$lib/rb/deck-error-id.svelte';
-	import { deckBannerDismissMs, deckBannerTone } from '$lib/rb/deck-banner-policy';
-	import { presentationTickFailure } from '$lib/rb/presentation-tick-failure.svelte';
+	import { deckErrorIds } from '$lib/rb/deck-error-id.svelte';
+	import { deckBannerTone } from '$lib/rb/deck-banner-policy';
+	import { stemStatusView } from '$lib/rb/stem-status';
+	import {
+		deckControlError,
+		deckSeparateId,
+		deckSeparation,
+		deckSeparateProbe
+	} from '$lib/rb/deck-effects.svelte';
 	import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 	import {
 		performanceCommandStatus,
@@ -44,7 +50,7 @@
 		deckIdFromHoverEl
 	} from '$lib/rb/deck-hover.svelte';
 	import { formatLoadLatency } from '$lib/rb/format-load-latency';
-	import { lyricEntry, loadLyrics } from '$lib/lyrics/lyrics-cache.svelte';
+	import { lyricEntry } from '$lib/lyrics/lyrics-cache.svelte';
 	import { adaptLyricTrack } from '$lib/rb/lyrics/build-track';
 	import type { LyricsTrack } from '$lib/rb/lyrics/types';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
@@ -77,21 +83,14 @@
 	import PadModeMenu from './deck/PadModeMenu.svelte';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
+	import { deckStemsPartKind } from './deck/deck-stem-selector-ids';
 	import { toggleTrackLoadResetPanel, trackLoadResetEnabled } from '$lib/rb/track-load-reset.svelte';
-	import {
-		loadedStemSeparation,
-		stemSeparation,
-		stemSeparationLoadError,
-		type StemSeparationPort
-	} from '$lib/rb/stem-separation-port';
-	import { stemStatusView } from '$lib/rb/stem-status';
-	import { subscribeLoadedDeckStemsRefresh } from '$lib/rb/loaded-deck-stems-refresh';
-	import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
-	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
-	import { SeparateEndProbe, lookForBundle, separateRunId } from '$lib/rb/stem-separate-probe';
+	import type { StemSeparationPort } from '$lib/rb/stem-separation-port';
+	import { separateRunId } from '$lib/rb/stem-separate-probe';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import { waveSeekCommand } from './wave/wave-scrub';
 	import TransportCluster from './deck/TransportCluster.svelte';
+	import { deckTransportJogPartKind } from './deck/deck-transport-jog-selector-ids';
 	import { selId, selectorNode } from '$lib/keyboard/selector-register';
 	import GridEditButtons from './deck/GridEditButtons.svelte';
 	import ReactIsland from '$lib/react/ReactIsland.svelte';
@@ -171,45 +170,11 @@
 			pausedForMs: pausedSinceMs === null ? null : Date.now() - pausedSinceMs
 		});
 	});
-	const controlError: string | null = $derived(
-		// DECKGAP-7691c: an unsynced start's reason glows on Play; it is not a deck error (PLAY-27).
-		performanceCommandStatus.deck_errors[deckId] ??
-			bannerSyncError(deck.sync_error) ??
-			deck.processor_error ??
-			presentationTickFailure()
-	);
-
-	/**
-	 * Mint and log the banner's id whenever what the banner shows changes.
-	 *
-	 * An $effect rather than a $derived because this WRITES a log row, and a
-	 * derivation that logs would fire on Svelte's own re-evaluation schedule
-	 * rather than on real changes. `noteDeckError` is idempotent for an
-	 * unchanged message, so the re-runs this effect takes from the three
-	 * unrelated deck-state sources behind `controlError` cost nothing.
-	 *
-	 * Covers all three sources uniformly. That matters because only two of them
-	 * (`_persistCommandError`, `_recordProcessorFailure`) raise a toast; the
-	 * Beat Sync paths set `sync_error` directly and had no id anywhere at all.
-	 */
-	$effect(() => {
-		noteDeckError(deckId, controlError);
-	});
+	const controlError: string | null = $derived(deckControlError(deckId));
 
 	const controlErrorId: string | null = $derived(deckErrorIds[deckId]);
 
-	// DECKUX-LABEL-02: an expected, self-resolving condition (stems still
-	// loading) clears itself and is not painted as a fault; a real fault stays
-	// until dismissed. Primitives, so the timer restarts only on a real change.
-	const controlErrorDismissMs: number | null = $derived(
-		controlError === null ? null : deckBannerDismissMs(controlError, deck.stems.status)
-	);
-	$effect(() => {
-		const ms = controlErrorDismissMs;
-		if (ms === null) return;
-		const timer = setTimeout(() => dismissPerformanceDeckError(deckId), ms);
-		return () => clearTimeout(timer);
-	});
+	// Deck-state effects (error logging, banner dismiss, lyrics, stems refresh, separation, stems-settled waiters) run in deck-effects.svelte.ts for all four decks, mounted or not (#10282).
 
 	// REACT-01 (`ui.react.deck`, default OFF): the deck's leaf controls render
 	// through their React twins only when the daemon declares the flag on.
@@ -238,12 +203,6 @@
 	);
 
 	const hotCueActions = createDeckHotCueActions(() => deckId, () => deck);
-
-	$effect(() => {
-		const stableId = deck.stable_id;
-		if (!uiPrefs.lyrics_deck_line || !uiPrefs.lyrics_global || stableId === null) return;
-		void loadLyrics(stableId);
-	});
 
 	const deckLyricEntry = $derived(deck.stable_id === null ? null : lyricEntry(deck.stable_id));
 	const deckLyrics: { track: LyricsTrack | null; error: string | null } = $derived.by(() => {
@@ -465,52 +424,16 @@
 		await runPerformanceCommandFromUi({ type: 'stem_load', deck: deckId });
 	}
 
-	// STEM-9934: a deck on NO STEMS looks for its bundle again when a stems job
-	// (library_jobs) or a library change (tracks) names its track, and on resync,
-	// clearing the cached no-stems flag first (loaded-deck-stems-refresh.ts).
-	$effect(() => {
-		const id = deckId;
-		return subscribeLoadedDeckStemsRefresh({
-			deck: id,
-			state: () => getDeckState(id),
-			subscribeKind,
-			subscribeResync,
-			canLoadStems: () => !rustCommandUnsupported('stem_load'),
-			loadStems: (stable_id) => runPerformanceCommandFromUi({ type: 'stem_load', deck: id, stable_id })
-		});
-	});
-
 	// STEM-77: a deck showing NO STEMS offers to separate the loaded track.
 	const stemStateName = $derived(stemStatusView(deck.stems).name);
-	const separateId = $derived(
-		deck.stable_id !== null && stemStateName === 'none' ? deck.stable_id : null
-	);
+	const separateId = $derived(deckSeparateId(deckId));
 	// The separation store (and the jobs client behind it) loads on demand, the
 	// first time a deck shows NO STEMS, so it is not in this route's first load
 	// (stem-separation-port.ts). Until it answers the button reads "Checking";
 	// a chunk that fails to load is the button's refusal, with its reason.
-	let separation = $state<StemSeparationPort | null>(loadedStemSeparation());
-	let separationLoadError = $state<string | null>(null);
-	$effect(() => {
-		if (separateId === null || separation !== null || separationLoadError !== null) return;
-		stemSeparation().then(
-			(port) => {
-				separation = port;
-			},
-			(exc: unknown) => {
-				// The port's own text, so the button and the query say the same.
-				separationLoadError = stemSeparationLoadError() ?? String(exc);
-			}
-		);
-	});
-	$effect(() => {
-		if (separateId === null || separation === null) return;
-		const store = separation;
-		store.ensureChecked();
-		// Date.now() is not reactive, so a stale "no source" answer is re-read on a timer.
-		const timer = setInterval(() => store.ensureChecked(), 15_000);
-		return () => clearInterval(timer);
-	});
+	const separation = $derived(deckSeparation(deckId).port);
+	const separationLoadError = $derived(deckSeparation(deckId).loadError);
+	const separateProbe = deckSeparateProbe(deckId);
 	// The button's words come from the store's chunk too (separateActionView);
 	// until it is loaded the deck says only "checking" or the load failure,
 	// in the same words (tests/unit/stem-separate.test.mjs keeps them equal).
@@ -532,54 +455,16 @@
 						separateProbeFailed(separation, separateId)
 					)
 	);
-	// However the covering job ended (a library job can fail after writing
-	// this track's bundle), look for the bundle once before showing the
-	// job's verdict: `stem_load` loads it if it is there.
-	// Only a stem_load that RAN is an answer: one refused (a preset lock, no
-	// session) leaves the probe failed and the button offers to look again.
-	let separateProbeAnswers = $state(0);
-	// Sol 4291048002: `stem_load` loads whatever the deck holds NOW, so it is an
-	// answer for `stableId` only while the deck still holds that track.
-	// The stem_load returns once the deck has started reloading, so the look
-	// waits for that load to settle before it answers (Codex on #6819).
-	let stemsSettledWaiters: Array<() => void> = [];
-	function stemsSettled(): Promise<void> {
-		if (deck.stems.status !== 'loading') return Promise.resolve();
-		return new Promise((resolve) => stemsSettledWaiters.push(resolve));
-	}
-	$effect(() => {
-		if (deck.stems.status === 'loading' || stemsSettledWaiters.length === 0) return;
-		const waiters = stemsSettledWaiters;
-		stemsSettledWaiters = [];
-		for (const resolve of waiters) resolve();
-	});
-	const separateProbe = new SeparateEndProbe(
-		async (stableId) =>
-			separateId === stableId &&
-			lookForBundle({
-				run: async () => (await runPerformanceCommandFromUi({ type: 'stem_load', deck: deckId, stable_id: stableId })).ok,
-				settled: stemsSettled,
-				holds: () => deck.stable_id === stableId
-			}),
-		() => {
-			separateProbeAnswers += 1;
-		}
-	);
 	function separateProbed(store: StemSeparationPort, stableId: string): boolean {
-		void separateProbeAnswers;
+		void deckSeparation(deckId).probeAnswers;
 		const job = store.job(stableId);
 		return job !== null && separateProbe.probed(stableId, separateRunId(job));
 	}
 	function separateProbeFailed(store: StemSeparationPort, stableId: string): boolean {
-		void separateProbeAnswers;
+		void deckSeparation(deckId).probeAnswers;
 		const job = store.job(stableId);
 		return job !== null && separateProbe.failed(stableId, separateRunId(job));
 	}
-	$effect(() => {
-		if (separateId === null || separation === null) return;
-		separation.noteNoStems(separateId);
-		void separateProbe.observe(separateId, separation.job(separateId));
-	});
 
 	async function separateStems(): Promise<void> {
 		if (separateId === null) return;
@@ -769,7 +654,8 @@
 	>
 		<!-- Left edge: grid adjust (top) and grid shift (bottom), GRIDEDIT-6235, then
 		     the HOT CUE pad-mode menu as a two-line button (LYR-14), which frees the
-		     row under the pads for the lyric strip. -->
+		     row under the pads for the lyric strip. #13698: one cues group spans both columns. -->
+		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'cues'), kind: 'group', enabled: true }}>
 		<div class="left-edge">
 			<div class="prio-slot" data-priority="2">
 				<GridEditButtons
@@ -781,7 +667,7 @@
 				{#if reactDeck}
 					<ReactIsland load={() => import('./deck/PadModeMenu.tsx')} props={{ deckId, stacked: true }} />
 				{:else}
-					<PadModeMenu {deckId} stacked />
+					<PadModeMenu {deckId} stacked onDeleteHotCue={hotCueActions.clearHotCueAt} onRestoreHotCue={hotCueActions.restoreHotCueAt} />
 				{/if}
 			</div>
 		</div>
@@ -789,7 +675,7 @@
 		<!-- The cue column absorbs spare width to preserve control alignment.
 		     LYR-14: the 2x4 bank sits on top and the lyric strip runs under it
 		     at the bank's full width, so a lyric line reads left to right. -->
-		<div class="cue-flex" bind:this={cueFlexEl} use:selectorNode={{ id: selId.deckPart(deckId, 'cues'), kind: 'leaf', enabled: true }}>
+		<div class="cue-flex" bind:this={cueFlexEl}>
 			{#if padModeFor(deckId) === 'beat-jump'}
 				<BeatJumpPads {deck} {pending} onJump={beatJump} />
 			{:else}
@@ -815,16 +701,17 @@
 				</div>
 			{/if}
 		</div>
+		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
-		<div class="loop-col" data-priority="2" use:selectorNode={{ id: selId.deckPart(deckId, 'loop'), kind: 'leaf', enabled: true }}>
+		<div class="loop-col" data-priority="2" use:selectorNode={{ id: selId.deckPart(deckId, 'loop'), kind: 'group', enabled: true }}>
 			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} onStoredLoop={engageStoredLoop} onLoopIn={loopIn} onLoopOut={loopOut} onReloop={reloop} onSetActive={setActiveMemoryLoop} />
 			<div class="prio-slot" data-priority="3">
 				<BeatJump {deck} {pending} onJump={beatJump} onSize={setBeatJumpSize} />
 			</div>
 		</div>
 
-		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'transport'), kind: 'leaf', enabled: true }}>
+		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'transport'), kind: deckTransportJogPartKind(), enabled: true }}>
 			<TransportCluster
 				{deck}
 				{pending}
@@ -835,7 +722,7 @@
 			/>
 		</div>
 
-		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'jog'), kind: 'leaf', enabled: true }}>
+		<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'jog'), kind: deckTransportJogPartKind(), enabled: true }}>
 			<JogDial
 				{deck}
 				{pitchRange}
@@ -859,7 +746,9 @@
 		</div>
 	</div>
 
-	<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'stems'), kind: 'leaf', enabled: true }}>
+	<!-- #14471: the Svelte StemRow registers one leaf per button under this group; the React
+	     twin registers none, so the part stays one leaf there. -->
+	<div class="sel-node" use:selectorNode={{ id: selId.deckPart(deckId, 'stems'), kind: deckStemsPartKind(reactDeck), enabled: true }}>
 		{#if reactDeck}
 			<ReactIsland
 				load={() => import('./deck/StemRow.tsx')}
@@ -888,6 +777,7 @@
 				onQuickMode={applyStemQuickMode}
 				stemsResetOn={trackLoadResetEnabled('stems')}
 				onOpenResetConfig={(el) => toggleTrackLoadResetPanel('stems', el, deck.deck_id)}
+				selectorPrefix={selId.deckPart(deckId, 'stems')}
 			/>
 		{/if}
 	</div>
@@ -1077,6 +967,10 @@
 		gap: 3px;
 		flex: 0 0 auto;
 		min-height: 0;
+		/* Safety-loop buttons sit on main-row's bottom edge; 1px so borders
+		 * are not clipped by main-row overflow (ui-border-audit, #13525). */
+		padding-bottom: 1px;
+		box-sizing: border-box;
 		/* This group stays beside the cue bank within main-row's fixed height.
 		 * LoopCluster keeps its own
 		 * fixed 44px width and vertical controls. */

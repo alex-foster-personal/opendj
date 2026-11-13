@@ -6,7 +6,7 @@
  * cold 9,713-row index. TrackTable's PreviewStripFiller already asks for strip-less
  * rows in view (plus one screen of margin), debounced and batched; its batch now
  * goes to `POST /library/row-assets`, which answers all four. This module writes
- * vocals, cover verdict and stems into the matching rows and hands the strips back
+ * vocals, cover verdict and stems into the matching rows (as whole-row patches) and hands the strips back
  * to the filler, which owns retries for `pending` ids.
  *
  * Loaded with a dynamic import on the first batch (preview-strip-fill's
@@ -40,16 +40,31 @@ export interface RowAssetTarget {
 	tempo_curve?: TempoCurveData | null;
 }
 
-/** Ask for `ids`, settle every row among `rows()` (read once the answer lands) that
- * has one of them, and return the strips in the filler's shape (null: nothing on
- * disk, or not a track). Each such row object not still pending goes into
- * `settled`, so the table can tell it from a refreshed row that has none yet. */
-export async function fetchAndApplyRowAssets(
+type RowAssetsAnswer = Awaited<ReturnType<typeof fetchRowAssets>>;
+type StripWire = { preview_b64: string; preview_max: number } | null;
+
+/** Ask for `ids`, then settle them through `applyRowAssetsAnswer`. */
+export async function fetchAndApplyRowAssets<T extends RowAssetTarget>(
 	ids: string[],
-	rows: () => readonly RowAssetTarget[],
-	settled?: WeakSet<object>
-): Promise<{ strips: Record<string, { preview_b64: string; preview_max: number } | null>; pending: string[] }> {
-	const answer = await fetchRowAssets(ids);
+	rows: () => readonly T[],
+	settled: WeakSet<object>,
+	patchRow: (stable_id: string, map: (row: T) => T) => void
+): Promise<{ strips: Record<string, StripWire>; pending: string[] }> {
+	return applyRowAssetsAnswer(ids, await fetchRowAssets(ids), rows, settled, patchRow);
+}
+
+/** Settle every row among `rows()` that has one of `ids` and return the strips in
+ * the filler's shape (null: nothing on disk, or not a track). Each such row object
+ * not still pending goes into `settled`, so the table can tell it from a refreshed
+ * row that has none yet. The answer is published
+ * through `patchRow` as whole-row replacements, never written into a row. */
+export function applyRowAssetsAnswer<T extends RowAssetTarget>(
+	ids: string[],
+	answer: RowAssetsAnswer,
+	rows: () => readonly T[],
+	settled: WeakSet<object>,
+	patchRow: (stable_id: string, map: (row: T) => T) => void
+): { strips: Record<string, StripWire>; pending: string[] } {
 	if (typeof answer.assets !== 'object' || answer.assets === null || !Array.isArray(answer.pending)) {
 		throw new Error('POST /library/row-assets answered without assets or pending');
 	}
@@ -57,16 +72,28 @@ export async function fetchAndApplyRowAssets(
 	const pending = new Set(answer.pending);
 	for (const row of rows()) {
 		if (!wanted.has(row.stable_id)) continue;
-		if (!pending.has(row.stable_id)) settled?.add(row);
+		const settles = !pending.has(row.stable_id);
 		const asset = answer.assets[row.stable_id];
-		if (asset === undefined) continue;
-		row.vocals = parseVocals(asset.vocals);
-		row.artwork_available = asset.artwork_available ?? null;
-		row.artwork_status = asset.artwork_status as ArtworkStatus;
-		row.stems = parseStemSummary(asset.stems);
-		row.tempo_curve = asset.tempo ?? null;
+		if (asset === undefined) {
+			if (settles) settled.add(row);
+			continue;
+		}
+		const fields = {
+			vocals: parseVocals(asset.vocals),
+			artwork_available: asset.artwork_available ?? null,
+			artwork_status: asset.artwork_status as ArtworkStatus,
+			stems: parseStemSummary(asset.stems),
+			tempo_curve: asset.tempo ?? null
+		};
+		// Rows are raw (PR #12724): a field written in place never redraws, so the
+		// answer publishes a whole new row, and that new object is the settled one.
+		patchRow(row.stable_id, (held) => {
+			const next = { ...held, ...fields };
+			if (settles) settled.add(next);
+			return next;
+		});
 	}
-	const strips: Record<string, { preview_b64: string; preview_max: number } | null> = {};
+	const strips: Record<string, StripWire> = {};
 	for (const id of ids) {
 		const asset = answer.assets[id];
 		const b64 = asset?.preview_b64 ?? null;

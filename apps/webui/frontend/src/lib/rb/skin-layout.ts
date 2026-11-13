@@ -48,9 +48,34 @@ import {
 import type { UiSkin } from './ui-skin';
 
 /** Performance surface presets. A new preset is a new grid map on /performance, never a forked page. */
-export type PerformanceLayout = 'deck-grid' | 'replica-desk';
+export type PerformanceLayout = 'deck-grid' | 'replica-desk' | 'library-first';
 
-export const PERFORMANCE_LAYOUTS: readonly PerformanceLayout[] = ['deck-grid', 'replica-desk'];
+export const PERFORMANCE_LAYOUTS: readonly PerformanceLayout[] = [
+	'deck-grid',
+	'replica-desk',
+	'library-first'
+];
+
+/** SKINLAYOUT-10207: library-first look variants (pref `layout_variant.library_first`). */
+export type LibraryFirstVariant = 'decks-bottom' | 'decks-top';
+export const LIBRARY_FIRST_VARIANTS: readonly LibraryFirstVariant[] = ['decks-bottom', 'decks-top'];
+export const LIBRARY_FIRST_VARIANT_DEFAULT: LibraryFirstVariant = 'decks-bottom';
+
+/** Grid areas per library-first variant; perf-layout.css must agree. */
+export const LIBRARY_FIRST_VARIANT_AREAS: Readonly<Record<LibraryFirstVariant, readonly string[]>> =
+	{
+		'decks-bottom': ['topbar', 'browser', 'wavestack', 'deckarea'],
+		'decks-top': ['topbar', 'wavestack', 'deckarea', 'browser']
+	};
+
+export function parseLibraryFirstVariant(raw: unknown): LibraryFirstVariant {
+	if (!LIBRARY_FIRST_VARIANTS.includes(raw as LibraryFirstVariant)) {
+		throw new Error(
+			`layout_variant.library_first must be ${LIBRARY_FIRST_VARIANTS.join('|')}, got ${String(raw)}`
+		);
+	}
+	return raw as LibraryFirstVariant;
+}
 
 /** Library surface presets. A new preset is a new grid map in CrateDeskView, never a new component. */
 export type LibraryLayout = 'crate-desk' | 'three-panel';
@@ -218,6 +243,15 @@ export const PERFORMANCE_LAYOUT_SPEC: Readonly<Record<PerformanceLayout, Perform
 		honours: { deckLayout: false, perfView: true, pads: false },
 		floors: { wavestackRows: 4, deckRowPx: 497, libraryPx: 272 },
 		minWindow: { w: 1280, h: 720 }
+	},
+	// SKINLAYOUT-10207: prep desk. Library on top, two waves, decks 1 and 2 at their floor.
+	// 1280x800: 28 + 2 x 56 + 249 + 360 = 749 px. Ignores deck_layout (always two decks).
+	'library-first': {
+		id: 'library-first',
+		areas: LIBRARY_FIRST_VARIANT_AREAS[LIBRARY_FIRST_VARIANT_DEFAULT],
+		honours: { deckLayout: false, perfView: true, pads: true },
+		floors: { wavestackRows: 2, deckRowPx: 249, libraryPx: 360 },
+		minWindow: { w: 1280, h: 800 }
 	}
 };
 

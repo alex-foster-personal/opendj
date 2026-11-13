@@ -6,6 +6,7 @@
 // [if] transMix gives wet above 0 at knob 0, or balance_then_duty does not reach duty/2 at knob 1 [then] broken
 // [if] transCycleSeconds disagrees with the mod FX LFO's lfoCycleSeconds or accepts a tempo outside 40..300 [then] broken
 // [if] the new files carry U+2014 or U+2013 [then] broken
+// [if] TRANS refuses a triplet cut cycle or its gate does not repeat with the 1/3 or 4/3 beat period [then] broken
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -240,5 +241,32 @@ describe('source hygiene', () => {
 			const text = readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
 			assert.ok(!bannedDashes.test(text), `${relative} must not carry U+2013 or U+2014`);
 		}
+	});
+});
+
+// requirement: BEATFX-14715
+describe('triplet cut cycles (issue #10016)', () => {
+	test('transGain on a triplet LFO phase repeats every 1/3 and 4/3 beat', () => {
+		// [if] transCycleSeconds refuses 1/3 or 4/3, or the gate on the LFO phase differs one cycle later [then] the triplet gate drifts, [else stop].
+		assert.deepEqual([...gate.TRANS_TRIPLET_CUT_BEATS], [...lfo.TRIPLET_CYCLE_BEATS]);
+		const grid = Array.from({ length: 400 }, (_unused, i) => ({
+			n: (i % 4) + 1,
+			bpm: 120,
+			t: i * 0.5
+		}));
+		for (const beats of [1 / 3, 4 / 3]) {
+			const cycleSec = gate.transCycleSeconds(beats, 120);
+			assert.ok(Math.abs(cycleSec - beats * 0.5) < 1e-12);
+			const anchor = lfo.lfoAnchor(grid, 4, 120, 0, beats);
+			const edge = gate.edgeFracFor('soft', cycleSec);
+			for (let t = 0.0013; t < 20; t += 0.0371) {
+				const now = gate.transGain(lfo.lfoPhase(anchor, t), 0.5, edge);
+				const next = gate.transGain(lfo.lfoPhase(anchor, t + cycleSec), 0.5, edge);
+				assert.ok(Number.isFinite(now) && now >= 0 && now <= 1);
+				assert.ok(Math.abs(now - next) < 1e-6, `${beats} beats at ${t}: ${now} vs ${next}`);
+			}
+			assert.equal(gate.transGain(lfo.lfoPhase(anchor, 0), 0.5, edge), 1, 'open on the downbeat');
+		}
+		assert.throws(() => gate.transCycleSeconds(3, 120), /beats/);
 	});
 });

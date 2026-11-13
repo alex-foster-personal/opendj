@@ -28,11 +28,17 @@ import {
 } from './cloudsync-scheduler-shed';
 import { anyDeckPlaying, startBackgroundDemandShed } from './playing-gate';
 import { setLiveTransportProbe } from '$lib/client-error-reporting';
-import { resumeAudioPrefetchOwedPump, setAudioPrefetchShedRequest } from './audio-prefetch-cache.svelte';
+import {
+	resumeAudioPrefetchOwedPump,
+	setAudioPrefetchShedRequest
+} from './audio-prefetch-cache.svelte';
 import { applyAllCaps } from '$lib/rb/cache-caps-registry';
 import { armPrefetchPressureCapScaling } from './prefetch-pressure-caps';
 import { resumeEagerStemDecodeOwedJob, setEagerStemDecodeShed } from './stem-decode-shed';
-import { resumeAnlzPrefetchOwedFetch, setAnlzPrefetchShedRequest } from '$lib/components/rb/wave/anlz-cache.svelte';
+import {
+	resumeAnlzPrefetchOwedFetch,
+	setAnlzPrefetchShedRequest
+} from '$lib/components/rb/wave/anlz-cache.svelte';
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
@@ -53,7 +59,11 @@ import { deckStemEnvelopes } from '$lib/rb/audio-engine-silence-probes';
 import { silenceSourceDeckSnap } from '$lib/rb/silence-source-snap';
 import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 import { mixerState } from '$lib/player/state.svelte';
-import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
+import {
+	getAutoPlayPlaylist,
+	pickNextStableId,
+	tempoBoundsFromPitchRange
+} from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	setSilenceDropoutContextReader,
@@ -113,7 +123,9 @@ function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
 
 function _hasPlayableAutoPlayNext(): boolean {
 	if (!uiPrefs.auto_play_enabled) return false;
-	const master = DECK_IDS.find((id) => deckStates[id].is_master && deckStates[id].stable_id !== null);
+	const master = DECK_IDS.find(
+		(id) => deckStates[id].is_master && deckStates[id].stable_id !== null
+	);
 	if (master === undefined) return false;
 	const follower = DECK_IDS.find((id) => id !== master && deckStates[id].stable_id === null);
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower ?? master]);
@@ -141,6 +153,11 @@ let _xrunsAtPrevious = 0;
  * settings/apply.ts at boot so that module stays off stores.svelte. */
 export function toastMidiLoadFailure(exc: unknown): void {
 	pushToast('MIDI could not load, so it stays off', 'error', undefined, exc);
+}
+
+/** Shared AutoPlay armed read for boot instruments and unit suites (issue #11216). */
+export function readAutoPlayArmedFromUiPrefs(): boolean {
+	return uiPrefs.auto_play_enabled;
 }
 
 /**
@@ -220,7 +237,11 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 				() => readXrunSessionCounter().xruns
 			);
 			setAudioPrefetchShedRequest((id) => shed.request(id));
-			setEagerStemDecodeShed(shed, () => kernelPressureIsElevated(readMachinePressure()), anyDeckPlaying);
+			setEagerStemDecodeShed(
+				shed,
+				() => kernelPressureIsElevated(readMachinePressure()),
+				anyDeckPlaying
+			);
 			setAnlzPrefetchShedRequest((id) => shed.request(id));
 		}
 	});
@@ -236,14 +257,14 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	_xrunsAtPrevious = readXrunSessionCounter().xruns;
 	setSilenceDropoutHandler(handleSilenceDropoutPlan);
 	setUnexpectedPauseAutoPlayReader(() => ({
-		armed: uiPrefs.auto_play_enabled,
+		armed: readAutoPlayArmedFromUiPrefs(),
 		handoff_in_flight: readAutoPlayHandoffInFlight()
 	}));
 	setSilenceDropoutContextReader(() => {
 		const xruns = readXrunSessionCounter().xruns;
 		const ctx = {
 			decks: _readSilenceDropoutDecks(),
-			autoplay_enabled: uiPrefs.auto_play_enabled,
+			autoplay_enabled: readAutoPlayArmedFromUiPrefs(),
 			has_playable_next: _hasPlayableAutoPlayNext(),
 			xruns,
 			xruns_at_previous: _xrunsAtPrevious

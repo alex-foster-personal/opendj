@@ -268,6 +268,10 @@
 			oncreatesmartlist={() => void handleNewSmartlist()}
 			onrenamesmartlist={(sl) => treeSmartlistSection?.beginRename(sl)}
 			onduplicatesmartlist={(sl) => treeSmartlistSection?.duplicateFromMenu(sl)}
+			oneditsmartlistrule={(sl) => treeSmartlistSection?.editRule(sl)}
+			onrefreshsmartlist={async (sl) => {
+				await treeSmartlistSection?.refreshNow(sl);
+			}}
 		/>
 	{/if}
 	{#if autolistsMounted}
@@ -309,6 +313,7 @@
 			{...playlistTreeProps}
 			nodes={shownNodes}
 			mode={playlistTreeView}
+			searchable={!treeSearch}
 			oncreatesmartlist={() => void handleNewSmartlist()}
 		/>
 	{:else if activeTab === 'taglists'}

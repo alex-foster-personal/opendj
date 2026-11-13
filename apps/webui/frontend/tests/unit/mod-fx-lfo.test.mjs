@@ -5,6 +5,7 @@
 // [if] re-anchoring at a tempo step moves the phase by 1e-6 or more [then] broken
 // [if] a free time_ms cycle does not repeat every time_ms or follows the grid [then] broken
 // [if] NaN, a negative time or an unknown cycle is accepted silently [then] broken
+// [if] a triplet cycle (1/12..12/3) is refused, or its trough misses a downbeat after every third cycle at 120 or 174 BPM [then] broken
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -154,4 +155,49 @@ test('no U+2014 or U+2013 characters in the new files', () => {
 		const text = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 		assert.equal(banned.test(text), false, rel);
 	}
+});
+
+/** A grid at `bpm` from 0.25 s whose first beat is beat 3 of its bar (first downbeat at index 2). */
+function gridAt(bpm, count = 800) {
+	return Array.from({ length: count }, (_unused, i) => ({
+		n: ((i + 2) % 4) + 1,
+		bpm,
+		t: 0.25 + (i * 60) / bpm
+	}));
+}
+
+// requirement: BEATFX-14715
+describe('lfoPhase triplet cycles (issue #10016)', () => {
+	test('triplet cycle list is 1/12..12/3 beats and lfoAnchor accepts every entry', () => {
+		// [if] TRIPLET_CYCLE_BEATS drifts from the A9 1/12..12/3 set or lfoAnchor refuses one [then] TRIPLET FILTER cannot lock, [else stop].
+		assert.deepEqual([...lfo.TRIPLET_CYCLE_BEATS], [1 / 12, 1 / 6, 1 / 3, 2 / 3, 4 / 3, 8 / 3, 4]);
+		for (const cycleBeats of lfo.TRIPLET_CYCLE_BEATS) {
+			assert.equal(lfo.lfoAnchor(grid120(), 7.3, 120, 0, cycleBeats).cycleBeats, cycleBeats);
+		}
+		assert.throws(() => lfo.lfoAnchor(grid120(), 7.3, 120, 0, 3), /cycleBeats/);
+	});
+
+	test('the trough lands on a bar downbeat after every third cycle at 120 and 174 BPM', () => {
+		// [if] a triplet cycle of 1 beat or more is off phase 0 by 1e-9 at the downbeat ending each third cycle [then] the sweep drifts, [else stop].
+		for (const bpm of [120, 174]) {
+			const beats = gridAt(bpm);
+			const positionSec = beats[9].t + 0.013;
+			for (const cycleBeats of lfo.TRIPLET_CYCLE_BEATS.filter((c) => c >= 1)) {
+				const anchor = lfo.lfoAnchor(beats, positionSec, bpm, 1.5, cycleBeats);
+				const span = Math.round(3 * cycleBeats);
+				let checked = 0;
+				for (let i = FIRST_DOWNBEAT_INDEX + span; i < beats.length; i += span) {
+					if (beats[i].t < positionSec) continue;
+					assert.equal(beats[i].n, 1, `${bpm} BPM cycle ${cycleBeats}: beat ${i} is a downbeat`);
+					const phase = lfo.lfoPhase(anchor, 1.5 + (beats[i].t - positionSec));
+					assert.ok(fromZero(phase) < 1e-9, `${bpm} BPM cycle ${cycleBeats} beat ${i}: ${phase}`);
+					checked += 1;
+				}
+				assert.ok(checked > 10);
+				// One cycle after a trough the phase is back at 0; a third of a cycle later it is 1/3.
+				const third = beats[FIRST_DOWNBEAT_INDEX + 4 * span].t + (cycleBeats * 60) / bpm / 3;
+				assert.ok(Math.abs(lfo.lfoPhase(anchor, 1.5 + (third - positionSec)) - 1 / 3) < 1e-9);
+			}
+		}
+	});
 });

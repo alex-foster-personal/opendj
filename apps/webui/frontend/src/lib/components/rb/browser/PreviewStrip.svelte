@@ -40,6 +40,7 @@
 	import { vocalAlpha } from '../wave/render';
 	import { snapFractionToPixels } from '$lib/ui/pixel-snap';
 	import { sectionsApiFor, type SectionsApi } from '../wave/sections-lazy.svelte';
+	import { previewSectionHover, type HoverSpan, type SectionHoverLabel } from './preview-section-hover';
 
 	const W = 165;
 	const H = 14;
@@ -119,6 +120,16 @@
 		nowRatio === null || !Number.isFinite(nowRatio) ? null : snapFractionToPixels(nowRatio, W * dpr) * W
 	);
 	let hoverX: number | null = $state(null);
+
+	// STRUCT-9659: name the section under the cursor as a DOM label (no repaint).
+	const hoverSpans: readonly HoverSpan[] | null = $derived.by(() => {
+		const api = sectionsApiFor(uiPrefs.show_sections);
+		return api !== null && markerAnlz !== null ? api.sectionSpans(markerAnlz.phrases) : null;
+	});
+	let sectionLabelW = $state(0);
+	const sectionHover: SectionHoverLabel | null = $derived(
+		previewSectionHover(hoverSpans, hoverX, W, duration_ms === null ? null : duration_ms / 1000, sectionLabelW)
+	);
 
 	const vocalsTitle: string | null = $derived(vocalsStatusTitle(vocals));
 	// Issue #7879: the daemon's tempo sentence joins the hover only when a curve is drawn.
@@ -321,6 +332,15 @@
 		{#if hoverX !== null}
 			<span class="scrub" style={`left:${hoverX}px`} aria-hidden="true"></span>
 		{/if}
+		{#if sectionHover !== null}
+			<span
+				class="section-hover"
+				data-testid="preview-section-hover"
+				style={`left:${sectionHover.leftPx}px`}
+				bind:offsetWidth={sectionLabelW}
+				aria-hidden="true">{sectionHover.label}</span
+			>
+		{/if}
 		{#if wordIndex !== null && pointer !== null && hoverX !== null}
 			<ScrubLyricStrip index={wordIndex} state={pointer} xPx={hoverX} widthPx={W} />
 		{/if}
@@ -367,6 +387,22 @@
 		background: var(--rb-red, #d0342c);
 		pointer-events: none;
 		z-index: 1;
+	}
+	/* STRUCT-9659: section name under the cursor, below the strip so it
+	   never covers the lyric readout above it. */
+	.section-hover {
+		position: absolute;
+		top: calc(100% + 2px);
+		z-index: 29;
+		padding: 0 4px;
+		border-radius: 3px;
+		background: rgba(10, 13, 17, 0.94);
+		border: 1px solid var(--rb-border, #3d4652);
+		color: #cfd8e2;
+		font-size: 10px;
+		line-height: 13px;
+		white-space: nowrap;
+		pointer-events: none;
 	}
 	/* Live deck position. Sits under the hover scrub so a scrub still
 	   reads clearly while the track is playing. */

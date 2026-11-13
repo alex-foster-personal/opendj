@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557496,
+  "measured_with_pr": 557652,
+  "sha": "da28dfdeb6f",
+  "date": "Fri 13 Nov 2026",
+  "reason": "Branch af--r2-browser-reds-4 changes one browser spec and no frontend source. CI measured other-lazy +156 B gzip over main at 60d83b2338f, 28 B past the 128 B build-noise floor: the two builds differ in content-hash names, which this 160-file surface compresses differently on each head (the same cause as charges 13662 and 13678). Ceiled to KiB so a test-only repair does not wait on another draw.",
+  "payback": "delete at the next rebaseline: the bytes are not code, so nothing has to come back"
+}

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 516811,
+  "measured_with_pr": 517023,
+  "sha": "3dcc5f24cd",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cloud-11463--sync-settle-typed-tempo-ramps-on-owned-r grows the other-lazy surface; measured +212 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

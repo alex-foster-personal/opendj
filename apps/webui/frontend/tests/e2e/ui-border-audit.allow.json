@@ -3,60 +3,6 @@
 	"entries": [
 		{
 			"kind": "double",
-			"side": "bottom",
-			"otherSide": "top",
-			"selector": "div.deck-area > section.rb-mixer.rb-panel",
-			"other": "div.perf-root > section[data-testid=\"browser-panel\"]",
-			"count": 1,
-			"reason": "Mixer bottom border + .rb-browser border-top (BrowserPanel.svelte) make a 2px line at the deck/library split. BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
-			"side": "bottom",
-			"otherSide": "top",
-			"selector": "div.deck-col > section.rb-deck.rb-panel",
-			"other": "div.perf-root > section[data-testid=\"browser-panel\"]",
-			"count": 2,
-			"reason": "Deck inset ring + .rb-browser border-top (BrowserPanel.svelte) make a 2px line at the deck/library split. BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
-			"side": "top",
-			"otherSide": "top",
-			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
-			"other": "div.header-controls-cluster > button.rb-lit-button.master-dd",
-			"count": 1,
-			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
-			"side": "top",
-			"otherSide": "top",
-			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
-			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
-			"count": 1,
-			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
-			"side": "top",
-			"otherSide": "top",
-			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
-			"other": "div.library-key-filter-pop > button.rb-lit-button.library-key-filter-trigger",
-			"count": 1,
-			"reason": "The library Key trigger (#7599) is a browser header control like nav-back and master-dd above, so its top border sits on .rb-browser's top border for the same BrowserPanel.svelte layout reason tracked on issue #5638. Remove this entry with that fix."
-		},
-		{
-			"kind": "double",
-			"side": "top",
-			"otherSide": "top",
-			"selector": "div.perf-root > section[data-testid=\"browser-panel\"]",
-			"other": "span.explainer > label.rb-search",
-			"count": 1,
-			"reason": "A browser header control's top border sits on .rb-browser's top border (BrowserPanel.svelte layout). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
 			"side": "top",
 			"otherSide": "top",
 			"selector": "section[data-testid=\"browser-panel\"] > div.bottom-bar",
@@ -132,24 +78,6 @@
 			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
 			"count": 1,
 			"reason": "A browser header control's bottom border sits on the pane header's bottom border where BrowserPanel.svelte mounts full-window in the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
-			"side": "top",
-			"otherSide": "top",
-			"selector": "div.desk > section[data-testid=\"browser-panel\"]",
-			"other": "div.header-controls-cluster > button.rb-lit-button.master-dd",
-			"count": 1,
-			"reason": "A browser header control's top border sits on .rb-browser's top border, as on /performance, here inside the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
-		},
-		{
-			"kind": "double",
-			"side": "top",
-			"otherSide": "top",
-			"selector": "div.desk > section[data-testid=\"browser-panel\"]",
-			"other": "div.header-controls-cluster > button.rb-lit-button.nav-back",
-			"count": 1,
-			"reason": "A browser header control's top border sits on .rb-browser's top border, as on /performance, here inside the Crate Desk (#5729). BrowserPanel.svelte is single-owned this wave (W26, the library-scroll thread); reported on issue #5638 for that owner. Remove this entry with the fix."
 		},
 		{
 			"kind": "double",

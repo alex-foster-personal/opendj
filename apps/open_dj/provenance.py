@@ -52,6 +52,18 @@ PROVENANCE_ENVELOPE_KEYS: tuple[str, ...] = (
 )
 
 
+def unwrap_provenance_scalar(value: Any) -> Any:
+    """Return the scalar inside a ``ProvenanceValue`` envelope, or ``value`` unchanged.
+
+    Wire documents wrap authored fields (``bpm``, ``rating``, ``key``, etc.) in
+    ``{"value": X, "source": ..., "modified_at": ...}``. The typed dataclass
+    layer stores the bare scalar; callers loading wire JSON use this helper.
+    """
+    if isinstance(value, dict) and "value" in value and ("source" in value or "modified_at" in value):
+        return value["value"]
+    return value
+
+
 def utc_mtime(path: Path) -> datetime:
     """Aware UTC datetime of ``path``'s mtime (second precision after wrap())."""
     return datetime.fromtimestamp(path.stat().st_mtime, UTC)

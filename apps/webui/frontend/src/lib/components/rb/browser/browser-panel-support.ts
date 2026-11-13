@@ -42,7 +42,6 @@ export {
 } from '$lib/rb/next-only-filter';
 export { peekLibraryIndex } from '$lib/rb/library-index';
 export { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
-export { libraryHealthDot, type LibraryHealthDot } from '$lib/rb/library-health-dots';
 export { completeLibraryUsable, recordOpenToLibraryRows } from '$lib/client-telemetry';
 export { formatReplaceStateUrl } from '$lib/rb/performance-deeplink';
 export { addToPlaylistToastMessage, appendTracksToPlaylist } from '$lib/rb/add-to-playlist';
@@ -93,8 +92,10 @@ export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 /** SET-6586 Routes view: loads on first use so it stays out of the /performance eager bundle. */
 export const loadComponentRouteList = () => import('./ComponentRouteList.svelte');
 export { setRoutesView } from './set-routes-view.svelte';
-export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';
-export { default as LibraryKeyFilterPopover } from './LibraryKeyFilterPopover.svelte';
+/** KEY-/compatible filter chrome: first paint on /performance uses the bare
+ *  checkboxes until these load (bootScheduler, same pattern as Spotify). */
+export const loadCompatibleFilterPopover = () => import('./CompatibleFilterPopover.svelte');
+export const loadLibraryKeyFilterPopover = () => import('./LibraryKeyFilterPopover.svelte');
 export { setTabLabel } from './playlist-set-tabs';
 /** A stick track row whose stick was pulled (USBPLAY-09: the browse store
  * grays it to awaiting_volume), refused as "Stick removed" (spec 4b) rather

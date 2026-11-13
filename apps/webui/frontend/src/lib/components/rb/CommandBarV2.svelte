@@ -96,6 +96,7 @@
 		settingNextValue,
 		settingValueLabel,
 		settingVerb,
+		statelessSetting,
 		type CmdkAction,
 		type CmdkPairTag,
 		type CmdkAdapter,
@@ -124,6 +125,7 @@
 	import { beatgridFallbackGate, paintAnlzForRow, readyBeatgridFallback } from './wave/wave-row-beatgrid-fallback';
 	import { sectionSpans } from './wave/sections';
 	import { formatListTotalsLine, summarizeListTotals } from '$lib/rb/list-totals';
+	import { captureCommandBarOpener, restoreCommandBarFocus } from '$lib/cmdk/command-bar-focus';
 
 	// SECONDSCREEN-11715: read once; the shell does not change under a running page.
 	const SECOND_SCREEN_ROW = nativeShellKind() === 'tauri';
@@ -238,6 +240,8 @@
 	let target = $state<DeckId>(1);
 	let input = $state<HTMLInputElement | null>(null);
 	let wrap = $state<HTMLDivElement | null>(null);
+	/** Focused element outside the bar when it opened, for keyboard return on close (#12947). */
+	let invokeOpener = $state<HTMLElement | null>(null);
 	let collection = $state<readonly CmdkRow[]>([]);
 	let collectionError = $state<string | null>(null);
 	/** Why the last picker pick was refused, shown under the deck picker. */
@@ -344,6 +348,8 @@
 	let ejectOp = 0;
 	/** Why the last setting or command did not run, until the next one. */
 	let actionError = $state<string | null>(null);
+	/** What the last catalog action row (ratings sync status or dry run) reported, until the next pick (#12988). */
+	let actionNotice = $state<string | null>(null);
 	const quickMod = quickPickModifier(typeof navigator === 'undefined' ? '' : navigator.platform);
 	const quickLabel = quickMod === 'Meta' ? '⌘' : 'Ctrl ';
 
@@ -371,9 +377,9 @@
 		const out: SettingAction[] = [];
 		for (const def of found) {
 			if (!actionableSetting(def)) continue;
-			const link = def.control.kind === 'link';
-			if (!link && !api.isKnownSettingKey(def.id)) continue;
-			const value = link || !api.isKnownSettingKey(def.id) ? '' : api.readSettingValue(def.id);
+			const stateless = statelessSetting(def);
+			if (!stateless && !api.isKnownSettingKey(def.id)) continue;
+			const value = stateless || !api.isKnownSettingKey(def.id) ? '' : api.readSettingValue(def.id);
 			out.push({
 				kind: 'setting',
 				id: def.id,
@@ -646,6 +652,7 @@
 	async function runAction(action: CmdkAction, confirmed: boolean, rowStillPicked: () => boolean = () => true, source: 'user-ui' | 'agent-command' = 'user-ui'): Promise<string | { asked: DeckId } | null> {
 		const session = barSession;
 		if (barSession === session) actionError = null;
+		actionNotice = null;
 		const fail = (message: string): string => {
 			if (barSession === session) actionError = message;
 			return message;
@@ -655,6 +662,17 @@
 				const href = action.def.control.href;
 				closeBar();
 				await goto(href);
+				return null;
+			}
+			if (action.def.control.kind === 'action') {
+				// A safe read or dry run: the bar stays open so its answer can be read.
+				try {
+					const { runSettingAction } = await import('$lib/settings/ratings-sync-actions');
+					const message = await runSettingAction(action.def.control.action);
+					if (barSession === session) actionNotice = message;
+				} catch (exc) {
+					return fail(`${action.label} did not run: ${exc instanceof Error ? exc.message : String(exc)}`);
+				}
 				return null;
 			}
 			const api = settingsApi;
@@ -1405,8 +1423,10 @@
 
 	/** Opens the bar at once, so typing lands in the search. Resolves with a settings failure, or null. */
 	async function openBar(): Promise<string | null> {
+		invokeOpener = captureCommandBarOpener(document.activeElement, wrap);
 		barSession += 1;
 		actionError = null;
+		actionNotice = null;
 		const life = ++barLife;
 		query = '';
 		selected = 0;
@@ -1435,6 +1455,9 @@
 		// An eject still waiting on its deck's queue must not resume into the closed bar (Sol P1, #6689).
 		ejectOp += 1;
 		settingsLoading = false;
+		const opener = invokeOpener;
+		invokeOpener = null;
+		const closedRoot = wrap;
 		open = false;
 		picker = null;
 		touched = false;
@@ -1442,6 +1465,7 @@
 		quickHeld = false;
 		cue.stop();
 		if (mode !== 'plain') setMode('plain');
+		void tick().then(() => restoreCommandBarFocus(opener, closedRoot));
 	}
 
 	function toggleFilter(id: LibraryFilterId): void {
@@ -2438,6 +2462,8 @@
 						<span class="err" role="alert">Collection search unavailable: {collectionError}</span>
 					{:else if actionError !== null}
 						<span class="err" role="alert" data-testid="command-bar-action-error">{actionError}</span>
+					{:else if actionNotice !== null}
+						<span role="status" data-testid="command-bar-action-notice">{actionNotice}</span>
 					{:else if pairLoading !== null}
 						<span data-testid="command-bar-pair-loading">Loading "{pairLoading.title}" to deck {pairLoading.deck} aligned to the master, fader at 0...</span>
 					{:else if mode === 'ai' && ejectGuard === null && picker === null}
@@ -2459,7 +2485,7 @@
 						{#if previewMode !== 'off'}<span><b>←→</b> preview in the cue</span>{/if}
 					{:else if actionsOn && selectedEntry?.kind === 'action'}
 						<span><b>↑↓</b> pick</span>
-						<span><b>Enter</b> {selectedEntry.action.kind === 'setting' ? 'change it' : 'run it'}</span>
+						<span><b>Enter</b> {selectedEntry.action.kind === 'setting' && selectedEntry.action.def.control.kind !== 'action' ? 'change it' : 'run it'}</span>
 						<span><b>hold {quickLabel.trim()}</b> quick pick</span>
 					{:else if previewMode !== 'off'}
 						<span><b>↑↓</b> pick</span>

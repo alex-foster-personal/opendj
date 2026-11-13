@@ -12,8 +12,9 @@ answer truthfully today, each a thin call into :class:`DjService` so the
 * execute: ``schedule_plan``, ``amend_plan``
 * sets (AGENT-27): ``plan_set``, ``show_set``, ``schedule_set_next``: a whole
   set as one document, performed one due transition at a time
-* try-er: ``try_transitions``, ``pick_transition``, ``undo_transition_pick``
-  (:mod:`mcp_dj_try_tools`, TRYER-12)
+* try-er: ``try_transitions``, ``pick_transition``, ``undo_transition_pick``,
+  ``get_transition_try``, ``get_transition_lanes`` (:mod:`mcp_dj_try_tools`,
+  TRYER-12, TRYER-16)
 
 Not registered yet, on purpose: ``render_preview`` (the Rust renderer has no
 metrics module and no stems) and ``log_transition_outcome``. A tool that

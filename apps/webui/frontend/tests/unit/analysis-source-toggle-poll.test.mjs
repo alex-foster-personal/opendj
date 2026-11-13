@@ -78,6 +78,15 @@ test('the poll timer is cleared, so it does not outlive the component', () => {
 	);
 });
 
+test('poll catch returns when isPageGoingAway before console.error', () => {
+	const text = _source();
+	const idx = text.indexOf('[analysis-source] poll failed');
+	assert.ok(idx >= 0, 'expected a poll failure log line in AnalysisSourceToggle.svelte');
+	const catchStart = text.lastIndexOf('.catch((exc) => {', idx);
+	const slice = text.slice(catchStart, idx + 60);
+	assert.match(slice, /if \(isPageGoingAway\(\)\) return;/);
+});
+
 test('the source menu is viewport-positioned outside the clipped top bar', () => {
 	const toggle = readFileSync(SOURCE_PATH, 'utf8');
 	const menu = readFileSync(MENU_PATH, 'utf8');

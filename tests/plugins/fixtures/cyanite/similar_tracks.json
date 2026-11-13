@@ -1,0 +1,24 @@
+{
+  "method": "POST",
+  "path": "/library-tracks/libtr_demo/similar-tracks",
+  "status": 200,
+  "headers": {
+    "x-ratelimit-limit": "30",
+    "x-ratelimit-remaining": "28",
+    "x-ratelimit-reset": "1731341000",
+    "retry-after": "15"
+  },
+  "body": {
+    "items": [
+      {
+        "score": 0.88,
+        "track": {
+          "id": "libtr_neighbor01",
+          "title": "Parallel Groove",
+          "externalId": null
+        }
+      }
+    ],
+    "pageInfo": {}
+  }
+}

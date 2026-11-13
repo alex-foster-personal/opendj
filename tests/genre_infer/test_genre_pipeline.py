@@ -315,7 +315,7 @@ def test_similar_leaves_out_deleted_tracks(tmp_path: Path) -> None:
     assert [sid for sid, _ in findings.similar_tracks(conn, "t-fred")] == ["t-copy"]
 
 
-@pytest.mark.requirement("INTEL-12016")
+@pytest.mark.requirement("INTEL-12031b")
 def test_generic_similar_omits_own_duplicate_copies(tmp_path: Path) -> None:
     """[if] Generic mode ranks a grouped track [then] own duplicates never neighbour it, [else stop]."""
     from apps.genre_infer import groups
@@ -332,7 +332,7 @@ def test_generic_similar_omits_own_duplicate_copies(tmp_path: Path) -> None:
     assert ids == ["t-fred2"]
 
 
-@pytest.mark.requirement("INTEL-12016")
+@pytest.mark.requirement("INTEL-12031b")
 def test_generic_similar_empty_when_no_other_vectors(tmp_path: Path) -> None:
     """[if] cosine ranking finds zero neighbours [then] candidates stay empty, [else stop]."""
     _data, state = library(tmp_path)
@@ -343,7 +343,7 @@ def test_generic_similar_empty_when_no_other_vectors(tmp_path: Path) -> None:
     assert doc["candidates"] == []
 
 
-@pytest.mark.requirement("INTEL-12016")
+@pytest.mark.requirement("INTEL-12031b")
 def test_genres_similar_http_matches_service_similar(tmp_path: Path) -> None:
     """[if] HTTP GET similar and service.similar share an id [then] neighbour ids and scores match, [else stop]."""
     from fastapi.testclient import TestClient

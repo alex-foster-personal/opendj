@@ -56,11 +56,20 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		}),
 		null
 	);
+	assert.equal(
+		ipc.performanceCommandQueueScopes({ type: 'beat_jump_size', deck: 2, beats: 16 }),
+		null,
+		'beat_jump_size is view state and must not wait on a deck scope'
+	);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'seek', deck: 3, position_ms: 1000 }),
 		[3, 'sync']
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'deck_move', from: 1, to: 4 }),
+		[1, 4, 'sync']
+	);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({
 			type: 'hot_cue_save',
@@ -343,6 +352,108 @@ test('LIBUX-02 (#2166): the library panel chevron is driven through the performa
 		assert.doesNotMatch(browser, /onclick=\{\(\) => toggleLibraryPanels\(\)\}/);
 	} finally {
 		pairing.setLibraryPanelsCollapsed(false);
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('MIDI-13228: deck pair select runs through the dispatcher and the query reports the selection', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		assert.deepEqual(
+			ipc.parsePerformanceCommandForTest({ type: 'mixer_deck_pair_select', pair: '2-4' }),
+			{ type: 'mixer_deck_pair_select', pair: '2-4' }
+		);
+		assert.throws(
+			() => ipc.parsePerformanceCommandForTest({ type: 'mixer_deck_pair_select', pair: '1-2' }),
+			/1-3 or 2-4/
+		);
+		assert.throws(
+			() =>
+				ipc.parsePerformanceCommandForTest({ type: 'mixer_deck_pair_select', pair: '1-3', deck: 2 }),
+			/not in pair 1-3/
+		);
+		assert.equal(
+			ipc.performanceCommandQueueScopes({ type: 'mixer_deck_pair_select', pair: '1-3' }),
+			null
+		);
+
+		await pairing.dispatchPerformanceCommand({ type: 'mixer_deck_pair_select', pair: '1-3', deck: 1 });
+		await pairing.dispatchPerformanceCommand({ type: 'mixer_deck_pair_select', pair: '2-4', deck: 2 });
+		assert.deepEqual(pairing.queryPerformanceState().mixer_selection, {
+			selected: [1, 2],
+			clicked_deck: null
+		});
+		await pairing.dispatchPerformanceCommand({ type: 'mixer_deck_pair_select', pair: '1-3' });
+		assert.deepEqual(pairing.queryPerformanceState().mixer_selection.selected, [2, 3]);
+
+		const glue = readFrontendSource('src/lib/rb/midi/action-glue.svelte.ts');
+		assert.match(glue, /dispatchPerformanceCommand\(\s*action\.deck === undefined\s*\? \{ type: 'mixer_deck_pair_select'/);
+		assert.doesNotMatch(glue, /midiSelectDeckPair/);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+// Issue #13403: the UI path and the combined query agree even when the legacy per-panel prefs disagree.
+test('LIBUX-02 (#13403): UI toggle and query report the combined state, not the legacy per-panel prefs', async () => {
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	const priorNext = pairing.uiPrefs.next_panel_collapsed;
+	const priorRecommended = pairing.uiPrefs.recommended_panel_collapsed;
+	try {
+		pairing.setLibraryPanelsCollapsed(false);
+		const shown = await pairing.runPerformanceCommandFromUi({
+			type: 'library_panels_toggle',
+			collapsed: true
+		});
+		assert.equal(shown.ok, true);
+		assert.equal(pairing.isLibraryPanelsCollapsed(), true);
+		assert.equal(pairing.queryPerformanceState().library_panels.collapsed, true);
+
+		// Legacy prefs say both panels are open while the combined strip is collapsed.
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels', panel: 'next', collapsed: false });
+		await pairing.dispatchPerformanceCommand({
+			type: 'library_panels',
+			panel: 'recommended',
+			collapsed: false
+		});
+		let snapshot = pairing.queryPerformanceState().library_panels;
+		assert.deepEqual(snapshot, {
+			collapsed: true,
+			next_collapsed: false,
+			recommended_collapsed: false,
+			single_column: false,
+			split_column: false,
+			mytag_pane: false
+		});
+
+		// The reverse disagreement: legacy prefs collapsed, combined strip flipped open by the UI.
+		await pairing.dispatchPerformanceCommand({ type: 'library_panels', panel: 'next', collapsed: true });
+		await pairing.dispatchPerformanceCommand({
+			type: 'library_panels',
+			panel: 'recommended',
+			collapsed: true
+		});
+		assert.equal(pairing.isLibraryPanelsCollapsed(), true, 'legacy prefs never move the strip');
+		const flipped = await pairing.runPerformanceCommandFromUi({ type: 'library_panels_toggle' });
+		assert.equal(flipped.ok, true);
+		snapshot = pairing.queryPerformanceState().library_panels;
+		assert.deepEqual(snapshot, {
+			collapsed: false,
+			next_collapsed: true,
+			recommended_collapsed: true,
+			single_column: false,
+			split_column: false,
+			mytag_pane: false
+		});
+		assert.equal(snapshot.collapsed, pairing.isLibraryPanelsCollapsed());
+	} finally {
+		pairing.setLibraryPanelsCollapsed(false);
+		pairing.uiPrefs.next_panel_collapsed = priorNext;
+		pairing.uiPrefs.recommended_panel_collapsed = priorRecommended;
 		uninstall();
 		delete globalThis.window;
 	}
@@ -966,6 +1077,42 @@ test('analysis-source commands are validated through the typed all-deck schedule
 				source: 'invalid'
 			}),
 			/source must be rekordbox or own/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('beat_jump_size validates, dispatches, and mirrors in queryPerformanceState', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const handle = globalThis.window.musicDjToolsPerformance;
+		assert.equal(
+			ipc.queryPerformanceState().decks[2].beat_jump_size_beats,
+			4,
+			'if the default is not 4 then broken'
+		);
+		const after = await handle.dispatch({ type: 'beat_jump_size', deck: 2, beats: 16 });
+		assert.equal(
+			after.decks[2].beat_jump_size_beats,
+			16,
+			'if a valid beat_jump_size dispatch does not update the deck snapshot then broken'
+		);
+		assert.equal(
+			after.decks[1].beat_jump_size_beats,
+			4,
+			'if a sibling deck moves on beat_jump_size then broken'
+		);
+		await assert.rejects(
+			() => handle.dispatch({ type: 'beat_jump_size', deck: 2, beats: 3 }),
+			/beat jump size must be one of/i
+		);
+		assert.equal(
+			ipc.queryPerformanceState().decks[2].beat_jump_size_beats,
+			16,
+			'if queryPerformanceState after dispatch does not mirror beat_jump_size_beats then broken'
 		);
 	} finally {
 		uninstall();

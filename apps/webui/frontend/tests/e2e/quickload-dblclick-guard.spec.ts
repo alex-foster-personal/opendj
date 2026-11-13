@@ -41,6 +41,7 @@
 import { expect, test, type ConsoleMessage, type Locator, type Page } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
+import { deckSettleFailure, deckSettleTick } from './support/deck-settle';
 import { appendEmptyRescueSnapshot } from './support/rescue-snapshot';
 
 const TRACK_ROW = '[data-testid="track-row"]';
@@ -105,29 +106,14 @@ async function _openAllTracks(page: Page): Promise<void> {
 	await _expectEveryDeckEmpty(page);
 }
 
-function _boardRoster(board: PerformanceState): string {
-	return ([1, 2, 3, 4] as const)
-		.map((id) => {
-			const d = board.decks[id];
-			return (
-				`deck${id}[sid=${d.stable_id?.slice(0, 8) ?? 'null'} ` +
-				`playing=${d.playing} pending=${d.transport_pending}]`
-			);
-		})
-		.join(' ');
-}
-
-function _deckErrorTail(deckErrors: string[]): string {
-	if (deckErrors.length === 0) return '';
-	return `; deck-error: ${deckErrors.slice(-3).join(' | ')}`;
-}
-
 /** Wait until the deck holds THIS track with no transport pending. Waiting for
  * any id could not tell a wrong-track load from the right one (#6242).
  *
  * #6242 needed (2): a transport drop (Failed to fetch / ECONNRESET) is a
  * failed load, not a retry. A settled wrong id fails immediately; collected
- * deck-error console lines ride that failure so a fetch miss is visible. */
+ * deck-error console lines ride that failure so a fetch miss is visible.
+ * The decision step lives in support/deck-settle.ts, unit-pinned by
+ * tests/unit/quickload-deck2-settle.test.mjs. */
 async function _waitForDeckLoaded(page: Page, deck: 1 | 2, stableId: string): Promise<void> {
 	const deckErrors: string[] = [];
 	const onConsole = (msg: ConsoleMessage) => {
@@ -143,29 +129,16 @@ async function _waitForDeckLoaded(page: Page, deck: 1 | 2, stableId: string): Pr
 		await expect
 			.poll(
 				async () => {
-					const board = await _query(page);
-					const state = board.decks[deck];
-					if (state.transport_pending) {
-						return `${state.stable_id} (pending)`;
-					}
-					if (typeof state.stable_id === 'string' && state.stable_id !== stableId) {
-						settledWrong = new Error(
-							`deck ${deck} settled on ${state.stable_id}, expected ${stableId}; board: ${_boardRoster(board)}${_deckErrorTail(deckErrors)}`
-						);
-						return stableId;
-					}
-					return state.stable_id;
+					const tick = deckSettleTick(await _query(page), deck, stableId, deckErrors);
+					if (tick.settledWrong) settledWrong = tick.settledWrong;
+					return tick.value;
 				},
 				{ message: `deck ${deck} never settled holding ${stableId}`, timeout: 45_000 }
 			)
 			.toBe(stableId);
 		if (settledWrong) throw settledWrong;
 	} catch (err) {
-		if (settledWrong) throw settledWrong;
-		const tail = _deckErrorTail(deckErrors);
-		if (tail === '') throw err;
-		const wrapped = new Error(`${err instanceof Error ? err.message : String(err)}${tail}`);
-		throw wrapped;
+		throw deckSettleFailure(err, settledWrong, deckErrors);
 	} finally {
 		page.off('console', onConsole);
 	}

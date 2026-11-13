@@ -1,0 +1,2415 @@
+{
+  "source": "XDJ-RX3_MIDI_Message_List_E1.pdf (Pioneer DJ / AlphaTheta, (c) 2021; sha256 bd9c747ec65c3910d139d33cbbf08033a9ffd57b548978bf5dd51f2c2cdf9c36; local only, not committed)",
+  "device": "XDJ-RX3",
+  "vendor": "AlphaTheta / Pioneer DJ",
+  "channel_conventions": {
+    "deck_rows": "deck rows carry ch=1; the unit sends on deck channel 1-4 (status 9n/Bn, n=deck-1). Left side = deck 1/3, right side = deck 2/4.",
+    "pad_rows": "pads on ch 6-9 (deck 1-4); note = 16*mode + (pad-1), +SHIFT = +8",
+    "channel_assignment": "ch1 browser (shared with deck 1), ch1-4 decks, ch5 effect+mixer, ch6-9 pads, ch12 LOAD LED / jog display (MIDI OUT only)"
+  },
+  "controls": [
+    {
+      "name": "jog_platter_rotate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "layer": "base",
+      "notes": "JOG dial (platter) rotate, relative: cw from 0x41, ccw from 0x3F; deck ch 1-4 (left side deck 1/3, right side deck 2/4) [1-1]"
+    },
+    {
+      "name": "jog_platter_rotate_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "layer": "shift",
+      "notes": "JOG dial (platter) rotate +SHIFT [1-1]"
+    },
+    {
+      "name": "jog_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "layer": "base",
+      "notes": "JOG dial (platter) touch; deck ch 1-4 (left side deck 1/3, right side deck 2/4) [1-1]"
+    },
+    {
+      "name": "jog_touch_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "layer": "shift",
+      "notes": "JOG dial (platter) touch +SHIFT [1-1]"
+    },
+    {
+      "name": "jog_wheel_side_rotate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "layer": "base",
+      "notes": "JOG dial (wheel side) rotate, relative [1-1]"
+    },
+    {
+      "name": "jog_wheel_side_rotate_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "layer": "shift",
+      "notes": "JOG dial (wheel side) rotate +SHIFT [1-1]"
+    },
+    {
+      "name": "tempo_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "layer": "base",
+      "notes": "TEMPO slider MSB (14-bit 0-16383, - side 0, + side 16383; LSB CC 32) [1-2]"
+    },
+    {
+      "name": "tempo_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "layer": "base",
+      "notes": "TEMPO slider LSB [1-2]"
+    },
+    {
+      "name": "master_tempo",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "layer": "base",
+      "notes": "MASTER TEMPO [1-3]"
+    },
+    {
+      "name": "tempo_range",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "layer": "base",
+      "notes": "TEMPO RANGE [1-4]"
+    },
+    {
+      "name": "beat_sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "layer": "base",
+      "notes": "SYNC [1-5]"
+    },
+    {
+      "name": "beat_sync_long",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "layer": "base",
+      "notes": "SYNC long-press [1-5]"
+    },
+    {
+      "name": "master",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "layer": "base",
+      "notes": "MASTER [1-6]"
+    },
+    {
+      "name": "jog_mode",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "layer": "base",
+      "notes": "JOG MODE [1-7]"
+    },
+    {
+      "name": "vinyl_speed_adjust",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "layer": "base",
+      "notes": "VINYL SPEED ADJUST button (hardware button), plate label 1-8-1 [1-8]"
+    },
+    {
+      "name": "vinyl_speed_adjust_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "layer": "base",
+      "notes": "VINYL SPEED ADJUST volume (SHORT CUT), plate row 8-2; sent only while VINYL SPEED ADJUST is ON; five levels 0x00/0x12/0x3F/0x6D/0x7F [1-8]"
+    },
+    {
+      "name": "track_search_fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "layer": "base",
+      "notes": "TRACK SEARCH FWD [1-9]"
+    },
+    {
+      "name": "track_search_rev",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "layer": "base",
+      "notes": "TRACK SEARCH REV [1-9]"
+    },
+    {
+      "name": "search_fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "layer": "base",
+      "notes": "SEARCH FWD [1-10]"
+    },
+    {
+      "name": "search_rev",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "layer": "base",
+      "notes": "SEARCH REV [1-10]"
+    },
+    {
+      "name": "reverse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "layer": "base",
+      "notes": "REVERSE (DIRECTION) [1-11]"
+    },
+    {
+      "name": "slip",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "layer": "base",
+      "notes": "SLIP [1-12]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "layer": "base",
+      "notes": "LOOP IN [1-14]"
+    },
+    {
+      "name": "loop_in_long",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "layer": "base",
+      "notes": "LOOP IN long-press [1-14]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "layer": "base",
+      "notes": "LOOP OUT [1-15]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "layer": "base",
+      "notes": "RELOOP/EXIT [1-16]"
+    },
+    {
+      "name": "cue_loop_call_next",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "layer": "base",
+      "notes": "CUE/LOOP CALL NEXT [1-17]"
+    },
+    {
+      "name": "cue_loop_call_prev",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "layer": "base",
+      "notes": "CUE/LOOP CALL PREV [1-17]"
+    },
+    {
+      "name": "cue_loop_delete",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "layer": "base",
+      "notes": "CUE/LOOP DELETE [1-18]"
+    },
+    {
+      "name": "cue_loop_memory",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "layer": "base",
+      "notes": "CUE/LOOP MEMORY [1-19]"
+    },
+    {
+      "name": "play_pause",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "layer": "base",
+      "notes": "PLAY/PAUSE [1-20]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "layer": "base",
+      "notes": "CUE [1-21]"
+    },
+    {
+      "name": "load",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "layer": "base",
+      "notes": "LOAD (hardware button), sent on the target deck's channel 1-4 [1-22]"
+    },
+    {
+      "name": "needle_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "layer": "base",
+      "notes": "NEEDLE (GUI, overall waveform position display) touch [1-23]"
+    },
+    {
+      "name": "needle_position",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "layer": "base",
+      "notes": "NEEDLE (GUI) position data 1-127, left to right [1-23]"
+    },
+    {
+      "name": "time_mode",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "layer": "base",
+      "notes": "TIME MODE (GUI, time display) [1-24]"
+    },
+    {
+      "name": "time_mode_long",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "layer": "base",
+      "notes": "TIME MODE (GUI) long-press [1-24]"
+    },
+    {
+      "name": "quantize",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "layer": "base",
+      "notes": "QUANTIZE [1-25]"
+    },
+    {
+      "name": "beat_left",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 76,
+      "layer": "base",
+      "notes": "BEAT LEFT [2-1]"
+    },
+    {
+      "name": "beat_right",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 77,
+      "layer": "base",
+      "notes": "BEAT RIGHT [2-1]"
+    },
+    {
+      "name": "tap",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 78,
+      "layer": "base",
+      "notes": "TAP [2-2]"
+    },
+    {
+      "name": "tap_shift",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 126,
+      "layer": "shift",
+      "notes": "TAP +SHIFT [2-2]"
+    },
+    {
+      "name": "beat_fx_select_delay",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 42,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT DELAY (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_echo",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 55,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT ECHO (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_ping_pong",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 51,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT PING PONG (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_spiral",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 43,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT SPIRAL (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_reverb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 54,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT REVERB (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_trans",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 53,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT TRANS (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_filter",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 59,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT FILTER (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_flanger",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 50,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT FLANGER (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_phaser",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 57,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT PHASER (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_pitch",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 63,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT PITCH (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_slip_roll",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 58,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT SLIP ROLL (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_roll",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 46,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT ROLL (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_vinyl_brake",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 61,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT VINYL BRAKE (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_select_helix",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 62,
+      "layer": "base",
+      "notes": "BEAT FX EFFECT SELECT HELIX (rotate; also BEAT FX BANK GUI press) [2-3]"
+    },
+    {
+      "name": "beat_fx_ch_select_cf_a",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 39,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT CF.A [2-4]"
+    },
+    {
+      "name": "beat_fx_ch_select_cf_b",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 40,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT CF.B [2-4]"
+    },
+    {
+      "name": "beat_fx_ch_select_mic",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 28,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT MIC [2-4]"
+    },
+    {
+      "name": "beat_fx_ch_select_aux",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 32,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT AUX [2-4]"
+    },
+    {
+      "name": "beat_fx_ch_select_ch1",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 34,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT CH1 [2-4]"
+    },
+    {
+      "name": "beat_fx_ch_select_ch2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 35,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT CH2 [2-4]"
+    },
+    {
+      "name": "beat_fx_ch_select_master",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 41,
+      "layer": "base",
+      "notes": "BEAT FX CH SELECT MASTER [2-4]"
+    },
+    {
+      "name": "beat_fx_time",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 45,
+      "layer": "base",
+      "notes": "BEAT FX TIME, relative (+/-1 to 30) [2-5]"
+    },
+    {
+      "name": "beat_fx_level_depth",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 91,
+      "layer": "base",
+      "notes": "BEAT FX LEVEL/DEPTH 0-127 [2-6]"
+    },
+    {
+      "name": "beat_fx_on",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 114,
+      "layer": "base",
+      "notes": "BEAT FX ON/OFF [2-7]"
+    },
+    {
+      "name": "beat_fx_on_shift",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 52,
+      "layer": "shift",
+      "notes": "BEAT FX ON/OFF +SHIFT [2-7]"
+    },
+    {
+      "name": "color_deck1",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 5,
+      "layer": "base",
+      "notes": "SOUND COLOR FX COLOR knob deck 1 [2-8]"
+    },
+    {
+      "name": "color_deck2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 10,
+      "layer": "base",
+      "notes": "SOUND COLOR FX COLOR knob deck 2 [2-8]"
+    },
+    {
+      "name": "color_deck3",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 22,
+      "layer": "base",
+      "notes": "SOUND COLOR FX COLOR knob deck 3 [2-8]"
+    },
+    {
+      "name": "color_deck4",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 83,
+      "layer": "base",
+      "notes": "SOUND COLOR FX COLOR knob deck 4 [2-8]"
+    },
+    {
+      "name": "color_parameter",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 108,
+      "layer": "base",
+      "notes": "SOUND COLOR FX PARAMETER [2-9]"
+    },
+    {
+      "name": "color_space",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 105,
+      "layer": "base",
+      "notes": "SOUND COLOR FX SPACE [2-10]"
+    },
+    {
+      "name": "color_dub_echo",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 107,
+      "layer": "base",
+      "notes": "SOUND COLOR FX DUB ECHO [2-11]"
+    },
+    {
+      "name": "color_sweep",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 106,
+      "layer": "base",
+      "notes": "SOUND COLOR FX SWEEP [2-12]"
+    },
+    {
+      "name": "color_noise",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 85,
+      "layer": "base",
+      "notes": "SOUND COLOR FX NOISE [2-13]"
+    },
+    {
+      "name": "color_crush",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 86,
+      "layer": "base",
+      "notes": "SOUND COLOR FX CRUSH [2-14]"
+    },
+    {
+      "name": "color_filter",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 87,
+      "layer": "base",
+      "notes": "SOUND COLOR FX FILTER [2-15]"
+    },
+    {
+      "name": "x_pad_slider",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 113,
+      "layer": "base",
+      "notes": "X-PAD (GUI) slide, Slider Mode, left 0 to right 127 [2-16]"
+    },
+    {
+      "name": "x_pad_beat",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 115,
+      "layer": "base",
+      "notes": "X-PAD (GUI) slide, Beat Mode [2-16]"
+    },
+    {
+      "name": "x_pad_press",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 114,
+      "layer": "base",
+      "notes": "X-PAD (GUI) press, same as BEAT FX ON/OFF [2-16]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 11,
+      "layer": "base",
+      "notes": "CROSSFADER left 0 to right 127 [3-1]"
+    },
+    {
+      "name": "ch_fader_deck1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 17,
+      "layer": "base",
+      "notes": "CH FADER deck 1, lower end 0, upper end 127 [3-2]"
+    },
+    {
+      "name": "ch_fader_deck2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 18,
+      "layer": "base",
+      "notes": "CH FADER deck 2, lower end 0, upper end 127 [3-2]"
+    },
+    {
+      "name": "ch_fader_deck3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 19,
+      "layer": "base",
+      "notes": "CH FADER deck 3, lower end 0, upper end 127 [3-2]"
+    },
+    {
+      "name": "ch_fader_deck4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 20,
+      "layer": "base",
+      "notes": "CH FADER deck 4, lower end 0, upper end 127 [3-2]"
+    },
+    {
+      "name": "crossfader_assign",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 95,
+      "layer": "base",
+      "notes": "CROSSFADER ASSIGN slide, data2 0x00 (THRU) / 0x40 / 0x7F as printed [3-3]"
+    },
+    {
+      "name": "trim_deck1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 1,
+      "layer": "base",
+      "notes": "TRIM deck 1 [3-4]"
+    },
+    {
+      "name": "trim_deck2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "layer": "base",
+      "notes": "TRIM deck 2 [3-4]"
+    },
+    {
+      "name": "trim_deck3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 12,
+      "layer": "base",
+      "notes": "TRIM deck 3 [3-4]"
+    },
+    {
+      "name": "trim_deck4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 80,
+      "layer": "base",
+      "notes": "TRIM deck 4 [3-4]"
+    },
+    {
+      "name": "eq_high_deck1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "layer": "base",
+      "notes": "EQ HIGH deck 1 [3-5]"
+    },
+    {
+      "name": "eq_high_deck2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 7,
+      "layer": "base",
+      "notes": "EQ HIGH deck 2 [3-5]"
+    },
+    {
+      "name": "eq_high_deck3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 14,
+      "layer": "base",
+      "notes": "EQ HIGH deck 3 [3-5]"
+    },
+    {
+      "name": "eq_high_deck4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 81,
+      "layer": "base",
+      "notes": "EQ HIGH deck 4 [3-5]"
+    },
+    {
+      "name": "eq_mid_deck1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 3,
+      "layer": "base",
+      "notes": "EQ MID deck 1 [3-6]"
+    },
+    {
+      "name": "eq_mid_deck2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 8,
+      "layer": "base",
+      "notes": "EQ MID deck 2 [3-6]"
+    },
+    {
+      "name": "eq_mid_deck3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 15,
+      "layer": "base",
+      "notes": "EQ MID deck 3 [3-6]"
+    },
+    {
+      "name": "eq_mid_deck4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 92,
+      "layer": "base",
+      "notes": "EQ MID deck 4 [3-6]"
+    },
+    {
+      "name": "eq_low_deck1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 4,
+      "layer": "base",
+      "notes": "EQ LOW deck 1 [3-7]"
+    },
+    {
+      "name": "eq_low_deck2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 9,
+      "layer": "base",
+      "notes": "EQ LOW deck 2 [3-7]"
+    },
+    {
+      "name": "eq_low_deck3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 21,
+      "layer": "base",
+      "notes": "EQ LOW deck 3 [3-7]"
+    },
+    {
+      "name": "eq_low_deck4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 82,
+      "layer": "base",
+      "notes": "EQ LOW deck 4 [3-7]"
+    },
+    {
+      "name": "headphones_mixing",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 27,
+      "layer": "base",
+      "notes": "HEADPHONES MIXING, CUE 0 to MASTER 127 [3-8]"
+    },
+    {
+      "name": "headphones_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 26,
+      "layer": "base",
+      "notes": "HEADPHONES LEVEL [3-9]"
+    },
+    {
+      "name": "ch_cue_deck1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 70,
+      "layer": "base",
+      "notes": "CH CUE (headphone) deck 1 [3-10]"
+    },
+    {
+      "name": "ch_cue_deck2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 71,
+      "layer": "base",
+      "notes": "CH CUE (headphone) deck 2 [3-10]"
+    },
+    {
+      "name": "ch_cue_deck3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 72,
+      "layer": "base",
+      "notes": "CH CUE (headphone) deck 3 [3-10]"
+    },
+    {
+      "name": "ch_cue_deck4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 73,
+      "layer": "base",
+      "notes": "CH CUE (headphone) deck 4 [3-10]"
+    },
+    {
+      "name": "master_cue",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 74,
+      "layer": "base",
+      "notes": "MASTER CUE (headphone) [3-11]"
+    },
+    {
+      "name": "link_cue",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 75,
+      "layer": "base",
+      "notes": "LINK CUE (headphone) [3-12]"
+    },
+    {
+      "name": "input_switch",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 99,
+      "layer": "base",
+      "notes": "INPUT SWITCH: DECK 0x00, LINE/PHONO 0x7F; sent on the deck channel (DECK1 side sends ch 1 and 3, DECK2 side ch 2 and 4) [3-13]"
+    },
+    {
+      "name": "master_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 24,
+      "layer": "base",
+      "notes": "MASTER LEVEL [3-14]"
+    },
+    {
+      "name": "booth_monitor_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 25,
+      "layer": "base",
+      "notes": "BOOTH MONITOR LEVEL [3-15]"
+    },
+    {
+      "name": "aux_select_off",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 119,
+      "layer": "base",
+      "notes": "AUX SELECT OFF [3-17]"
+    },
+    {
+      "name": "aux_select_line",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 120,
+      "layer": "base",
+      "notes": "AUX SELECT LINE [3-17]"
+    },
+    {
+      "name": "aux_select_portable",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 121,
+      "layer": "base",
+      "notes": "AUX SELECT PORTABLE [3-17]"
+    },
+    {
+      "name": "aux_trim",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 122,
+      "layer": "base",
+      "notes": "AUX TRIM [3-18]"
+    },
+    {
+      "name": "browse_rotate",
+      "section": "browser",
+      "type": "cc",
+      "ch": 1,
+      "code": 79,
+      "layer": "base",
+      "notes": "ROTARY SELECTOR rotate, relative: cw 1-30, ccw 127-98 [4-1]"
+    },
+    {
+      "name": "browse_rotate_shift",
+      "section": "browser",
+      "type": "cc",
+      "ch": 1,
+      "code": 96,
+      "layer": "shift",
+      "notes": "ROTARY SELECTOR rotate +SHIFT [4-1]"
+    },
+    {
+      "name": "browse_press",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "layer": "base",
+      "notes": "ROTARY SELECTOR press [4-1]"
+    },
+    {
+      "name": "browse_press_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 97,
+      "layer": "shift",
+      "notes": "ROTARY SELECTOR press +SHIFT [4-1]"
+    },
+    {
+      "name": "back",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "layer": "base",
+      "notes": "BACK [4-2]"
+    },
+    {
+      "name": "back_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 95,
+      "layer": "shift",
+      "notes": "BACK +SHIFT [4-2]"
+    },
+    {
+      "name": "tag_track",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "layer": "base",
+      "notes": "TAG TRACK/REMOVE [4-3]"
+    },
+    {
+      "name": "tag_track_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 98,
+      "layer": "shift",
+      "notes": "TAG TRACK/REMOVE +SHIFT [4-3]"
+    },
+    {
+      "name": "track_filter",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "layer": "base",
+      "notes": "TRACK FILTER [4-4]"
+    },
+    {
+      "name": "track_filter_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 93,
+      "layer": "shift",
+      "notes": "TRACK FILTER +SHIFT [4-4]"
+    },
+    {
+      "name": "deck_1_2",
+      "section": "browser",
+      "type": "cc",
+      "ch": 1,
+      "code": 102,
+      "layer": "base",
+      "notes": "DECK 1/2 (GUI) press; DECK1/2 on ch 1/2, DECK3/4 on ch 3/4 [4-6]"
+    },
+    {
+      "name": "pad_mode_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "layer": "base",
+      "notes": "PAD MODE HOT CUE [5-1]"
+    },
+    {
+      "name": "pad_mode_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "layer": "shift",
+      "notes": "PAD MODE HOT CUE +SHIFT (EXTENSION1) [5-1]"
+    },
+    {
+      "name": "pad_mode_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "layer": "base",
+      "notes": "PAD MODE BEAT LOOP [5-2]"
+    },
+    {
+      "name": "pad_mode_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "layer": "shift",
+      "notes": "PAD MODE BEAT LOOP +SHIFT (EXTENSION2) [5-2]"
+    },
+    {
+      "name": "pad_mode_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "layer": "base",
+      "notes": "PAD MODE SLIP LOOP [5-3]"
+    },
+    {
+      "name": "pad_mode_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "layer": "shift",
+      "notes": "PAD MODE SLIP LOOP +SHIFT (EXTENSION3) [5-3]"
+    },
+    {
+      "name": "pad_mode_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "layer": "base",
+      "notes": "PAD MODE BEAT JUMP [5-4]"
+    },
+    {
+      "name": "pad_mode_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "layer": "shift",
+      "notes": "PAD MODE BEAT JUMP +SHIFT (EXTENSION4) [5-4]"
+    },
+    {
+      "name": "pad1_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 0,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, HOT CUE mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 16,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 24,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, BEAT LOOP mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 32,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 40,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, SLIP LOOP mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 48,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 56,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, BEAT JUMP mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 64,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, EXTENSION1 mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 80,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 88,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, EXTENSION2 mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 96,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 104,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, EXTENSION3 mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad1_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 112,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 1, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-5]"
+    },
+    {
+      "name": "pad1_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 120,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 1, EXTENSION4 mode +SHIFT [5-5]"
+    },
+    {
+      "name": "pad2_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 1,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 9,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, HOT CUE mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 17,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 25,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, BEAT LOOP mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 33,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 41,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, SLIP LOOP mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 49,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 57,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, BEAT JUMP mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 65,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, EXTENSION1 mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 81,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 89,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, EXTENSION2 mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 97,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 105,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, EXTENSION3 mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad2_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 113,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 2, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-6]"
+    },
+    {
+      "name": "pad2_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 121,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 2, EXTENSION4 mode +SHIFT [5-6]"
+    },
+    {
+      "name": "pad3_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 2,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 10,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, HOT CUE mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 18,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 26,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, BEAT LOOP mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 34,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 42,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, SLIP LOOP mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 50,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 58,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, BEAT JUMP mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 66,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 74,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, EXTENSION1 mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 82,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 90,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, EXTENSION2 mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 98,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 106,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, EXTENSION3 mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad3_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 114,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 3, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-7]"
+    },
+    {
+      "name": "pad3_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 122,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 3, EXTENSION4 mode +SHIFT [5-7]"
+    },
+    {
+      "name": "pad4_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 3,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, HOT CUE mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 19,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 27,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, BEAT LOOP mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 35,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 43,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, SLIP LOOP mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 51,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 59,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, BEAT JUMP mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 67,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 75,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, EXTENSION1 mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 83,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 91,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, EXTENSION2 mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 99,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 107,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, EXTENSION3 mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad4_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 115,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 4, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-8]"
+    },
+    {
+      "name": "pad4_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 123,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 4, EXTENSION4 mode +SHIFT [5-8]"
+    },
+    {
+      "name": "pad5_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 4,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 12,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, HOT CUE mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 20,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 28,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, BEAT LOOP mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 36,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 44,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, SLIP LOOP mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 52,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 60,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, BEAT JUMP mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 68,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 76,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, EXTENSION1 mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 84,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 92,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, EXTENSION2 mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 100,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 108,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, EXTENSION3 mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad5_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 116,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 5, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-9]"
+    },
+    {
+      "name": "pad5_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 124,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 5, EXTENSION4 mode +SHIFT [5-9]"
+    },
+    {
+      "name": "pad6_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 5,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 13,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, HOT CUE mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 21,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 29,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, BEAT LOOP mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 37,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 45,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, SLIP LOOP mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 53,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 61,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, BEAT JUMP mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 69,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 77,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, EXTENSION1 mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 85,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 93,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, EXTENSION2 mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 101,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 109,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, EXTENSION3 mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad6_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 117,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 6, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-10]"
+    },
+    {
+      "name": "pad6_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 125,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 6, EXTENSION4 mode +SHIFT [5-10]"
+    },
+    {
+      "name": "pad7_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 14,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, HOT CUE mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 22,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 30,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, BEAT LOOP mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 38,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 46,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, SLIP LOOP mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 54,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 62,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, BEAT JUMP mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 70,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 78,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, EXTENSION1 mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 86,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 94,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, EXTENSION2 mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 102,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 110,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, EXTENSION3 mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad7_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 118,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 7, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-11]"
+    },
+    {
+      "name": "pad7_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 126,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 7, EXTENSION4 mode +SHIFT [5-11]"
+    },
+    {
+      "name": "pad8_hot_cue",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, HOT CUE mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_hot_cue_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 15,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, HOT CUE mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_beat_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 23,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, BEAT LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_beat_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 31,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, BEAT LOOP mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_slip_loop",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 39,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, SLIP LOOP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_slip_loop_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 47,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, SLIP LOOP mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_beat_jump",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 55,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, BEAT JUMP mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_beat_jump_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 63,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, BEAT JUMP mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_extension1",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 71,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, EXTENSION1 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_extension1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 79,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, EXTENSION1 mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_extension2",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 87,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, EXTENSION2 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_extension2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 95,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, EXTENSION2 mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_extension3",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 103,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, EXTENSION3 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_extension3_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 111,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, EXTENSION3 mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pad8_extension4",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 119,
+      "layer": "base",
+      "notes": "PERFORMANCE PAD 8, EXTENSION4 mode; pad ch 6-9 = deck 1-4; LED out color number 1-126 [5-12]"
+    },
+    {
+      "name": "pad8_extension4_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 6,
+      "code": 127,
+      "layer": "shift",
+      "notes": "PERFORMANCE PAD 8, EXTENSION4 mode +SHIFT [5-12]"
+    },
+    {
+      "name": "pc_control_mode",
+      "section": "system",
+      "type": "cc",
+      "ch": 1,
+      "code": 100,
+      "layer": "base",
+      "notes": "PC Control mode (BROWSE > MIDI > LOAD), deck ch 1-4; no plate fig"
+    },
+    {
+      "name": "mixer_mode",
+      "section": "system",
+      "type": "cc",
+      "ch": 5,
+      "code": 101,
+      "layer": "base",
+      "notes": "Mixer mode: MIDI CONTROL 0x00, XDJ-RX3 0x7F (UTILITY > MIXER MODE); no plate fig"
+    }
+  ]
+}

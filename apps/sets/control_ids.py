@@ -6,7 +6,10 @@ controls they own. Mixer ids captured on the engine path are listed in
 the command reaches the engine (SETREC-05). Loop and cue ids are split by owner
 the same way (SETREC-07).
 
-Regenerate the page module with ``uv run python -m apps.sets.control_ids --write``.
+The registry is the vocabulary shared by capture, replay and coverage tests.
+This module is the Python source of truth; regenerate the page constants with
+``uv run python -m apps.sets.control_ids --write`` (writes
+``apps/webui/frontend/src/lib/sets/control-ids.generated.ts``).
 """
 
 from __future__ import annotations
@@ -151,6 +154,99 @@ def assert_engine_page_mixer_disjoint() -> None:
     overlap = ENGINE_MIXER_CONTROL_IDS & PAGE_MIXER_CONTROL_IDS
     if overlap:
         raise AssertionError(f"mixer control ids claimed by both engine and page: {sorted(overlap)}")
+
+
+# ---------------------------------------------------------------------------
+# FX family (SETREC-11827): per-deck color FX uses fx.{deck}.* ; beat FX unit 0
+# uses fx.0.* for on/select/wet (the DJM Beat FX section).
+# ---------------------------------------------------------------------------
+
+FX_COLOR_SELECT: Final[dict[int, str]] = {
+    1: "fx.1.select",
+    2: "fx.2.select",
+    3: "fx.3.select",
+    4: "fx.4.select",
+}
+
+FX_COLOR_WET: Final[dict[int, str]] = {
+    1: "fx.1.wet",
+    2: "fx.2.wet",
+    3: "fx.3.wet",
+    4: "fx.4.wet",
+}
+
+FX_COLOR_ECHO_BEATS: Final[dict[int, str]] = {
+    1: "fx.1.echo_beats",
+    2: "fx.2.echo_beats",
+    3: "fx.3.echo_beats",
+    4: "fx.4.echo_beats",
+}
+
+# Beat FX is the DJM Beat FX section: one unit, id 0 so it does not collide with
+# per-channel color FX ids fx.1 .. fx.4.
+BEAT_FX_ON: Final[str] = "fx.0.on"
+BEAT_FX_SELECT: Final[str] = "fx.0.select"
+BEAT_FX_WET: Final[str] = "fx.0.wet"
+BEAT_FX_TARGET: Final[str] = "fx.0.target"
+BEAT_FX_BEATS: Final[str] = "fx.0.beats"
+BEAT_FX_QUANTIZE: Final[str] = "fx.0.quantize"
+BEAT_FX_RELEASE: Final[str] = "fx.0.release"
+
+FX_TRIGGER_IDS: Final[frozenset[str]] = frozenset({BEAT_FX_RELEASE})
+
+FX_CONTINUOUS_IDS: Final[frozenset[str]] = frozenset(
+    {
+        *FX_COLOR_WET.values(),
+        *FX_COLOR_ECHO_BEATS.values(),
+        BEAT_FX_WET,
+        BEAT_FX_BEATS,
+    }
+)
+
+FX_SET_IDS: Final[frozenset[str]] = frozenset(
+    {
+        *FX_COLOR_SELECT.values(),
+        *FX_COLOR_WET.values(),
+        *FX_COLOR_ECHO_BEATS.values(),
+        BEAT_FX_ON,
+        BEAT_FX_SELECT,
+        BEAT_FX_WET,
+        BEAT_FX_TARGET,
+        BEAT_FX_BEATS,
+        BEAT_FX_QUANTIZE,
+        BEAT_FX_RELEASE,
+    }
+)
+
+FX_SCRIPTED_TOUCH_IDS: Final[tuple[str, ...]] = (
+    FX_COLOR_SELECT[1],
+    FX_COLOR_WET[1],
+    FX_COLOR_ECHO_BEATS[1],
+    FX_COLOR_SELECT[2],
+    FX_COLOR_WET[2],
+    BEAT_FX_ON,
+    BEAT_FX_SELECT,
+    BEAT_FX_WET,
+    BEAT_FX_RELEASE,
+)
+
+
+def fx_color_select(deck: int) -> str:
+    if deck not in FX_COLOR_SELECT:
+        raise ValueError(f"fx color select id needs deck 1..4, got {deck}")
+    return FX_COLOR_SELECT[deck]
+
+
+def fx_color_wet(deck: int) -> str:
+    if deck not in FX_COLOR_WET:
+        raise ValueError(f"fx color wet id needs deck 1..4, got {deck}")
+    return FX_COLOR_WET[deck]
+
+
+def fx_color_echo_beats(deck: int) -> str:
+    if deck not in FX_COLOR_ECHO_BEATS:
+        raise ValueError(f"fx color echo_beats id needs deck 1..4, got {deck}")
+    return FX_COLOR_ECHO_BEATS[deck]
 
 
 # ---------------------------------------------------------------------------

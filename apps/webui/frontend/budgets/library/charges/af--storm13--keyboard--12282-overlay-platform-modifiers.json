@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373188,
+  "measured_with_pr": 373697,
+  "sha": "9957061f55",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12282-overlay-platform-modifiers grows the library surface; measured +509 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

@@ -1,0 +1,11 @@
+# Explicit file-graph edges for frontend unit tests that load code through a computed path, which
+# scripts/ci_frontend_unit_selection.py cannot read from imports or path literals. One
+# `<glob> -> <test>` per line, both apps/webui/frontend-relative; `*` crosses directories. A
+# linked test that does not exist fails the selector, which then runs the whole suite. Each entry
+# names the past escape it closes (Mon 9 Nov 2026 replay of 108 PR-head failures).
+
+# readSource() builds `../../src/lib/components/rb/${relPath}` (escaped on #10546).
+src/lib/components/rb/*.svelte -> tests/unit/bindthis-null-guards.test.mjs
+# Reads the root Playwright config and lists tests/e2e/*.spec.ts (escaped on #10612).
+tests/e2e/* -> tests/unit/root-playwright-dedicated-config-ignores.test.mjs
+playwright*.config.ts -> tests/unit/root-playwright-dedicated-config-ignores.test.mjs

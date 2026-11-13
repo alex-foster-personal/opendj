@@ -90,7 +90,9 @@ function renderContext() {
 	const gain = (kind) => Object.assign(new Node(), { kind, gain: new Param(1) });
 	return {
 		currentTime: 0,
+		sampleRate: SR,
 		createGain: () => gain('gain'),
+		createChannelMerger: () => new Node(),
 		createDelay(max) {
 			return Object.assign(new Node(), {
 				delayTime: new Param(0),
@@ -192,6 +194,7 @@ function buildGraph({ send = 0, dry = 1 } = {}) {
 	target.dry.gain.value = dry;
 	target.beatFxSend.gain.value = send;
 	const beatFx = buildEchoKernel(ctx, {
+		mode: 'echo',
 		maxDelaySec: 2,
 		feedback: Q.BEAT_FX_RELEASE_FEEDBACK,
 		loopHpHz: 180,

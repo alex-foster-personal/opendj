@@ -114,6 +114,6 @@ def test_cli_export_writes_the_route_bytes(
         payload = json.loads(capsys.readouterr().out)
         assert payload["rows"] == 3
         assert payload["text"].encode("utf-8") == route_bytes
-    assert playlist_cli.export_path("pl 1/x") == "/api/v1/playlists/pl%201%2Fx/export.txt"
+    assert playlist_cli.export_path("pl 1/x", "txt") == "/api/v1/playlists/pl%201%2Fx/export.txt"
     assert playlist_cli.run(["export", "pl-1"], as_json=True) == EXIT_FAILED
     assert "usage" in capsys.readouterr().out

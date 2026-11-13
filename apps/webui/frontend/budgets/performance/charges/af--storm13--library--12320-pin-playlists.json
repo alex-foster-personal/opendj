@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 483100,
+  "measured_with_pr": 484383,
+  "sha": "ab5c5e1bf1",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--12320-pin-playlists grows the performance surface; measured +1283 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

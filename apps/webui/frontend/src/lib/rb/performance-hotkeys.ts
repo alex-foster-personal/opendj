@@ -7,8 +7,12 @@
 // Backquote (Shift reverses) moves it to the next loaded deck (KEYB-11383).
 // Cmd+, / Ctrl+, is owned by settings/hotkeys.ts (meta/ctrl ignored here).
 // Digits 1-8 are the transport deck's hot cues (#10354); Shift saves an empty
-// slot, Cmd+Shift clears.
+// slot, Cmd+Shift clears. The edge sampler takes digits and PageUp / PageDown
+// only while one of its edges is awake (#13720).
 // #10357: , . (Shift coarse) step tempo; Shift+K reset; P cycles pitch range.
+// #9395: W A S D move the keyboard selector, E drills in, Q out, Esc clears it.
+// #13708: on a selected leaf, Enter presses its control and the arrows step its dial.
+// #14324: the arrows also step a crossfader or pitch slider leaf and nudge a jog leaf's tempo.
 import { DECK_IDS, getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi, uiPrefs } from '$lib/rb/performance-ipc.svelte';
 import {
@@ -25,7 +29,12 @@ import {
 } from '$lib/rb/deck-slots';
 import { createDeckHotCueActions } from '$lib/rb/deck-hot-cue-actions';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
-import { selectedKnobIds } from '$lib/rb/knob-control.svelte';
+import {
+	KNOB_CFG,
+	nudgeKnobOrSelection,
+	readKnobValue,
+	selectedKnobIds
+} from '$lib/rb/knob-control.svelte';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 import { armPinPlacement } from './feedback-store.svelte';
@@ -36,13 +45,12 @@ import {
 	type RecentDeckVerb
 } from './performance-shortcut-routing';
 import { gridJumpEnabled } from './grid-jump-flag';
+import type { SectionJumpDirection } from './section-jump';
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
-import {
-	edgeSamplerUi,
-	fireEdgeTab,
-	flipEdgePage,
-	type EdgeId
-} from '$lib/player/sampler/edge-sampler-ui.svelte';
+import { isModalDialogTarget } from '$lib/keyboard/modal-dialog-target';
+import { trackTypeAhead } from '$lib/components/rb/browser/track-table-type-ahead';
+import { fireEdgeTab, flipSet, sampler } from '$lib/player/sampler/sampler-store.svelte';
+import { awakeSamplerEdge, samplerKeyAction } from '$lib/player/sampler/sampler-keys';
 import { nativeShellKind } from '$lib/shell/native-shell';
 import { tempoKeyCommand, type TempoKeyAction } from './tempo-keys';
 import {
@@ -50,6 +58,29 @@ import {
 	handleKeymapKeydown,
 	legacyPerformanceChordsActive
 } from '$lib/keyboard/keymap-runtime.svelte';
+import {
+	selId,
+	onSelectorRegistryChange,
+	selectorRegistryVersion,
+	snapshotSelectorNodes
+} from '$lib/keyboard/selector-register';
+import {
+	clearSelectorRingTarget,
+	setSelectorRingTarget
+} from '$lib/keyboard/selector-ring-state.svelte';
+import { createSelectorSession, type SelectorSession } from '$lib/keyboard/selector-session';
+import { installSelectorFocusRestore } from '$lib/keyboard/selector-focus-restore';
+import {
+	setKeyboardSelectorProvider,
+	setKeyboardShortcutHandlersProvider
+} from '$lib/keyboard/keyboard-agent-handle';
+import { runCommand, type SelectorLeafHost } from '$lib/keyboard/command-registry';
+import {
+	createSelectorLeafHost,
+	selectorLeafAdjustTarget,
+	type SelectorLeafHostDeps
+} from '$lib/keyboard/selector-activate';
+import { handleMidiAction } from '$lib/rb/midi/action-glue.svelte';
 
 // Re-exported so noteLoopInteraction's callers (e.g. LoopSafetyControls.svelte)
 // can take DeckId from here instead of a fresh direct import of deck-slots.ts,
@@ -124,7 +155,7 @@ async function _toggleRecentPlay(pressT0Ms?: number, quantize?: boolean): Promis
 	const pending = mostRecentPendingLoadPlay();
 	if (pending !== null) {
 		const desiredPlay = !pending.desiredPlay;
-		await runPerformanceCommandFromUi(
+		const result = await runPerformanceCommandFromUi(
 			{
 				type: 'load_play_intent',
 				deck: pending.deck,
@@ -133,7 +164,8 @@ async function _toggleRecentPlay(pressT0Ms?: number, quantize?: boolean): Promis
 			},
 			pressT0Ms
 		);
-		if (quantize === true && desiredPlay) {
+		// #12289: a press that never ran (no session, or refused) arms nothing.
+		if (result.ok && quantize === true && desiredPlay) {
 			setPendingLoadPlayIntent(pending.deck, pending.generation, desiredPlay, pressT0Ms, true);
 		}
 		return;
@@ -187,6 +219,14 @@ async function _gridJump(bars: number): Promise<void> {
 	const deck = _resolveTransportDeck();
 	if (deck === null) return;
 	await runPerformanceCommandFromUi({ type: 'grid_jump', deck, bars });
+}
+
+/** Issue #10263: jump the transport deck to its next or previous analysed
+ * section start. An empty deck sends nothing. */
+async function _sectionJump(direction: SectionJumpDirection): Promise<void> {
+	const deck = _resolveTransportDeck();
+	if (deck === null) return;
+	await runPerformanceCommandFromUi({ type: 'section_jump', deck, direction });
 }
 
 /** KEYB-11383: C, V and K act on the transport deck; an empty deck sends nothing. */
@@ -245,6 +285,110 @@ async function _hotCueKey(kind: 'trigger' | 'save' | 'clear', slot: HotCueSlot):
 	await (kind === 'save' ? actions.saveHotCueAt(slot) : actions.clearHotCueAt(slot));
 }
 
+/** The selector node the key came from, so the first selector key starts where focus is. */
+function _selectorNodeAt(target: EventTarget | null): string | null {
+	if (!(target instanceof Element)) return null;
+	return target.closest('[data-sel-node]')?.getAttribute('data-sel-node') ?? null;
+}
+
+/** #13708: the page and knob registry behind the selected leaf's Enter and arrows. */
+const SELECTOR_LEAF_DEPS: SelectorLeafHostDeps = {
+	findLeaf: (leafId) => document.querySelector(`[data-sel-node="${CSS.escape(leafId)}"]`),
+	readControl: readKnobValue,
+	nudgeControl: nudgeKnobOrSelection,
+	// #14324: a jog leaf's arrows send the keymap's own tempo nudge action.
+	nudgeTempo: (deck, direction) => {
+		void handleMidiAction(
+			{ type: 'deck_tempo_nudge', deck, direction },
+			{ kind: 'button', pressed: true, velocity: 127 }
+		);
+	},
+	keyStep: KNOB_CFG.keyStep
+};
+
+/** #14324: the leaf has a knob, jog or slider for the arrows to adjust. */
+function _leafAdjustable(leafId: string): boolean {
+	return selectorLeafAdjustTarget(leafId, SELECTOR_LEAF_DEPS) !== null;
+}
+
+/** The session's selected leaf as the leaf commands' host; keys and `__odjKeyboard` share it (#13989). */
+function _selectedLeafHost(selector: SelectorSession): SelectorLeafHost | null {
+	const leafId = selector.selectedLeaf();
+	return leafId === null ? null : createSelectorLeafHost(leafId, SELECTOR_LEAF_DEPS);
+}
+
+/** The key press a set of shortcut handlers answers: its stamp and where it landed. */
+interface ShortcutPress {
+	timeStamp: number;
+	target: EventTarget | null;
+}
+
+/** The /performance shortcut handlers for one press; keys and `__odjKeyboard` share them (#13770). */
+function _shortcutHandlers(
+	selector: SelectorSession,
+	press: ShortcutPress
+): PerformanceShortcutHandlers {
+	return {
+		toggleRecentPlay: (pressT0Ms, quantize) => {
+			void _toggleRecentPlay(pressT0Ms, quantize || undefined);
+		},
+		resizeLast: (factor) => {
+			void _resizeLast(factor);
+		},
+		exitLast: () => {
+			void _exitLast();
+		},
+		armPinPlacement,
+		// Linked zoom moves every deck; unlinked, the deck under the pointer,
+		// so with no deck hovered the key does nothing rather than move them all.
+		waveZoomStep: (direction) => {
+			const deck = uiPrefs.wave_zoom_linked ? null : deckHoverUi.deckId;
+			if (deck === null && !uiPrefs.wave_zoom_linked) return;
+			void runPerformanceCommandFromUi(
+				deck === null
+					? { type: 'wave_zoom_step', direction }
+					: { type: 'wave_zoom_step', direction, deck }
+			);
+		},
+		gridJump: (bars) => {
+			void _gridJump(bars);
+		},
+		sectionJump: (direction) => {
+			void _sectionJump(direction);
+		},
+		recentDeckCommand: (verb) => {
+			void _recentDeckCommand(verb);
+		},
+		cycleRecentDeck: _cycleRecentDeck,
+		tempoKey: (action) => {
+			void _tempoKey(action);
+		},
+		hotCueTrigger: (slot) => {
+			void _hotCueKey('trigger', slot).catch(() => {});
+		},
+		hotCueSave: (slot) => {
+			void _hotCueKey('save', slot).catch(() => {});
+		},
+		hotCueClear: (slot) => {
+			void _hotCueKey('clear', slot).catch(() => {});
+		},
+		selectorCommand: (command) => {
+			selector.run(command, {
+				timeStamp: press.timeStamp,
+				startId: _selectorNodeAt(press.target)
+			});
+		},
+		clearSelector: () => {
+			selector.clear();
+		},
+		selectorLeafCommand: (command) => {
+			const selectorLeaf = _selectedLeafHost(selector);
+			if (selectorLeaf === null) throw new Error(`${command}: no selector leaf is selected`);
+			runCommand(command, { timeStamp: press.timeStamp, selectorLeaf });
+		}
+	};
+}
+
 /** True when a pointer press landed on a deck or mixer channel rather than
  * the library, so Cmd+A means "jump back" instead of Select all. */
 function _isDeckPress(target: EventTarget | null): boolean {
@@ -254,78 +398,47 @@ function _isDeckPress(target: EventTarget | null): boolean {
 	);
 }
 
+/** #12286: the one live install's teardown, so a second install replaces it rather than stacking. */
+let uninstallLive: (() => void) | null = null;
+
+/** Install the /performance window shortcuts, replacing any live install; returns its teardown. */
 export function installPerformanceHotkeys(): () => void {
+	uninstallLive?.();
 	let deckFocus = false;
+	const selector = createSelectorSession({
+		snapshot: snapshotSelectorNodes,
+		version: selectorRegistryVersion,
+		showRing: setSelectorRingTarget,
+		hideRing: clearSelectorRingTarget
+	});
 	const onPointer = (e: PointerEvent): void => {
 		deckFocus = _isDeckPress(e.target);
 	};
+	// #13720: existing bindings win; the sampler takes digits and PageUp /
+	// PageDown only while an edge is awake (sampler-keys.ts), never [ or ].
 	function tryEdgeSamplerHotkey(e: KeyboardEvent): boolean {
 		if (!uiPrefs.sampler_enabled || nativeShellKind() !== 'electron') return false;
-		if (isTextEntryTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return false;
-		const edge = edgeSamplerUi.lastEdge as EdgeId;
-		if (e.key === ']' || e.key === 'PageDown') {
-			flipEdgePage(edge, 1);
-			e.preventDefault();
-			return true;
-		}
-		if (e.key === '[' || e.key === 'PageUp') {
-			flipEdgePage(edge, -1);
-			e.preventDefault();
-			return true;
-		}
-		const digit = '1234567890'.indexOf(e.key);
-		if (digit >= 0) {
-			fireEdgeTab(edge, digit);
-			e.preventDefault();
-			return true;
-		}
-		return false;
+		const action = samplerKeyAction(e, {
+			inTextField: isTextEntryTarget(e.target),
+			awakeEdge: awakeSamplerEdge(
+				{ L: sampler.edges.L.awake, R: sampler.edges.R.awake },
+				sampler.lastEdge
+			)
+		});
+		if (action === null) return false;
+		if (action.kind === 'flip') flipSet(action.edge, action.delta);
+		else if (action.kind === 'fire') fireEdgeTab(action.edge, action.index);
+		e.preventDefault();
+		return true;
 	}
 
 	const onKey = (e: KeyboardEvent): void => {
+		// #14604: a key typed inside a modal dialog is the dialog's, not the page's.
+		if (isModalDialogTarget(e.target)) return;
+		// LIBM-82b: an open type-ahead prefix on a track row owns every printable key.
+		if (trackTypeAhead.ownsKey(e)) return;
 		if (tryEdgeSamplerHotkey(e)) return;
-		const handlers: PerformanceShortcutHandlers = {
-			toggleRecentPlay: (pressT0Ms, quantize) => {
-				void _toggleRecentPlay(pressT0Ms, quantize || undefined);
-			},
-			resizeLast: (factor) => {
-				void _resizeLast(factor);
-			},
-			exitLast: () => {
-				void _exitLast();
-			},
-			armPinPlacement,
-			// Linked zoom moves every deck; unlinked, the deck under the pointer,
-			// so with no deck hovered the key does nothing rather than move them all.
-			waveZoomStep: (direction) => {
-				const deck = uiPrefs.wave_zoom_linked ? null : deckHoverUi.deckId;
-				if (deck === null && !uiPrefs.wave_zoom_linked) return;
-				void runPerformanceCommandFromUi(
-					deck === null
-						? { type: 'wave_zoom_step', direction }
-						: { type: 'wave_zoom_step', direction, deck }
-				);
-			},
-			gridJump: (bars) => {
-				void _gridJump(bars);
-			},
-			recentDeckCommand: (verb) => {
-				void _recentDeckCommand(verb);
-			},
-			cycleRecentDeck: _cycleRecentDeck,
-			tempoKey: (action) => {
-				void _tempoKey(action);
-			},
-			hotCueTrigger: (slot) => {
-				void _hotCueKey('trigger', slot).catch(() => {});
-			},
-			hotCueSave: (slot) => {
-				void _hotCueKey('save', slot).catch(() => {});
-			},
-			hotCueClear: (slot) => {
-				void _hotCueKey('clear', slot).catch(() => {});
-			}
-		};
+		const handlers = _shortcutHandlers(selector, { timeStamp: e.timeStamp, target: e.target });
 		if (handleKeymapKeydown(e, handlers)) return;
 		if (!legacyPerformanceChordsActive(activeKeyboardPreset())) return;
 		handlePerformanceShortcutKeydown(e, handlers, {
@@ -333,15 +446,44 @@ export function installPerformanceHotkeys(): () => void {
 			gridJump: gridJumpEnabled(),
 			deckFocus,
 			libraryFocus: e.target instanceof Element && e.target.closest('[data-library-root]') !== null,
-			dialSelected: selectedKnobIds().length > 0
+			dialSelected: selectedKnobIds().length > 0,
+			selectorActive: selector.selected() !== null,
+			selectorInLibrary: selector.selectionWithin(selId.section('library')),
+			selectorLeafId: selector.selectedLeaf(),
+			selectorLeafAdjustable: _leafAdjustable
 		});
 	};
 	window.addEventListener('pointerdown', onPointer, { capture: true });
 	window.addEventListener('keydown', onKey, { capture: true });
-	return () => {
+	// #13770: `__odjKeyboard.run` drives this same session and these same handlers.
+	const selectorHost = {
+		...selector.commandHost(() => performance.now()),
+		selectedLeaf: () => _selectedLeafHost(selector)
+	};
+	setKeyboardSelectorProvider(() => selectorHost);
+	setKeyboardShortcutHandlersProvider(() =>
+		_shortcutHandlers(selector, { timeStamp: performance.now(), target: null })
+	);
+	// #12256: a layout change that removes the selected node moves the selection and ring at once.
+	const stopReconcile = onSelectorRegistryChange(() => selector.reconcile());
+	// #13428: a re-render that drops the focused control hands focus back by selector identity.
+	const stopFocusRestore = installSelectorFocusRestore();
+	let uninstalled = false;
+	// #12286: idempotent, so a replaced install's late teardown cannot clear the live install's providers.
+	const uninstall = (): void => {
+		if (uninstalled) return;
+		uninstalled = true;
+		stopFocusRestore();
+		stopReconcile();
 		window.removeEventListener('pointerdown', onPointer, { capture: true });
 		window.removeEventListener('keydown', onKey, { capture: true });
+		setKeyboardSelectorProvider(null);
+		setKeyboardShortcutHandlersProvider(null);
+		selector.clear();
+		if (uninstallLive === uninstall) uninstallLive = null;
 	};
+	uninstallLive = uninstall;
+	return uninstall;
 }
 
 /** Fallback: if no interaction yet, prefer any engaged loop (lowest deck id). */

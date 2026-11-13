@@ -8,6 +8,7 @@
  * - if a click with quantise off snaps at all then broken
  * - if a click on the overview strip is not proportional to the whole track then broken
  * - if a waveform seek reaches the engine without exact, so the deck's bar/2-bar/phrase grid re-snaps it, then broken
+ * - if a drag across a 120 to 60 BPM change lets the grabbed point slide off the pointer (WAVEZOOM-9661) then broken
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -19,6 +20,9 @@ let overviewSeekMs;
 let waveSnapModeFromModifiers;
 let waveSeekCommand;
 let quantizedSeekDecisionMs;
+let waveDragTargetMs;
+let waveGestureZoomView;
+let zoomView;
 
 const BPM = 128;
 const BEAT_S = 60 / BPM;
@@ -29,9 +33,9 @@ const DURATION_MS = Math.ceil((FIRST_BEAT_S + 256 * BEAT_S) * 1000) + 5_000;
 const NO_MODIFIER = { shiftKey: false, metaKey: false };
 
 before(async () => {
-	({ waveClickSeekMs, overviewSeekMs, waveSnapModeFromModifiers, waveSeekCommand } = await loadTypeScriptModule(
-		'src/lib/components/rb/wave/wave-scrub.ts'
-	));
+	({ waveClickSeekMs, overviewSeekMs, waveSnapModeFromModifiers, waveSeekCommand, waveDragTargetMs, waveGestureZoomView } =
+		await loadTypeScriptModule('src/lib/components/rb/wave/wave-scrub.ts'));
+	zoomView = await loadTypeScriptModule('src/lib/rb/wave-zoom-view.ts');
 	({ quantizedSeekDecisionMs } = await loadTypeScriptModule('src/lib/player/transport/loops.ts'));
 });
 
@@ -152,4 +156,69 @@ test('waveform seeks reach the engine as exact, so a 2-bar grid cannot re-snap t
 	const resnapped = quantizedSeekDecisionMs(GRID, clickMs, 8, false, null).targetMs;
 	assert.ok(Math.abs(resnapped - clickMs) >= 2 * BEAT_S * 1000 - 1, `engine re-snap moved ${resnapped - clickMs} ms`);
 	assert.equal(quantizedSeekDecisionMs(GRID, clickMs, 8, true, null).targetMs, clickMs, 'exact keeps the click');
+});
+
+// ------------------------------------------- drag across a tempo change
+
+// 120 BPM for 32 s, then 60 BPM: the 16-bar window doubles from 32 s to 64 s.
+const TEMPO_GRID = [
+	...Array.from({ length: 64 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: i * 0.5 })),
+	...Array.from({ length: 88 }, (_, i) => ({ n: (i % 4) + 1, bpm: 60, t: 32 + i }))
+];
+const TEMPO_REF = { id: 1, loaded: true, isMaster: true, bpm: 120, pitch: 1, durationMs: 120_000, positionMs: 0 };
+
+/** The live 16-bar view the row paints at a position on the 120 to 60 BPM grid. */
+function _liveView(positionMs) {
+	const ref = zoomView.waveZoomRefAt(TEMPO_REF, positionMs, TEMPO_GRID);
+	const windowS = zoomView.waveZoomWindowS('16', ref);
+	return { windowS, frac: zoomView.wavePlayheadFrac('center', windowS, ref) };
+}
+
+/** The track time painted under a pointer x for a painted position and view. */
+function _timeUnderPointer(positionMs, pointerX, widthPx, view) {
+	return waveClickSeekMs({
+		centerPositionMs: positionMs,
+		pointerX,
+		widthPx,
+		durationMs: TEMPO_REF.durationMs,
+		windowSeconds: view.windowS * TEMPO_REF.pitch,
+		playheadFrac: view.frac,
+		beats: null,
+		mode: 'exact'
+	});
+}
+
+test('WAVEZOOM-9661: a drag across a 120 to 60 BPM change keeps the grabbed point under the pointer', () => {
+	const widthPx = 800;
+	const originMs = 30_000;
+	const downX = 700;
+	const upX = 100;
+	assert.equal(_liveView(originMs).windowS, 32, '16 bars at 120 BPM');
+	const heldWindowS = waveGestureZoomView(_liveView(originMs), null).windowS;
+	const grabbedMs = _timeUnderPointer(originMs, downX, widthPx, waveGestureZoomView(_liveView(originMs), heldWindowS));
+	const releaseMs = waveDragTargetMs({
+		originPositionMs: originMs,
+		originClientX: downX,
+		clientX: upX,
+		widthPx,
+		durationMs: TEMPO_REF.durationMs,
+		windowSeconds: heldWindowS * TEMPO_REF.pitch
+	});
+	assert.equal(releaseMs, 54_000, 'the drag crossed the 32 s tempo change');
+	assert.equal(_liveView(releaseMs).windowS, 64, '16 bars at 60 BPM: the live window doubled');
+	const painted = waveGestureZoomView(_liveView(releaseMs), heldWindowS);
+	assert.equal(painted.windowS, heldWindowS, 'the painted window is the one held at pointerdown');
+	assert.equal(painted.frac, _liveView(releaseMs).frac, 'the playhead fraction stays live');
+	const underMs = _timeUnderPointer(releaseMs, upX, widthPx, painted);
+	assert.ok(Math.abs(underMs - grabbedMs) <= 1, `grabbed ${grabbedMs} ms, under the pointer at release ${underMs} ms`);
+	// Without the hold the painted window doubles and the grabbed point slides away.
+	const slid = _timeUnderPointer(releaseMs, upX, widthPx, waveGestureZoomView(_liveView(releaseMs), null));
+	assert.ok(Math.abs(slid - grabbedMs) > 1_000, `unheld window keeps ${slid} ms under the pointer`);
+});
+
+test('WAVEZOOM-9661: with no held window the live view passes through unchanged', () => {
+	const live = { windowS: 24, frac: 0.5, cacheWindowS: 48 };
+	assert.equal(waveGestureZoomView(live, null), live);
+	assert.deepEqual(waveGestureZoomView(live, 24), { windowS: 24, frac: 0.5 });
+	assert.throws(() => waveGestureZoomView(live, 0), RangeError);
 });

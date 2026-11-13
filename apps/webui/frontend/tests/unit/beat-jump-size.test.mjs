@@ -9,6 +9,10 @@
  *   ✔︎ ✅ 🎯 < > step through the eight sizes and stop at the ends.
  *   ✔︎ ✅ 🎯 A restore does not echo to persistence; a set does.
  *   ✔︎ ✅ 🎯 BeatJump renders size steppers and two jump buttons.
+ *   ✔︎ ✅ 🎯 At 1/2 the < is disabled, at 64 the > is; jumps use the selected size.
+ *     [if] a stepper stays live at its end or a jump ignores the size [then ⛔️]
+ *   ✔︎ ✅ 🎯 With no track loaded the size is still selectable; jumps stay inert.
+ *     [if] the size control is disabled or a jump is live without a track [then ⛔️]
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -137,4 +141,76 @@ test('BeatJump renders size steppers and two jump buttons, not four fixed jumps'
 	const jumps = body.match(/data-performance-control="beat-jump"/g);
 	assert.equal(jumps?.length, 2, 'if there are not exactly two jump buttons then broken');
 	assert.doesNotMatch(body, /data-beats="-8"/, 'if the fixed four jumps remain then broken');
+});
+
+test('BeatJump disables a stepper at its end, jumps by the selected size, and allows picking a size with no track', async () => {
+	// Pins the four issue #13359 acceptance lines against the rendered component.
+	const entry = [
+		"export { default as BeatJump } from '$lib/components/rb/deck/BeatJump.svelte';",
+		"export { setBeatJumpSize } from '$lib/rb/beat-jump-size.svelte';",
+		"export { render } from 'svelte/server';"
+	].join('\n');
+	const ssr = await loadSvelteSsrModule(entry);
+	const beats = Array.from({ length: 200 }, (_, i) => ({ n: (i % 4) + 1, bpm: 120, t: i * 0.5 }));
+	const loaded = {
+		deck_id: 3,
+		stable_id: 'trk-1',
+		anlz: { beatgrid: { beats } },
+		duration_ms: 100000,
+		position_ms: 50000,
+		loop: null
+	};
+	const render = (deck) =>
+		ssr.render(ssr.BeatJump, {
+			props: { deck, pending: false, onJump: async () => {}, onSize: async () => {} }
+		}).body;
+	const tag = (body, testid) =>
+		body.match(new RegExp(`<button[^>]*data-testid="${testid}"[^>]*>`))?.[0] ?? '';
+
+	ssr.setBeatJumpSize(3, 0.5);
+	let body = render(loaded);
+	assert.match(
+		tag(body, 'beat-jump-size-down-deck-3'),
+		/disabled/,
+		'if < is live at 1/2 then broken'
+	);
+	assert.doesNotMatch(
+		tag(body, 'beat-jump-size-up-deck-3'),
+		/disabled/,
+		'if > is dead at 1/2 then broken'
+	);
+
+	ssr.setBeatJumpSize(3, 64);
+	body = render(loaded);
+	assert.match(tag(body, 'beat-jump-size-up-deck-3'), /disabled/, 'if > is live at 64 then broken');
+	assert.doesNotMatch(
+		tag(body, 'beat-jump-size-down-deck-3'),
+		/disabled/,
+		'if < is dead at 64 then broken'
+	);
+	assert.match(
+		tag(body, 'beat-jump-back-deck-3'),
+		/data-beats="-64"/,
+		'if back ignores the size then broken'
+	);
+	assert.match(
+		tag(body, 'beat-jump-forward-deck-3'),
+		/data-beats="64"/,
+		'if forward ignores the size then broken'
+	);
+
+	ssr.setBeatJumpSize(3, 8);
+	body = render({ ...loaded, stable_id: null, anlz: null, duration_ms: null, position_ms: 0 });
+	assert.match(
+		body,
+		/data-testid="beat-jump-size-deck-3"[^>]*>8</,
+		'if the readout misses the size then broken'
+	);
+	for (const id of ['beat-jump-size-down-deck-3', 'beat-jump-size-up-deck-3']) {
+		assert.doesNotMatch(tag(body, id), /disabled/, `if ${id} is dead with no track then broken`);
+	}
+	for (const id of ['beat-jump-back-deck-3', 'beat-jump-forward-deck-3']) {
+		assert.match(tag(body, id), /disabled/, `if ${id} is live with no track then broken`);
+		assert.match(tag(body, id), /title="no track loaded"/);
+	}
 });

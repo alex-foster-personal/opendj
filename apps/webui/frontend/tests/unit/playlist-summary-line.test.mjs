@@ -14,7 +14,8 @@ const sample = {
 	bpm: { min: 122, median: 126, max: 128, missing: 1 },
 	energy: { min: 5, max: 8, missing: 2 },
 	keys: { distinct: 9, missing: 1 },
-	unanalysed: 3
+	unanalysed: 3,
+	unavailable: 0
 };
 
 /** @type {import('$lib/rb/playlist-summary-format')} */
@@ -36,4 +37,31 @@ test('summary line matches the acceptance shape', () => {
 	assert.match(line, /energy 5 to 8/);
 	assert.match(line, /9 keys/);
 	assert.match(line, /3 unanalysed$/);
+});
+
+// LIBM-105b (issue #12328): the health counts on the same line.
+test('missing-file members show as unavailable after unanalysed', () => {
+	/** [if] two members have no audio here [then] the line ends "3 unanalysed, 2 unavailable", [else stop]. */
+	const line = mod.formatPlaylistSummaryLine({ ...sample, unavailable: 2 });
+	assert.match(line, /3 unanalysed, 2 unavailable$/);
+});
+
+test('an all-analysed, all-available list shows neither health count', () => {
+	/** [if] unanalysed and unavailable are both 0 [then] neither word appears on the line, [else stop]. */
+	const line = mod.formatPlaylistSummaryLine({ ...sample, unanalysed: 0, unavailable: 0 });
+	assert.doesNotMatch(line, /unanalysed|unavailable/);
+});
+
+test('an empty playlist reads 0 tracks and nothing else', () => {
+	/** [if] the server reports 0 tracks [then] the line is exactly "0 tracks", [else stop]. */
+	const empty = {
+		tracks: 0,
+		duration_s: 0,
+		bpm: { min: null, median: null, max: null, missing: 0 },
+		energy: { min: null, max: null, missing: 0 },
+		keys: { distinct: 0, missing: 0 },
+		unanalysed: 0,
+		unavailable: 0
+	};
+	assert.equal(mod.formatPlaylistSummaryLine(empty), '0 tracks');
 });

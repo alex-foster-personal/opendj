@@ -179,6 +179,26 @@ export function waveDragTargetMs(target: WaveDragTarget): number {
 	return _clampToTrack(target.originPositionMs - draggedMs, target.durationMs);
 }
 
+/** A row's zoom view: the wall-clock window, the playhead place 0..1, and the glide cache width. */
+export interface WaveZoomViewFrame {
+	windowS: number;
+	frac: number;
+	cacheWindowS?: number;
+}
+
+/** WAVEZOOM-9661: the view a row paints and drags with during a gesture. A window
+ * held at pointerdown replaces the live one, so the painted scale and the drag's
+ * pixel-to-time scale stay one scale while the preview crosses a tempo change;
+ * the playhead fraction stays live. No held window: the live view unchanged. */
+export function waveGestureZoomView(
+	live: WaveZoomViewFrame,
+	heldWindowS: number | null
+): WaveZoomViewFrame {
+	if (heldWindowS === null) return live;
+	_assertPositive('heldWindowS', heldWindowS);
+	return { windowS: heldWindowS, frac: live.frac };
+}
+
 type SeekDispatch = (positionMs: number, pressT0Ms?: number) => Promise<void>;
 
 class _LatestSeekDispatcher implements LatestSeekDispatcher {

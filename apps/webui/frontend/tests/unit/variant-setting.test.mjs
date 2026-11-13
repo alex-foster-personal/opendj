@@ -216,10 +216,11 @@ test('apply routes variant ids', async () => {
 	);
 });
 
-test('shipped catalog has no variant rows', async () => {
+test('shipped catalog variant rows are dev-only and the bare registry is empty', async () => {
 	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 	const variantRows = catalog.SETTINGS_CATALOG.filter((d) => d.id.startsWith('variant_'));
-	assert.equal(variantRows.length, 0);
+	assert.ok(variantRows.length > 0, 'catalog registers the variant families (#13727)');
+	for (const row of variantRows) assert.equal(row.devOnly, true, `${row.id} must be devOnly`);
 	const vs = await loadTypeScriptModule('src/lib/settings/variant-setting.ts');
 	assert.equal(vs.VARIANT_REGISTRY.length, 0);
 });

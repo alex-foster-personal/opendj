@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 33749,
+  "measured_with_pr": 34238,
+  "sha": "59b56e159f",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 5 (PR 14874, branch rc-main-direct--r3-b5) grows the practice-replica surface by its 102 members' code and the bundle's own fixes: measured +489 B gzip at 59b56e159f over bundle 4's head e0d5292549 built on the same machine (this branch's base once PR 14808 and 14841 merge), ceiled to KiB. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

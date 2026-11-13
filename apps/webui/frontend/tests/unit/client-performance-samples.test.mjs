@@ -155,6 +155,10 @@ test('the payload builder defaults live_handles to null', () => {
 	assert.equal(samples.buildClientPerformanceSamplePayload('s', 'id').live_handles, null);
 });
 
+test('the payload builder posts readout_rows null when no perf card is mounted', () => {
+	assert.equal(samples.buildClientPerformanceSamplePayload('s', 'id').readout_rows, null);
+});
+
 test('with ?perfprobe=1 each sample carries the probe window and stop stops the probe', async () => {
 	globalThis.window.location.search = '?perfprobe=1';
 	let stopped = 0;

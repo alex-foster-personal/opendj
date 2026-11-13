@@ -192,7 +192,13 @@ export interface PlaylistNode {
 		| 'missing_tracks'
 		| 'taglist'
 		| 'autolist'
-		| 'usb';
+		| 'usb'
+		// PLAYS-9745: one History night in the track table (`history:YYYY-MM-DD`), read only.
+		| 'history'
+		// Issue #10028: the rekordbox Tag List prep list (`tag-list`); not MyTag `taglist`.
+		| 'tag_list'
+		// Issue #9747: one Explorer folder (`explorer:<path>`, `explorer-all:<path>`), read only.
+		| 'explorer';
 	/** Below server min playable-track count; tree row renders dimmed. */
 	mostly_broken?: boolean;
 	/** When true, extra copies of an already-present track are rejected on add. */

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 350707,
+  "measured_with_pr": 350910,
+  "sha": "28745d4585",
+  "date": "Wed 11 Nov 2026",
+  "reason": "branch af--cmp-10530--memory-loop-followup grows the library surface; measured +203 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

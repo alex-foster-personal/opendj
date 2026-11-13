@@ -21,6 +21,7 @@ export const HIDEABLE_COLUMNS = [
 	'preview',
 	'art',
 	'artist',
+	'album',
 	'key',
 	'bpm',
 	'tempostab',
@@ -35,21 +36,31 @@ export const HIDEABLE_COLUMNS = [
 	'stems',
 	'tags',
 	'filename',
-	'location'
+	'location',
+	'date_added',
+	'bitrate',
+	'kind',
+	'last_played'
 ] as const satisfies readonly ColId[];
 
 export type HideableColumn = (typeof HIDEABLE_COLUMNS)[number];
 
-/** Issue #10030: File name and Location start hidden on a fresh install. */
+/** Issues #9732, #9733, #9735, #9736 and #10030: Album, File name, Location, Date Added, Bitrate, Kind and Last Played start hidden on a fresh install. */
 export const DEFAULT_HIDDEN_LIBRARY_COLUMNS: readonly HideableColumn[] = [
+	'album',
 	'filename',
-	'location'
+	'location',
+	'date_added',
+	'bitrate',
+	'kind',
+	'last_played'
 ];
 
 export const HIDEABLE_COLUMN_LABELS: Readonly<Record<HideableColumn, string>> = {
 	preview: 'Preview',
 	art: 'Artwork',
 	artist: 'Artist',
+	album: 'Album',
 	key: 'Key',
 	bpm: 'BPM',
 	tempostab: 'Beat stability',
@@ -64,7 +75,11 @@ export const HIDEABLE_COLUMN_LABELS: Readonly<Record<HideableColumn, string>> = 
 	stems: 'Stems',
 	tags: 'Tags',
 	filename: 'File name',
-	location: 'Location'
+	location: 'Location',
+	date_added: 'Date Added',
+	bitrate: 'Bitrate',
+	kind: 'Kind',
+	last_played: 'Last Played'
 };
 
 export function isHideableColumn(value: unknown): value is HideableColumn {

@@ -21,7 +21,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 if (process.platform === 'darwin') {
 	contextBridge.executeInMainWorld({
 		func: () => {
-			document.documentElement.setAttribute('data-titlebar', 'overlay');
+			// A preload runs before the page has a document element, so the mark
+			// waits for it: an unguarded call throws here and aborts the rest of
+			// this preload, leaving the bootstrap page without its engine origin.
+			const mark = (): void => document.documentElement?.setAttribute('data-titlebar', 'overlay');
+			if (document.documentElement !== null) mark();
+			else document.addEventListener('DOMContentLoaded', mark, { once: true });
 		},
 		args: []
 	});
@@ -65,7 +70,7 @@ if (init !== null) {
 
 	contextBridge.exposeInMainWorld('opendjShell', {
 		kind: 'electron',
-		version: 2,
+		version: 3,
 		pickFolder: (options?: { title?: string }): Promise<string | null> =>
 			ipcRenderer.invoke('opendj:pick-folder', { title: options?.title }),
 		openExternal: (url: string): Promise<void> => ipcRenderer.invoke('opendj:open-external', String(url)),
@@ -89,7 +94,17 @@ if (init !== null) {
 		windows: {
 			open: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'open', label),
 			close: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'close', label),
-			focus: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'focus', label)
+			focus: (label: string): Promise<void> => ipcRenderer.invoke('opendj:window', 'focus', label),
+			list: (): Promise<string[]> => ipcRenderer.invoke('opendj:window-labels'),
+			onChange: (listener: (labels: string[]) => void): (() => void) => {
+				const wrapper = (_event: unknown, labels: string[]): void => {
+					if (typeof listener === 'function') listener(labels);
+				};
+				ipcRenderer.on('opendj:window-labels', wrapper);
+				return () => {
+					ipcRenderer.removeListener('opendj:window-labels', wrapper);
+				};
+			}
 		},
 		setAudioEngineChoice: (choice: string): Promise<void> =>
 			ipcRenderer.invoke('opendj:audio-engine-choice', String(choice)),

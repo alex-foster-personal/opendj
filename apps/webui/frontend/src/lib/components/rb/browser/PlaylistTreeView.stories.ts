@@ -114,6 +114,14 @@ export const Tints: Story = {
 /** A track drag hovering a playlist, and a Finder folder over the panel. */
 export const DropTargets: Story = { args: { dropTargetId: 'pl-3', folderDropActive: true } };
 
+/** LIBM-84: a smartlist beside ordinary playlists, under a refused track drag. */
+export const SmartlistDropRefused: Story = {
+	args: {
+		nodes: [...nodes, playlist('sl-1', 'Unplayed 128', 22, { kind: 'smartlist' })],
+		refusedDropId: 'sl-1'
+	}
+};
+
 /** A just-created playlist being renamed inline, with the "what next" hint. */
 export const NewPlaylistRename: Story = {
 	args: {

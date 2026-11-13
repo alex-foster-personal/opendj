@@ -37,6 +37,7 @@ function rig({
 	onDispatch = null, // a hook that runs after each dispatch, so a test can change the decks mid-tick
 	handingOff = () => false, // AutoPlay reports a handoff in flight: schedule refuses while it does
 	hold = null, // (command, state) => a promise the dispatch waits on AFTER its effect lands, or null: a command still in flight
+	stemsCalls = null, // when an array, each stemsSilent call pushes { deck, state } so a test sees what it was judged on
 	stemsSilent = {}, // deck => true when its ready stem parts are all muted (the page answers with everyStemPartSilent)
 	onOverlay = undefined, // the waveform's overlay feed (WAVEPLAN-7896)
 	colorFxNoise = undefined // #10246: null when the deck's color effect can be NOISE, else the refusal reason
@@ -137,7 +138,10 @@ function rig({
 			return stepStates.get(id) ?? null;
 		},
 		positionAnchor: (deck) => (anchor === undefined ? { position_ms: state.decks[deck].position_ms, context_sec: 1000 + now / 1000, pitch: state.decks[deck].pitch } : anchor),
-		stemsSilent: (deck) => stemsSilent[deck] === true
+		stemsSilent: (deck, snapshot) => {
+			stemsCalls?.push({ deck, state: snapshot });
+			return stemsSilent[deck] === true;
+		}
 	});
 	// Moving the playhead lands any armed launch on its downbeat, as the page does before the next tick.
 	const at = (bar) => {
@@ -1232,6 +1236,30 @@ test('the handover stop refuses when every incoming stem part is muted, even wit
 		assert.equal(runner.mirror().status, expected);
 		if (silent) assert.match(runner.mirror().reason, /incoming deck 2 is silent/);
 	}
+});
+
+test('the stem guards judge the snapshot they already read, never a query of their own (PERF #9713)', async () => {
+	/** [if] guards on both decks ask stemsSilent during a tick [then] each call gets a state snapshot with that deck, [else stop]. */
+	const stemsCalls = [];
+	const { runner, state, at } = rig({ clockBar: 19, stemsSilent: { 2: true }, stemsCalls });
+	await runner.schedule(order());
+	at(19.8);
+	await runner.tick();
+	state.decks[2].quantized_launch_armed = null;
+	state.decks[2].playing = true;
+	at(27.5);
+	await runner.tick();
+	at(28.1);
+	await runner.tick();
+	assert.ok(stemsCalls.length > 0, 'the guards consulted the stems');
+	for (const { deck, state: snapshot } of stemsCalls) assert.ok(snapshot?.decks?.[deck], `deck ${deck} judged on a passed snapshot`);
+	assert.match(runner.mirror().reason, /incoming deck 2 is silent/);
+});
+
+test('a deck with no stem bundle is never stems-silent through the page wiring (PERF #9713)', async () => {
+	/** [if] the deck state carries no stem bundle [then] everyStemPartSilent on the passed snapshot is false, [else stop]. */
+	const { everyStemPartSilent } = await loadTypeScriptModule('src/lib/sets/deck-audibility.ts');
+	assert.equal(everyStemPartSilent({ stems: { status: 'unavailable', layout: null, controls: {} } }), false);
 });
 
 test('a timed stop of the incoming deck refuses when the outgoing stem parts are all muted, even with its channel open', async () => {
@@ -3682,4 +3710,45 @@ test('[if] a running bass_swap_blend is aborted mid-swap [then] both decks strip
 	assert.deepEqual(dispatched.slice(before, before + abortFlattenCommands().length), abortFlattenCommands());
 	assert.equal(state.mixer.channels[1].eq_low, 0.5);
 	assert.equal(state.mixer.channels[2].filter, 0.5);
+});
+
+test('a plan carries stem_gain sets and ramps and drives them on the clock (#10169)', async () => {
+	/** [if] a plan sets drums and ramps vocal by stem_gain [then] it parses and the ramp moves from the live part gain, [else stop]. */
+	const { runner, state, dispatched, at } = rig({ clockBar: 19 });
+	state.decks[2].stems = { controls: { vocal: { gain: 0 } } };
+	const events = [
+		{ at_bar: -0.25, command: { type: 'play', deck: 2, playing: true, quantize: true } },
+		{ at_bar: 0, ramp: { command: { type: 'stem_gain', deck: 2, stem: 'vocal', value: 1 }, to: 1, over_bars: 4 } },
+		{ at_bar: 4, command: { type: 'stem_gain', deck: 1, stem: 'drums', value: 0 } },
+		{ at_bar: 8, command: { type: 'master', deck: 2 } }
+	];
+	assert.equal(plan.parsePlanOrder(order({ events })).events.length, 4);
+	await runner.schedule(order({ events }));
+	at(19.8);
+	await runner.tick();
+	at(22);
+	await runner.tick();
+	const half = dispatched.filter((c) => c.type === 'stem_gain' && c.deck === 2 && c.stem === 'vocal').at(-1);
+	assert.ok(half && Math.abs(half.value - 0.5) < 1e-9, 'the vocal ramp is half way from the live gain 0 to 1');
+	at(24.5);
+	await runner.tick();
+	assert.ok(dispatched.some((c) => c.type === 'stem_gain' && c.deck === 1 && c.stem === 'drums' && c.value === 0));
+});
+
+test('a plan stem_gain step is sent ahead on its bar\'s AudioContext time, like fader and eq (#14043)', async () => {
+	/** [if] a stem_gain step sits inside the lookahead [then] it is dispatched once with its bar's at_context_sec and a step_id, [else stop]. */
+	const { runner, state, dispatched, at } = rig({ clockBar: 19 });
+	state.decks[1].stems = { controls: { drums: { gain: 0.5 } } };
+	const events = order().events.map((e) => (e.at_bar === 4 ? { at_bar: 4, command: { type: 'stem_gain', deck: 1, stem: 'drums', value: 0 } } : e));
+	await runner.schedule(order({ events }));
+	at(19.8);
+	await runner.tick();
+	at(20);
+	await runner.tick();
+	state.decks[1].position_ms = 23 * BAR_MS - 50;
+	await runner.tick();
+	const steps = dispatched.filter((c) => c.type === 'stem_gain');
+	assert.equal(steps.length, 1);
+	assert.ok(Math.abs(steps[0].at_context_sec - 1000.05) < 1e-9, `at_context_sec ${steps[0].at_context_sec}`);
+	assert.equal(typeof steps[0].step_id, 'string');
 });

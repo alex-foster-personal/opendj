@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,7 @@ import pytest
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
 from apps.shared.state import schema as state_schema
-from apps.sync_hub import client, enrollment, enrollment_credentials
+from apps.sync_hub import client, enrollment, enrollment_credentials, service_enroll
 from apps.sync_hub.transport import HttpTransport
 
 from .conftest import ENROLL_OWNER_SUB, ENROLL_PATH
@@ -196,9 +197,6 @@ def _live_attempt(
         results[name] = exc
 
 
-@pytest.mark.skip(
-    reason="quarantined: lock-wait flake under load, 3 of 7 nucbox runs fail after BEGIN IMMEDIATE, #8623"
-)
 def test_two_live_enrollments_racing_one_grant_admit_exactly_one(
     enroll_live_hub: str, enroll_hub_dir: Path, tmp_path: Path
 ) -> None:
@@ -247,6 +245,39 @@ def test_two_live_enrollments_racing_one_grant_admit_exactly_one(
     assert len(owner_rows(enroll_hub_dir)) == LIVE_RACE_ROUNDS, (
         "one owned machine per raced grant, no more and no fewer"
     )
+
+
+def test_enroll_waits_out_a_writer_lock_held_past_the_request_default(
+    enroll_live_hub: str, enroll_hub_dir: Path, tmp_path: Path
+) -> None:
+    """if enroll times out on a writer lock held just past the 5 s request default then broken"""
+    print("if enroll times out on a writer lock held just past the 5 s request default then broken")
+    token = mint_grant(enroll_hub_dir)
+    hold_s = state_db.DEFAULT_BUSY_TIMEOUT_S + 1.0
+    assert hold_s < service_enroll.ENROLL_BUSY_TIMEOUT_S
+    locked = threading.Event()
+
+    def hold_writer_lock() -> None:
+        """Stand in for a race winner descheduled while it holds the lock."""
+        conn = state_db.open_rw(client.state_db_path(enroll_hub_dir), check_same_thread=False)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            locked.set()
+            time.sleep(hold_s)
+            conn.execute("ROLLBACK")
+        finally:
+            conn.close()
+
+    holder = threading.Thread(target=hold_writer_lock)
+    holder.start()
+    assert locked.wait(BARRIER_TIMEOUT_S), "the lock holder never took the writer lock"
+    data_dir = tmp_path / "waiter"
+    data_dir.mkdir()
+    results: dict[str, object] = {}
+    _live_attempt(enroll_live_hub, data_dir, "waiter", token, threading.Barrier(1), results)
+    holder.join(timeout=BARRIER_TIMEOUT_S * 2)
+    assert isinstance(results["waiter"], dict), f"enroll must wait out the lock, got {results['waiter']}"
+    assert results["waiter"]["created"] is True
 
 
 def test_the_same_machine_re_presenting_its_own_grant_still_resolves(

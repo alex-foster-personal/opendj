@@ -1,8 +1,11 @@
-// requirement: SKINLAYOUT-10201
+// requirement: SKINLAYOUT-10201, SKINLAYOUT-14739
 // [if] a performance preset's topbar + waverows + deck row exceed 800 px [then] decks clip at the 1280x800 contract window, [else stop].
 // [if] the 900 px deck row fixture passes, or its failure omits the preset and px over [then] the contract test is blind, [else stop].
 // [if] presetFitsWindow's reason omits the preset id, window height or needed height [then] a refusal cannot be acted on, [else stop].
 // [if] theme.css or the /performance page drifts from the TS px mirror [then] the contract measures the wrong layout, [else stop].
+// [if] a window is too narrow for a preset [then] the refusal names the preset and width shortfall, [else stop].
+// [if] a window is too short for a preset [then] the refusal names the preset and height shortfall, [else stop].
+// [if] a window meets minWindow exactly [then] presetFitsWindow accepts the preset, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, test } from 'node:test';
@@ -97,14 +100,28 @@ test('if a 900 px deck row fixture passes or its failure omits the preset and px
 	assert.ok(overflows.some((m) => /900 px deck row/.test(m) && /352 px over/.test(m)));
 });
 
-test('if presetFitsWindow accepts a short or narrow window, or its reason omits id and heights, then refusals are useless', () => {
+test('if a window is too short for deck-grid then presetFitsWindow names the preset and height shortfall', () => {
 	const short = L.presetFitsWindow(grid(), { w: 1280, h: 600 });
 	assert.equal(short.ok, false);
-	for (const part of ['deck-grid', '600 px', '720 px']) {
+	for (const part of ['deck-grid', '600 px', '720 px', '120 px short']) {
 		assert.ok(short.reason.includes(part), short.reason);
 	}
+});
+
+test('if a window is too narrow for deck-grid then presetFitsWindow names the preset and width shortfall', () => {
 	const narrow = L.presetFitsWindow(grid(), { w: 1000, h: 800 });
 	assert.equal(narrow.ok, false);
-	assert.match(narrow.reason, /1000 px wide/);
+	for (const part of ['deck-grid', '1000 px wide', '1280 px wide', '280 px short']) {
+		assert.ok(narrow.reason.includes(part), narrow.reason);
+	}
+});
+
+test('if a window matches deck-grid minWindow exactly then presetFitsWindow accepts it', () => {
+	const exact = grid().minWindow;
+	const fit = L.presetFitsWindow(grid(), { w: exact.w, h: exact.h });
+	assert.equal(fit.ok, true);
+});
+
+test('if presetFitsWindow gets a non-finite window height then it throws instead of accepting', () => {
 	assert.throws(() => L.presetFitsWindow(grid(), { w: 1280, h: Number.NaN }), /window h/);
 });

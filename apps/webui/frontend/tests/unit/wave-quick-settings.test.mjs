@@ -12,9 +12,12 @@
 // [if] the glyph shows while the daemon has not declared waveform.quick_settings on [then] this fails, [else stop].
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { before, test } from 'node:test';
+import { after, before, test } from 'node:test';
+import { compile } from 'svelte/compiler';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { bundleWaveQuickSettingsClient } from './mount-svelte-client.mjs';
+import { installQualityBadgeDom } from './quality-badge-client-harness.mjs';
 
 let qs;
 let catalog;
@@ -212,13 +215,11 @@ test('WAVEQS-11734 show_vocal_lane is a live markers row with set_waveform_overl
 	assert.equal(inertVocal, undefined, 'vocal_lane must not remain an inert row');
 });
 
-test('WAVEQS-8348/8348d the glyph title is the requirement text verbatim and open focus targets an option, not the header', () => {
+test('WAVEQS-8348 the glyph title is the requirement text verbatim', () => {
 	const button = readFileSync('src/lib/components/rb/WaveQuickSettingsButton.svelte', 'utf8');
 	assert.match(button, /const TITLE = 'Waveform quick settings';/);
 	assert.match(button, /title=\{TITLE\}/);
 	assert.doesNotMatch(button, /loadError/, 'a load error must not replace the title');
-	const popover = readFileSync('src/lib/components/rb/WaveQuickSettingsPopover.svelte', 'utf8');
-	assert.match(popover, /querySelector<HTMLElement>\(\s*'\.wqs-group select, \.wqs-group input:not\(:disabled\)'\s*\)/);
 });
 
 test('WAVEQS-11736 the bar lines row is live, its title names the CLI verb, and the CLI declares the three values', async () => {
@@ -235,4 +236,391 @@ test('WAVEQS-11736 the bar lines row is live, its title names the CLI verb, and 
 	const values = cli.match(/WAVE_GRID_LINES_VALUES: tuple\[str, \.\.\.\] = \(([^)]*)\)/);
 	assert.ok(values, 'WAVE_GRID_LINES_VALUES missing from the CLI catalog');
 	assert.deepEqual([...values[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]), [...grid.WAVE_GRID_LINES_VALUES]);
+});
+
+// ---- issue #12519: one shared read and write path, at runtime ----
+// requirement: WAVEQS-8348c
+// [if] a popover row change is not visible through the Settings read path, is not sent as PUT /api/v1/ui-prefs, or is lost on reload [then] this fails, [else stop].
+
+const WAVEQS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
+
+/** Install a fake window, document and fetch; return the localStorage map and the recorded ui-prefs PUT bodies. */
+function _installSharedPathEnv(store) {
+	const puts = [];
+	globalThis.window = {
+		localStorage: {
+			getItem: (k) => (store.has(k) ? store.get(k) : null),
+			setItem: (k, v) => store.set(k, v),
+			removeItem: (k) => store.delete(k)
+		},
+		matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} })
+	};
+	globalThis.localStorage = globalThis.window.localStorage;
+	globalThis.document = { documentElement: { dataset: {}, style: { setProperty() {} } } };
+	globalThis.fetch = async (input, init) => {
+		const request = input instanceof Request ? input : new Request(input, init);
+		if (request.method === 'PUT' && new URL(request.url).pathname === '/api/v1/ui-prefs') {
+			puts.push(await request.clone().json());
+		}
+		return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+	};
+	return puts;
+}
+
+/** Load the popover and Settings shared modules as one fresh app boot (a page reload). */
+async function _bootSharedPath() {
+	const { loadRuneModule } = await import('./load-rune-module.mjs');
+	return loadRuneModule(
+		[
+			"export { applySettingChange, readSettingValue } from '$lib/settings/apply';",
+			"export { WAVE_QS_GROUPS, resolveWaveQsSetting } from '$lib/settings/waveform-quick-settings';",
+			"export { SETTINGS_CATALOG } from '$lib/settings/catalog';"
+		].join('\n')
+	);
+}
+
+/** A value for `def` that differs from `current`: the flipped boolean or another enum option. */
+function _otherValue(def, current) {
+	if (def.control.kind === 'boolean') return current !== true;
+	return def.control.options.map((o) => o.value).find((v) => v !== current);
+}
+
+/** Let the queued disk write chain drain. */
+async function _settleWrites() {
+	for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve));
+}
+
+test('WAVEQS-8348c a popover row change reads back through the Settings path, PUTs /api/v1/ui-prefs and survives reload', async () => {
+	const saved = { window: globalThis.window, document: globalThis.document, fetch: globalThis.fetch, localStorage: globalThis.localStorage };
+	try {
+		const store = new Map();
+		const puts = _installSharedPathEnv(store);
+		const app = await _bootSharedPath();
+		const expected = new Map();
+		for (const group of app.WAVE_QS_GROUPS) {
+			for (const row of group.rows) {
+				if (row.kind !== 'setting') continue;
+				const def = app.resolveWaveQsSetting(app.SETTINGS_CATALOG, row.id);
+				if (def.control.kind !== 'boolean' && def.control.kind !== 'enum') continue;
+				const next = _otherValue(def, app.readSettingValue(def.id));
+				app.applySettingChange(def.id, next);
+				assert.equal(app.readSettingValue(def.id), next, `${def.id}: Settings must see the popover change at once`);
+				expected.set(def.id, next);
+			}
+		}
+		assert.ok(expected.size >= 10, `expected the live waveform rows, got ${expected.size}`);
+		await _settleWrites();
+		const putKeys = new Set(puts.flatMap((body) => Object.keys(body)));
+		for (const id of ['wave_height', 'show_vocal_lane', 'show_hot_cue_markers', 'wave_grid_lines']) {
+			assert.ok(expected.has(id), `${id} must be a live popover row`);
+			assert.ok(putKeys.has(id), `${id} must persist through PUT /api/v1/ui-prefs`);
+		}
+		assert.ok(store.has(WAVEQS_STORAGE_KEY), 'the change must land in the ui-prefs blob');
+		_installSharedPathEnv(store);
+		const reloaded = await _bootSharedPath();
+		for (const [id, value] of expected) {
+			assert.equal(reloaded.readSettingValue(id), value, `${id} must survive a reload`);
+		}
+	} finally {
+		globalThis.window = saved.window;
+		globalThis.document = saved.document;
+		globalThis.fetch = saved.fetch;
+		globalThis.localStorage = saved.localStorage;
+	}
+});
+
+test('WAVEQS-8348c the Settings overlay reads and writes through the same apply.ts pair as the popover', () => {
+	const src = readFileSync('src/lib/components/settings/SettingsOverlay.svelte', 'utf8');
+	assert.match(src, /import \{[^}]*\bapplySettingChange\b[^}]*\breadSettingValue\b[^}]*\} from '\$lib\/settings\/apply';/);
+	assert.match(src, /applySettingChange\(def\.id, /);
+	assert.match(src, /readSettingValue\(def\.id as AllowedSettingKey\)/);
+});
+
+// ----- WAVEQS-8348d keyboard dialog: the real glyph and popover, client-mounted on the DOM shim -----
+// requirement: WAVEQS-8348d, WAVEQS-14462
+
+let client;
+let teardownDom = null;
+const windowListeners = [];
+
+/** One compound selector (tag, .class, #id, [attr], [attr="v"], :disabled, :not(...)) against a shim element. */
+function matchesCompound(el, compound) {
+	let rest = compound;
+	const tag = rest.match(/^[a-z][\w-]*/i);
+	if (tag) {
+		if (el.tagName.toLowerCase() !== tag[0].toLowerCase()) return false;
+		rest = rest.slice(tag[0].length);
+	}
+	while (rest) {
+		let m;
+		if ((m = rest.match(/^:not\(([^)]*)\)/))) {
+			if (matchesCompound(el, m[1])) return false;
+		} else if ((m = rest.match(/^:disabled/))) {
+			if (!(el.disabled === true || el.hasAttribute('disabled'))) return false;
+		} else if ((m = rest.match(/^\.([\w-]+)/))) {
+			if (!el.classList.contains(m[1])) return false;
+		} else if ((m = rest.match(/^#([\w-]+)/))) {
+			if (el.getAttribute('id') !== m[1]) return false;
+		} else if ((m = rest.match(/^\[([\w-]+)(?:="([^"]*)")?\]/))) {
+			const value = el.getAttribute(m[1]);
+			if (value === null || (m[2] !== undefined && value !== m[2])) return false;
+		} else {
+			throw new Error(`test selector engine: unsupported selector part ${rest}`);
+		}
+		rest = rest.slice(m[0].length);
+	}
+	return true;
+}
+
+/** Selector lists with descendant combinators, enough for focus-trap.ts and the popover. */
+function matchesSelector(el, selector) {
+	return selector.split(',').some((part) => {
+		const chain = part.trim().split(/\s+/);
+		if (!matchesCompound(el, chain[chain.length - 1])) return false;
+		let ancestor = el.parentElement;
+		for (let i = chain.length - 2; i >= 0; i -= 1) {
+			while (ancestor && !matchesCompound(ancestor, chain[i])) ancestor = ancestor.parentElement;
+			if (!ancestor) return false;
+			ancestor = ancestor.parentElement;
+		}
+		return true;
+	});
+}
+
+const NATIVE_TAB_STOPS = new Set(['a', 'button', 'input', 'select', 'textarea']);
+
+/** Give the quality-badge shim the focus, selector and layout surface the dialog needs. */
+function extendShim() {
+	const proto = globalThis.Element.prototype;
+	proto.matches = function (selector) {
+		return matchesSelector(this, selector);
+	};
+	proto.closest = function (selector) {
+		for (let el = this; el; el = el.parentElement) if (matchesSelector(el, selector)) return el;
+		return null;
+	};
+	proto.focus = function () {
+		this.ownerDocument.activeElement = this;
+	};
+	proto.blur = function () {
+		if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body;
+	};
+	Object.defineProperty(proto, 'tabIndex', {
+		configurable: true,
+		get() {
+			const attr = this.getAttribute('tabindex');
+			if (attr !== null) return Number(attr);
+			return NATIVE_TAB_STOPS.has(this.tagName.toLowerCase()) ? 0 : -1;
+		},
+		set(v) {
+			this.setAttribute('tabindex', String(v));
+		}
+	});
+	Object.defineProperty(proto, 'options', {
+		configurable: true,
+		get() {
+			return this.querySelectorAll('option');
+		}
+	});
+	Object.defineProperty(proto, 'offsetWidth', { configurable: true, get: () => 600 });
+	Object.defineProperty(proto, 'offsetHeight', { configurable: true, get: () => 400 });
+	proto.checkVisibility = () => true;
+	proto.getBoundingClientRect = () => ({ left: 900, right: 920, top: 10, bottom: 26, width: 20, height: 16 });
+	proto.getClientRects = () => [{ width: 1 }];
+	globalThis.MutationObserver = class {
+		observe() {}
+		disconnect() {}
+	};
+	globalThis.innerWidth = 1440;
+	globalThis.innerHeight = 900;
+	globalThis.addEventListener = (type, fn, options) => windowListeners.push({ type, fn, options });
+	globalThis.removeEventListener = (type, fn, options) => {
+		const capture = (o) => (typeof o === 'boolean' ? o : o?.capture === true);
+		const i = windowListeners.findIndex((l) => l.type === type && l.fn === fn && capture(l.options) === capture(options));
+		if (i !== -1) windowListeners.splice(i, 1);
+	};
+}
+
+before(async () => {
+	teardownDom = installQualityBadgeDom();
+	extendShim();
+	client = await bundleWaveQuickSettingsClient();
+});
+
+after(() => {
+	for (const key of ['addEventListener', 'removeEventListener', 'MutationObserver', 'innerWidth', 'innerHeight'])
+		delete globalThis[key];
+	teardownDom?.();
+});
+
+function domEvent(type, init = {}) {
+	return {
+		type,
+		...init,
+		defaultPrevented: false,
+		cancelBubble: false,
+		preventDefault() {
+			this.defaultPrevented = true;
+		},
+		stopPropagation() {
+			this.cancelBubble = true;
+		}
+	};
+}
+
+/** Window capture listeners first, then the target's own path, the order a browser dispatches in. */
+function fire(target, type, init = {}) {
+	const event = domEvent(type, { target, ...init });
+	for (const l of [...windowListeners]) if (l.type === type && !event.cancelBubble) l.fn(event);
+	if (!event.cancelBubble) target.dispatchEvent(event);
+	return event;
+}
+
+async function settle() {
+	for (let i = 0; i < 6; i += 1) {
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		client.flushSync();
+	}
+}
+
+/** A host and an outside sibling under document.body, both removed when the test ends. */
+function stage(t) {
+	const host = document.createElement('div');
+	const outside = document.createElement('div');
+	document.body.appendChild(host);
+	document.body.appendChild(outside);
+	t.after(() => {
+		host.remove();
+		outside.remove();
+	});
+	return { host, outside };
+}
+
+/** Mount the real glyph, focus it as a click does, click it, and wait for the lazy popover. */
+async function openFromGlyph(t) {
+	const { host } = stage(t);
+	const instance = client.mount(client.WaveQuickSettingsButton, { target: host });
+	t.after(() => client.unmount(instance));
+	client.flushSync();
+	const glyph = host.querySelector('[data-testid="wave-quick-settings-button"]');
+	assert.ok(glyph, 'the glyph did not render');
+	assert.ok(document.querySelector('[role="dialog"]') === null, 'the dialog rendered before the first click');
+	glyph.focus();
+	fire(glyph, 'click');
+	await settle();
+	const dialog = host.querySelector('[role="dialog"]');
+	assert.ok(dialog, 'a glyph click did not open the dialog');
+	return { glyph, dialog };
+}
+
+/**
+ * Mount the real popover against a focused stand-in glyph, as the glyph does; `close()` unmounts it the
+ * way the glyph's {#if} does. (The DOM shim does not detach a closed {#if} branch, so close paths are
+ * asserted on the popover's onclose contract plus the unmount.)
+ */
+async function openPopover(t) {
+	const { host, outside } = stage(t);
+	const glyph = document.createElement('button');
+	host.appendChild(glyph);
+	glyph.focus();
+	const closes = [];
+	let instance = client.mount(client.WaveQuickSettingsPopover, {
+		target: host,
+		props: { anchor: glyph, onclose: () => closes.push(document.activeElement) }
+	});
+	const close = () => {
+		if (instance === null) return;
+		client.unmount(instance);
+		instance = null;
+		client.flushSync();
+	};
+	t.after(close);
+	await settle();
+	const dialog = host.querySelector('[role="dialog"]');
+	assert.ok(dialog, 'the popover rendered no dialog');
+	return { glyph, dialog, outside, closes, close };
+}
+
+function firstOption(dialog) {
+	return dialog.querySelector('.wqs-group select, .wqs-group input:not(:disabled)');
+}
+
+function tabStops(dialog) {
+	return dialog
+		.querySelectorAll('button, input, select')
+		.filter((el) => !matchesSelector(el, ':disabled') && el.tabIndex >= 0);
+}
+
+test('WAVEQS-8348d the glyph opens a labeled dialog with focus on its first option control', async (t) => {
+	// [if] the glyph click opens no labeled dialog or focus lands off the first option [then] the dialog is not keyboard-ready, [else stop].
+	const { glyph, dialog } = await openFromGlyph(t);
+	assert.equal(dialog.getAttribute('aria-label'), 'Waveform quick settings');
+	assert.equal(glyph.getAttribute('aria-expanded'), 'true');
+	const first = firstOption(dialog);
+	assert.ok(first, 'the dialog has no option control');
+	assert.ok(document.activeElement === first, 'focus is not on the first option control');
+	assert.ok(document.activeElement !== dialog.querySelector('.wqs-all'), 'focus went to All settings');
+});
+
+test('WAVEQS-8348d Tab and Shift+Tab reach every dialog control and stay inside it', async (t) => {
+	// [if] Tab skips a dialog control or walks focus out of the open dialog [then] keyboard users are stranded, [else stop].
+	const { dialog } = await openPopover(t);
+	const stops = tabStops(dialog);
+	assert.ok(stops.length >= 10, `expected every option control, got ${stops.length}`);
+	assert.ok(stops.includes(dialog.querySelector('.wqs-all')), 'All settings is not a Tab stop');
+	const visited = new Set();
+	for (let i = 0; i < stops.length; i += 1) {
+		const event = fire(document.activeElement, 'keydown', { key: 'Tab', shiftKey: false });
+		assert.equal(event.defaultPrevented, true, 'Tab was not handled inside the dialog');
+		assert.ok(dialog.contains(document.activeElement), `Tab ${i + 1} left the dialog`);
+		visited.add(document.activeElement);
+	}
+	const missed = stops.filter((el) => !visited.has(el)).map((el) => el.id || el.className);
+	assert.deepEqual(missed, [], 'some controls were never reached by Tab');
+	assert.ok(document.activeElement === firstOption(dialog), 'Tab did not wrap back to the first option');
+	fire(document.activeElement, 'keydown', { key: 'Tab', shiftKey: true });
+	assert.ok(dialog.contains(document.activeElement), 'Shift+Tab left the dialog');
+	assert.ok(document.activeElement === dialog.querySelector('.wqs-all'), 'Shift+Tab did not step back to All settings');
+});
+
+test('WAVEQS-8348d Escape closes the dialog and returns focus to the glyph', async (t) => {
+	// [if] Escape leaves the dialog open or focus does not return to the glyph [then] it traps the user, [else stop].
+	const { glyph, closes, close } = await openPopover(t);
+	const event = fire(document.activeElement, 'keydown', { key: 'Escape' });
+	assert.equal(event.defaultPrevented, true, 'Escape was not consumed by the dialog');
+	assert.equal(closes.length, 1, 'Escape did not close the dialog');
+	assert.ok(document.activeElement === glyph, 'Escape did not return focus to the glyph');
+	close();
+	assert.ok(document.activeElement === glyph, 'unmount moved focus off the glyph');
+});
+
+test('WAVEQS-8348d a pointer press outside closes the dialog, one inside keeps it open', async (t) => {
+	// [if] an outside press leaves the dialog open or an inside press closes it [then] pointer dismissal is broken, [else stop].
+	const { glyph, dialog, outside, closes, close } = await openPopover(t);
+	fire(dialog.querySelector('.wqs-group'), 'pointerdown');
+	fire(glyph, 'pointerdown');
+	assert.equal(closes.length, 0, 'a press inside the dialog or on the glyph closed it');
+	fire(outside, 'pointerdown');
+	assert.equal(closes.length, 1, 'a press outside left the dialog open');
+	assert.ok(dialog.contains(closes[0]), 'focus had already left the dialog before it closed');
+	close();
+	assert.ok(document.activeElement === glyph, 'closing with focus inside did not return focus to the glyph');
+});
+
+test('WAVEQS-8348d every dialog control carries a hover title', async (t) => {
+	// [if] a dialog control has no hover title of its own or from its group [then] the hover-title rule is broken, [else stop].
+	const { dialog } = await openPopover(t);
+	for (const el of dialog.querySelectorAll('button, input, select')) {
+		const titled = el.closest('[title]');
+		const ok = titled !== null && dialog.contains(titled) && titled.getAttribute('title').trim() !== '';
+		assert.ok(ok, `untitled control ${el.id || el.className}`);
+	}
+});
+
+test('WAVEQS-8348d the glyph imports the popover only on its first click', () => {
+	// [if] the compiled glyph imports the popover statically [then] first paint carries its weight, [else stop].
+	const path = 'src/lib/components/rb/WaveQuickSettingsButton.svelte';
+	const { js } = compile(readFileSync(path, 'utf8'), { filename: path, generate: 'client' });
+	assert.match(js.code, /import\(['"]\.\/WaveQuickSettingsPopover\.svelte['"]\)/);
+	assert.doesNotMatch(js.code, /^import [^;]*from ['"]\.\/WaveQuickSettingsPopover\.svelte['"]/m);
 });

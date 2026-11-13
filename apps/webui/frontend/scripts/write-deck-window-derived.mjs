@@ -1,4 +1,4 @@
-/** Regenerate gothic pre-B5 golden and Settings preview sample from deck-window fixtures. */
+/** Regenerate the gothic pre-B5 golden (from the pinned pre-B5 painter) and the Settings preview sample from the deck-window fixtures. */
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { captureGothicGolden } from '../tests/unit/fixtures/capture-gothic-golden.mjs';

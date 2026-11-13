@@ -465,6 +465,52 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// Pins the spawn-to-adopt race: a re-inspection after a holder takes the lock adopts or stops.
+    #[test]
+    fn a_holder_that_takes_the_lock_after_a_spawn_plan_is_seen_on_reinspection() {
+        let dir = std::env::temp_dir().join(format!("launch-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let lock_path = dir.join(".engine.lock");
+        fs::write(&lock_path, b"{}").expect("write free lock");
+        assert_eq!(
+            inspect_lock(&lock_path, health_always_true),
+            LaunchPlan::Spawn,
+            "a free lock must first plan a spawn"
+        );
+        let pid = std::process::id();
+        let blob = format!(r#"{{"pid":{pid},"host":"127.0.0.1","port":4321,"heartbeat_at":"2099"}}"#);
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .truncate(true)
+            .open(&lock_path)
+            .expect("open lock");
+        let fd = file.as_raw_fd();
+        assert_eq!(unsafe { libc::flock(fd, libc::LOCK_EX) }, 0);
+        file.write_all(blob.as_bytes()).expect("write holder json");
+        assert_eq!(
+            inspect_lock(&lock_path, health_always_true),
+            LaunchPlan::Adopt {
+                pid,
+                host: "127.0.0.1".to_string(),
+                port: 4321,
+            },
+            "a healthy holder that won the gap must be adopted, not reported as a spawn failure"
+        );
+        match inspect_lock(&lock_path, health_always_false) {
+            LaunchPlan::StopOrQuit { pid: holder, detail } => {
+                assert_eq!(holder, pid);
+                assert!(detail.contains("not answering health"), "{detail}");
+            }
+            other => panic!("an unreachable holder must be StopOrQuit, got {other:?}"),
+        }
+        unsafe {
+            libc::flock(fd, libc::LOCK_UN);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn held_dead_pid_is_not_adopt() {
         let dir = std::env::temp_dir().join(format!("launch-dead-{}", std::process::id()));

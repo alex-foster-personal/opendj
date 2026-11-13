@@ -115,13 +115,15 @@ export function safetyLoopToEngage(
 
 /** rekordbox / CDJ ACTIVE LOOP (CUES-9967): the track's active memory loop
  * as an armed safety slot, or null when it has none (the caller then leaves
- * the deck's slot untouched). Hot-cue loops never count. */
+ * the deck's slot untouched). Hot-cue loops and malformed ranges never count. */
 export function activeLoopSafetySlot(
 	cues: readonly AnlzCue[] | null | undefined,
 	durationMs: number
 ): SafetyLoopSnapshot | null {
 	for (const cue of cues ?? []) {
 		if (cue.kind !== 'loop' || cue.slot !== null || !cue.active_loop || cue.out_ms === null) continue;
+		// A malformed saved cue (missing or non-finite endpoint) must never arm the slot.
+		if (!Number.isFinite(cue.in_ms) || !Number.isFinite(cue.out_ms)) continue;
 		if (cue.in_ms < 0 || cue.out_ms <= cue.in_ms || cue.out_ms > durationMs) continue;
 		return { in_ms: cue.in_ms, out_ms: cue.out_ms, beat_length: null, armed: true };
 	}

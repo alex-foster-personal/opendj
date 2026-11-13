@@ -1,0 +1,9 @@
+{
+  "bytes": 3072,
+  "measured_main": 373163,
+  "measured_with_pr": 375525,
+  "sha": "9923dcc1cc",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--oj--13717-transition-preset-bus-verb grows the library surface; measured +2362 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

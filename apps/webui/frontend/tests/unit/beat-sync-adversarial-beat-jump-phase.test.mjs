@@ -171,7 +171,12 @@ test('SOURCE: beatJump takes beatJumpSeekPlan with the deck\'s desired transport
 	// beatJump and DECKUX-6794's gridJump share one body, run from the anchor each planned from.
 	const entry = engine.indexOf('async beatJump(deck: DeckId, beats: number): Promise<void> {');
 	assert.ok(entry > 0, 'beatJump not found');
-	assert.match(engine.slice(entry, engine.indexOf('\n\t}\n', entry)), /await this\._beatJumpFrom\(deck, st, grid, anchorMs, beats\);/);
+	const beatJumpBody = engine.slice(entry, engine.indexOf('\n\t}\n', entry));
+	assert.match(beatJumpBody, /await this\._beatJumpFrom\(deck, st, grid, anchorMs, beats\);/);
+	assert.match(
+		beatJumpBody,
+		/const anchorMs = rt\.desiredActive[\s\S]*\? _projectPositionAt\(deck, _futureScheduleTime\(deck\)\) \* 1000[\s\S]*: st\.position_ms;/
+	);
 	const start = engine.indexOf('private async _beatJumpFrom(');
 	assert.ok(start > 0, '_beatJumpFrom not found');
 	const body = engine.slice(start, engine.indexOf('\n\t}\n', start));

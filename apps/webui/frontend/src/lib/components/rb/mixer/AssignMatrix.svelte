@@ -7,6 +7,8 @@
 	 */
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { CrossfaderAssign } from '$lib/rb/mixer-types';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { assignMatrixSelectorId, assignSwitchSelectorId } from './mixer-extra-selector-ids';
 
 	interface Props {
 		/** Which crossfader bus this matrix assigns to (A = left, B = right). */
@@ -28,10 +30,15 @@
 	}
 </script>
 
-<div class="matrix" aria-label={`crossfader ${bus} assign matrix`}>
+<div
+	class="matrix"
+	aria-label={`crossfader ${bus} assign matrix`}
+	use:selectorNode={{ id: assignMatrixSelectorId(bus), kind: 'group', enabled: true }}
+>
 	{#each CELLS as deck (deck)}
 		<button
 			class="cell"
+			use:selectorNode={{ id: assignSwitchSelectorId(bus, deck), kind: 'leaf', enabled: true }}
 			class:lit={assigns[deck] === bus}
 			title={assigns[deck] === bus
 				? `Channel ${deck} is on ${bus === 'A' ? 'left (A)' : 'right (B)'} now. Click to release to THRU.`

@@ -7,15 +7,23 @@
  * AudioContext graph actually moves the meter when `fader.gain` changes. That
  * is the same "test the shape, not the code" failure the master-meter harness
  * was added to close (Sol thread 3967976238). This entry bundles the shipped
- * `buildDeckChannelMeterHarnessGraph` (same fader tap as production) and
- * `readMeterTap` so the suite can drive a real
+ * `buildDeckChannelGraphCore` (the builder production `buildDeckChannelGraph`
+ * calls, issue #12665) and `readMeterTap` so the suite can drive a real
  * oscillator through the production channel chain and assert post-fader metering.
+ * Only the rune-backed hooks are neutral here: trim at TRIM_MAX_GAIN with no
+ * auto gain, FILTER build params from `colorFxTargets('filter', ...)`, and no
+ * colour-FX splice.
  *
  * One entry, not several imports: meter-tap.ts keeps module-level state, so
  * two bundles would give two unrelated copies (see master-meter-browser-entry.ts).
  */
-import type { DeckChannelNodes } from '$lib/rb/deck-channel-graph';
-import { buildDeckChannelMeterHarnessGraph } from '$lib/rb/deck-channel-meter-harness-graph';
+import { colorFxTargets } from '$lib/rb/color-fx';
+import {
+	buildDeckChannelGraphCore,
+	type DeckChannelGraphHooks,
+	type DeckChannelNodes
+} from '$lib/rb/deck-channel-graph-core';
+import { TRIM_MAX_GAIN } from '$lib/player/constants';
 import type { DeckId } from '$lib/rb/deck-slots';
 import { dbfsFromAmplitude } from '$lib/rb/meter-math';
 import {
@@ -30,6 +38,14 @@ import type { CrossfaderAssign, MixerChannelState, MixerState } from '$lib/rb/mi
 import { ioDeviceAccessNotChecked } from '$lib/player/io-device-access';
 
 const TEST_DECK = 1 as DeckId;
+
+/** Neutral stand-ins for the rune-backed hooks production injects (no auto gain, FILTER mode, no colour FX, no beat FX). */
+const NEUTRAL_HOOKS: DeckChannelGraphHooks = {
+	trimStageGain: (trimKnob) => trimKnob * TRIM_MAX_GAIN,
+	colorFilterParamsForBuild: (_deck, value) => colorFxTargets('filter', value, false).filter,
+	colorFxChannelBuilt: () => {},
+	postFaderInsert: (_deck, fader) => fader
+};
 
 function xfGainFor(assign: CrossfaderAssign, x: number): number {
 	if (assign === 'THRU') return 1;
@@ -180,7 +196,8 @@ async function readChannelMeterAtFaderGains(faderGains: number[]): Promise<{ rea
 	let capturedNodes: DeckChannelNodes | undefined;
 	let capturedTap: MeterTap | undefined;
 
-	const meterSources = buildDeckChannelMeterHarnessGraph({
+	const meterSources = buildDeckChannelGraphCore({
+		...NEUTRAL_HOOKS,
 		ctx,
 		mixerState: neutralMixerState(faderGains[0] ?? 1),
 		masterGain,
@@ -197,7 +214,7 @@ async function readChannelMeterAtFaderGains(faderGains: number[]): Promise<{ rea
 	});
 
 	if (capturedNodes === undefined || capturedTap === undefined) {
-		throw new Error('buildDeckChannelMeterHarnessGraph did not register the test deck');
+		throw new Error('buildDeckChannelGraphCore did not register the test deck');
 	}
 	const deckNodes = capturedNodes;
 	const deckTap = capturedTap;
@@ -245,7 +262,8 @@ async function readChannelMeterFloorsOnNextObservation(): Promise<{
 	let capturedNodes: DeckChannelNodes | undefined;
 	let capturedTap: MeterTap | undefined;
 
-	const meterSources = buildDeckChannelMeterHarnessGraph({
+	const meterSources = buildDeckChannelGraphCore({
+		...NEUTRAL_HOOKS,
 		ctx,
 		mixerState: neutralMixerState(1),
 		masterGain,
@@ -262,7 +280,7 @@ async function readChannelMeterFloorsOnNextObservation(): Promise<{
 	});
 
 	if (capturedNodes === undefined || capturedTap === undefined) {
-		throw new Error('buildDeckChannelMeterHarnessGraph did not register the test deck');
+		throw new Error('buildDeckChannelGraphCore did not register the test deck');
 	}
 	const deckNodes = capturedNodes;
 	const deckTap = capturedTap;

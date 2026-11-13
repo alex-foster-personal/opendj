@@ -92,6 +92,44 @@ test('different keys do not share a fetch', async () => {
 	assert.equal(fetches, 2);
 });
 
+/** A settled hover inside the TTL is served from the cache with no new fetch (issue #13138). */
+test('cached result inside TTL is reused without a fetch', async () => {
+	const host = makeHost();
+	const coalescer = coalescerMod.createCoalescer({ now: host.now });
+	let fetches = 0;
+	originalFetch = globalThis.fetch;
+	globalThis.fetch = async () => {
+		fetches += 1;
+		return jsonResponse({ quality: { grade: { hover: `cached-${fetches}` } } });
+	};
+
+	const first = await hoverMod.audioQualityHover('t6', 'k', coalescer);
+	host.advance(hoverMod.HOVER_TTL_MS - 1);
+	const second = await hoverMod.audioQualityHover('t6', 'k', coalescer);
+	assert.equal(first, 'cached-1');
+	assert.equal(second, 'cached-1');
+	assert.equal(fetches, 1);
+});
+
+/** A different track with the same grade key gets its own cache entry and fetch (issue #13138). */
+test('track change does not reuse the previous track entry', async () => {
+	const host = makeHost();
+	const coalescer = coalescerMod.createCoalescer({ now: host.now });
+	const urls = [];
+	originalFetch = globalThis.fetch;
+	globalThis.fetch = async (url) => {
+		urls.push(String(url));
+		return jsonResponse({ quality: { grade: { hover: `hover for ${urls.length}` } } });
+	};
+
+	const a = await hoverMod.audioQualityHover('track-a', '{"letter":"A"}', coalescer);
+	const b = await hoverMod.audioQualityHover('track-b', '{"letter":"A"}', coalescer);
+	assert.equal(urls.length, 2);
+	assert.match(urls[0], /\/track-a$/);
+	assert.match(urls[1], /\/track-b$/);
+	assert.notEqual(a, b);
+});
+
 test('failed fetch is worded and not cached', async () => {
 	const host = makeHost();
 	const coalescer = coalescerMod.createCoalescer({ now: host.now });

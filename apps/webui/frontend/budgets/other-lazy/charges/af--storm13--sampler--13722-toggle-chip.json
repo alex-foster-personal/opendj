@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557761,
+  "measured_with_pr": 557890,
+  "sha": "28596c6af8",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--13722-toggle-chip grows the other-lazy surface; measured +129 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

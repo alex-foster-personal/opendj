@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557769,
+  "measured_with_pr": 558022,
+  "sha": "9d4d101999",
+  "date": "Fri 13 Nov 2026",
+  "reason": "Branch af--r2-browser-reds: the first-run dialog's focus repair (SETUP-12014), the auto-REC build switch (SETREC-11802b) and the per-occurrence row patch (LIBM-13678) add +253 B gzip to other-lazy over main at f65bb94f34e; ceiled to KiB.",
+  "payback": "none planned: the bytes are the three repairs' own code on this surface"
+}

@@ -1,0 +1,2658 @@
+{
+ "source": "XDJ-XZ_MIDI_Message_List_E1.pdf (Pioneer DJ, (c) 2019; sha256 c0e23435447a5c3f444f55e777e4d7e1b02a0abd6238e8dd0ff1a6a00df867b9; local only, not committed)",
+ "device": "XDJ-XZ",
+ "vendor": "AlphaTheta / Pioneer DJ",
+ "channel_conventions": {
+  "deck_rows": "deck rows carry ch=1; the unit sends on deck channel 1-4 (status 9n/Bn, n=deck-1). Left side = deck 1/3, right side = deck 2/4 via DECK SELECT.",
+  "pad_rows": "pads on ch 6-9 (deck 1-4); note = 16 * mode index + pad index, +SHIFT adds 8",
+  "channel_assignment": "ch1 browser (shared with deck 1), ch1-4 decks, ch5 effect+mixer, ch6-9 pads, ch12 LOAD LED and jog display (MIDI OUT only)"
+ },
+ "controls": [
+  {
+   "name": "jog_platter_rotate",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 34,
+   "layer": "base",
+   "notes": "JOG platter rotate, relative (cw 0x41+, ccw 0x3F-); deck ch 1-4 (left side decks 1/3, right side decks 2/4) [1-1]"
+  },
+  {
+   "name": "jog_platter_rotate_shift",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 41,
+   "layer": "shift",
+   "notes": "JOG platter rotate, relative (cw 0x41+, ccw 0x3F-) +SHIFT [1-1]"
+  },
+  {
+   "name": "jog_touch",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 32,
+   "layer": "base",
+   "notes": "JOG platter touch; deck ch 1-4 (left side decks 1/3, right side decks 2/4) [1-1]"
+  },
+  {
+   "name": "jog_touch_shift",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 72,
+   "layer": "shift",
+   "notes": "JOG platter touch +SHIFT [1-1]"
+  },
+  {
+   "name": "jog_wheel_side_rotate",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 33,
+   "layer": "base",
+   "notes": "JOG wheel side rotate, relative; deck ch 1-4 (left side decks 1/3, right side decks 2/4) [1-1]"
+  },
+  {
+   "name": "jog_wheel_side_rotate_shift",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 38,
+   "layer": "shift",
+   "notes": "JOG wheel side rotate, relative +SHIFT [1-1]"
+  },
+  {
+   "name": "tempo_msb",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 0,
+   "layer": "base",
+   "notes": "TEMPO slider MSB (14-bit 0..16383, - side 0) [1-2]"
+  },
+  {
+   "name": "tempo_lsb",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 32,
+   "layer": "base",
+   "notes": "TEMPO slider LSB [1-2]"
+  },
+  {
+   "name": "tempo_reset",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 19,
+   "layer": "base",
+   "notes": "TEMPO RESET [1-3]"
+  },
+  {
+   "name": "master_tempo",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 17,
+   "layer": "base",
+   "notes": "MASTER TEMPO [1-4]"
+  },
+  {
+   "name": "tempo_range",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 16,
+   "layer": "base",
+   "notes": "TEMPO RANGE [1-5]"
+  },
+  {
+   "name": "sync",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 31,
+   "layer": "base",
+   "notes": "BEAT SYNC press [1-6]"
+  },
+  {
+   "name": "sync_long",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 71,
+   "layer": "base",
+   "notes": "BEAT SYNC long press [1-6]"
+  },
+  {
+   "name": "master",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 30,
+   "layer": "base",
+   "notes": "MASTER [1-7]"
+  },
+  {
+   "name": "jog_mode",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 18,
+   "layer": "base",
+   "notes": "JOG MODE [1-9]"
+  },
+  {
+   "name": "vinyl_speed_adjust",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 30,
+   "layer": "base",
+   "notes": "VINYL SPEED ADJUST knob 0..127 [1-10]"
+  },
+  {
+   "name": "track_search_fwd",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 4,
+   "layer": "base",
+   "notes": "TRACK SEARCH FWD [1-11]"
+  },
+  {
+   "name": "track_search_rev",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 5,
+   "layer": "base",
+   "notes": "TRACK SEARCH REV [1-11]"
+  },
+  {
+   "name": "search_fwd",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 2,
+   "layer": "base",
+   "notes": "SEARCH FWD [1-12]"
+  },
+  {
+   "name": "search_rev",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 3,
+   "layer": "base",
+   "notes": "SEARCH REV [1-12]"
+  },
+  {
+   "name": "reverse",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 33,
+   "layer": "base",
+   "notes": "DIRECTION (REVERSE) [1-14]"
+  },
+  {
+   "name": "slip",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 44,
+   "layer": "base",
+   "notes": "SLIP [1-15]"
+  },
+  {
+   "name": "beat4",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 67,
+   "layer": "base",
+   "notes": "4 BEAT press [1-16]"
+  },
+  {
+   "name": "beat4_long",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 68,
+   "layer": "base",
+   "notes": "4 BEAT long press [1-16]"
+  },
+  {
+   "name": "loop_in",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 6,
+   "layer": "base",
+   "notes": "LOOP IN press [1-17]"
+  },
+  {
+   "name": "loop_in_long",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 69,
+   "layer": "base",
+   "notes": "LOOP IN long press [1-17]"
+  },
+  {
+   "name": "loop_out",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 7,
+   "layer": "base",
+   "notes": "LOOP OUT [1-18]"
+  },
+  {
+   "name": "reloop_exit",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 8,
+   "layer": "base",
+   "notes": "RELOOP/EXIT [1-19]"
+  },
+  {
+   "name": "call_next",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 11,
+   "layer": "base",
+   "notes": "CUE/LOOP CALL NEXT [1-20]"
+  },
+  {
+   "name": "call_prev",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 12,
+   "layer": "base",
+   "notes": "CUE/LOOP CALL PREV [1-20]"
+  },
+  {
+   "name": "cue_loop_delete",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 13,
+   "layer": "base",
+   "notes": "CUE/LOOP DELETE [1-21]"
+  },
+  {
+   "name": "cue_loop_memory",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 10,
+   "layer": "base",
+   "notes": "CUE/LOOP MEMORY [1-22]"
+  },
+  {
+   "name": "play_pause",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 0,
+   "layer": "base",
+   "notes": "PLAY/PAUSE [1-23]"
+  },
+  {
+   "name": "cue",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 1,
+   "layer": "base",
+   "notes": "CUE [1-24]"
+  },
+  {
+   "name": "load",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 81,
+   "layer": "base",
+   "notes": "LOAD (LOAD 1 sends on deck ch 1/3, LOAD 2 on deck ch 2/4) [1-26]"
+  },
+  {
+   "name": "needle_position",
+   "section": "deck",
+   "type": "cc",
+   "ch": 1,
+   "code": 28,
+   "layer": "base",
+   "notes": "NEEDLE POSITION (touch display GUI) position 1..127 left to right [1-27]"
+  },
+  {
+   "name": "needle_touch",
+   "section": "deck",
+   "type": "note",
+   "ch": 1,
+   "code": 54,
+   "layer": "base",
+   "notes": "NEEDLE POSITION (touch display GUI) touch [1-27]"
+  },
+  {
+   "name": "xpad_slide",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 116,
+   "layer": "base",
+   "notes": "X-PAD slide, slider mode, left 0 .. right 127 [2-1]"
+  },
+  {
+   "name": "xpad_beat_slide",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 117,
+   "layer": "base",
+   "notes": "X-PAD slide, beat mode, upper 0..63, lower 64..127 [2-1]"
+  },
+  {
+   "name": "xpad_press",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 114,
+   "layer": "base",
+   "notes": "X-PAD press = BEAT EFFECT ON/OFF (same CC as 2-13) [2-1]"
+  },
+  {
+   "name": "beat_left",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 76,
+   "layer": "base",
+   "notes": "BEAT LEFT [2-2]"
+  },
+  {
+   "name": "beat_right",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 77,
+   "layer": "base",
+   "notes": "BEAT RIGHT [2-2]"
+  },
+  {
+   "name": "auto_tap",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 69,
+   "layer": "base",
+   "notes": "AUTO/TAP [2-3]"
+  },
+  {
+   "name": "tap",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 78,
+   "layer": "base",
+   "notes": "TAP [2-4]"
+  },
+  {
+   "name": "fx_quantize",
+   "section": "fx",
+   "type": "note",
+   "ch": 5,
+   "code": 118,
+   "layer": "base",
+   "notes": "FX QUANTIZE [2-5]"
+  },
+  {
+   "name": "fx_freq_hi",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 102,
+   "layer": "base",
+   "notes": "FREQUENCY HI [2-6]"
+  },
+  {
+   "name": "fx_freq_mid",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 103,
+   "layer": "base",
+   "notes": "FREQUENCY MID [2-7]"
+  },
+  {
+   "name": "fx_freq_low",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 104,
+   "layer": "base",
+   "notes": "FREQUENCY LOW [2-8]"
+  },
+  {
+   "name": "effect_select_delay",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 42,
+   "layer": "base",
+   "notes": "EFFECT SELECT DELAY (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_echo",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 55,
+   "layer": "base",
+   "notes": "EFFECT SELECT ECHO (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_ping_pong",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 51,
+   "layer": "base",
+   "notes": "EFFECT SELECT PING PONG (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_spiral",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 43,
+   "layer": "base",
+   "notes": "EFFECT SELECT SPIRAL (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_reverb",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 54,
+   "layer": "base",
+   "notes": "EFFECT SELECT REVERB (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_trans",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 53,
+   "layer": "base",
+   "notes": "EFFECT SELECT TRANS (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_filter",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 59,
+   "layer": "base",
+   "notes": "EFFECT SELECT FILTER (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_flanger",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 50,
+   "layer": "base",
+   "notes": "EFFECT SELECT FLANGER (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_phaser",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 57,
+   "layer": "base",
+   "notes": "EFFECT SELECT PHASER (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_pitch",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 63,
+   "layer": "base",
+   "notes": "EFFECT SELECT PITCH (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_spiral_roll",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 58,
+   "layer": "base",
+   "notes": "EFFECT SELECT SPIRAL ROLL (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_roll",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 46,
+   "layer": "base",
+   "notes": "EFFECT SELECT ROLL (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_vinyl_brake",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 61,
+   "layer": "base",
+   "notes": "EFFECT SELECT VINYL BRAKE (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "effect_select_helix",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 62,
+   "layer": "base",
+   "notes": "EFFECT SELECT HELIX (rotary switch position, 127 when selected) [2-9]"
+  },
+  {
+   "name": "ch_select_cf_a",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 39,
+   "layer": "base",
+   "notes": "CH SELECT CF/A (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_cf_b",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 40,
+   "layer": "base",
+   "notes": "CH SELECT CF/B (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_mic1",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 28,
+   "layer": "base",
+   "notes": "CH SELECT MIC1 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_mic2",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 29,
+   "layer": "base",
+   "notes": "CH SELECT MIC2 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_mic1_2",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 38,
+   "layer": "base",
+   "notes": "CH SELECT MIC1/2 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_aux",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 32,
+   "layer": "base",
+   "notes": "CH SELECT AUX (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_ch3",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 36,
+   "layer": "base",
+   "notes": "CH SELECT CH3 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_ch1",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 34,
+   "layer": "base",
+   "notes": "CH SELECT CH1 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_ch2",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 35,
+   "layer": "base",
+   "notes": "CH SELECT CH2 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_ch4",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 37,
+   "layer": "base",
+   "notes": "CH SELECT CH4 (rotary switch position) [2-10]"
+  },
+  {
+   "name": "ch_select_master",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 41,
+   "layer": "base",
+   "notes": "CH SELECT MASTER (rotary switch position) [2-10]"
+  },
+  {
+   "name": "time_msb",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 13,
+   "layer": "base",
+   "notes": "TIME encoder, relative (cw 1..30, ccw 127..98) [2-11]"
+  },
+  {
+   "name": "time_lsb",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 45,
+   "layer": "base",
+   "notes": "TIME encoder LSB [2-11]"
+  },
+  {
+   "name": "level_depth",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 91,
+   "layer": "base",
+   "notes": "LEVEL/DEPTH 0..127 [2-12]"
+  },
+  {
+   "name": "beat_fx_on_off",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 114,
+   "layer": "base",
+   "notes": "BEAT EFFECT ON/OFF [2-13]"
+  },
+  {
+   "name": "color_ch1",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 5,
+   "layer": "base",
+   "notes": "SOUND COLOR FX COLOR ch 1 (LOW 0 .. HI 127) [2-14]"
+  },
+  {
+   "name": "color_ch2",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 10,
+   "layer": "base",
+   "notes": "SOUND COLOR FX COLOR ch 2 (LOW 0 .. HI 127) [2-14]"
+  },
+  {
+   "name": "color_ch3",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 22,
+   "layer": "base",
+   "notes": "SOUND COLOR FX COLOR ch 3 (LOW 0 .. HI 127) [2-14]"
+  },
+  {
+   "name": "color_ch4",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 83,
+   "layer": "base",
+   "notes": "SOUND COLOR FX COLOR ch 4 (LOW 0 .. HI 127) [2-14]"
+  },
+  {
+   "name": "color_parameter",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 108,
+   "layer": "base",
+   "notes": "SOUND COLOR FX PARAMETER [2-15]"
+  },
+  {
+   "name": "color_space",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 105,
+   "layer": "base",
+   "notes": "SOUND COLOR FX SPACE [2-16]"
+  },
+  {
+   "name": "color_dub_echo",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 107,
+   "layer": "base",
+   "notes": "SOUND COLOR FX DUB ECHO [2-17]"
+  },
+  {
+   "name": "color_sweep",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 106,
+   "layer": "base",
+   "notes": "SOUND COLOR FX SWEEP [2-18]"
+  },
+  {
+   "name": "color_noise",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 85,
+   "layer": "base",
+   "notes": "SOUND COLOR FX NOISE [2-19]"
+  },
+  {
+   "name": "color_crush",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 86,
+   "layer": "base",
+   "notes": "SOUND COLOR FX CRUSH [2-20]"
+  },
+  {
+   "name": "color_filter",
+   "section": "fx",
+   "type": "cc",
+   "ch": 5,
+   "code": 87,
+   "layer": "base",
+   "notes": "SOUND COLOR FX FILTER [2-21]"
+  },
+  {
+   "name": "crossfader",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 11,
+   "layer": "base",
+   "notes": "CROSSFADER left 0 .. right 127 [3-1]"
+  },
+  {
+   "name": "ch_fader_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 17,
+   "layer": "base",
+   "notes": "CH FADER ch 1, lower 0 .. upper 127 [3-2]"
+  },
+  {
+   "name": "ch_fader_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 18,
+   "layer": "base",
+   "notes": "CH FADER ch 2, lower 0 .. upper 127 [3-2]"
+  },
+  {
+   "name": "ch_fader_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 19,
+   "layer": "base",
+   "notes": "CH FADER ch 3, lower 0 .. upper 127 [3-2]"
+  },
+  {
+   "name": "ch_fader_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 20,
+   "layer": "base",
+   "notes": "CH FADER ch 4, lower 0 .. upper 127 [3-2]"
+  },
+  {
+   "name": "xf_assign_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 65,
+   "layer": "base",
+   "notes": "CROSSFADER ASSIGN ch 1 (A 0x00, THRU 0x40, B 0x7F) [3-3]"
+  },
+  {
+   "name": "xf_assign_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 66,
+   "layer": "base",
+   "notes": "CROSSFADER ASSIGN ch 2 (A 0x00, THRU 0x40, B 0x7F) [3-3]"
+  },
+  {
+   "name": "xf_assign_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 67,
+   "layer": "base",
+   "notes": "CROSSFADER ASSIGN ch 3 (A 0x00, THRU 0x40, B 0x7F) [3-3]"
+  },
+  {
+   "name": "xf_assign_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 68,
+   "layer": "base",
+   "notes": "CROSSFADER ASSIGN ch 4 (A 0x00, THRU 0x40, B 0x7F) [3-3]"
+  },
+  {
+   "name": "input_ch3_computer",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 61,
+   "layer": "base",
+   "notes": "INPUT SELECT ch 3 Computer [3-4]"
+  },
+  {
+   "name": "input_ch3_line",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 59,
+   "layer": "base",
+   "notes": "INPUT SELECT ch 3 LINE [3-4]"
+  },
+  {
+   "name": "input_ch3_phono",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 60,
+   "layer": "base",
+   "notes": "INPUT SELECT ch 3 PHONO [3-4]"
+  },
+  {
+   "name": "input_ch4_computer",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 65,
+   "layer": "base",
+   "notes": "INPUT SELECT ch 4 Computer [3-4]"
+  },
+  {
+   "name": "input_ch4_line",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 63,
+   "layer": "base",
+   "notes": "INPUT SELECT ch 4 LINE [3-4]"
+  },
+  {
+   "name": "input_ch4_phono",
+   "section": "mixer",
+   "type": "note",
+   "ch": 5,
+   "code": 64,
+   "layer": "base",
+   "notes": "INPUT SELECT ch 4 PHONO [3-4]"
+  },
+  {
+   "name": "trim_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 1,
+   "layer": "base",
+   "notes": "TRIM ch 1 0..127 [3-5]"
+  },
+  {
+   "name": "trim_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 6,
+   "layer": "base",
+   "notes": "TRIM ch 2 0..127 [3-5]"
+  },
+  {
+   "name": "trim_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 12,
+   "layer": "base",
+   "notes": "TRIM ch 3 0..127 [3-5]"
+  },
+  {
+   "name": "trim_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 80,
+   "layer": "base",
+   "notes": "TRIM ch 4 0..127 [3-5]"
+  },
+  {
+   "name": "eq_hi_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 2,
+   "layer": "base",
+   "notes": "EQ HI ch 1 0..127 [3-6]"
+  },
+  {
+   "name": "eq_hi_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 7,
+   "layer": "base",
+   "notes": "EQ HI ch 2 0..127 [3-6]"
+  },
+  {
+   "name": "eq_hi_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 14,
+   "layer": "base",
+   "notes": "EQ HI ch 3 0..127 [3-6]"
+  },
+  {
+   "name": "eq_hi_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 81,
+   "layer": "base",
+   "notes": "EQ HI ch 4 0..127 [3-6]"
+  },
+  {
+   "name": "eq_mid_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 3,
+   "layer": "base",
+   "notes": "EQ MID ch 1 0..127 [3-7]"
+  },
+  {
+   "name": "eq_mid_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 8,
+   "layer": "base",
+   "notes": "EQ MID ch 2 0..127 [3-7]"
+  },
+  {
+   "name": "eq_mid_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 15,
+   "layer": "base",
+   "notes": "EQ MID ch 3 0..127 [3-7]"
+  },
+  {
+   "name": "eq_mid_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 92,
+   "layer": "base",
+   "notes": "EQ MID ch 4 0..127 [3-7]"
+  },
+  {
+   "name": "eq_low_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 4,
+   "layer": "base",
+   "notes": "EQ LOW ch 1 0..127 [3-8]"
+  },
+  {
+   "name": "eq_low_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 9,
+   "layer": "base",
+   "notes": "EQ LOW ch 2 0..127 [3-8]"
+  },
+  {
+   "name": "eq_low_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 21,
+   "layer": "base",
+   "notes": "EQ LOW ch 3 0..127 [3-8]"
+  },
+  {
+   "name": "eq_low_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 82,
+   "layer": "base",
+   "notes": "EQ LOW ch 4 0..127 [3-8]"
+  },
+  {
+   "name": "headphones_mix",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 27,
+   "layer": "base",
+   "notes": "HEADPHONES MIXING (CUE 0 .. MASTER 127) [3-9]"
+  },
+  {
+   "name": "headphones_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 26,
+   "layer": "base",
+   "notes": "HEADPHONES LEVEL [3-10]"
+  },
+  {
+   "name": "ch_cue_ch1",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 70,
+   "layer": "base",
+   "notes": "CH CUE (headphone) ch 1 [3-11]"
+  },
+  {
+   "name": "ch_cue_ch2",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 71,
+   "layer": "base",
+   "notes": "CH CUE (headphone) ch 2 [3-11]"
+  },
+  {
+   "name": "ch_cue_ch3",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 72,
+   "layer": "base",
+   "notes": "CH CUE (headphone) ch 3 [3-11]"
+  },
+  {
+   "name": "ch_cue_ch4",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 73,
+   "layer": "base",
+   "notes": "CH CUE (headphone) ch 4 [3-11]"
+  },
+  {
+   "name": "master_cue",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 74,
+   "layer": "base",
+   "notes": "MASTER CUE (headphone) [3-12]"
+  },
+  {
+   "name": "master_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 24,
+   "layer": "base",
+   "notes": "MASTER LEVEL [3-13]"
+  },
+  {
+   "name": "master_eq_low",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 49,
+   "layer": "base",
+   "notes": "MASTER EQ LOW [3-14]"
+  },
+  {
+   "name": "master_eq_mid",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 48,
+   "layer": "base",
+   "notes": "MASTER EQ MID [3-15]"
+  },
+  {
+   "name": "master_eq_hi",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 47,
+   "layer": "base",
+   "notes": "MASTER EQ HI [3-16]"
+  },
+  {
+   "name": "booth_level",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 25,
+   "layer": "base",
+   "notes": "BOOTH MONITOR LEVEL [3-17]"
+  },
+  {
+   "name": "mic1_eq_low",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 31,
+   "layer": "base",
+   "notes": "MIC 1 EQ LOW (-12 0 .. +12 127) [3-25]"
+  },
+  {
+   "name": "mic2_eq_low",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 97,
+   "layer": "base",
+   "notes": "MIC 2 EQ LOW (-12 0 .. +12 127) [3-25]"
+  },
+  {
+   "name": "mic1_eq_mid",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 98,
+   "layer": "base",
+   "notes": "MIC 1 EQ MID (-12 0 .. +12 127) [3-26]"
+  },
+  {
+   "name": "mic2_eq_mid",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 99,
+   "layer": "base",
+   "notes": "MIC 2 EQ MID (-12 0 .. +12 127) [3-26]"
+  },
+  {
+   "name": "mic1_eq_hi",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 30,
+   "layer": "base",
+   "notes": "MIC 1 EQ HI (-12 0 .. +12 127) [3-27]"
+  },
+  {
+   "name": "mic2_eq_hi",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 96,
+   "layer": "base",
+   "notes": "MIC 2 EQ HI (-12 0 .. +12 127) [3-27]"
+  },
+  {
+   "name": "feedback_reducer_mode",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 88,
+   "layer": "base",
+   "notes": "MIC FEEDBACK REDUCER SETTING MODE (LIGHT 0x00, HEAVY 0x7F) [3-28]"
+  },
+  {
+   "name": "feedback_reducer_on",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 89,
+   "layer": "base",
+   "notes": "MIC FEEDBACK REDUCER ON/OFF [3-29]"
+  },
+  {
+   "name": "aux_select_off",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 119,
+   "layer": "base",
+   "notes": "AUX SELECT OFF [3-31]"
+  },
+  {
+   "name": "aux_select_line",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 120,
+   "layer": "base",
+   "notes": "AUX SELECT LINE [3-31]"
+  },
+  {
+   "name": "aux_select_portable",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 121,
+   "layer": "base",
+   "notes": "AUX SELECT PORTABLE [3-31]"
+  },
+  {
+   "name": "aux_trim",
+   "section": "mixer",
+   "type": "cc",
+   "ch": 5,
+   "code": 122,
+   "layer": "base",
+   "notes": "AUX TRIM [3-32]"
+  },
+  {
+   "name": "browse_rotate",
+   "section": "browser",
+   "type": "cc",
+   "ch": 1,
+   "code": 79,
+   "layer": "base",
+   "notes": "ROTARY SELECTOR rotate, relative (cw 1..30, ccw 127..98) [4-1]"
+  },
+  {
+   "name": "browse_rotate_shift",
+   "section": "browser",
+   "type": "cc",
+   "ch": 1,
+   "code": 96,
+   "layer": "shift",
+   "notes": "ROTARY SELECTOR rotate, relative (cw 1..30, ccw 127..98) +SHIFT [4-1]"
+  },
+  {
+   "name": "browse_press",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 51,
+   "layer": "base",
+   "notes": "ROTARY SELECTOR press [4-1]"
+  },
+  {
+   "name": "browse_press_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 97,
+   "layer": "shift",
+   "notes": "ROTARY SELECTOR press +SHIFT [4-1]"
+  },
+  {
+   "name": "back",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 50,
+   "layer": "base",
+   "notes": "BACK [4-2]"
+  },
+  {
+   "name": "back_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 95,
+   "layer": "shift",
+   "notes": "BACK +SHIFT [4-2]"
+  },
+  {
+   "name": "tag_track",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 48,
+   "layer": "base",
+   "notes": "TAG TRACK/REMOVE [4-3]"
+  },
+  {
+   "name": "tag_track_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 98,
+   "layer": "shift",
+   "notes": "TAG TRACK/REMOVE +SHIFT [4-3]"
+  },
+  {
+   "name": "track_filter",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 49,
+   "layer": "base",
+   "notes": "TRACK FILTER/EDIT [4-4]"
+  },
+  {
+   "name": "track_filter_shift",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 93,
+   "layer": "shift",
+   "notes": "TRACK FILTER/EDIT +SHIFT [4-4]"
+  },
+  {
+   "name": "time_mode",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 14,
+   "layer": "base",
+   "notes": "TIME MODE/AUTO CUE press [4-6]"
+  },
+  {
+   "name": "time_mode_long",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 15,
+   "layer": "base",
+   "notes": "TIME MODE/AUTO CUE long press [4-6]"
+  },
+  {
+   "name": "deck_quantize",
+   "section": "browser",
+   "type": "note",
+   "ch": 1,
+   "code": 9,
+   "layer": "base",
+   "notes": "QUANTIZE (deck) [4-7]"
+  },
+  {
+   "name": "deck_select",
+   "section": "browser",
+   "type": "cc",
+   "ch": 1,
+   "code": 102,
+   "layer": "base",
+   "notes": "DECK SELECT (touch display SHORT CUT); sends on deck ch 1-4 [4-8]"
+  },
+  {
+   "name": "pad_mode_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 34,
+   "layer": "base",
+   "notes": "PAD MODE HOT CUE; deck ch 1-4 (left side decks 1/3, right side decks 2/4) [5-1]"
+  },
+  {
+   "name": "pad_mode_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 38,
+   "layer": "shift",
+   "notes": "PAD MODE +SHIFT = EXTENSION1 [5-1]"
+  },
+  {
+   "name": "pad_mode_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 35,
+   "layer": "base",
+   "notes": "PAD MODE BEAT LOOP; deck ch 1-4 (left side decks 1/3, right side decks 2/4) [5-2]"
+  },
+  {
+   "name": "pad_mode_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 39,
+   "layer": "shift",
+   "notes": "PAD MODE +SHIFT = EXTENSION2 [5-2]"
+  },
+  {
+   "name": "pad_mode_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 36,
+   "layer": "base",
+   "notes": "PAD MODE SLIP LOOP; deck ch 1-4 (left side decks 1/3, right side decks 2/4) [5-3]"
+  },
+  {
+   "name": "pad_mode_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 40,
+   "layer": "shift",
+   "notes": "PAD MODE +SHIFT = EXTENSION3 [5-3]"
+  },
+  {
+   "name": "pad_mode_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 37,
+   "layer": "base",
+   "notes": "PAD MODE BEAT JUMP; deck ch 1-4 (left side decks 1/3, right side decks 2/4) [5-4]"
+  },
+  {
+   "name": "pad_mode_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 1,
+   "code": 41,
+   "layer": "shift",
+   "notes": "PAD MODE +SHIFT = EXTENSION4 [5-4]"
+  },
+  {
+   "name": "pad1_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 0,
+   "layer": "base",
+   "notes": "PAD 1 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 8,
+   "layer": "shift",
+   "notes": "PAD 1 HOT CUE mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 16,
+   "layer": "base",
+   "notes": "PAD 1 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 24,
+   "layer": "shift",
+   "notes": "PAD 1 BEAT LOOP mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 32,
+   "layer": "base",
+   "notes": "PAD 1 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 40,
+   "layer": "shift",
+   "notes": "PAD 1 SLIP LOOP mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 48,
+   "layer": "base",
+   "notes": "PAD 1 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 56,
+   "layer": "shift",
+   "notes": "PAD 1 BEAT JUMP mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 64,
+   "layer": "base",
+   "notes": "PAD 1 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 72,
+   "layer": "shift",
+   "notes": "PAD 1 EXTENSION1 mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 80,
+   "layer": "base",
+   "notes": "PAD 1 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 88,
+   "layer": "shift",
+   "notes": "PAD 1 EXTENSION2 mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 96,
+   "layer": "base",
+   "notes": "PAD 1 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 104,
+   "layer": "shift",
+   "notes": "PAD 1 EXTENSION3 mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad1_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 112,
+   "layer": "base",
+   "notes": "PAD 1 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-5]"
+  },
+  {
+   "name": "pad1_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 120,
+   "layer": "shift",
+   "notes": "PAD 1 EXTENSION4 mode +SHIFT [5-5]"
+  },
+  {
+   "name": "pad2_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 1,
+   "layer": "base",
+   "notes": "PAD 2 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 9,
+   "layer": "shift",
+   "notes": "PAD 2 HOT CUE mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 17,
+   "layer": "base",
+   "notes": "PAD 2 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 25,
+   "layer": "shift",
+   "notes": "PAD 2 BEAT LOOP mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 33,
+   "layer": "base",
+   "notes": "PAD 2 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 41,
+   "layer": "shift",
+   "notes": "PAD 2 SLIP LOOP mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 49,
+   "layer": "base",
+   "notes": "PAD 2 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 57,
+   "layer": "shift",
+   "notes": "PAD 2 BEAT JUMP mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 65,
+   "layer": "base",
+   "notes": "PAD 2 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 73,
+   "layer": "shift",
+   "notes": "PAD 2 EXTENSION1 mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 81,
+   "layer": "base",
+   "notes": "PAD 2 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 89,
+   "layer": "shift",
+   "notes": "PAD 2 EXTENSION2 mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 97,
+   "layer": "base",
+   "notes": "PAD 2 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 105,
+   "layer": "shift",
+   "notes": "PAD 2 EXTENSION3 mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad2_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 113,
+   "layer": "base",
+   "notes": "PAD 2 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-6]"
+  },
+  {
+   "name": "pad2_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 121,
+   "layer": "shift",
+   "notes": "PAD 2 EXTENSION4 mode +SHIFT [5-6]"
+  },
+  {
+   "name": "pad3_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 2,
+   "layer": "base",
+   "notes": "PAD 3 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 10,
+   "layer": "shift",
+   "notes": "PAD 3 HOT CUE mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 18,
+   "layer": "base",
+   "notes": "PAD 3 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 26,
+   "layer": "shift",
+   "notes": "PAD 3 BEAT LOOP mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 34,
+   "layer": "base",
+   "notes": "PAD 3 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 42,
+   "layer": "shift",
+   "notes": "PAD 3 SLIP LOOP mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 50,
+   "layer": "base",
+   "notes": "PAD 3 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 58,
+   "layer": "shift",
+   "notes": "PAD 3 BEAT JUMP mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 66,
+   "layer": "base",
+   "notes": "PAD 3 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 74,
+   "layer": "shift",
+   "notes": "PAD 3 EXTENSION1 mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 82,
+   "layer": "base",
+   "notes": "PAD 3 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 90,
+   "layer": "shift",
+   "notes": "PAD 3 EXTENSION2 mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 98,
+   "layer": "base",
+   "notes": "PAD 3 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 106,
+   "layer": "shift",
+   "notes": "PAD 3 EXTENSION3 mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad3_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 114,
+   "layer": "base",
+   "notes": "PAD 3 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-7]"
+  },
+  {
+   "name": "pad3_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 122,
+   "layer": "shift",
+   "notes": "PAD 3 EXTENSION4 mode +SHIFT [5-7]"
+  },
+  {
+   "name": "pad4_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 3,
+   "layer": "base",
+   "notes": "PAD 4 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 11,
+   "layer": "shift",
+   "notes": "PAD 4 HOT CUE mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 19,
+   "layer": "base",
+   "notes": "PAD 4 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 27,
+   "layer": "shift",
+   "notes": "PAD 4 BEAT LOOP mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 35,
+   "layer": "base",
+   "notes": "PAD 4 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 43,
+   "layer": "shift",
+   "notes": "PAD 4 SLIP LOOP mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 51,
+   "layer": "base",
+   "notes": "PAD 4 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 59,
+   "layer": "shift",
+   "notes": "PAD 4 BEAT JUMP mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 67,
+   "layer": "base",
+   "notes": "PAD 4 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 75,
+   "layer": "shift",
+   "notes": "PAD 4 EXTENSION1 mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 83,
+   "layer": "base",
+   "notes": "PAD 4 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 91,
+   "layer": "shift",
+   "notes": "PAD 4 EXTENSION2 mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 99,
+   "layer": "base",
+   "notes": "PAD 4 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 107,
+   "layer": "shift",
+   "notes": "PAD 4 EXTENSION3 mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad4_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 115,
+   "layer": "base",
+   "notes": "PAD 4 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-8]"
+  },
+  {
+   "name": "pad4_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 123,
+   "layer": "shift",
+   "notes": "PAD 4 EXTENSION4 mode +SHIFT [5-8]"
+  },
+  {
+   "name": "pad5_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 4,
+   "layer": "base",
+   "notes": "PAD 5 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 12,
+   "layer": "shift",
+   "notes": "PAD 5 HOT CUE mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 20,
+   "layer": "base",
+   "notes": "PAD 5 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 28,
+   "layer": "shift",
+   "notes": "PAD 5 BEAT LOOP mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 36,
+   "layer": "base",
+   "notes": "PAD 5 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 44,
+   "layer": "shift",
+   "notes": "PAD 5 SLIP LOOP mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 52,
+   "layer": "base",
+   "notes": "PAD 5 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 60,
+   "layer": "shift",
+   "notes": "PAD 5 BEAT JUMP mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 68,
+   "layer": "base",
+   "notes": "PAD 5 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 76,
+   "layer": "shift",
+   "notes": "PAD 5 EXTENSION1 mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 84,
+   "layer": "base",
+   "notes": "PAD 5 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 92,
+   "layer": "shift",
+   "notes": "PAD 5 EXTENSION2 mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 100,
+   "layer": "base",
+   "notes": "PAD 5 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 108,
+   "layer": "shift",
+   "notes": "PAD 5 EXTENSION3 mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad5_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 116,
+   "layer": "base",
+   "notes": "PAD 5 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-9]"
+  },
+  {
+   "name": "pad5_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 124,
+   "layer": "shift",
+   "notes": "PAD 5 EXTENSION4 mode +SHIFT [5-9]"
+  },
+  {
+   "name": "pad6_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 5,
+   "layer": "base",
+   "notes": "PAD 6 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 13,
+   "layer": "shift",
+   "notes": "PAD 6 HOT CUE mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 21,
+   "layer": "base",
+   "notes": "PAD 6 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 29,
+   "layer": "shift",
+   "notes": "PAD 6 BEAT LOOP mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 37,
+   "layer": "base",
+   "notes": "PAD 6 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 45,
+   "layer": "shift",
+   "notes": "PAD 6 SLIP LOOP mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 53,
+   "layer": "base",
+   "notes": "PAD 6 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 61,
+   "layer": "shift",
+   "notes": "PAD 6 BEAT JUMP mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 69,
+   "layer": "base",
+   "notes": "PAD 6 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 77,
+   "layer": "shift",
+   "notes": "PAD 6 EXTENSION1 mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 85,
+   "layer": "base",
+   "notes": "PAD 6 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 93,
+   "layer": "shift",
+   "notes": "PAD 6 EXTENSION2 mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 101,
+   "layer": "base",
+   "notes": "PAD 6 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 109,
+   "layer": "shift",
+   "notes": "PAD 6 EXTENSION3 mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad6_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 117,
+   "layer": "base",
+   "notes": "PAD 6 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-10]"
+  },
+  {
+   "name": "pad6_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 125,
+   "layer": "shift",
+   "notes": "PAD 6 EXTENSION4 mode +SHIFT [5-10]"
+  },
+  {
+   "name": "pad7_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 6,
+   "layer": "base",
+   "notes": "PAD 7 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 14,
+   "layer": "shift",
+   "notes": "PAD 7 HOT CUE mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 22,
+   "layer": "base",
+   "notes": "PAD 7 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 30,
+   "layer": "shift",
+   "notes": "PAD 7 BEAT LOOP mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 38,
+   "layer": "base",
+   "notes": "PAD 7 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 46,
+   "layer": "shift",
+   "notes": "PAD 7 SLIP LOOP mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 54,
+   "layer": "base",
+   "notes": "PAD 7 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 62,
+   "layer": "shift",
+   "notes": "PAD 7 BEAT JUMP mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 70,
+   "layer": "base",
+   "notes": "PAD 7 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 78,
+   "layer": "shift",
+   "notes": "PAD 7 EXTENSION1 mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 86,
+   "layer": "base",
+   "notes": "PAD 7 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 94,
+   "layer": "shift",
+   "notes": "PAD 7 EXTENSION2 mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 102,
+   "layer": "base",
+   "notes": "PAD 7 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 110,
+   "layer": "shift",
+   "notes": "PAD 7 EXTENSION3 mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad7_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 118,
+   "layer": "base",
+   "notes": "PAD 7 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-11]"
+  },
+  {
+   "name": "pad7_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 126,
+   "layer": "shift",
+   "notes": "PAD 7 EXTENSION4 mode +SHIFT [5-11]"
+  },
+  {
+   "name": "pad8_hot_cue",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 7,
+   "layer": "base",
+   "notes": "PAD 8 HOT CUE mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_hot_cue_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 15,
+   "layer": "shift",
+   "notes": "PAD 8 HOT CUE mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_beat_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 23,
+   "layer": "base",
+   "notes": "PAD 8 BEAT LOOP mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_beat_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 31,
+   "layer": "shift",
+   "notes": "PAD 8 BEAT LOOP mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_slip_loop",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 39,
+   "layer": "base",
+   "notes": "PAD 8 SLIP LOOP mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_slip_loop_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 47,
+   "layer": "shift",
+   "notes": "PAD 8 SLIP LOOP mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_beat_jump",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 55,
+   "layer": "base",
+   "notes": "PAD 8 BEAT JUMP mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_beat_jump_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 63,
+   "layer": "shift",
+   "notes": "PAD 8 BEAT JUMP mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_extension1",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 71,
+   "layer": "base",
+   "notes": "PAD 8 EXTENSION1 mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_extension1_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 79,
+   "layer": "shift",
+   "notes": "PAD 8 EXTENSION1 mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_extension2",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 87,
+   "layer": "base",
+   "notes": "PAD 8 EXTENSION2 mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_extension2_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 95,
+   "layer": "shift",
+   "notes": "PAD 8 EXTENSION2 mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_extension3",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 103,
+   "layer": "base",
+   "notes": "PAD 8 EXTENSION3 mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_extension3_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 111,
+   "layer": "shift",
+   "notes": "PAD 8 EXTENSION3 mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pad8_extension4",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 119,
+   "layer": "base",
+   "notes": "PAD 8 EXTENSION4 mode; pad ch 6-9 = deck 1-4 [5-12]"
+  },
+  {
+   "name": "pad8_extension4_shift",
+   "section": "pads",
+   "type": "note",
+   "ch": 6,
+   "code": 127,
+   "layer": "shift",
+   "notes": "PAD 8 EXTENSION4 mode +SHIFT [5-12]"
+  },
+  {
+   "name": "pc_control_mode",
+   "section": "others",
+   "type": "cc",
+   "ch": 1,
+   "code": 100,
+   "layer": "base",
+   "notes": "PC Control mode (BROWSE > MIDI > LOAD); deck ch 1-4; no plate fig"
+  }
+ ]
+}

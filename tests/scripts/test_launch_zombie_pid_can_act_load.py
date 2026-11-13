@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -20,8 +21,9 @@ LAUNCH_RS = CRATE / "src" / "launch.rs"
 TEST_NAME = "launch::tests::pid_can_act_rejects_a_zombie_child"
 PARALLEL_RUNS = 12
 REQUIRE_ENV = "MDT_REQUIRE_DESKTOP_CARGO"
-# opendj-desktop shares one target/; parallel cargo test without a lock races the build graph.
+# opendj-desktop shares one target/; build once under this lock, then run the binary concurrently.
 _CARGO_INVOCATION_LOCK = threading.Lock()
+_TEST_EXECUTABLES: list[str] = []
 
 
 def _desktop_build_blocker() -> str | None:
@@ -50,27 +52,60 @@ def _require_desktop_cargo_or_skip() -> None:
     pytest.skip(f"UNAVAILABLE: {blocker}; contracts CI builds desktop and reruns this")
 
 
-def _run_zombie_test() -> None:
-    """Run the desktop unit test once; raise on failure."""
+def _build_test_executables() -> list[str]:
+    """Build the desktop test binary once under the lock; return its executable paths."""
     _ensure_payload_dir()
     with _CARGO_INVOCATION_LOCK:
+        if _TEST_EXECUTABLES:
+            return _TEST_EXECUTABLES
         proc = subprocess.run(
-            [
-                "cargo",
-                "test",
-                "--locked",
-                TEST_NAME,
-                "--",
-                "--exact",
-            ],
+            ["cargo", "test", "--locked", "--no-run", "--message-format=json"],
+            cwd=CRATE,
+            capture_output=True,
+            text=True,
+            timeout=900,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise AssertionError(f"cargo test --no-run failed (exit {proc.returncode}):\n{proc.stderr}")
+        _TEST_EXECUTABLES.extend(_test_executables_from_cargo_json(proc.stdout))
+        if not _TEST_EXECUTABLES:
+            raise AssertionError("cargo test --no-run reported no test executable")
+        return _TEST_EXECUTABLES
+
+
+def _test_executables_from_cargo_json(stdout: str) -> list[str]:
+    """Pick test-profile executables out of cargo --message-format=json output."""
+    found: list[str] = []
+    for line in stdout.splitlines():
+        if not line.startswith("{"):
+            continue
+        msg = json.loads(line)
+        if msg.get("reason") != "compiler-artifact" or not msg.get("profile", {}).get("test"):
+            continue
+        exe = msg.get("executable")
+        if exe and exe not in found:
+            found.append(exe)
+    return found
+
+
+def _run_zombie_test() -> None:
+    """Run the prebuilt desktop unit test once outside the build lock; raise on failure."""
+    ran = False
+    for exe in _build_test_executables():
+        proc = subprocess.run(
+            [exe, TEST_NAME, "--exact"],
             cwd=CRATE,
             capture_output=True,
             text=True,
             timeout=300,
             check=False,
         )
-    if proc.returncode != 0:
-        raise AssertionError(f"cargo test {TEST_NAME} failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}")
+        if proc.returncode != 0:
+            raise AssertionError(f"{TEST_NAME} failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}")
+        ran = ran or "1 passed" in proc.stdout
+    if not ran:
+        raise AssertionError(f"{TEST_NAME} did not run in any test executable")
 
 
 def _zombie_test_block(launch_rs: str) -> str:
@@ -89,6 +124,7 @@ def test_pid_can_act_zombie_green_under_parallel_cargo_on_linux() -> None:
     if sys.platform != "linux":
         pytest.skip("UNAVAILABLE: parallel load gate is linux-light runner scoped")
     _require_desktop_cargo_or_skip()
+    _build_test_executables()
     with ThreadPoolExecutor(max_workers=PARALLEL_RUNS) as pool:
         futures = [pool.submit(_run_zombie_test) for _ in range(PARALLEL_RUNS)]
         for fut in as_completed(futures):
@@ -115,3 +151,22 @@ def test_pid_can_act_zombie_reap_tail_unchanged() -> None:
     assert "libc::waitpid(raw_pid, &mut status, 0)" in block
     assert "assert!(!pid_alive(child_pid));" in block
     _run_zombie_test()
+
+
+def test_cargo_json_parser_picks_test_executables_only() -> None:
+    """[if] cargo emits build and test artifacts [then] only test-profile executables are run, [else stop]."""
+    lines = [
+        json.dumps({"reason": "compiler-artifact", "profile": {"test": False}, "executable": "/tmp/app"}),
+        "not json",
+        json.dumps({"reason": "compiler-artifact", "profile": {"test": True}, "executable": "/tmp/app-test"}),
+        json.dumps({"reason": "compiler-artifact", "profile": {"test": True}, "executable": None}),
+        json.dumps({"reason": "build-finished", "success": True}),
+    ]
+    assert _test_executables_from_cargo_json("\n".join(lines)) == ["/tmp/app-test"]
+
+
+def test_parallel_runs_do_not_hold_build_lock() -> None:
+    """[if] the parallel gate runs the zombie test [then] the cargo lock is not held around the run, [else stop]."""
+    src = Path(__file__).read_text(encoding="utf-8")
+    run_body = src[src.index("def _run_zombie_test") : src.index("def _zombie_test_block")]
+    assert "_CARGO_INVOCATION_LOCK" not in run_body

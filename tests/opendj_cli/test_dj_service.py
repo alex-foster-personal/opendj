@@ -13,6 +13,7 @@ import json
 import re
 import tempfile
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -182,6 +183,8 @@ def _propose_transition_cache_key(args: tuple[object, ...], kwargs: Mapping[str,
     payload = {
         "out": getattr(out_profile, "stable_id", None),
         "in": getattr(in_profile, "stable_id", None),
+        # A test may drop the incoming bass analysis, which moves blend entries: that is a different search.
+        "in_bass_analyzed": getattr(in_profile, "bar_bass", None) is not None,
         "out_deck": kwargs.get("out_deck"),
         "in_deck": kwargs.get("in_deck"),
         "intent": kwargs.get("intent"),
@@ -1426,6 +1429,9 @@ def test_a_next_bar_anchor_leaves_room_for_the_plan_pre_roll(
     """AGENT-35 (Codex P2/BLOCKING on #7595): a compensated blend starts its outgoing ease at bar -1, so next_bar
     resolves far enough ahead for that pre-roll at any point in the bar; a crossfade (no pre-roll) is the control."""
     service = _service(FakePage(out_bar=out_bar), requests)
+    # PR #12799 (AUTODJ-11851): bass placement moves this fixture's blend entry into a 7-bar in-window, which blends
+    # now refuse. Without bass analysis the full 16-bar window stays mixable, as that PR's own propose tests do.
+    service._profiles["trk-in"] = replace(service.profile("trk-in"), bar_bass=None)
     proposals = service.propose("trk-in", top=50)["proposals"]
     plan = next(p["plan"] for p in proposals if p["style"] == style_name)
     plan["anchor"] = "next_bar"
@@ -1528,8 +1534,8 @@ def test_propose_refuses_a_malformed_mirror_on_the_final_reread(
 def test_propose_does_not_report_a_bad_proposal_plan_as_mirror_malformed(
     requests: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[if] a generated proposal's plan fails parse_plan [then] propose raises ValueError or a DjError
-    that is not mirror_malformed, [else stop]. Issue #9314 / review follow-up #7657."""
+    """[if] a generated proposal's plan fails parse_plan [then] propose raises the proposal-specific DjError
+    plan_invalid, never mirror_malformed, [else stop]. Issue #9314 / review follow-up #7657, #13083."""
     from apps.opendj_cli import dj_service as dj_mod
 
     real = dj_mod.propose_transition
@@ -1541,9 +1547,9 @@ def test_propose_does_not_report_a_bad_proposal_plan_as_mirror_malformed(
         return {**result, "proposals": [first, *result["proposals"][1:]]}
 
     monkeypatch.setattr(dj_mod, "propose_transition", poison)
-    with pytest.raises((ValueError, DjError)) as raised:
+    with pytest.raises(DjError) as raised:
         _service(FakePage(out_bar=100.0), requests).propose("trk-in", intent="smooth")
-    assert getattr(raised.value, "code", None) != "mirror_malformed"
+    assert raised.value.code == "plan_invalid"  # #13083: the proposal keeps its own classification
 
 
 def test_propose_revalidates_candidates_against_the_fresh_mirror(requests: list[str]) -> None:

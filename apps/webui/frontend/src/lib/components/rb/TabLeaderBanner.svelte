@@ -5,20 +5,31 @@
 -->
 <script lang="ts">
 	import { tabLeadershipView, takeTabControl } from '$lib/rb/tab-leadership.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { bannerLeafSelId, bannerSelId } from './banner-selector-ids';
 
 	const view = $derived(tabLeadershipView.current);
 </script>
 
 {#if view.role === 'follower'}
-	<div class="tab-leader" role="status" data-testid="tab-leader-banner" data-reason={view.reason}>
+	<!-- #14559: a selector group while shown, one leaf per button, so Enter presses that button. -->
+	<div
+		class="tab-leader"
+		role="status"
+		data-testid="tab-leader-banner"
+		data-reason={view.reason}
+		use:selectorNode={{ id: bannerSelId('tab-leader'), kind: 'group', enabled: true }}
+	>
 		<span>
 			{view.reason === 'another-browser'
 				? 'Another Open DJ window is in control'
 				: 'Another Open DJ tab is in control'}
 		</span>
-		<button type="button" class="tab-leader-take" data-testid="tab-leader-take" onclick={takeTabControl}>
-			Take control
-		</button>
+		<div class="sel-leaf" use:selectorNode={{ id: bannerLeafSelId('tab-leader', 'take-control'), kind: 'leaf', enabled: true }}>
+			<button type="button" class="tab-leader-take" data-testid="tab-leader-take" onclick={takeTabControl}>
+				Take control
+			</button>
+		</div>
 	</div>
 {/if}
 
@@ -40,6 +51,11 @@
 		font-size: var(--rb-fs-label);
 		line-height: 16px;
 		/* No opacity: at 0.92 the dim label blended to 4.5:1 and failed UICONTRAST-01. */
+	}
+
+	/* A selector leaf adds no box: the banner's flex row lays out its buttons as before. */
+	.sel-leaf {
+		display: contents;
 	}
 
 	.tab-leader-take {

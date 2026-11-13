@@ -121,6 +121,7 @@ def test_live_zero_match_run_writes_report(
 ) -> None:
     """[if] a live run matches nothing [then] the CLI still writes its report, [else stop]."""
     output = tmp_path / "r.json"
+    assert not output.exists()
     monkeypatch.setattr(OpenRouterBatchMatcher, "from_env", classmethod(lambda cls: _LlmDouble()))
     monkeypatch.setattr(SpotifyClient, "from_env", classmethod(lambda cls: _SpotifyDouble()))
     monkeypatch.setattr(

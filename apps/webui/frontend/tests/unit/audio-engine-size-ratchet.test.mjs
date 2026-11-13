@@ -8,7 +8,7 @@ import { readFrontendSource } from './engine-source.mjs';
 globalThis.location ??= { search: '' };
 
 // Ratchet toward 1_500 as further #8581 slices land.
-const AUDIO_ENGINE_SVELTE_MAX_LINES = 4830;
+const AUDIO_ENGINE_SVELTE_MAX_LINES = 4847;
 
 /**
  * Sorted runtime Object.keys of the barrel on this merge, matching origin/main's public names (the

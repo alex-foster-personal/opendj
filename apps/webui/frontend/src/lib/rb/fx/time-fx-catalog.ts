@@ -1,6 +1,8 @@
 /**
  * Typed table of time-based beat FX effects (issue #9973, #10015). The unit,
  * panel TIME readout and CLI catalog read one frozen source of truth.
+ * `builtOnMain` is true only where a kernel exists on main (issue #13726):
+ * echo-kernel.ts hosts delay, echo and pingpong; the rest await their kernels.
  */
 
 export type TimeFxLevelLaw = 'balance' | 'hold' | 'depth';
@@ -71,7 +73,7 @@ export const TIME_FX_CATALOG = Object.freeze([
 		name: 'spiral',
 		kernel: 'spiral',
 		mode: 'spiral',
-		builtOnMain: true,
+		builtOnMain: false,
 		beatsMin: 1 / 16,
 		beatsMax: 16,
 		timeMsMin: 10,
@@ -85,7 +87,7 @@ export const TIME_FX_CATALOG = Object.freeze([
 		name: 'helix',
 		kernel: 'echo',
 		mode: 'helix',
-		builtOnMain: true,
+		builtOnMain: false,
 		beatsMin: 1 / 16,
 		beatsMax: 16,
 		timeMsMin: 1,
@@ -99,7 +101,7 @@ export const TIME_FX_CATALOG = Object.freeze([
 		name: 'reverse_delay',
 		kernel: 'reverse_delay',
 		mode: 'reverse',
-		builtOnMain: true,
+		builtOnMain: false,
 		beatsMin: 1 / 8,
 		beatsMax: 16,
 		timeMsMin: 1,
@@ -113,7 +115,7 @@ export const TIME_FX_CATALOG = Object.freeze([
 		name: 'multitap',
 		kernel: 'multitap',
 		mode: 'multitap',
-		builtOnMain: true,
+		builtOnMain: false,
 		beatsMin: 1 / 16,
 		beatsMax: 16,
 		timeMsMin: 10,
@@ -127,7 +129,7 @@ export const TIME_FX_CATALOG = Object.freeze([
 		name: 'tape',
 		kernel: 'echo',
 		mode: 'tape',
-		builtOnMain: true,
+		builtOnMain: false,
 		beatsMin: 1 / 16,
 		beatsMax: 16,
 		timeMsMin: 1,
@@ -149,11 +151,9 @@ export const TIME_FX_BUILT_EFFECT_NAMES = TIME_FX_CATALOG.filter((row) => row.bu
 	(row) => row.name
 ) as readonly TimeFxEffectName[];
 
-/** Catalog row for a built effect, or null when the name is unknown or not on main. */
+/** Catalog row for `name`, built or not, or null when the name is unknown. */
 export function timeFxCatalogRow(name: string): TimeFxCatalogRow | null {
-	const row = _BY_NAME.get(name as TimeFxEffectName);
-	if (row === undefined || !row.builtOnMain) return null;
-	return row;
+	return _BY_NAME.get(name as TimeFxEffectName) ?? null;
 }
 
 export function beatDivisionToMs(beats: number, bpm: number): number {
@@ -167,7 +167,7 @@ export function beatDivisionToMs(beats: number, bpm: number): number {
 export function assertTimeFxDivisionAllowed(effect: string, beats: number, bpm: number): void {
 	const row = timeFxCatalogRow(effect);
 	if (row === null) {
-		throw new TypeError(`beat_fx effect ${effect} is not built on main`);
+		throw new TypeError(`beat_fx effect ${effect} is not in the time catalog`);
 	}
 	if (beats < row.beatsMin || beats > row.beatsMax) {
 		throw new RangeError(

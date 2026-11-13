@@ -86,6 +86,12 @@ def test_set_layout_preset_accepts_replica_desk() -> None:
 
 
 @pytest.mark.requirement("SKINLAYOUT-10199")
+def test_set_layout_preset_accepts_library_first() -> None:
+    """[if] set_layout_preset refuses library-first [then] agents cannot pick the prep preset, [else stop]."""
+    assert parse_invocation(["set_layout_preset", "performance", "library-first"]).command["preset"] == "library-first"
+
+
+@pytest.mark.requirement("SKINLAYOUT-10199")
 def test_set_layout_preset_rejects_unknown_tokens() -> None:
     """[if] unknown surface or preset tokens parse [then] the enum is not enforced, [else stop]."""
     with pytest.raises(InvocationError):

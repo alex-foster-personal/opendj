@@ -61,7 +61,9 @@ export class TreeRecentlyDeleted {
 	}
 
 	async restore(id: string): Promise<void> {
-		await this.restoreFn(id);
+		const row = this.rows?.find((candidate) => candidate.playlist_id === id);
+		if (row === undefined) throw new Error(`deleted playlist not found: ${id}`);
+		await this.restoreFn(id, row.etag);
 		if (this.rows !== null) {
 			this.rows = this.rows.filter((row) => row.playlist_id !== id);
 		}

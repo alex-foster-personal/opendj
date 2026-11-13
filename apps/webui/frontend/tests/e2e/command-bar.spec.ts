@@ -1,23 +1,27 @@
 /**
- * CMDK-01..03: the Cmd-K command bar on /performance, against the real root
- * fixture library and engine (no route mocks).
+ * CMDK-01..04 (v2 bar, cmdk.v2 default-on): the Cmd-K command bar on
+ * /performance, against the real root fixture library and engine (no route
+ * mocks).
  *
  * Acceptance tests:
  *
  * - [if] Ctrl/Cmd-K does not open the bar with the open playlist's rows
  *   listed [then ⛔️] the open test passes.
  * - [if] typing does not narrow the list to the matching track, or Tab does
- *   not switch to whole-library results [then ⛔️] the search test passes.
- * - [if] Right then Enter does not land the highlighted track on deck 2 (read
- *   from the performance IPC, not the DOM) [then ⛔️] the load test passes.
+ *   not move focus within the bar [then ⛔️] the search test passes.
+ * - [if] Enter through the deck picker does not land the highlighted track on
+ *   deck 2 (read from the performance IPC, not the DOM) [then ⛔️] the load
+ *   test passes.
  */
 import { expect, test, type Page } from '@playwright/test';
 
 import type { DeckId } from '../../src/lib/rb/deck-id';
 import { spendBootLanding } from './support/boot-landing';
+import { CMDK_MOD, openCmdkBar } from './support/open-cmdk-bar';
+
+const MOD = CMDK_MOD;
 
 const TRACK_ROW = '[data-testid="track-row"]';
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 async function openGigWithAllTracks(page: Page): Promise<void> {
 	await page.goto('/performance');
@@ -37,23 +41,20 @@ async function deckStableId(page: Page, deck: DeckId): Promise<string | null> {
 }
 
 test('Cmd-K opens on the open playlist and Escape closes it', async ({ page }) => {
-	test.fixme(true, 'v1 Cmd-K bar test ids, cmdk.v2 is default-on since #10452, see #13521');
 	await openGigWithAllTracks(page);
 	const tableRows = await page.locator(TRACK_ROW).count();
-	await page.keyboard.press(`${MOD}+k`);
+	await openCmdkBar(page);
 	const bar = page.getByTestId('command-bar');
 	await expect(bar).toBeVisible();
-	await expect(page.getByTestId('command-bar-input')).toBeFocused();
-	await expect(page.getByTestId('command-bar-scope')).toHaveAttribute('data-scope', 'playlist');
+	await expect(page.getByText(/In open playlist/)).toBeVisible();
 	await expect(page.getByTestId('command-bar-row')).toHaveCount(Math.min(tableRows, 50));
 	await page.keyboard.press('Escape');
 	await expect(bar).toBeHidden();
 });
 
-test('typing narrows the playlist and Tab searches the whole library', async ({ page }) => {
-	test.fixme(true, 'v1 Cmd-K bar test ids, cmdk.v2 is default-on since #10452, see #13521');
+test('typing narrows the playlist and Tab cycles bar focus', async ({ page }) => {
 	await openGigWithAllTracks(page);
-	await page.keyboard.press(`${MOD}+k`);
+	await openCmdkBar(page);
 	const rows = page.getByTestId('command-bar-row');
 	const before = await rows.count();
 	expect(before).toBeGreaterThan(1);
@@ -64,25 +65,32 @@ test('typing narrows the playlist and Tab searches the whole library', async ({ 
 	await expect(rows.first()).toContainText(word);
 	expect(await rows.count()).toBeLessThan(before);
 
+	// v2 (CMDK-04): Tab cycles bar focus instead of flipping playlist/library scope.
 	await page.keyboard.press('Tab');
-	await expect(page.getByTestId('command-bar-scope')).toHaveAttribute('data-scope', 'library');
+	await expect(page.getByTestId('command-bar-filters').locator('button').first()).toBeFocused();
+	await page.keyboard.press('Shift+Tab');
 	await expect(page.getByTestId('command-bar-input')).toBeFocused();
-	await expect(page.getByTestId('command-bar-row').first()).toContainText(word, {
-		timeout: 15_000
-	});
 });
 
 test('Right then Enter loads the highlighted track onto deck 2', async ({ page }) => {
-	test.fixme(true, 'v1 Cmd-K bar test ids, cmdk.v2 is default-on since #10452, see #13521');
+	test.setTimeout(90_000);
 	await openGigWithAllTracks(page);
 	expect(await deckStableId(page, 2)).toBeNull();
-	await page.keyboard.press(`${MOD}+k`);
+	await openCmdkBar(page);
+	// cmdk.v2.actions lists commands first; move the highlight onto a track row.
+	await page.keyboard.press('ArrowDown');
 	const highlighted = page.locator('[data-testid="command-bar-row"][aria-selected="true"]');
+	await expect(highlighted).toBeVisible();
 	const stableId = await highlighted.getAttribute('data-stable-id');
 	expect(stableId).not.toBeNull();
 	await expect(page.getByTestId('command-bar-deck-1')).toHaveAttribute('aria-pressed', 'true');
-	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Alt+2');
 	await expect(page.getByTestId('command-bar-deck-2')).toHaveAttribute('aria-pressed', 'true');
+	await page.keyboard.press('Enter');
+	await expect(page.getByTestId('command-bar-picker')).toBeVisible();
+	await expect(
+		page.locator('[data-testid="command-bar-picker-deck"][data-deck="2"]')
+	).toHaveAttribute('aria-selected', 'true');
 	await page.keyboard.press('Enter');
 	await expect(page.getByTestId('command-bar')).toBeHidden();
 	await expect.poll(() => deckStableId(page, 2), { timeout: 45_000 }).toBe(stableId);
@@ -103,6 +111,12 @@ test.describe('v2 palette on every route (#9467)', () => {
 		});
 	});
 
+	// Only the v2 bar carries `data-tracks`. On /performance the v1 bar answers Cmd-K until the
+	// lazy v2 host mounts (flags read, chunk loaded), and that takeover unmounts an open v1 bar.
+	// Accepting either bar let this test open v1 just before the takeover and then count 0 bars,
+	// so the poll waits for the v2 bar itself and presses again once v2 owns the key.
+	const V2_BAR = '[data-testid="command-bar"][data-tracks]';
+
 	async function openPalette(page: Page, path: string): Promise<void> {
 		if (path === '/') await spendBootLanding(page);
 		await page.goto(path);
@@ -118,7 +132,7 @@ test.describe('v2 palette on every route (#9467)', () => {
 		await expect
 			.poll(
 				async () => {
-					const bar = page.getByTestId('command-bar');
+					const bar = page.locator(V2_BAR);
 					if (!(await bar.isVisible())) await page.keyboard.press(`${MOD}+k`);
 					return bar.isVisible();
 				},

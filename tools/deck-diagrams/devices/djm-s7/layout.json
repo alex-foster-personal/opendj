@@ -1,0 +1,1672 @@
+{
+  "device": "DJM-S7",
+  "vendor": "Pioneer DJ / AlphaTheta",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 685,
+    "height": 1280
+  },
+  "layers": [
+    "base",
+    "shift",
+    "mode",
+    "shift_mode"
+  ],
+  "out_of_scope": [
+    "M16 MIC LEVEL: hardware control",
+    "M20 CROSSFADER FEELING ADJUST: hardware control",
+    "VU meters, input selectors and sockets: no MIDI identity"
+  ],
+  "controls": [
+    {
+      "id": "djm-s7-m2-1",
+      "fig": "m2_1",
+      "label": "TRIM",
+      "kind": "knob",
+      "x": 22.6999,
+      "y": 9.2987,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m2_1_trim_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 4
+      },
+      "notes": "[m2_1] PDF p2, TRIM. Printed channel 1/2, status Bn, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m2-2",
+      "fig": "m2_2",
+      "label": "TRIM",
+      "kind": "knob",
+      "x": 71.259,
+      "y": 9.459,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m2_2_trim_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 4
+      },
+      "notes": "[m2_2] PDF p2, TRIM. Printed channel 1/2, status Bn, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m3-1",
+      "fig": "m3_1",
+      "label": "ISO HIGH",
+      "kind": "knob",
+      "x": 34.4086,
+      "y": 3.7768,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m3_1_iso_high_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 7
+      },
+      "notes": "[m3_1] PDF p2, ISO HIGH. Printed channel 1/2, status Bn, Data1 07h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m3-2",
+      "fig": "m3_2",
+      "label": "ISO HIGH",
+      "kind": "knob",
+      "x": 59.0678,
+      "y": 3.7768,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m3_2_iso_high_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 7
+      },
+      "notes": "[m3_2] PDF p2, ISO HIGH. Printed channel 1/2, status Bn, Data1 07h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m4-1",
+      "fig": "m4_1",
+      "label": "ISO MID",
+      "kind": "knob",
+      "x": 34.4926,
+      "y": 9.1696,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m4_1_iso_mid_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 11
+      },
+      "notes": "[m4_1] PDF p2, ISO MID. Printed channel 1/2, status Bn, Data1 0Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m4-2",
+      "fig": "m4_2",
+      "label": "ISO MID",
+      "kind": "knob",
+      "x": 59.1159,
+      "y": 9.3291,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m4_2_iso_mid_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 11
+      },
+      "notes": "[m4_2] PDF p2, ISO MID. Printed channel 1/2, status Bn, Data1 0Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m5-1",
+      "fig": "m5_1",
+      "label": "ISO LOW",
+      "kind": "knob",
+      "x": 34.3933,
+      "y": 14.8557,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m5_1_iso_low_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 15
+      },
+      "notes": "[m5_1] PDF p2, ISO LOW. Printed channel 1/2, status Bn, Data1 0Fh (printed dec 15 47). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m5-2",
+      "fig": "m5_2",
+      "label": "ISO LOW",
+      "kind": "knob",
+      "x": 59.2196,
+      "y": 14.7184,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m5_2_iso_low_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 15
+      },
+      "notes": "[m5_2] PDF p2, ISO LOW. Printed channel 1/2, status Bn, Data1 0Fh (printed dec 15 47). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m6-1",
+      "fig": "m6_1",
+      "label": "FILTER",
+      "kind": "knob",
+      "x": 22.7678,
+      "y": 14.7912,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m6_1_filter_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 1
+      },
+      "notes": "[m6_1] PDF p2, FILTER. Printed channel 1/2, status Bn, Data1 01h (printed dec 1 33). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m6-2",
+      "fig": "m6_2",
+      "label": "FILTER",
+      "kind": "knob",
+      "x": 71.2605,
+      "y": 14.8533,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m6_2_filter_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 1
+      },
+      "notes": "[m6_2] PDF p2, FILTER. Printed channel 1/2, status Bn, Data1 01h (printed dec 1 33). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m7",
+      "fig": "m7",
+      "label": "BOOTH LEVEL",
+      "kind": "knob",
+      "x": 46.4566,
+      "y": 9.3409,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m7_booth_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 9
+      },
+      "notes": "[m7] PDF p2, BOOTH LEVEL. Printed channel 7, status B6, Data1 09h (printed dec 9 41). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m8",
+      "fig": "m8",
+      "label": "MASTER LEVEL",
+      "kind": "knob",
+      "x": 46.8048,
+      "y": 3.8612,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m8_master_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 8
+      },
+      "notes": "[m8] PDF p2, MASTER LEVEL. Printed channel 7, status B6, Data1 08h (printed dec 8 40). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-d5",
+      "fig": "d5",
+      "label": "SHIFT",
+      "kind": "button",
+      "x": 46.3369,
+      "y": 17.0367,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "d5_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 63
+      },
+      "notes": "[d5] PDF p2, SHIFT. Printed channel 7, status 96, Data1 3Fh (printed dec 63)."
+    },
+    {
+      "id": "djm-s7-m9",
+      "fig": "m9",
+      "label": "CH FADER",
+      "kind": "fader",
+      "x": 31.5446,
+      "y": 54.3799,
+      "w": 5.8394,
+      "h": 4.6875,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "m9_ch_fader_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": "m9_ch_fader_shift",
+        "shift_mode_name": "m9_ch_fader_shift_mode_zero_not_zero"
+      },
+      "notes": "[m9] PDF p2, CH FADER. Printed channel 1/2, status Bn, Data1 13h (printed dec 19 51). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "id": "djm-s7-m10",
+      "fig": "m10",
+      "label": "CH FADER",
+      "kind": "fader",
+      "x": 62.0908,
+      "y": 54.334,
+      "w": 5.8394,
+      "h": 4.6875,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "m10_ch_fader_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 19,
+        "shift_name": "m10_ch_fader_shift",
+        "shift_mode_name": "m10_ch_fader_shift_mode_zero_not_zero"
+      },
+      "notes": "[m10] PDF p2, CH FADER. Printed channel 1/2, status Bn, Data1 13h (printed dec 19 51). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) Min at bottom end, Max at top end"
+    },
+    {
+      "id": "djm-s7-m11",
+      "fig": "m11",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 46.6616,
+      "y": 66.6071,
+      "w": 5.8394,
+      "h": 4.6875,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "m11_crossfader_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 31,
+        "shift_name": "m11_crossfader_shift",
+        "shift_mode_name": "m11_crossfader_shift_mode_min_not_min"
+      },
+      "notes": "[m11] PDF p2, CROSSFADER. Printed channel 7, status B6, Data1 1Fh (printed dec 31 63). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) CROSSFADER REVERSE OFF : Min at left side, Max at right side CROSSFADER REVERSE ON : Min at right side, Max at lef"
+    },
+    {
+      "id": "djm-s7-m12",
+      "fig": "m12",
+      "label": "HEADPHONE VOL",
+      "kind": "knob",
+      "x": 81.5874,
+      "y": 47.7619,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m12_headphone_vol_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 13
+      },
+      "notes": "[m12] PDF p2, HEADPHONE VOL. Printed channel 7, status B6, Data1 0Dh (printed dec 13 45). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m13",
+      "fig": "m13",
+      "label": "HEADPHONE MIX",
+      "kind": "knob",
+      "x": 90.4954,
+      "y": 47.8803,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m13_headphone_mix_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 12
+      },
+      "notes": "[m13] PDF p2, HEADPHONE MIX. Printed channel 7, status B6, Data1 0Ch (printed dec 12 44). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m14",
+      "fig": "m14",
+      "label": "HEADPHONE CUEFADER",
+      "kind": "fader",
+      "x": 85.9149,
+      "y": 50.9672,
+      "w": 5.8394,
+      "h": 4.6875,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m14_headphone_cuefader_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 14
+      },
+      "notes": "[m14] PDF p2, HEADPHONE CUEFADER. Printed channel 7, status B6, Data1 0Eh (printed dec 14 46). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m15",
+      "fig": "m15",
+      "label": "MIC ON/ OFF/TALKOVER",
+      "kind": "switch",
+      "x": 15.674,
+      "y": 87.9481,
+      "w": 6.4234,
+      "h": 2.3438,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m15_mic_on_off_talkover",
+        "type": "cc",
+        "ch": 7,
+        "code": 79
+      },
+      "notes": "[m15] PDF p2, MIC ON/ OFF/TALKOVER. Printed channel 7, status B6, Data1 4Fh (printed dec 79). OFF=0x00, ON=0x40, TALKOVER=0x7F"
+    },
+    {
+      "id": "djm-s7-m17",
+      "fig": "m17",
+      "label": "MIC TONE",
+      "kind": "knob",
+      "x": 37.2076,
+      "y": 87.5575,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m17_mic_tone_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 4
+      },
+      "notes": "[m17] PDF p2, MIC TONE. Printed channel 7, status B6, Data1 04h (printed dec 4 36). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m18",
+      "fig": "m18",
+      "label": "BLUETOOTH LEVEL",
+      "kind": "knob",
+      "x": 28.2098,
+      "y": 93.2856,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m18_bluetooth_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 5
+      },
+      "notes": "[m18] PDF p2, BLUETOOTH LEVEL. Printed channel 7, status B6, Data1 05h (printed dec 4 37). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m19",
+      "fig": "m19",
+      "label": "AUX LEVEL",
+      "kind": "knob",
+      "x": 37.3915,
+      "y": 93.2856,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m19_aux_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 11
+      },
+      "notes": "[m19] PDF p2, AUX LEVEL. Printed channel 7, status B6, Data1 0Bh (printed dec 11 43). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m21",
+      "fig": "m21",
+      "label": "CROSS FADER REVERSE",
+      "kind": "switch",
+      "x": 56.0499,
+      "y": 87.9481,
+      "w": 6.4234,
+      "h": 2.3438,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m21_cross_fader_reverse",
+        "type": "note",
+        "ch": 7,
+        "code": 24
+      },
+      "notes": "[m21] PDF p3, CROSS FADER REVERSE. Printed channel 7, status 96, Data1 18h (printed dec 24). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-m22",
+      "fig": "m22",
+      "label": "CROSS FADER CURVE",
+      "kind": "knob",
+      "x": 66.0755,
+      "y": 87.5575,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m22_cross_fader_curve_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 1
+      },
+      "notes": "[m22] PDF p3, CROSS FADER CURVE. Printed channel 7, status B6, Data1 01h (printed dec 1 33). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m23",
+      "fig": "m23",
+      "label": "CHANNEL 1 FADER CURVE",
+      "kind": "knob",
+      "x": 46.9718,
+      "y": 93.2856,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m23_channel_1_fader_curve_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 2
+      },
+      "notes": "[m23] PDF p3, CHANNEL 1 FADER CURVE. Printed channel 7, status B6, Data1 02h (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-m24",
+      "fig": "m24",
+      "label": "CHANNEL1 FADER REVERSE",
+      "kind": "switch",
+      "x": 53.9017,
+      "y": 93.6762,
+      "w": 6.4234,
+      "h": 2.3438,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m24_channel1_fader_reverse",
+        "type": "note",
+        "ch": 7,
+        "code": 25
+      },
+      "notes": "[m24] PDF p3, CHANNEL1 FADER REVERSE. Printed channel 7, status 96, Data1 19h (printed dec 25). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-m25",
+      "fig": "m25",
+      "label": "CHANNEL 2FADER REVERSE",
+      "kind": "switch",
+      "x": 58.3426,
+      "y": 93.6762,
+      "w": 6.4234,
+      "h": 2.3438,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m25_channel_2fader_reverse",
+        "type": "note",
+        "ch": 7,
+        "code": 32
+      },
+      "notes": "[m25] PDF p3, CHANNEL 2FADER REVERSE. Printed channel 7, status 96, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-m26",
+      "fig": "m26",
+      "label": "CHANNEL 2 FADER CURVE",
+      "kind": "knob",
+      "x": 65.8127,
+      "y": 93.2856,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "m26_channel_2_fader_curve_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 7
+      },
+      "notes": "[m26] PDF p3, CHANNEL 2 FADER CURVE. Printed channel 7, status B6, Data1 07h (printed dec 7 39). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-e1",
+      "fig": "e1",
+      "label": "ECHO",
+      "kind": "button",
+      "x": 1.9243,
+      "y": 24.0506,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e1_echo_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": "e1_echo_shift",
+        "mode_name": "e1_echo_mode_beat_fx_selected"
+      },
+      "notes": "[e1] PDF p3, ECHO, condition: BEAT FX selected. Printed channel 7, status 96, Data1 00h (printed dec 0). ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e2",
+      "fig": "e2",
+      "label": "BACKSPIN",
+      "kind": "button",
+      "x": 8.209,
+      "y": 24.0225,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e2_backspin_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 1,
+        "shift_name": "e2_backspin_shift",
+        "mode_name": "e2_backspin_mode_beat_fx_selected"
+      },
+      "notes": "[e2] PDF p3, BACKSPIN, condition: BEAT FX selected. Printed channel 7, status 96, Data1 01h (printed dec 1). ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e3",
+      "fig": "e3",
+      "label": "e3",
+      "kind": "button",
+      "x": 14.047,
+      "y": 24.0225,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e3_control_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": "e3_flanger_shift",
+        "mode_name": "e3_control_mode_beat_fx_selected"
+      },
+      "notes": "[e3] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 02h (printed dec 2). ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e4",
+      "fig": "e4",
+      "label": "e4",
+      "kind": "button",
+      "x": 78.6156,
+      "y": 23.959,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e4_control_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 3,
+        "shift_name": "e4_reverb_shift",
+        "mode_name": "e4_control_mode_beat_fx_selected"
+      },
+      "notes": "[e4] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 03h (printed dec 3). ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e5",
+      "fig": "e5",
+      "label": "e5",
+      "kind": "button",
+      "x": 84.7908,
+      "y": 23.959,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e5_control_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 4,
+        "shift_name": "e5_vinyl_brake_shift",
+        "mode_name": "e5_control_mode_beat_fx_selected"
+      },
+      "notes": "[e5] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 04h (printed dec 4). ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e6",
+      "fig": "e6",
+      "label": "e6",
+      "kind": "button",
+      "x": 90.6813,
+      "y": 23.959,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e6_control_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 5,
+        "shift_name": "e6_phaser_shift",
+        "mode_name": "e6_control_mode_beat_fx_selected"
+      },
+      "notes": "[e6] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 05h (printed dec 5). ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e7",
+      "fig": "e7",
+      "label": "e7",
+      "kind": "button",
+      "x": 37.1404,
+      "y": 21.0916,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "e7_control_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 6,
+        "mode_name": "e7_control_mode_beat_fx_selected",
+        "shift_mode_name": "e7_beat_left_shift_mode_serato_fx_selected_fx1_1_2_3"
+      },
+      "notes": "[e7] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e8",
+      "fig": "e8",
+      "label": "e8",
+      "kind": "button",
+      "x": 55.2608,
+      "y": 21.0799,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "e8_control_mode_beat_fx_selected",
+        "type": "note",
+        "ch": 7,
+        "code": 7,
+        "mode_name": "e8_control_mode_beat_fx_selected",
+        "shift_mode_name": "e8_beat_right_shift_mode_serato_fx_selected_fx1_1_2_3"
+      },
+      "notes": "[e8] PDF p3, , condition: BEAT FX selected. Printed channel 7, status 96, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e9",
+      "fig": "e9",
+      "label": "TAP",
+      "kind": "button",
+      "x": 46.4382,
+      "y": 29.5795,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e9_tap",
+        "type": "note",
+        "ch": 7,
+        "code": 10,
+        "shift_name": "e9_tap_shift"
+      },
+      "notes": "[e9] PDF p3, TAP. Printed channel 7, status 96, Data1 0Ah (printed dec 10). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e10",
+      "fig": "e10",
+      "label": "e10",
+      "kind": "button",
+      "x": 28.6711,
+      "y": 25.82,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e10_control",
+        "type": "note",
+        "ch": 5,
+        "code": 80,
+        "shift_name": "e10_ch1_effect_lever_shift",
+        "mode_name": "e10_control_mode_serato_fx_selected_echo",
+        "shift_mode_name": "e10_ch1_effect_lever_shift_mode_loop_midi1_selected_echo"
+      },
+      "notes": "[e10] PDF p4, . Printed channel 5, status 94, Data1 50h (printed dec 80). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e11",
+      "fig": "e11",
+      "label": "e11",
+      "kind": "button",
+      "x": 64.079,
+      "y": 25.6198,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "e11_control",
+        "type": "note",
+        "ch": 6,
+        "code": 80,
+        "shift_name": "e11_ch2_effect_lever_shift",
+        "mode_name": "e11_control_mode_serato_fx_selected_echo",
+        "shift_mode_name": "e11_ch2_effect_lever_shift_mode_loop_midi1_selected_echo"
+      },
+      "notes": "[e11] PDF p4, . Printed channel 6, status 95, Data1 50h (printed dec 80). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-e12",
+      "fig": "e12",
+      "label": "LEVEL/DEPTH",
+      "kind": "knob",
+      "x": 46.633,
+      "y": 24.6655,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "e12_level_depth_mode_beat_fx_loop_midi1_loop_midi2_selected_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 10,
+        "mode_name": "e12_level_depth_mode_beat_fx_loop_midi1_loop_midi2_selected_msb"
+      },
+      "notes": "[e12] PDF p5, LEVEL/DEPTH, condition: BEAT FX /LOOP MIDI1 /LOOP MIDI2 selected. Printed channel 7, status B6, Data1 0Ah (printed dec 2 34). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-d1-1",
+      "fig": "d1_1",
+      "label": "d1_1",
+      "kind": "button",
+      "x": 5.7597,
+      "y": 4.819,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_1_control",
+        "type": "cc",
+        "ch": 1,
+        "code": 64,
+        "shift_name": "d1_1_control_shift",
+        "mode_name": "d1_1_browse_mode_rotate_while_pressing_echo_button_serato"
+      },
+      "notes": "[d1_1] PDF p5, . Printed channel 7, status Bn, Data1 40h (printed dec 64). Difference count value from when previous operated Turn clockwise: 0x01~0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F~0x62(max) (1~30clicks/40msec)"
+    },
+    {
+      "id": "djm-s7-d2-1",
+      "fig": "d2_1",
+      "label": "d2_1",
+      "kind": "button",
+      "x": 86.8295,
+      "y": 4.6313,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_1_control",
+        "type": "cc",
+        "ch": 1,
+        "code": 64,
+        "shift_name": "d2_1_control_shift",
+        "mode_name": "d2_1_browse_mode_rotate_while_pressing_echo_button_serato"
+      },
+      "notes": "[d2_1] PDF p5, . Printed channel 7, status Bn, Data1 40h (printed dec 64). Difference count value from when previous operated Turn clockwise: 0x01~0x1E(max) (1~30clicks/40msec) Turn counterclockwise: 0x7F~0x62(max) (1~30clicks/40msec)"
+    },
+    {
+      "id": "djm-s7-d1-2",
+      "fig": "d1_2",
+      "label": "BACK",
+      "kind": "button",
+      "x": 2.0006,
+      "y": 9.4406,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_2_back",
+        "type": "note",
+        "ch": 1,
+        "code": 104,
+        "shift_name": "d1_2_back_shift"
+      },
+      "notes": "[d1_2] PDF p5, BACK. Printed channel 7, status 9n, Data1 68h (printed dec 104). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-2",
+      "fig": "d2_2",
+      "label": "BACK",
+      "kind": "button",
+      "x": 82.3791,
+      "y": 9.3377,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_2_back",
+        "type": "note",
+        "ch": 2,
+        "code": 104,
+        "shift_name": "d2_2_back_shift"
+      },
+      "notes": "[d2_2] PDF p5, BACK. Printed channel 7, status 9n, Data1 68h (printed dec 104). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-3",
+      "fig": "d1_3",
+      "label": "LOAD",
+      "kind": "button",
+      "x": 9.1327,
+      "y": 9.5332,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_3_load",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": "d1_3_load_shift"
+      },
+      "notes": "[d1_3] PDF p5, LOAD. Printed channel 1/2, status 9n, Data1 46h (printed dec 70). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-3",
+      "fig": "d2_3",
+      "label": "LOAD",
+      "kind": "button",
+      "x": 89.4696,
+      "y": 9.285,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_3_load",
+        "type": "note",
+        "ch": 2,
+        "code": 70,
+        "shift_name": "d2_3_load_shift"
+      },
+      "notes": "[d2_3] PDF p5, LOAD. Printed channel 1/2, status 9n, Data1 46h (printed dec 70). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-4",
+      "fig": "d1_4",
+      "label": "d1_4",
+      "kind": "button",
+      "x": 5.7017,
+      "y": 14.6393,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_4_control",
+        "type": "note",
+        "ch": 1,
+        "code": 68,
+        "shift_name": "d1_4_auto_loop_shift"
+      },
+      "notes": "[d1_4] PDF p5, . Printed channel 1/2, status 9n, Data1 44h (printed dec 68). OFF=0x00,1/4beat = 0x01,1/2beat = 0x02,1beat = 0x03,2beats = 0x04, 4beats = 0x05,8beats = 0x06,16beats = 0x07, LOOP OPTION=ON"
+    },
+    {
+      "id": "djm-s7-d2-4",
+      "fig": "d2_4",
+      "label": "d2_4",
+      "kind": "button",
+      "x": 86.8711,
+      "y": 14.5418,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_4_control",
+        "type": "note",
+        "ch": 2,
+        "code": 68,
+        "shift_name": "d2_4_auto_loop_shift"
+      },
+      "notes": "[d2_4] PDF p5, . Printed channel 1/2, status 9n, Data1 44h (printed dec 68). OFF=0x00,1/4beat = 0x01,1/2beat = 0x02,1beat = 0x03,2beats = 0x04, 4beats = 0x05,8beats = 0x06,16beats = 0x07, LOOP OPTION=ON"
+    },
+    {
+      "id": "djm-s7-d1-5",
+      "fig": "d1_5",
+      "label": "LOOP HALF",
+      "kind": "button",
+      "x": 2.1222,
+      "y": 17.959,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_5_loop_half",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": "d1_5_loop_half_shift"
+      },
+      "notes": "[d1_5] PDF p5, LOOP HALF. Printed channel 1/2, status 9n, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-5",
+      "fig": "d2_5",
+      "label": "LOOP HALF",
+      "kind": "button",
+      "x": 83.163,
+      "y": 18.0061,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_5_loop_half",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": "d2_5_loop_half_shift"
+      },
+      "notes": "[d2_5] PDF p5, LOOP HALF. Printed channel 1/2, status 9n, Data1 12h (printed dec 18). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-6",
+      "fig": "d1_6",
+      "label": "LOOP DOUBLE",
+      "kind": "button",
+      "x": 9.5367,
+      "y": 17.959,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_6_loop_double",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": "d1_6_loop_double_shift"
+      },
+      "notes": "[d1_6] PDF p5, LOOP DOUBLE. Printed channel 1/2, status 9n, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-6",
+      "fig": "d2_6",
+      "label": "LOOP DOUBLE",
+      "kind": "button",
+      "x": 90.6521,
+      "y": 18.0061,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_6_loop_double",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": "d2_6_loop_double_shift"
+      },
+      "notes": "[d2_6] PDF p5, LOOP DOUBLE. Printed channel 1/2, status 9n, Data1 13h (printed dec 19). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-7",
+      "fig": "d1_7",
+      "label": "PARAM1 (LEFT)",
+      "kind": "button",
+      "x": 5.9119,
+      "y": 29.2783,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_7_param1_left",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": "d1_7_param1_left_shift"
+      },
+      "notes": "[d1_7] PDF p5, PARAM1 (LEFT). Printed channel 1/2, status 9n, Data1 24h (printed dec 36). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-7",
+      "fig": "d2_7",
+      "label": "PARAM1 (LEFT)",
+      "kind": "button",
+      "x": 79.7028,
+      "y": 29.2571,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_7_param1_left",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "shift_name": "d2_7_param1_left_shift"
+      },
+      "notes": "[d2_7] PDF p5, PARAM1 (LEFT). Printed channel 1/2, status 9n, Data1 24h (printed dec 36). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-8",
+      "fig": "d1_8",
+      "label": "PARAM1 (RIGHT)",
+      "kind": "button",
+      "x": 12.5378,
+      "y": 29.2571,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_8_param1_right",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": "d1_8_param1_right_shift"
+      },
+      "notes": "[d1_8] PDF p6, PARAM1 (RIGHT). Printed channel 1/2, status 9n, Data1 2Ch (printed dec 44). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-8",
+      "fig": "d2_8",
+      "label": "PARAM1 (RIGHT)",
+      "kind": "button",
+      "x": 86.1893,
+      "y": 29.2783,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_8_param1_right",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": "d2_8_param1_right_shift"
+      },
+      "notes": "[d2_8] PDF p6, PARAM1 (RIGHT). Printed channel 1/2, status 9n, Data1 2Ch (printed dec 44). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-9",
+      "fig": "d1_9",
+      "label": "HOT CUE",
+      "kind": "button",
+      "x": 6.1013,
+      "y": 33.0448,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_9_hot_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": "d1_9_hot_cue_shift"
+      },
+      "notes": "[d1_9] PDF p6, HOT CUE. Printed channel 1/2, status 9n, Data1 1Bh (printed dec 27). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-9",
+      "fig": "d2_9",
+      "label": "HOT CUE",
+      "kind": "button",
+      "x": 53.3327,
+      "y": 33.0448,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_9_hot_cue",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": "d2_9_hot_cue_shift"
+      },
+      "notes": "[d2_9] PDF p6, HOT CUE. Printed channel 1/2, status 9n, Data1 1Bh (printed dec 27). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-10",
+      "fig": "d1_10",
+      "label": "d1_10",
+      "kind": "button",
+      "x": 17.6424,
+      "y": 33.033,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_10_control",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": "d1_10_roll_shift"
+      },
+      "notes": "[d1_10] PDF p6, . Printed channel 1/2, status 9n, Data1 1Eh (printed dec 30). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-10",
+      "fig": "d2_10",
+      "label": "d2_10",
+      "kind": "button",
+      "x": 64.1216,
+      "y": 33.0705,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_10_control",
+        "type": "note",
+        "ch": 2,
+        "code": 30,
+        "shift_name": "d2_10_roll_shift"
+      },
+      "notes": "[d2_10] PDF p6, . Printed channel 1/2, status 9n, Data1 1Eh (printed dec 30). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-11",
+      "fig": "d1_11",
+      "label": "SAVED LOOP",
+      "kind": "button",
+      "x": 28.4946,
+      "y": 33.0598,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_11_saved_loop",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": "d1_11_saved_loop_shift"
+      },
+      "notes": "[d1_11] PDF p6, SAVED LOOP. Printed channel 1/2, status 9n, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-11",
+      "fig": "d2_11",
+      "label": "SAVED LOOP",
+      "kind": "button",
+      "x": 75.2106,
+      "y": 33.0705,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_11_saved_loop",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": "d2_11_saved_loop_shift"
+      },
+      "notes": "[d2_11] PDF p6, SAVED LOOP. Printed channel 1/2, status 9n, Data1 20h (printed dec 32). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-12",
+      "fig": "d1_12",
+      "label": "SAMPLER",
+      "kind": "button",
+      "x": 39.9968,
+      "y": 33.0846,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_12_sampler",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "d1_12_sampler_shift"
+      },
+      "notes": "[d1_12] PDF p6, SAMPLER. Printed channel 1/2, status 9n, Data1 22h (printed dec 34). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-12",
+      "fig": "d2_12",
+      "label": "SAMPLER",
+      "kind": "button",
+      "x": 86.9566,
+      "y": 33.0084,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_12_sampler",
+        "type": "note",
+        "ch": 2,
+        "code": 34,
+        "shift_name": "d2_12_sampler_shift"
+      },
+      "notes": "[d2_12] PDF p6, SAMPLER. Printed channel 1/2, status 9n, Data1 22h (printed dec 34). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-13",
+      "fig": "d1_13",
+      "label": "PAD1",
+      "kind": "pad",
+      "x": 5.0153,
+      "y": 36.7774,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_13_pad1",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": "d1_13_pad1_shift"
+      },
+      "notes": "[d1_13] PDF p6, PAD1. Printed channel 8/9, status 9p, Data1 00h (printed dec 0). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-13",
+      "fig": "d2_13",
+      "label": "PAD1",
+      "kind": "pad",
+      "x": 51.8197,
+      "y": 36.7774,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_13_pad1",
+        "type": "note",
+        "ch": 9,
+        "code": 0,
+        "shift_name": "d2_13_pad1_shift"
+      },
+      "notes": "[d2_13] PDF p6, PAD1. Printed channel 8/9, status 9p, Data1 00h (printed dec 0). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-14",
+      "fig": "d1_14",
+      "label": "PAD2",
+      "kind": "pad",
+      "x": 15.5179,
+      "y": 36.7774,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_14_pad2",
+        "type": "note",
+        "ch": 8,
+        "code": 1,
+        "shift_name": "d1_14_pad2_shift"
+      },
+      "notes": "[d1_14] PDF p6, PAD2. Printed channel 8/9, status 9p, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-14",
+      "fig": "d2_14",
+      "label": "PAD2",
+      "kind": "pad",
+      "x": 63.5544,
+      "y": 36.7764,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_14_pad2",
+        "type": "note",
+        "ch": 9,
+        "code": 1,
+        "shift_name": "d2_14_pad2_shift"
+      },
+      "notes": "[d2_14] PDF p6, PAD2. Printed channel 8/9, status 9p, Data1 01h (printed dec 1). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-15",
+      "fig": "d1_15",
+      "label": "PAD3",
+      "kind": "pad",
+      "x": 26.9873,
+      "y": 36.7764,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_15_pad3",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": "d1_15_pad3_shift"
+      },
+      "notes": "[d1_15] PDF p6, PAD3. Printed channel 8/9, status 9p, Data1 02h (printed dec 2). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-15",
+      "fig": "d2_15",
+      "label": "PAD3",
+      "kind": "pad",
+      "x": 74.1913,
+      "y": 36.7764,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_15_pad3",
+        "type": "note",
+        "ch": 9,
+        "code": 2,
+        "shift_name": "d2_15_pad3_shift"
+      },
+      "notes": "[d2_15] PDF p6, PAD3. Printed channel 8/9, status 9p, Data1 02h (printed dec 2). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-16",
+      "fig": "d1_16",
+      "label": "PAD4",
+      "kind": "pad",
+      "x": 38.4702,
+      "y": 36.7774,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_16_pad4",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "shift_name": "d1_16_pad4_shift"
+      },
+      "notes": "[d1_16] PDF p6, PAD4. Printed channel 8/9, status 9p, Data1 03h (printed dec 3). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-16",
+      "fig": "d2_16",
+      "label": "PAD4",
+      "kind": "pad",
+      "x": 85.3785,
+      "y": 36.7774,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_16_pad4",
+        "type": "note",
+        "ch": 9,
+        "code": 3,
+        "shift_name": "d2_16_pad4_shift"
+      },
+      "notes": "[d2_16] PDF p6, PAD4. Printed channel 8/9, status 9p, Data1 03h (printed dec 3). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-17",
+      "fig": "d1_17",
+      "label": "PAD5",
+      "kind": "pad",
+      "x": 4.9336,
+      "y": 41.6207,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_17_pad5",
+        "type": "note",
+        "ch": 8,
+        "code": 4,
+        "shift_name": "d1_17_pad5_shift"
+      },
+      "notes": "[d1_17] PDF p6, PAD5. Printed channel 8/9, status 9p, Data1 04h (printed dec 4). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-17",
+      "fig": "d2_17",
+      "label": "PAD5",
+      "kind": "pad",
+      "x": 51.9551,
+      "y": 41.6115,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_17_pad5",
+        "type": "note",
+        "ch": 9,
+        "code": 4,
+        "shift_name": "d2_17_pad5_shift"
+      },
+      "notes": "[d2_17] PDF p6, PAD5. Printed channel 8/9, status 9p, Data1 04h (printed dec 4). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-18",
+      "fig": "d1_18",
+      "label": "PAD6",
+      "kind": "pad",
+      "x": 15.8705,
+      "y": 41.6207,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_18_pad6",
+        "type": "note",
+        "ch": 8,
+        "code": 5,
+        "shift_name": "d1_18_pad6_shift"
+      },
+      "notes": "[d1_18] PDF p6, PAD6. Printed channel 8/9, status 9p, Data1 05h (printed dec 5). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-18",
+      "fig": "d2_18",
+      "label": "PAD6",
+      "kind": "pad",
+      "x": 62.6555,
+      "y": 41.6057,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_18_pad6",
+        "type": "note",
+        "ch": 9,
+        "code": 5,
+        "shift_name": "d2_18_pad6_shift"
+      },
+      "notes": "[d2_18] PDF p6, PAD6. Printed channel 8/9, status 9p, Data1 05h (printed dec 5). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-19",
+      "fig": "d1_19",
+      "label": "PAD7",
+      "kind": "pad",
+      "x": 27.5508,
+      "y": 41.6125,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_19_pad7",
+        "type": "note",
+        "ch": 8,
+        "code": 6,
+        "shift_name": "d1_19_pad7_shift"
+      },
+      "notes": "[d1_19] PDF p6, PAD7. Printed channel 8/9, status 9p, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-19",
+      "fig": "d2_19",
+      "label": "PAD7",
+      "kind": "pad",
+      "x": 73.5274,
+      "y": 41.6207,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_19_pad7",
+        "type": "note",
+        "ch": 9,
+        "code": 6,
+        "shift_name": "d2_19_pad7_shift"
+      },
+      "notes": "[d2_19] PDF p6, PAD7. Printed channel 8/9, status 9p, Data1 06h (printed dec 6). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d1-20",
+      "fig": "d1_20",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 38.8441,
+      "y": 41.6207,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d1_20_pad_8",
+        "type": "note",
+        "ch": 8,
+        "code": 7,
+        "shift_name": "d1_20_pad_8_shift"
+      },
+      "notes": "[d1_20] PDF p6, PAD 8. Printed channel 8/9, status 9p, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d2-20",
+      "fig": "d2_20",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 85.269,
+      "y": 41.6207,
+      "w": 9.3431,
+      "h": 3.9062,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d2_20_pad_8",
+        "type": "note",
+        "ch": 9,
+        "code": 7,
+        "shift_name": "d2_20_pad_8_shift"
+      },
+      "notes": "[d2_20] PDF p6, PAD 8. Printed channel 8/9, status 9p, Data1 07h (printed dec 7). OFF=0x00, ON=0x7F"
+    },
+    {
+      "id": "djm-s7-d3",
+      "fig": "d3",
+      "label": "SAMPLER VOLUME",
+      "kind": "knob",
+      "x": 5.6026,
+      "y": 48.5422,
+      "w": 5.8394,
+      "h": 3.125,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "d3_sampler_volume_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 3
+      },
+      "notes": "[d3] PDF p6, SAMPLER VOLUME. Printed channel 7, status B6, Data1 03h (printed dec 3 35). MSB of 14-bit pair. Min(MSB:0x00 LSB:0x00)~Max(MSB:0x7F LSB:0x7F) When turned fully counterclockwise: 0 When turned fully clockwise: 16383"
+    },
+    {
+      "id": "djm-s7-d4",
+      "fig": "d4",
+      "label": "PANEL",
+      "kind": "button",
+      "x": 46.4022,
+      "y": 14.427,
+      "w": 6.7153,
+      "h": 1.875,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "d4_panel",
+        "type": "note",
+        "ch": 7,
+        "code": 120,
+        "shift_name": "d4_panel_shift"
+      },
+      "notes": "[d4] PDF p6, PANEL. Printed channel 7, status 96, Data1 78h (printed dec 120). OFF=0x00, ON=0x7F"
+    }
+  ]
+}

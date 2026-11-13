@@ -27,6 +27,7 @@
 	 * whether this tab is drawing the panel, the chip, or neither.
 	 */
 	import { tick, untrack } from 'svelte';
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 	import { focusTrap } from '$lib/keyboard/focus-trap';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -72,7 +73,9 @@
 	} from '$lib/setup/run-setup';
 	import { dismissReloadResume } from '$lib/rb/reload-resume.svelte';
 	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
-	import { nativeShellKind, pickFolder } from '$lib/shell/native-shell';
+	import { nativeShellKind } from '$lib/shell/native-shell';
+	import { pickFolderIntoRow } from '$lib/setup/folder-picker';
+	import { preserveUrlSearchOnRedirect } from '$lib/setup/wizard-rules';
 	import {
 		FOLDER_STAGE_LABELS,
 		STAGE_LABELS,
@@ -110,6 +113,7 @@
 		stepPosition,
 		visibleSteps,
 		wizardAnnouncement,
+		panelSwapNeedsHeadingFocus,
 		type AnnouncerState,
 		type WizardStep
 	} from '$lib/setup/wizard.svelte';
@@ -263,19 +267,34 @@
 		void tick().then(() => panel.querySelector<HTMLElement>('[data-step-heading]')?.focus());
 	});
 
+	// Choose a folder instead removes itself with the panel it sat in; focus then
+	// falls to the page and the Tab trap restarts at Minimise. Land it on the new
+	// panel's heading so the next Tab reaches that panel's first control.
+	let focusedSource: typeof source = null;
+
+	$effect(() => {
+		const panel = panelEl;
+		const current = source;
+		if (panel === null) {
+			focusedSource = current;
+			return;
+		}
+		const previous = focusedSource;
+		focusedSource = current;
+		void tick().then(() => {
+			const active = document.activeElement;
+			const inside = active !== null && active !== document.body && panel.contains(active);
+			if (panelSwapNeedsHeadingFocus(previous, current, inside)) {
+				panel.querySelector<HTMLElement>('[data-step-heading]')?.focus();
+			}
+		});
+	});
+
 	/** Open the OS-native directory picker in the desktop shell; browser tabs keep
 	 * the text field as the only path and this handler is never called there.
 	 * The chosen folder is checked at once (SETUP-29). */
 	async function chooseFolder(rowId: string): Promise<void> {
-		if (!canUseNativeFolderPicker()) return;
-		try {
-			const selected = await pickFolder('Choose a folder');
-			if (typeof selected === 'string') {
-				setupWizard.chooseFolderForRow(rowId, selected);
-			}
-		} catch {
-			// A failed plugin load or cancelled dialog must not clear a typed path.
-		}
+		await pickFolderIntoRow(rowId, (id, path) => setupWizard.chooseFolderForRow(id, path));
 	}
 	/** The separation job StemsPrompt started, if the tester said yes. Held
 	 * so BOTH the stems step and the done screen can name it: run 2 on the
@@ -433,7 +452,7 @@
 		openSetupOverlay();
 		const pathname = $page.url.pathname;
 		if (shouldNavigateSetupDoor(pathname, anyDeckPlaying())) {
-			void goto(SETUP_HOST_ROUTE);
+			void goto(preserveUrlSearchOnRedirect(SETUP_HOST_ROUTE, $page.url.search));
 		}
 	}
 
@@ -1352,6 +1371,19 @@ message={job.message}
 										</span>
 										file(s) were skipped because they are not playable audio.
 									</p>
+									{#if (lastImport.unplayable_rejections ?? []).length > 0}
+										{@const unplayableRows = lastImport.unplayable_rejections ?? []}
+										<details class="agent-details">
+											<summary>{AGENT_DETAILS_LABEL}</summary>
+											<pre
+												data-agent-unplayable={unplayableRows
+													.map((row) => `${row.path} -- ${row.reason}`)
+													.join('\n')}
+											>{unplayableRows
+												.map((row) => `${row.path} -- ${row.reason}`)
+												.join('\n')}</pre>
+										</details>
+									{/if}
 								{/if}
 								{#if importDenied.length > 0}
 									<p class="fatal" role="alert">
@@ -1409,6 +1441,7 @@ message={job.message}
 	<button
 		type="button"
 		class="su-chip"
+		style:z-index={OVERLAY_Z_INDEX.setupChip}
 		onclick={() => expandSetupOverlay()}
 		title={importRunning
 			? 'Setup is minimised while the import runs. Click to reopen it with live progress.'
@@ -1424,7 +1457,7 @@ message={job.message}
 		{/if}
 	</button>
 {:else if setupOverlay.incomplete}
-	<div class="su-incomplete" role="status">
+	<div class="su-incomplete" role="status" style:z-index={OVERLAY_Z_INDEX.setupChip}>
 		<span>
 			Setup incomplete -- library is
 			<strong title="Tracks currently in your library">
@@ -1808,7 +1841,6 @@ message={job.message}
 		position: fixed;
 		right: calc(1rem + var(--assistant-dock-width, 0px));
 		bottom: 1.75rem;
-		z-index: 370;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;

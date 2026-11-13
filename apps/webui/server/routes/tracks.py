@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import os
+import re
 import sqlite3
 import stat
 import threading
@@ -15,6 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from pydantic import BaseModel, Field
 
 from apps.analysis_key import key_guess
+from apps.analysis_key.canon import canonical_key_text
 from apps.cloud import stem_index
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.asr_hallucination import servable_lyrics
@@ -35,7 +37,7 @@ from apps.shared.state.writer_tracks import (
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
 from .. import boot_grace, mik_tag_cache, rb_vendor
-from ..backend import ConflictError, StateBackend, Track, TrackFilter
+from ..backend import BatchConflictError, ConflictError, StateBackend, Track, TrackFilter, normalize_mytag_name
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
@@ -52,11 +54,13 @@ from ..models import (
     TrackPlaylistOut,
     TracksPage,
 )
+from ..mytag_comment_sync import sync_mytag_comments
 from ..rb_vendor_pkg.track_rows import KEY_WIRE_FIELDS, _artwork_facts, key_chain_for_track, load_key_edits
 from ..reveal_path import RevealPathError, reveal_track_path
 from ..shell_output_health import data_dir_from_state_db
 from ..track_loudness import track_loudness
 from .ingest_job import valid_lyrics_ids
+from .rb_hot_cues import HotCueSlotOut, list_hot_cue_slots
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 MOUNT_UNDER_API_PREFIX = True
@@ -264,6 +268,8 @@ def _track_own_fields(track: Track) -> dict[str, Any]:
         "tags": list(track.tags or []),
         "notes": track.notes,
         "comments": track.comments,
+        "year": track.year,
+        "label": track.label,
         "last_played_at": track.last_played_at,
         "tempo_pref": track.tempo_pref,
         "tracklist_hidden": track.tracklist_hidden,
@@ -331,6 +337,11 @@ def _listing_row_from_builder(track: Track, row: dict[str, Any]) -> dict[str, An
         "play_count": int(row["play_count"]),
         "preview_b64": row["preview_b64"],
         "preview_max": row["preview_max"],
+        "date_added": row["date_added"],
+        # Issue #9737: the Open DJ colour edit, else the rekordbox ColorID.
+        "color_id": row["color_id"],
+        # LIBUX-13845: play-log aware, so a recorded play shows on the next list read.
+        "last_played_at": row["last_played_at"],
         "file_availability": row["file_availability"],
         "file_exists": row["file_exists"],
         "is_remote": bool(row["is_remote"]),
@@ -470,6 +481,98 @@ INCLUDE_NON_MUSIC_DOC = (
 )
 
 
+#: Issue #9738: the BPM column funnel range, inclusive at both ends.
+BPM_MIN_DOC = "Inclusive lower BPM bound; rows with no BPM are left out when a bound is set"
+BPM_MAX_DOC = "Inclusive upper BPM bound; a bpm_min above bpm_max is a 422"
+
+
+def check_bpm_range(bpm_min: float | None, bpm_max: float | None) -> None:
+    """Refuse a BPM range whose min is above its max (422 ``bpm_range_invalid``)."""
+    if bpm_min is not None and bpm_max is not None and bpm_min > bpm_max:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "bpm_range_invalid", "message": "bpm_min must not be above bpm_max"},
+        )
+
+
+def keep_by_bpm(bpm_min: float | None, bpm_max: float | None, bpm: float | None) -> bool:
+    """True when a row's served BPM is inside the inclusive range (no bound: every row)."""
+    if bpm_min is None and bpm_max is None:
+        return True
+    if bpm is None:
+        return False
+    return (bpm_min is None or bpm >= bpm_min) and (bpm_max is None or bpm <= bpm_max)
+
+
+_CAMELOT_KEY = re.compile(r"(?:[1-9]|1[0-2])[AB]")
+KEY_QUERY_DOC = "Repeatable key (any notation: 8A, Am, 1m); a row matches any; an unknown key is a 422"
+
+
+def parse_key_query(key: list[str] | None) -> tuple[str, ...]:
+    """Issue #9739: the Key funnel picks as canonical Camelot keys; a key in no notation is a 422 ``key_invalid``."""
+    keys: list[str] = []
+    for raw in key or []:
+        canonical = canonical_key_text(raw.strip())
+        if canonical is None or not _CAMELOT_KEY.fullmatch(canonical):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "key_invalid", "message": f"key {raw!r} is not a musical key in any notation"},
+            )
+        keys.append(canonical)
+    return tuple(dict.fromkeys(keys))
+
+
+def keep_by_key(keys: tuple[str, ...], key: str | None) -> bool:
+    """True when a row's served (canonical) key is one of the picks (no picks: every row)."""
+    return not keys or key in keys
+
+
+GENRE_QUERY_DOC = "Repeatable genre, case-insensitive exact match on the served genre; a row matches any; blank is 422"
+RATING_MIN_DOC = "Minimum star rating, 1 to 5; unrated rows drop out"
+
+
+def parse_genre_query(genre: list[str] | None) -> tuple[str, ...]:
+    """Issue #9740: the Genre funnel picks, lower-cased; a blank genre is a 422 ``genre_invalid``."""
+    genres: list[str] = []
+    for raw in genre or []:
+        picked = raw.strip().lower()
+        if not picked:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "genre_invalid", "message": "genre must not be blank"},
+            )
+        genres.append(picked)
+    return tuple(dict.fromkeys(genres))
+
+
+def keep_by_genre(genres: tuple[str, ...], genre: str | None) -> bool:
+    """True when a row's served genre is one of the picks, ignoring case (no picks: every row)."""
+    return not genres or (genre or "").strip().lower() in genres
+
+
+def keep_by_rating(rating_min: int | None, rating: int | None) -> bool:
+    """True when a row has at least ``rating_min`` stars (no minimum: every row, unrated rows drop out)."""
+    return rating_min is None or (rating is not None and rating >= rating_min)
+
+
+MYTAG_QUERY_DOC = "Repeatable My Tag name (matched like the tag catalog: case and width ignored); blank is a 422"
+MYTAG_MODE_DOC = "How several mytag values combine: or keeps a track holding any, and one holding all"
+
+
+def parse_mytag_query(mytag: list[str] | None) -> tuple[str, ...]:
+    """Issue #9742: the My Tag filter picks, normalised; a blank name is a 422 ``mytag_invalid``."""
+    names: list[str] = []
+    for raw in mytag or []:
+        name = normalize_mytag_name(raw)
+        if not name:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "mytag_invalid", "message": "mytag must not be blank"},
+            )
+        names.append(name)
+    return tuple(dict.fromkeys(names))
+
+
 def _parse_color_id_query(color_id: list[int] | None) -> tuple[int, ...]:
     if not color_id:
         return ()
@@ -486,11 +589,14 @@ def _parse_color_id_query(color_id: list[int] | None) -> tuple[int, ...]:
 def list_tracks(
     request: Request,
     q: str | None = Query(None, description="Substring match on title/artist"),
-    bpm_min: float | None = None,
-    bpm_max: float | None = None,
-    key: str | None = None,
-    rating_min: int | None = None,
+    bpm_min: float | None = Query(None, ge=0, description=BPM_MIN_DOC),
+    bpm_max: float | None = Query(None, ge=0, description=BPM_MAX_DOC),
+    key: list[str] | None = Query(None, description=KEY_QUERY_DOC),
+    rating_min: int | None = Query(None, ge=1, le=5, description=RATING_MIN_DOC),
+    genre: list[str] | None = Query(None, description=GENRE_QUERY_DOC),
     tag: str | None = None,
+    mytag: list[str] | None = Query(None, description=MYTAG_QUERY_DOC),
+    mytag_mode: Literal["and", "or"] = Query("or", description=MYTAG_MODE_DOC),
     color_id: list[int] | None = Query(None, description="Repeatable rekordbox ColorID 0..8"),
     available: AvailableFilter = Query(  # noqa: B008  # FastAPI DI
         "all",
@@ -510,20 +616,26 @@ def list_tracks(
     limit: int = Query(200, ge=1, le=1000),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> Response:
+    check_bpm_range(bpm_min, bpm_max)
+    genres = parse_genre_query(genre)
     flt = TrackFilter(
         q=q,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
-        key=key,
+        keys=parse_key_query(key),
         rating_min=rating_min,
         tag=tag,
+        mytags=parse_mytag_query(mytag),
+        mytag_mode=mytag_mode,
         color_ids=_parse_color_id_query(color_id),
         cursor=cursor,
         limit=limit,
         show_deleted=show_deleted,
     )
     page = backend.list_tracks(flt)
-    items, non_music_hidden = _listing_items(request, page.items, available, include_non_music)
+    items, non_music_hidden = _listing_items(
+        request, page.items, available, include_non_music, genres
+    )
     # The page is validated ONCE, as a whole, and returned already rendered
     # (LIBM-137). Before, each row was built as a TrackOut, dumped, rebuilt as a
     # TrackListItemOut, and then FastAPI validated and encoded the whole page a
@@ -538,7 +650,11 @@ def list_tracks(
 
 
 def _listing_items(
-    request: Request, tracks: list[Track], available: AvailableFilter, include_non_music: bool
+    request: Request,
+    tracks: list[Track],
+    available: AvailableFilter,
+    include_non_music: bool,
+    genres: tuple[str, ...] = (),
 ) -> tuple[list[TrackListItemOut], int]:
     """One listing row per music track, in order, and how many non-music rows were hidden."""
     state_db_path = Path(request.app.state.state_db_path)
@@ -567,11 +683,9 @@ def _listing_items(
             "auto_cues_available": auto_cues_by_sid[track.stable_id],
             "stems_available": _stems_available(track.stable_id, row["stems"], request),
         }
-        items.append(TrackListItemOut(**source))
-        items.extend(
-            TrackListItemOut(**_edit_listing_row(source, edit))
-            for edit in edits.get(track.stable_id, [])
-        )
+        # Issue #9740: the Genre funnel picks match the served genre of each row (an edit has its own).
+        listed = [source, *(_edit_listing_row(source, edit) for edit in edits.get(track.stable_id, []))]
+        items.extend(TrackListItemOut(**row) for row in listed if keep_by_genre(genres, row["genre"]))
     return items, non_music_hidden
 
 
@@ -953,13 +1067,26 @@ def undelete_track_from_library(
     return _lifecycle_out(result)
 
 
-@router.get("/{stable_id}", response_model=TrackOut)
+class TrackDeckOut(TrackOut):
+    """LATENCY-9993: the single-track read, with hot cue slots embedded on request."""
+
+    #: Present only for ``include=hot_cues``: the list ``GET /tracks/{id}/hot-cues`` returns.
+    hot_cues: list[HotCueSlotOut] | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+TrackInclude = Literal["hot_cues"]
+
+
+@router.get("/{stable_id}", response_model=TrackDeckOut)
 def get_track(
     stable_id: str,
     request: Request,
     response: Response,
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
-) -> TrackOut:
+    include: list[TrackInclude] | None = Query(  # noqa: B008  # FastAPI DI
+        None, description="Extra blocks to embed. `hot_cues` embeds the GET /tracks/{id}/hot-cues list (LATENCY-9993)."
+    ),
+) -> TrackDeckOut:
     # NotFoundError -> handle_not_found (errors.py).
     track = backend.get_track(stable_id)
     response.headers["ETag"] = compute_etag(track.stable_id, track.updated_at, track.selection_tag)
@@ -974,15 +1101,20 @@ def get_track(
         stems=stems,
     )
     has_rb_mapping, artwork_available = _rb_mapping_and_artwork(stable_id)
-    out = _track_to_out(
-        track,
-        has_rb_mapping=has_rb_mapping,
-        lyrics_available=lyrics,
-        auto_cues_available=auto_cues,
-        stems_available=stems_avail,
-        artwork_available=artwork_available,
+    out = TrackDeckOut.model_validate(
+        _track_to_out(
+            track,
+            has_rb_mapping=has_rb_mapping,
+            lyrics_available=lyrics,
+            auto_cues_available=auto_cues,
+            stems_available=stems_avail,
+            artwork_available=artwork_available,
+        ),
+        from_attributes=True,
     )
     out.loudness = loudness_block(state_db_path, stable_id)
+    if include and "hot_cues" in include:
+        out.hot_cues = list_hot_cue_slots(stable_id, request, backend)
     # KEY-FALLBACK-01: Mixed In Key's tag stands in for a missing key or BPM.
     mik = mik_tag_cache.mik_values(state_db_path, {stable_id: track.file_path}, read_missing=True).get(stable_id)
     resolved = deck_key_fields(track, has_rb_mapping=has_rb_mapping, state_db_path=state_db_path, mik=mik)
@@ -1038,6 +1170,17 @@ def reveal_track(
     return Response(status_code=204)
 
 
+def _sync_mytag_comment_block(request: Request, backend: StateBackend, updated: Track, patch_dict: dict) -> Track:
+    """Re-render the My Tag comment block after a tag or comment edit (issue #10025); a lost race is a 409."""
+    if not {"comments", "tags_add", "tags_remove"} & patch_dict.keys():
+        return updated
+    try:
+        (synced,) = sync_mytag_comments(request.app, backend, [updated], source="webui")
+    except BatchConflictError as exc:  # another writer landed between the edit and its block re-render
+        raise ConflictError(backend.get_track(updated.stable_id).to_dict(), exc.conflicts[0]["current_etag"]) from exc
+    return synced
+
+
 @router.patch("/{stable_id}", response_model=TrackOut)
 def patch_track(
     stable_id: str,
@@ -1065,15 +1208,20 @@ def patch_track(
     if patch.tags_remove is not None:
         patch_dict["tags_remove"] = patch.tags_remove
     if patch.tempo_pref is not None or "tempo_pref" in patch.model_fields_set:
+        # PREF-2163: {} or an all-null object means "no preference", stored as null.
+        tempo_pref = patch.tempo_pref.model_dump() if patch.tempo_pref is not None else None
         patch_dict["tempo_pref"] = (
-            patch.tempo_pref.model_dump() if patch.tempo_pref is not None else None
+            tempo_pref if tempo_pref and any(v is not None for v in tempo_pref.values()) else None
         )
     if "tracklist_hidden" in patch.model_fields_set:
         patch_dict["tracklist_hidden"] = patch.tracklist_hidden
+    if "color_id" in patch.model_fields_set:
+        patch_dict["color_id"] = patch.color_id
     try:
         updated = backend.update_track(
             stable_id, patch_dict, expected_etag=if_match, source="webui"
         )
+        updated = _sync_mytag_comment_block(request, backend, updated, patch_dict)
     except ConflictError as exc:
         # update_track raises straight from the backend layer (current.to_dict()),
         # bypassing _track_to_out, so the 409 payload never picks up has_rb_mapping

@@ -19,7 +19,7 @@ from apps.autodj.profile import (
     resolve_key_at_bar,
 )
 from apps.autodj.sections import own_label, phrase_label, pssi_label
-from apps.autodj.windows import USER_CUE_SCORE, mix_windows, window_at
+from apps.autodj.windows import USER_CUE_SCORE, _in_position_prior, mix_windows, window_at
 from tests.autodj.fixtures import CHORUS, DOWN, INTRO, OUTRO, UP, anlz_payload, profile, track_row
 
 
@@ -151,6 +151,7 @@ _GOLDEN_WITHOUT_MID_HIGH: dict[str, str] = {
 }
 _TRK_A_SUMMARY_DIGEST = "4364c044b3f99574c3f5566daed1250b4d2dbf6cc48fa58b087ca8915b01c4c4"
 _TRANSAI_REQ = "TRANSAI-10505"
+_BITTNER_PRIOR_REQ = "AUTODJ-11849"
 
 
 def _profile_digest_without_new_bands(p) -> str:
@@ -165,6 +166,7 @@ def _profile_digest_without_new_bands(p) -> str:
         "mik_boundaries",
         "mik_grid_suspect",
         "mik_grid_note",
+        "stem_layout",
     ):
         data.pop(key, None)
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
@@ -296,6 +298,66 @@ def test_an_outro_shorter_than_four_bars_is_marked_too_short() -> None:
     outro = next(window for window in mix_windows(track, "out") if window.label == "outro")
     assert outro.max_bars == 2
     assert outro.too_short is True
+
+
+@pytest.mark.requirement(_BITTNER_PRIOR_REQ)
+def test_out_window_prior_prefers_the_last_quarter_of_the_grid() -> None:
+    """[if] two out windows tie on label [then] the last 25 percent band wins, [else stop]."""
+    track = profile(
+        "trk-prior-out",
+        arrangement=(
+            (DOWN, 96, 0.6, 0.5, False),
+            (DOWN, 32, 0.8, 0.8, True),
+        ),
+    )
+    windows = mix_windows(track, "out", limit=2)
+    assert [window.start_bar for window in windows] == [97, 1]
+
+
+@pytest.mark.requirement(_BITTNER_PRIOR_REQ)
+def test_in_window_prior_prefers_the_first_fifth_of_the_grid() -> None:
+    """[if] two in windows tie on label [then] the first 20 percent band wins, [else stop]."""
+    track = profile(
+        "trk-prior-in",
+        arrangement=(
+            # Both intros carry the same energy, so both clear the mix-in salience gate (#12804)
+            # and only the position prior separates them.
+            (INTRO, 26, 0.5, 0.4, True),
+            (UP, 77, 0.9, 0.9, False),
+            (INTRO, 25, 0.5, 0.4, False),
+        ),
+    )
+    windows = mix_windows(track, "in", limit=5)
+    intro_early = next(w for w in windows if w.start_bar == 1)
+    intro_late = next(w for w in windows if w.start_bar == 104)
+    assert windows.index(intro_early) < windows.index(intro_late)
+
+
+@pytest.mark.requirement(_BITTNER_PRIOR_REQ)
+def test_transition_in_cue_score_beats_the_in_position_prior() -> None:
+    """[if] a user transition-in cue exists [then] its score stays above rule windows, [else stop]."""
+    anlz = anlz_payload("trk-a")
+    anlz["cues"] = [{"kind": "transition_in", "slot": None, "in_ms": round(103 * (60 / 128) * 4 * 1000)}]
+    cued = profile_from_payloads(anlz, track_row("trk-a"))
+    assert cued.transition_in_bar == 104
+    (cue_window,) = mix_windows(cued, "in")
+    assert cue_window.score == USER_CUE_SCORE
+    rule_best = max(mix_windows(dataclasses.replace(cued, transition_in_bar=None), "in"), key=lambda w: w.score)
+    assert cue_window.score > rule_best.score
+
+
+@pytest.mark.requirement(_BITTNER_PRIOR_REQ)
+def test_mix_windows_with_zero_bars_keeps_the_in_fallback_score() -> None:
+    """[if] bars is zero [then] mix_windows skips divide-by-zero and the prior leaves the in fallback alone, [else stop]."""
+    zero = dataclasses.replace(profile("trk-a"), downbeats_s=(), sections=())
+    assert zero.bars == 0
+    assert mix_windows(zero, "out") == []
+    (fallback,) = mix_windows(zero, "in")
+    assert (fallback.start_bar, fallback.label) == (1, "unknown")
+    assert _in_position_prior(zero.bars, fallback.start_bar) == 1.0
+    # The one-bar fallback is under the 64-beat incoming floor (#11851); that floor, not the prior, zeroes it.
+    assert fallback.score == 0.0
+    assert "requires 16 bars (64 beats)" in fallback.reason
 
 
 def test_out_windows_prefer_the_outro_and_end_by_the_last_downbeat() -> None:

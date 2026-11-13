@@ -91,7 +91,7 @@ async function _openLibraryMenu(page: Page): Promise<void> {
 test('performance, library and Settings have no unlisted serious or critical axe violation', async ({
 	page
 }) => {
-	test.fixme(true, 'brand-launch aria-prohibited-attr, see #13525');
+	test.fixme(true, 'nested-interactive on playlist rows and browser tabs, see #14903');
 	test.setTimeout(60_000);
 	await page.setViewportSize({ width: 1600, height: 900 });
 	expect(allowlistProblems(ALLOW), 'allowlist shape').toEqual([]);

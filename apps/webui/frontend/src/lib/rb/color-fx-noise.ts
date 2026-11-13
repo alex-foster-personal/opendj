@@ -5,8 +5,10 @@
  * Pink is derived from the same white seed via a deterministic -3 dB/oct filter.
  */
 import type { DeckId } from '$lib/player/constants';
-import { defineVariantSetting } from '$lib/settings/variant-setting';
 import { onVariantChange } from '$lib/rb/variant-prefs';
+import { NOISE_COLOUR_VARIANT } from './color-fx-noise-variants';
+
+export { NOISE_COLOUR_VARIANT };
 
 /** Matches COLOR_FX_RAMP_SEC in color-fx-graph.ts (avoid graph import at registry time). */
 export const NOISE_BUFFER_RAMP_SEC = 0.01;
@@ -17,19 +19,6 @@ export const NOISE_HIGH_HZ = 16000;
 export const NOISE_GAIN_MAX_DB = -6;
 export const NOISE_LOOP_SECONDS = 4;
 export const NOISE_DECORRELATION_MAX = 0.05;
-
-export const NOISE_COLOUR_VARIANT = defineVariantSetting({
-	id: 'variant_sndcol_noise_colour',
-	label: 'NOISE colour',
-	group: 'advanced',
-	keywords: ['noise', 'pink', 'white', 'sound color', 'sndcol'],
-	detail: 'Spectrum of the NOISE kernel injected hiss.',
-	variants: [
-		{ value: 'white', label: 'White', summary: 'flat spectrum (DJM default)' },
-		{ value: 'pink', label: 'Pink', summary: '-3 dB/oct darker riser' }
-	],
-	defaultValue: 'white'
-});
 
 export type NoiseColour = 'white' | 'pink';
 

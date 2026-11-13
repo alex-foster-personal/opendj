@@ -61,11 +61,15 @@ MIN_INCOMING_MIXABLE_BARS = 16
 SALIENCE_BARS = 4
 #: Minimum fraction of the track peak that salience window must reach.
 SALIENCE_MIN_RATIO = 0.4
+#: Bittner 2017 A position prior: the last fraction of A a mix-out may start in.
+OUT_POSITION_PRIOR = 0.25
+#: Bittner 2017 B position prior: the first fraction of B a mix-in may start in.
+IN_POSITION_PRIOR = 0.20
 
 _OUT_LABEL_WEIGHT = {OUTRO: 1.0, BREAKDOWN: 0.8, BRIDGE: 0.7, INSTRUMENTAL: 0.7}
 _IN_LABEL_WEIGHT = {INTRO: 1.0, BUILD: 0.8, INSTRUMENTAL: 0.7}
-#: Above every rule score (each is a weighted sum of terms in 0..1), so a
-#: caller that merges windows from elsewhere still ranks the user's cue first.
+#: Above every rule score (weighted sum of terms in 0..1 times a band prior in 0..1),
+#: so a caller that merges windows from elsewhere still ranks the user's cue first.
 USER_CUE_SCORE = 2.0
 _OTHER_LABEL_WEIGHT = 0.3
 
@@ -138,6 +142,26 @@ def _vocal_free_run(profile: TrackProfile, start_bar: int, bars: int) -> int | N
     return max(0, min(bars, first - start_bar))
 
 
+def _out_position_prior(bars: int, start_bar: int) -> float:
+    """Linear ramp: 1.0 in the last ``OUT_POSITION_PRIOR`` of the grid, down toward bar 1."""
+    if bars <= 0:
+        return 1.0
+    bars_eff = max(1, bars)
+    band_start = (1.0 - OUT_POSITION_PRIOR) * bars_eff
+    return min(1.0, start_bar / max(1.0, band_start))
+
+
+def _in_position_prior(bars: int, start_bar: int) -> float:
+    """Linear ramp: 1.0 in the first ``IN_POSITION_PRIOR`` of the grid, down toward the tail."""
+    if bars <= 0:
+        return 1.0
+    bars_eff = max(1, bars)
+    band_end = IN_POSITION_PRIOR * bars_eff
+    if start_bar <= band_end:
+        return 1.0
+    return max(0.0, (bars_eff - start_bar) / (bars_eff - band_end))
+
+
 def _out_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> MixWindow | None:
     last_bar = profile.bars  # the last downbeat on the grid
     # The blend must be over BY the last downbeat: the bar after it is the
@@ -152,6 +176,7 @@ def _out_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> 
     vocal_term = 1.0 if vocal_free is None else vocal_free / max_bars
     length_term = min(1.0, max_bars / 32.0)
     score = 0.45 * label_weight + 0.2 * vocal_term + 0.2 * position + 0.15 * length_term
+    score *= _out_position_prior(last_bar, start_bar)
     reasons = [why, f"{max_bars} bars to the last downbeat"]
     if vocal_free is not None:
         reasons.append(f"{vocal_free} vocal-free bars")
@@ -184,6 +209,7 @@ def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str, *, p
     length_term = min(1.0, max_bars / 16.0)
     landing = 1.0 if peak is not None else 0.0
     score = 0.4 * label_weight + 0.15 * vocal_term + 0.15 * position + 0.15 * length_term + 0.15 * landing
+    score *= _in_position_prior(profile.bars, start_bar)
     reasons = [why, f"{max_bars} usable bars"]
     if peak is not None:
         reasons.append(f"lands on a peak at bar {peak}")

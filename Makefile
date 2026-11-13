@@ -46,7 +46,7 @@ test:
 	$(PYTEST) $(pytest_basetemp_flag) -q -n $(PYTEST_JOBS) --dist loadgroup \
 		--collect-floor $(RELEASE_GATE_COLLECT_FLOOR) \
 		$(RELEASE_GATE_PYTEST_IGNORES) \
-		--ignore=(private path)
+		--ignore=tests/scripts/test_ci_trunk_quarantine_nextest.py
 
 # Optional native / slow-edge suites excluded from the portable core gate.
 # Run locally before release on macOS (Quartz/cliclick agent) or with
@@ -60,7 +60,7 @@ test-optional-native:
 test-full:
 	$(PYTEST) $(pytest_basetemp_flag) -q -n $(PYTEST_JOBS) --dist loadgroup \
 		--collect-floor $(PYTEST_COLLECT_FLOOR) \
-		--ignore=(private path)
+		--ignore=tests/scripts/test_ci_trunk_quarantine_nextest.py
 
 # Fast iteration gates for the Rekordbox parity stack. These deliberately omit
 # untouched analysis backends and Pioneer actuator suites, which require
@@ -80,13 +80,16 @@ rb-parity-final: rb-parity-check
 	cd apps/webui/frontend && pnpm build
 
 cov:
-	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html --ignore=(private path) $(pytest_basetemp_flag)
+	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html --ignore=tests/scripts/test_ci_trunk_quarantine_nextest.py $(pytest_basetemp_flag)
 
 reqs:
 	$(PY) -m scripts.build_reqs_json
 
 reqs-check:
 	$(PY) -m scripts.build_reqs_json --check
+
+reqs-merged-dup-check:
+	$(PY) -m scripts.reqs_merged_dup_gate --base origin/main
 
 fixture:
 	$(PY) -m scripts.make_rb_fixture --force

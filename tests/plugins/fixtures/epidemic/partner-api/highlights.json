@@ -1,0 +1,15 @@
+{
+  "method": "GET",
+  "path": "/tracks/es-ref-demo/highlights",
+  "status": 200,
+  "headers": {},
+  "body": {
+    "highlights": [
+      {
+        "startMs": 12000,
+        "endMs": 28000,
+        "label": "chorus"
+      }
+    ]
+  }
+}

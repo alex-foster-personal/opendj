@@ -1,0 +1,21 @@
+{
+  "origin": "browser",
+  "samples": [
+    {
+      "name": "http.client.duration",
+      "value_ms": 22.648267000000004,
+      "tags": {
+        "method": "GET",
+        "route": "/api/v1/tracks/:id",
+        "status": "2xx"
+      },
+      "error": false
+    },
+    {
+      "name": "deck.load",
+      "value_ms": 120,
+      "tags": {},
+      "error": false
+    }
+  ]
+}

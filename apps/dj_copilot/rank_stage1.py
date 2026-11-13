@@ -40,7 +40,10 @@ def rank_stage1(
     history_weight: float = 0.0,
     now: datetime | None = None,
 ) -> list[ScoredCandidate]:
-    """Rank ``candidates`` by combined harmonic score; DESC score."""
+    """Rank ``candidates`` by combined harmonic score; DESC score.
+
+    Specific find-similar-tracks uses this ranker directly (no genre cosine).
+    """
     if history_weight > 0 and now is None:
         raise ValueError("now is required when history_weight > 0")
     cur_key = getattr(current_track, "key_camelot", None)

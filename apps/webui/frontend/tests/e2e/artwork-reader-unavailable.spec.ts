@@ -414,6 +414,8 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
 	);
 	await stubPlaylistsRoute(page, (route) => route.fulfill({ json: [] }));
+	// The sidebar loads its pinned tree shortcuts at boot (LIBM-87, PR 13988): none pinned here.
+	await page.route('**/api/v1/playlist-tree/pins', (route) => route.fulfill({ json: { pins: [] } }));
 	await page.route('**/api/v1/playlist-history', (route) =>
 		route.fulfill({
 			json: { cursor: 0, limit: 50, can_undo: false, can_redo: false, entries: [] }
@@ -523,6 +525,28 @@ test('null artwork availability identifies an unavailable reader without request
 		route.fulfill({
 			json: { lanes: { beatgrid: { default: 'rbx', toggle: 'unset', effective: 'rbx' } } }
 		})
+	);
+
+	// The lighting status chip (TopBar.svelte, lighting-status.svelte.ts, issue
+	// #13353) mounts in the top bar of this same /performance route. It reads
+	// lighting.output from the /api/v1/flags stub above (absent there, so off)
+	// and then makes no status call at all; it polls GET /api/v1/lighting/status
+	// every 5 s (LIGHTING_STATUS_POLL_MS) only while that flag is on. Kept
+	// declared as a KNOWN request for a flag-on run, answered 409, the daemon's
+	// answer while the lighting.output flag is off.
+	await page.route('**/api/v1/lighting/status', (route) =>
+		route.fulfill({ status: 409, json: { detail: 'lighting.output is off' } })
+	);
+
+	// The Tag List rail badge (BrowserPanel.svelte onMount ->
+	// tag-list-ops.svelte.ts refreshTagListCount, issue #10028) mounts in the
+	// library browser of this same /performance route and reads GET
+	// /api/v1/taglist once for its count. Declared as a KNOWN request.
+	// Answered with routes/taglist.py's TagListOut for an empty Tag List
+	// (count 0, TAGLIST_CAP 100, no items), the daemon's answer on a library
+	// nobody has tagged, so the badge shows 0.
+	await page.route('**/api/v1/taglist', (route) =>
+		route.fulfill({ json: { count: 0, cap: 100, items: [] } })
 	);
 
 	// BTHFP-8319 (BluetoothHeadsetModeBanner.svelte) mounts from

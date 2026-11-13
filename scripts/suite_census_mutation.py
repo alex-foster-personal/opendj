@@ -189,8 +189,8 @@ def junit_outcomes(junit: Path) -> dict[str, str]:
 
 def _pytest_env() -> dict[str, str]:
     """No census instrumentation leaks into a mutant run, and no user data dir either."""
-    drop = {"MDT_DATA_DIR", "COVERAGE_PROCESS_START", PROCESS_CONFIG_ENV, CORE_DIR_ENV}
-    return {k: v for k, v in os.environ.items() if k not in drop}
+    drop = {"MDT_DATA_DIR", PROCESS_CONFIG_ENV, CORE_DIR_ENV}
+    return {k: v for k, v in os.environ.items() if k not in drop and not k.startswith("COVERAGE_")}
 
 
 def run_tests(repo: Path, tests: list[str], timeout_s: float) -> tuple[set[str], set[str]] | None:

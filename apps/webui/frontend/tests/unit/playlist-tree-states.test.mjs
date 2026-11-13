@@ -139,7 +139,8 @@ test('createdId survives past the rename commit, unlike the transient editingId'
 
 test('mostly-broken row: broken class and threshold tooltip on PlaylistTree rows', () => {
 	assert.match(viewSource, /class:broken=\{node\.mostly_broken\}/);
-	assert.match(viewSource, /title=\{node\.mostly_broken \? mostlyBrokenTitle : undefined\}/);
+	assert.match(viewSource, /title=\{_rowTitle\(node\)\}/);
+	assert.match(viewSource, /if \(node\.mostly_broken\) return mostlyBrokenTitle;/);
 	assert.match(treeSource, /mostlyBrokenTitle=\{formatMostlyBrokenTooltip\(\)\}/);
 	const policy = readFileSync(
 		new URL('../../src/lib/rb/runtime-policy.svelte.ts', import.meta.url),

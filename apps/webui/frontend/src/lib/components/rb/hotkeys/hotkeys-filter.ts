@@ -83,3 +83,20 @@ export function filterHotkeys(entries: readonly HotkeyEntry[], query: string): F
 	}
 	return out;
 }
+
+//----- #12288: one polite live-region summary of the filter result
+
+/** Shortcuts the overlay shows for `rows`; a row id listed twice counts once. */
+export function visibleShortcutCount(rows: readonly FilteredHotkey[]): number {
+	return new Set(rows.map((row) => row.entry.id)).size;
+}
+
+/** The live-region sentence for a result count: "No shortcuts found", "1 shortcut found", "5 shortcuts found". */
+export function shortcutCountAnnouncement(count: number): string {
+	if (!Number.isInteger(count) || count < 0) {
+		throw new Error(`shortcut count must be a non-negative integer, got ${count}`);
+	}
+	if (count === 0) return 'No shortcuts found';
+	if (count === 1) return '1 shortcut found';
+	return `${count} shortcuts found`;
+}

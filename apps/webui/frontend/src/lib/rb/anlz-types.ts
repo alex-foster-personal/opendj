@@ -105,6 +105,9 @@ export interface AnlzBeatgrid {
 	 * which never applies a stored grid edit, so the deck refuses to edit it.
 	 * On the grid itself so it is replaced with the grid (Sentry on PR #8132). */
 	fallback?: true;
+	/** GRIDEDIT-9763: set only while the user has locked this track's grid; the
+	 * server then refuses grid edits with 409 GRID_LOCKED. Absent = unlocked. */
+	locked?: true;
 }
 
 /** One grid source's stored edit, as `/anlz` and `/grid-edit` report it. */

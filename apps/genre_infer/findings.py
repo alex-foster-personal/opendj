@@ -513,6 +513,34 @@ def claims_for(conn: sqlite3.Connection, stable_id: str) -> list[EnrichmentClaim
     return out
 
 
+def claims_grouped(conn: sqlite3.Connection) -> dict[str, list[EnrichmentClaim]]:
+    """Every enrichment claim grouped by ``stable_id`` (newest first per id)."""
+    rows = conn.execute(
+        "SELECT stable_id, envelope_json FROM enrichment_claims ORDER BY stable_id, created_at DESC"
+    ).fetchall()
+    out: dict[str, list[EnrichmentClaim]] = {}
+    for stable_id, envelope_json in rows:
+        sid = str(stable_id)
+        out.setdefault(sid, []).append(EnrichmentClaim.from_json(envelope_json))
+    return out
+
+
+def claim_search_text(claims: Iterable[EnrichmentClaim]) -> str:
+    """Concatenate claim values that free-text retrieval may match."""
+    parts: list[str] = []
+    for claim in claims:
+        if claim.kind not in ("semantic_tag", "generated_description"):
+            continue
+        value = claim.value
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, (list, dict)):
+            parts.append(json.dumps(value, sort_keys=True))
+        elif value is not None:
+            parts.append(str(value))
+    return " ".join(parts)
+
+
 def finding_to_semantic_claim(finding: Finding, *, input_fingerprint: str) -> EnrichmentClaim:
     """Attach a GENRE-03 finding as a semantic genre claim when status is ok."""
     from .claim_envelope import vendor_observation
@@ -550,7 +578,9 @@ __all__ = [
     "GenreConfig",
     "GenreInputError",
     "cached_search",
+    "claim_search_text",
     "claims_for",
+    "claims_grouped",
     "choose",
     "ENVELOPE_VERSION",
     "delete_finding",

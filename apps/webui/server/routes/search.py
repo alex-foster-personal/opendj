@@ -14,15 +14,21 @@ by concatenating two API responses.
 """
 from __future__ import annotations
 
+import contextlib
+import sqlite3
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from apps.genre_infer import findings
 from apps.lyrics.search_snippet import matched_snippet
+from apps.shared.state import db as state_db
 
-from .. import rb_vendor, search_index
+from .. import rb_vendor, search_gaps_store, search_index, semantic_search
 from ..backend import StateBackend
 from ..deps import get_library_data_dir, get_library_state_db, get_read_state
 from ..hybrid_rank import (
@@ -62,9 +68,62 @@ class SearchResults(BaseModel):
     next_offset: int | None = None
 
 
+class RetrievalFactorOut(BaseModel):
+    kind: Literal["tag", "embedding", "filter"]
+    score: float
+    detail: str
+
+
+class SemanticCandidateOut(BaseModel):
+    stable_id: str
+    ranking_kind: Literal["embedding_candidate"]
+    distance: float | None = None
+    factors: list[RetrievalFactorOut]
+
+
+class RetrievalReportOut(BaseModel):
+    retrieval_mode: Literal["audio_reference", "free_text", "hybrid"]
+    baseline: str
+    indexed_embedding_tracks: int
+    indexed_claim_tracks: int
+    similarity_quality_claimed: bool
+    similarity_quality_note: str
+
+
+class SemanticRetrievalResults(BaseModel):
+    mode: Literal["audio_reference", "free_text", "hybrid"]
+    ranking_kind: Literal["embedding_candidate"]
+    mix_compatible: bool = False
+    report: RetrievalReportOut
+    factor_kinds_present: list[str] = Field(default_factory=list)
+    items: list[SemanticCandidateOut]
+
+
+@contextmanager
+def _library_read(state_db_path: Path) -> Iterator[sqlite3.Connection]:
+    if not state_db_path.is_file():
+        raise FileNotFoundError(f"no library database at {state_db_path}")
+    conn = state_db.open_ro(state_db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _semantic_response(result) -> SemanticRetrievalResults:
+    payload = semantic_search.result_to_dict(result)
+    return SemanticRetrievalResults.model_validate(payload)
+
+
 def _state_db_path(request: Request) -> Path:
     # Same lookup health.py uses for the same app.state field.
     return Path(getattr(request.app.state, "state_db_path", "(private path)"))
+
+
+def _record_gap(q: str, state_db_path: Path) -> None:
+    """Log a zero-result query to the gap list (LIBM-12321); a write failure never fails the search."""
+    with contextlib.suppress(OSError, sqlite3.Error):
+        search_gaps_store.record_zero_result(q, state_db_path)
 
 
 def _hybrid_candidate_cap(limit: int, offset: int) -> int:
@@ -136,8 +195,8 @@ def search_collection(
     q: str = Query(
         "",
         description=(
-            "Search text, matched against title, artist, genre, comments, notes "
-            "and custom tags across the whole collection (not just the "
+            "Search text, matched against title, artist, genre, comments, notes, "
+            "custom tags and record label across the whole collection (not just the "
             "active pane)."
         ),
     ),
@@ -205,6 +264,7 @@ def search_collection(
         )
     )
     if not candidate_ids:
+        _record_gap(q, state_db)
         return SearchResults(query=q, items=[], total=0, next_offset=None)
 
     tracks_map = backend.get_tracks_bulk(candidate_ids)
@@ -240,7 +300,113 @@ def search_collection(
         if candidate.stable_id in rows_by_id
     ]
     next_offset = offset + len(page) if offset + len(page) < total else None
+    if total == 0:
+        _record_gap(q, state_db)
     return SearchResults(query=q, items=items, total=total, next_offset=next_offset)
 
 
-__all__ = ["SearchHit", "SearchResults", "router"]
+@router.get(
+    "/audio-reference",
+    response_model=SemanticRetrievalResults,
+    summary="Audio-reference semantic candidates (embedding neighbours)",
+)
+def search_audio_reference(
+    reference_stable_id: str = Query(..., min_length=1),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    tags: str | None = Query(None, description="Comma-separated dimension:value tag filters"),
+    bpm_min: float | None = Query(None, ge=0, le=400),
+    bpm_max: float | None = Query(None, ge=0, le=400),
+    genre: str | None = Query(None, max_length=80),
+    state_db_path: Path = Depends(_state_db_path),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+) -> SemanticRetrievalResults:
+    try:
+        tag_filters = semantic_search.parse_tag_filters(tags)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "SEMANTIC_TAG_INVALID", "message": str(exc)}) from exc
+    filters = semantic_search.SemanticFilters(bpm_min=bpm_min, bpm_max=bpm_max, genre=genre)
+    try:
+        with _library_read(state_db_path) as conn:
+            findings.ensure_schema(conn)
+            result = semantic_search.audio_reference_retrieval(
+                conn,
+                data_dir,
+                reference_stable_id=reference_stable_id,
+                limit=limit,
+                filters=filters,
+                tag_filters=tag_filters,
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail={"code": "LIBRARY_DB_UNAVAILABLE", "message": str(exc)}) from exc
+    return _semantic_response(result)
+
+
+@router.get(
+    "/semantic/free-text",
+    response_model=SemanticRetrievalResults,
+    summary="Free-text semantic candidates from stored enrichment claims",
+)
+def search_semantic_free_text(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    state_db_path: Path = Depends(_state_db_path),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+) -> SemanticRetrievalResults:
+    try:
+        with _library_read(state_db_path) as conn:
+            findings.ensure_schema(conn)
+            result = semantic_search.free_text_retrieval(conn, data_dir, query=q, limit=limit)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail={"code": "LIBRARY_DB_UNAVAILABLE", "message": str(exc)}) from exc
+    return _semantic_response(result)
+
+
+@router.get(
+    "/semantic/hybrid",
+    response_model=SemanticRetrievalResults,
+    summary="Hybrid semantic candidates with explicit tag, text, embedding and filter factors",
+)
+def search_semantic_hybrid(
+    q: str = Query("", description="Free-text leg of the hybrid query"),
+    tags: str = Query(..., min_length=1, description="Comma-separated dimension:value tag filters"),
+    reference_stable_id: str | None = Query(None, min_length=1),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    bpm_min: float | None = Query(None, ge=0, le=400),
+    bpm_max: float | None = Query(None, ge=0, le=400),
+    genre: str | None = Query(None, max_length=80),
+    state_db_path: Path = Depends(_state_db_path),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
+) -> SemanticRetrievalResults:
+    try:
+        tag_filters = semantic_search.parse_tag_filters(tags)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "SEMANTIC_TAG_INVALID", "message": str(exc)}) from exc
+    if not tag_filters and not q.strip():
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SEMANTIC_HYBRID_EMPTY", "message": "hybrid query needs tags and/or text"},
+        )
+    filters = semantic_search.SemanticFilters(bpm_min=bpm_min, bpm_max=bpm_max, genre=genre)
+    try:
+        with _library_read(state_db_path) as conn:
+            findings.ensure_schema(conn)
+            result = semantic_search.hybrid_retrieval(
+                conn,
+                data_dir,
+                query=q,
+                tag_filters=tag_filters,
+                limit=limit,
+                filters=filters,
+                reference_stable_id=reference_stable_id,
+            )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail={"code": "LIBRARY_DB_UNAVAILABLE", "message": str(exc)}) from exc
+    return _semantic_response(result)
+
+
+__all__ = [
+    "SearchHit",
+    "SearchResults",
+    "SemanticRetrievalResults",
+    "router",
+]

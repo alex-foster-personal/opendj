@@ -1,5 +1,7 @@
 """STANDALONE-04: native beatgrid backfill must not degrade the deck grid.
 
+Regression coverage for GitHub issue #13375 (deck-grid backfill monotonicity).
+
 Uses the real analysis router and store paths; no mocks or fabricated records.
 ANLZ availability goes through the production probe: the fixture tracks carry
 no rekordbox vendor mapping, so ``resolve_content`` raises
@@ -157,7 +159,7 @@ def test_successful_native_backfill_does_not_shrink_the_legacy_fallback_grid(
 def test_failed_own_beatgrid_is_inert_and_blocks_default_legacy_resurrection(
     standalone_client: TestClient,
 ) -> None:
-    """[if] own record is failed [then] grid is inert with reason, [else stop]."""
+    """[if] own fails no_trackable_pulse [then] inert deck blocks legacy default, [else stop]."""
     _set_source(standalone_client, "own")
     anlz = standalone_client.get(f"/api/v1/tracks/{SID_FAILED}/anlz")
     assert anlz.status_code == 200, anlz.text
@@ -175,6 +177,7 @@ def test_failed_own_beatgrid_is_inert_and_blocks_default_legacy_resurrection(
     fallback = standalone_client.get(f"/api/v1/tracks/{SID_FAILED}/beatgrid-fallback")
     assert fallback.status_code == 404, fallback.text
     assert fallback.json()["detail"]["code"] == "BEATGRID_FALLBACK_NOT_FOUND"
+    assert "beatgrid" not in fallback.json()
 
     explicit = standalone_client.get(
         f"/api/v1/tracks/{SID_FAILED}/beatgrid-fallback",

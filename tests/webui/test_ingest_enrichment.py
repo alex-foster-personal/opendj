@@ -203,6 +203,43 @@ def test_batches_and_watermark_survive_a_restart(rig: Rig) -> None:
     assert again.reconcile_new_rows() is None, "the stored watermark means nothing is new"
 
 
+@pytest.mark.requirement("LIBM-13766")
+def test_a_store_a_newer_build_wrote_loads_and_skips_what_it_cannot_use(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """[if] unknown batch keys or one unusable batch stop the coordinator loading [then] fail, [else stop]."""
+    store = tmp_path / "state" / ie.STORE_FILENAME
+    store.parent.mkdir(parents=True)
+    store.write_text(
+        json.dumps(
+            {
+                "watermark": 3,
+                "batches": [
+                    {
+                        "batch_id": "viva",
+                        "source": "materialize",
+                        "stable_ids": ["a", "b"],
+                        "registered_at": 900.0,
+                        "duplicates": 2,
+                        "lane_added_by_a_newer_build": "queued",
+                    },
+                    {"source": "materialize", "lane_added_by_a_newer_build": "queued"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger=ie.__name__):
+        rig = Rig(tmp_path)
+
+    batches = rig.coordinator.status()["batches"]
+    assert [b["batch_id"] for b in batches] == ["viva"], "the usable batch loads, the unusable one is skipped"
+    assert rig.coordinator.status()["import_duplicates"] == 2, "known keys are kept"
+    skipped = [r for r in caplog.records if r.levelno == logging.WARNING and "skipping" in r.getMessage()]
+    assert len(skipped) == 1, [r.getMessage() for r in caplog.records]
+
+
 # -----------------------------------------------------------------------------
 # ENRICH-07: artwork waits for the essentials
 # -----------------------------------------------------------------------------

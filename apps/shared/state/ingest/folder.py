@@ -105,6 +105,18 @@ NewTracksFn = Callable[[list[str]], None]
 #: than this in one write pass looks like a mass event; the rest waits a cycle.
 MAX_ANALYSIS_DROPS_PER_CYCLE = 100
 
+#: Per-file unplayable rejection rows on the ingest report. The count field
+#: ``files_rejected_unplayable`` is always the full total; this list is bounded.
+MAX_UNPLAYABLE_REJECTIONS = 50
+
+
+@dataclasses.dataclass(frozen=True)
+class UnplayableRejection:
+    """One allowlisted file the playable-audio probe refused."""
+
+    path: str
+    reason: str
+
 
 @dataclasses.dataclass
 class FolderIngestReport:
@@ -125,6 +137,12 @@ class FolderIngestReport:
     tracks_with_tag_key: int = 0
     #: Allowlisted files that failed the playable-audio probe. Never imported.
     files_rejected_unplayable: int = 0
+    #: Path and probe reason for each unplayable file, up to
+    #: ``MAX_UNPLAYABLE_REJECTIONS`` entries; further rejections increment only
+    #: ``files_rejected_unplayable``.
+    unplayable_rejections: list[UnplayableRejection] = dataclasses.field(
+        default_factory=list
+    )
     #: Stem-separation outputs (LIBM-170), e.g. ``vocals/Song - vocals.mp3``.
     #: Never imported: they carry the song's title and play as an acapella.
     files_skipped_stem_output: int = 0
@@ -641,7 +659,7 @@ def _write_one_file(  # noqa: PLR0913 - the per-file collision maps and the inje
     ):
         return False
     title, artists, album, row_duration_ms = _metadata_to_write(
-        bound.existing, bound.metadata, entry, bound.duration_ms
+        writer.raw_conn, bound.stable_id, bound.existing, bound.metadata, entry, bound.duration_ms
     )
     changed = writer.upsert_track(
         stable_id=bound.stable_id,
@@ -675,6 +693,12 @@ def _write_one_file(  # noqa: PLR0913 - the per-file collision maps and the inje
             writer, bound.rows[1:], audio_hash, written_at, bound.duration_ms, drop_budget
         )
     report.tier_counts[bound.tier] = report.tier_counts.get(bound.tier, 0) + 1
+    if bound.existing is None or str(bound.existing[1]) not in _STRONG_TIERS:
+        record_file_identity(
+            writer,
+            bound.stable_id,
+            TrackIdentity(_title(bound.metadata, entry), _artists(bound.metadata), _album(bound.metadata)),
+        )
     write_file_tag_metadata(writer, bound.stable_id, bound.metadata, report)
     # A folder import analyses nothing. A tag BPM / key is the file's own
     # claim, recorded with "inferred" provenance, not an analysis result.
@@ -906,6 +930,8 @@ def _stored_artists(row: tuple[Any, ...]) -> list[str]:
 
 
 def _metadata_to_write(
+    conn: Any,
+    stable_id: str,
     existing: tuple[Any, ...] | None,
     metadata: audio_files.AudioMetadata | None,
     entry: audio_files.AudioFile,
@@ -917,12 +943,83 @@ def _metadata_to_write(
     walk. When the folder writer adopts one, only its path and hash follow
     the file: the stored title, artists, album and duration stay, or an
     untagged file would retitle it from its filename on every rescan. A new
-    row and an inferred row take the file's tags.
+    row takes the file's tags; an inferred row takes them except where the
+    user corrected title, artists or album (:func:`merge_reloaded_identity`).
     """
     if existing is not None and str(existing[1]) in _STRONG_TIERS:
         return existing[5], _stored_artists(existing), existing[7], existing[8]
-    album = metadata.album if metadata is not None else None
-    return _title(metadata, entry), _artists(metadata), album, duration_ms
+    from_file = TrackIdentity(_title(metadata, entry), _artists(metadata), _album(metadata))
+    stored = None if existing is None else TrackIdentity(existing[5], _stored_artists(existing), existing[7])
+    merged = merge_reloaded_identity(
+        stored, from_file, read_file_identity(conn, stable_id), fallback_title=entry.path.stem
+    )
+    return merged.title, merged.artists, merged.album, duration_ms
+
+
+# ----- user corrections survive a tag reload (LIBM-67b) -------------------
+#: ``track_fields`` name of the title, artists and album a file import last wrote.
+FILE_IDENTITY_FIELD = "file_identity"
+
+
+@dataclasses.dataclass(frozen=True)
+class TrackIdentity:
+    """The title, artists and album of one tracks row."""
+
+    title: str | None
+    artists: list[str]
+    album: str | None
+
+
+def read_file_identity(conn: Any, stable_id: str) -> TrackIdentity | None:
+    """What a file import last wrote onto this row, or None for a row imported before LIBM-67b."""
+    recorded = state_provenance.read_field(conn, stable_id, FILE_IDENTITY_FIELD)
+    if recorded is None:
+        return None
+    value = recorded.value
+    return TrackIdentity(value["title"], list(value["artists"]), value["album"])
+
+
+def record_file_identity(writer: StateWriter, stable_id: str, identity: TrackIdentity) -> None:
+    """Remember what the file's tags give this row, so the next reload can tell a user correction from it."""
+    if read_file_identity(writer.raw_conn, stable_id) == identity:
+        return
+    writer.set_field(
+        stable_id,
+        FILE_IDENTITY_FIELD,
+        {"v": 1, "title": identity.title, "artists": identity.artists, "album": identity.album},
+        source="inferred",
+        confidence=1.0,
+        modified_at=_dt.datetime.now(_dt.UTC).isoformat(),
+    )
+
+
+def merge_reloaded_identity(
+    stored: TrackIdentity | None,
+    from_file: TrackIdentity,
+    last_from_file: TrackIdentity | None,
+    *,
+    fallback_title: str,
+) -> TrackIdentity:
+    """Keep each stored title, artists or album the user corrected; take the file's value for the rest.
+
+    A stored value is the file's own while it is still an import fallback
+    (no value, or the filename stem as title) or equals what the last import
+    wrote. A row imported before that record existed has no baseline, so any
+    other value it holds is kept: an older correction is never overwritten.
+    """
+    if stored is None:
+        return from_file
+
+    def file_owned(name: str, fallbacks: tuple[Any, ...]) -> bool:
+        stored_value = getattr(stored, name)
+        baseline = getattr(last_from_file if last_from_file is not None else from_file, name)
+        return stored_value in fallbacks or bool(stored_value == baseline)
+
+    return TrackIdentity(
+        title=from_file.title if file_owned("title", (None, "", fallback_title)) else stored.title,
+        artists=from_file.artists if file_owned("artists", ([],)) else stored.artists,
+        album=from_file.album if file_owned("album", (None, "")) else stored.album,
+    )
 
 
 def _retire_analysis_of_replaced_bytes(conn: Any, stable_id: str, *, delete: bool) -> None:
@@ -962,6 +1059,14 @@ def _table_exists(conn: Any, table: str) -> bool:
     ).fetchone() is not None
 
 
+def _record_unplayable_rejection(
+    report: FolderIngestReport, *, path: str, reason: str
+) -> None:
+    report.files_rejected_unplayable += 1
+    if len(report.unplayable_rejections) < MAX_UNPLAYABLE_REJECTIONS:
+        report.unplayable_rejections.append(UnplayableRejection(path=path, reason=reason))
+
+
 def _identify(
     entry: audio_files.AudioFile, report: FolderIngestReport
 ) -> tuple[str, str, int | None, audio_files.AudioMetadata | None] | None:
@@ -971,8 +1076,10 @@ def _identify(
         return None
     try:
         audio_playable.probe_playable_audio(entry.path)
-    except UnplayableAudioError:
-        report.files_rejected_unplayable += 1
+    except UnplayableAudioError as exc:
+        _record_unplayable_rejection(
+            report, path=str(entry.path), reason=exc.reason
+        )
         return None
     metadata = audio_files.read_metadata(entry.path)
     if not _has_file_tags(metadata):
@@ -1026,6 +1133,10 @@ def _artists(metadata: audio_files.AudioMetadata | None) -> list[str]:
     return [artist] if artist else []
 
 
+def _album(metadata: audio_files.AudioMetadata | None) -> str | None:
+    return metadata.album if metadata is not None else None
+
+
 def write_file_tag_metadata(
     writer: StateWriter,
     stable_id: str,
@@ -1034,7 +1145,8 @@ def write_file_tag_metadata(
 ) -> None:
     """Persist the file's own tags that unmapped browser rows display.
 
-    genre / comments follow the tag on every import. bpm / key are written
+    genre / comments / year / label follow the tag on every import (year and
+    label feed the Year and Label columns, issue #10029). bpm / key are written
     only when the track has NO value for that field yet: those fields are also
     written by analysis, rekordbox and webui edits, and a rescan of the same
     folder must never replace one of those with the file's tag.
@@ -1045,6 +1157,8 @@ def write_file_tag_metadata(
     for field_name, value in (
         ("genre", metadata.genre),
         ("comments", metadata.comment),
+        ("year", metadata.year),
+        ("label", metadata.label),
     ):
         if value is None:
             continue
@@ -1084,6 +1198,8 @@ def _print_summary(report: FolderIngestReport) -> None:
     print(f"  tracks with tag bpm: {report.tracks_with_tag_bpm}")
     print(f"  tracks with tag key: {report.tracks_with_tag_key}")
     print(f"  files rejected (unplayable): {report.files_rejected_unplayable}")
+    for rejection in report.unplayable_rejections:
+        print(f"  rejected: {rejection.path} ({rejection.reason})")
     print(f"  skipped: stem separation outputs: {report.files_skipped_stem_output}")
     print(f"  tracks inserted:    {report.tracks_inserted}")
     print(f"  tracks unchanged:   {report.tracks_unchanged}")
@@ -1139,12 +1255,19 @@ def run_cli(args: argparse.Namespace, *, open_duplicate_recorder: OpenDuplicateR
 
 __all__ = [
     "ADAPTER_ID",
+    "FILE_IDENTITY_FIELD",
     "MAX_ANALYSIS_DROPS_PER_CYCLE",
+    "MAX_UNPLAYABLE_REJECTIONS",
     "FolderIngestReport",
     "NewTracksFn",
     "ProgressFn",
+    "TrackIdentity",
+    "UnplayableRejection",
     "collect_audio",
     "ingest_folder",
+    "merge_reloaded_identity",
+    "read_file_identity",
+    "record_file_identity",
     "run_cli",
     "write_file_tag_metadata",
 ]

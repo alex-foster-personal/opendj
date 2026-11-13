@@ -47,46 +47,12 @@ import type {
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
 import type { PcmHandoff } from '$lib/rb/stretch-pcm-handoff';
 
-/** Settled probe inputs for stem load policy (mirrors api-rb StemArtifactProbe). */
-export type StemLoadProbeInput =
-	| { status: 'ready' }
-	| { status: 'hydrating' }
-	| { status: 'unavailable'; error: string }
-	| { status: 'invalid'; error: string };
-
-export type StemLoadPolicyDecision =
-	| 'use-precomputed'
-	| 'await-precomputed'
-	| 'consider-live-generation-fallback'
-	| 'reject-loud'
-	| 'aborted-stale';
-
-export type StemLiveGenerationFallback = () => boolean;
-
-/** Prefer a fresh precomputed bundle; live-generation only when probe is unavailable. */
-export function resolveStemLoadPolicy(
-	probe: StemLoadProbeInput | null,
-	considerLiveGeneration: StemLiveGenerationFallback
-): StemLoadPolicyDecision {
-	if (probe === null) {
-		return 'aborted-stale';
-	}
-	switch (probe.status) {
-		case 'ready':
-			return 'use-precomputed';
-		case 'hydrating':
-			return 'await-precomputed';
-		case 'invalid':
-			return 'reject-loud';
-		case 'unavailable':
-			considerLiveGeneration();
-			return 'consider-live-generation-fallback';
-		default: {
-			const _exhaustive: never = probe;
-			throw new Error(`Unhandled stem load probe: ${JSON.stringify(_exhaustive)}`);
-		}
-	}
-}
+export type {
+	StemLiveGenerationFallback,
+	StemLoadPolicyDecision,
+	StemLoadProbeInput
+} from '$lib/rb/stem-load-policy';
+export { resolveStemLoadPolicy } from '$lib/rb/stem-load-policy';
 
 export const STEM_CONTROLS = STEM_CONTROL_IDS;
 export const DEMUCS_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
@@ -474,12 +440,20 @@ export async function scheduleAlignedStemProcessors(
 	_aggregateFailures('schedule', outcomes);
 }
 
+/** Test seam for AlignedStemDeckProcessor.create; production uses the defaults. */
+export interface AlignedStemCreateDeps {
+	createProcessor?: (context: AudioContext, options: StretchAdapterOptions) => Promise<StretchDeckProcessor>;
+	scanEnvelope?: (buffer: AudioBuffer) => Promise<PeakEnvelope>;
+}
+
 /** Four real time-stretch processors sharing exact schedules and summing into
  * the existing deck analyser. No original-mix bypass exists once selected. */
 export class AlignedStemDeckProcessor {
 	readonly #context: AudioContext;
 	readonly #processors: Partial<Record<StemPart, StretchDeckProcessor>>;
 	readonly #gains: Partial<Record<StemPart, GainNode>>;
+	/** #14217: per part, the gain steps laid after now by the last timeline (time order). */
+	readonly #waitingGains = new Map<StemPart, { atSec: number; value: number }[]>();
 	/** STEMPERF-11663: per-part FX sends, tapped from the processor in parallel
 	 * with the part gain (pre-fader): mute, solo and gain gate only the dry path. */
 	readonly #sends: Partial<Record<StemPart, GainNode>>;
@@ -526,32 +500,52 @@ export class AlignedStemDeckProcessor {
 	static async create(
 		context: AudioContext,
 		buffers: StemBuffers,
-		options: StretchAdapterOptions
+		options: StretchAdapterOptions,
+		deps: AlignedStemCreateDeps = {}
 	): Promise<{ processor: AlignedStemDeckProcessor; alignment: StemAlignment; pcmHandoff: PcmHandoff }> {
+		const createProcessor = deps.createProcessor ?? ((c, o) => StretchDeckProcessor.create(c, o));
+		const scanEnvelope = deps.scanEnvelope ?? peakEnvelopeYielding;
 		const alignment = validateStemBufferAlignment(buffers);
 		const layout = layoutOfBuffers(buffers);
 		const parts = STEM_LAYOUT_PARTS[layout];
 		const processors: Partial<Record<StemPart, StretchDeckProcessor>> = {};
 		const gains: Partial<Record<StemPart, GainNode>> = {};
 		const sends: Partial<Record<StemPart, GainNode>> = {};
-		const handoffs: PcmHandoff[] = [];
 		const envelopes: Partial<Record<StemPart, PeakEnvelope>> = {};
 		try {
-			for (const part of parts) {
-				// AUDIOLIVE-17: the last moment this thread can read the part. ~30 ms
-				// per 6 min part ((private path)), so it is scanned
-				// in yielding slices: a live upgrade must not hold Class A controls.
-				envelopes[part] = await peakEnvelopeYielding(buffers[part] as AudioBuffer);
-				const processor = await StretchDeckProcessor.create(context, options);
-				// PERF-STEMDEC-05: `buffers` is CONSUMED. Nothing reads a stem
-				// AudioBuffer after its processor holds the PCM, so the channels
-				// move instead of being copied on the main thread.
-				handoffs.push(await processor.load(buffers[part] as AudioBuffer, 'transfer'));
-				processors[part] = processor;
-				const bus = createStemPartBus(context, processor);
-				gains[part] = bus.gain;
-				sends[part] = bus.send;
-			}
+			// PERF-STEMDEC (#9988): the per-part branches are independent, so they are
+			// built concurrently; each part still scans, creates and loads in order.
+			const built = await Promise.allSettled(
+				parts.map(async (part) => {
+					// AUDIOLIVE-17: the last moment this thread can read the part. ~30 ms
+					// per 6 min part ((private path)), so it is scanned
+					// in yielding slices: a live upgrade must not hold Class A controls.
+					envelopes[part] = await scanEnvelope(buffers[part] as AudioBuffer);
+					let processor: StretchDeckProcessor;
+					try {
+						processor = await createProcessor(context, options);
+					} catch (cause) {
+						throw new Error(`stem processor create failed for part ${part}`, { cause });
+					}
+					processors[part] = processor;
+					// PERF-STEMDEC-05: `buffers` is CONSUMED. Nothing reads a stem
+					// AudioBuffer after its processor holds the PCM, so the channels
+					// move instead of being copied on the main thread.
+					let handoff: PcmHandoff;
+					try {
+						handoff = await processor.load(buffers[part] as AudioBuffer, 'transfer');
+					} catch (cause) {
+						throw new Error(`stem processor load failed for part ${part}`, { cause });
+					}
+					const bus = createStemPartBus(context, processor);
+					gains[part] = bus.gain;
+					sends[part] = bus.send;
+					return handoff;
+				})
+			);
+			const firstFailure = built.find((outcome) => outcome.status === 'rejected');
+			if (firstFailure) throw (firstFailure as PromiseRejectedResult).reason;
+			const handoffs = built.map((outcome) => (outcome as PromiseFulfilledResult<PcmHandoff>).value);
 			const latencies = await Promise.all(
 				parts.map((part) => (processors[part] as StretchDeckProcessor).latencySec())
 			);
@@ -701,18 +695,11 @@ export class AlignedStemDeckProcessor {
 
 	setControls(controls: StemControls): void {
 		_validateControls(controls);
-		const gains = stemPartGains(controls, this.#layout);
-		for (const part of this.#parts) {
-			const value = gains[part];
-			const node = this.#gains[part];
-			if (value === undefined || node === undefined) {
-				throw new Error(`stem gain missing for part ${part} in layout ${this.#layout}`);
-			}
-			node.gain.setTargetAtTime(value, this.#context.currentTime, 0.01);
-		}
+		const now = this.#context.currentTime;
+		this.#setPartGains(controls, now);
 		const sends = stemPartSends(controls, this.#layout);
 		for (const part of this.#parts) {
-			this.#sends[part]?.gain.setTargetAtTime(sends[part] ?? 0, this.#context.currentTime, 0.01);
+			this.#sends[part]?.gain.setTargetAtTime(sends[part] ?? 0, now, 0.01);
 		}
 		const copy = (state: StemControls[StemControl]) => ({ ...state, fx_send: state.fx_send ?? 0 });
 		this.#controls = {
@@ -722,6 +709,64 @@ export class AlignedStemDeckProcessor {
 			bass: copy(controls.bass),
 			other: copy(controls.other)
 		};
+	}
+
+	/** #14376: drop the waiting gain automation, from now on, of every part that one control drives. */
+	cancelStemGain(stem: StemControl): void {
+		const muted = stemPartGains({ ...this.#controls, [stem]: { ...this.#controls[stem], gain: 0 } }, this.#layout);
+		const full = stemPartGains({ ...this.#controls, [stem]: { ...this.#controls[stem], gain: 1, muted: false } }, this.#layout);
+		for (const part of this.#parts) {
+			if (muted[part] === full[part]) continue;
+			this.#gains[part]?.gain.cancelScheduledValues(this.#context.currentTime);
+			this.#waitingGains.delete(part);
+		}
+	}
+
+	/**
+	 * #14217: the part gains from now on, for plan stem steps that wait on the audio clock: each entry's controls start
+	 * on its context time (time order; of the entries already due, the last starts now). Only the part gains: the sends
+	 * and the held controls stay as the DJ set them. A part's automation after now is dropped only when what it waits
+	 * for changed, so a move on one part leaves another part's waiting step in place (#14376).
+	 */
+	setGainTimeline(entries: readonly { atSec: number; controls: StemControls }[]): void {
+		const now = this.#context.currentTime;
+		const due = entries.filter((_, i) => entries[i + 1] === undefined || entries[i + 1].atSec > now);
+		const laid = due.map(({ atSec, controls }) => ({ atSec: Math.max(atSec, now), gains: stemPartGains(controls, this.#layout) }));
+		for (const part of this.#parts) {
+			const node = this.#gains[part];
+			const first = laid[0]?.gains[part];
+			if (laid.length === 0) continue;
+			if (first === undefined || node === undefined) {
+				throw new Error(`stem gain missing for part ${part} in layout ${this.#layout}`);
+			}
+			// The values this part waits for after now: an entry that leaves the part's gain as it was lays nothing.
+			const waiting: { atSec: number; value: number }[] = [];
+			let before = first;
+			for (const { atSec, gains } of laid.slice(1)) {
+				const value = gains[part];
+				if (value === undefined) throw new Error(`stem gain missing for part ${part} in layout ${this.#layout}`);
+				if (value !== before) waiting.push({ atSec, value });
+				before = value;
+			}
+			const was = (this.#waitingGains.get(part) ?? []).filter((event) => event.atSec > now);
+			const same = was.length === waiting.length && was.every((event, i) => event.atSec === waiting[i].atSec && event.value === waiting[i].value);
+			if (was.length > 0 && !same) node.gain.cancelScheduledValues(now);
+			node.gain.setTargetAtTime(first, now, 0.01);
+			if (!same) for (const { atSec, value } of waiting) node.gain.setTargetAtTime(value, atSec, 0.01);
+			this.#waitingGains.set(part, waiting);
+		}
+	}
+
+	#setPartGains(controls: StemControls, atSec: number): void {
+		const gains = stemPartGains(controls, this.#layout);
+		for (const part of this.#parts) {
+			const value = gains[part];
+			const node = this.#gains[part];
+			if (value === undefined || node === undefined) {
+				throw new Error(`stem gain missing for part ${part} in layout ${this.#layout}`);
+			}
+			node.gain.setTargetAtTime(value, atSec, 0.01);
+		}
 	}
 
 	/** STEMPERF-11663: ramp one control's FX send. Touches only the send nodes

@@ -60,7 +60,17 @@ test('drop and add-to-playlist writes invalidate the written playlists', () => {
 });
 
 test('hover prefetch only fires for real playlists', () => {
-	const hovers = tree.match(/onpointer(enter|down)=\{[^\n]*\}/g) ?? [];
-	assert.equal(hovers.length, 2);
-	for (const h of hovers) assert.ok(h.includes("node.kind === 'playlist'"), h);
+	// Tree rows can be folders, so each of their prefetch handlers checks the kind.
+	// Pinned shortcut rows prefetch unguarded: pinnedShortcutNodes hands them playlists only
+	// (behaviour covered in playlist-tree-pins.test.mjs).
+	const hovers = tree.match(/onpointer(enter|down)=\{[^\n]*onprefetch\([^\n]*\}/g) ?? [];
+	const pinned = hovers.filter((h) => h === 'onpointerenter={() => onprefetch(node.playlist_id)}');
+	const rows = hovers.filter((h) => !pinned.includes(h));
+	assert.equal(pinned.length, 1, 'the pinned shortcut row prefetches on hover');
+	assert.ok(
+		tree.includes('pinnedShortcutNodes(nodes, playlistTreePins.ids)'),
+		'pinned rows come from pinnedShortcutNodes'
+	);
+	assert.ok(rows.length >= 2, 'tree rows prefetch on pointer enter and down');
+	for (const h of rows) assert.ok(h.includes("node.kind === 'playlist'"), h);
 });

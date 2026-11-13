@@ -137,6 +137,18 @@ export function allKeyTexts(notation: KeyNotation): string[] {
 	return texts;
 }
 
+/** Issue #9739: the 24 Camelot keys, minor (A) then major (B), 1 to 12: what the Key funnel lists. */
+export const CAMELOT_KEYS: readonly string[] = (['A', 'B'] as const).flatMap((mode) =>
+	Array.from({ length: 12 }, (_, i) => `${i + 1}${mode}`)
+);
+
+/** Issue #9739: a key in any notation as its canonical Camelot text (8A), or null when it is none. */
+export function canonicalCamelotKey(raw: string | null | undefined): string | null {
+	if (raw === null || raw === undefined || raw.trim() === '') return null;
+	const parsed = _parseAnyKey(raw);
+	return parsed === null ? null : `${parsed.number}${parsed.mode}`;
+}
+
 /** Where the current notation is read from. prefs.svelte.ts installs
  * `() => uiPrefs.key_notation` when it loads, so this module needs no prefs
  * import and every surface reads the one setting. */

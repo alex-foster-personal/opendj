@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { FakeAudioContext } from './fixtures/fake-web-audio.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const topology = await loadTypeScriptModule('src/lib/rb/audio-output-topology.ts');
@@ -13,6 +14,32 @@ test('djio accepts only the named Mixtour Pro four-channel layout', () => {
 		() => topology.parseDjOutputProfile('?djio=guess'),
 		/unsupported profile 'guess'/
 	);
+});
+
+// CUEOUT-08 (issue #13011): channel-count fallback is pure, so it is pinned here without hardware.
+test('an output with fewer than four channels reports unavailable output instead of inventing channels', () => {
+	for (const channels of [1, 2, 3]) {
+		const result = topology.resolveDjOutputProfile('master12-cue34', channels);
+		assert.equal(result.requested, 'master12-cue34');
+		assert.equal(result.profile, null, `${channels} channels must not keep the 4-channel profile`);
+		assert.equal(result.fallback.available_channels, channels, 'fallback reports the real count');
+		assert.match(result.fallback.message, /4-channel output unavailable/);
+	}
+});
+
+test('an output with four channels keeps the four-channel path eligible', () => {
+	assert.deepEqual(topology.resolveDjOutputProfile('master12-cue34', 4), {
+		requested: 'master12-cue34',
+		profile: 'master12-cue34',
+		fallback: null
+	});
+});
+
+test('the fallback message names the available channel count and the recovery action', () => {
+	const { fallback } = topology.resolveDjOutputProfile('master12-cue34', 3);
+	assert.match(fallback.message, /this output has 3 channels/);
+	assert.match(fallback.message, /needs 4/);
+	assert.match(fallback.message, /Select the Mixtour Pro as the macOS output device and reload\./);
 });
 
 function monitorState({ master = 0, cue = true, playing = true } = {}) {
@@ -250,4 +277,86 @@ test('a deck a partial ?extroute= map leaves out never arms output-device livene
 	const plain = liveMixer();
 	assert.equal(topology.masterSilenceIsCommanded(null, plain.mixer, plain.decks, null, 1), false);
 	assert.equal(topology.masterSilenceIsCommanded(null, plain.mixer, plain.decks, new Map(), 1), false);
+});
+
+/** Resolve then wire a djio request on a fake output exposing `channels`, as the engine does. */
+function wireDjio(channels) {
+	FakeAudioContext.maxChannelCount = channels;
+	const context = new FakeAudioContext();
+	const resolution = topology.resolveDjOutputProfile('master12-cue34', context.destination.maxChannelCount);
+	const masterGain = context.createGain();
+	const masterMuteGain = context.createGain();
+	const masterDelay = context.createDelay(1);
+	const headphoneDelay = context.createDelay(1);
+	const before = context.created.length;
+	const wired = topology.wireAudioOutputTopology({
+		context,
+		routing: null,
+		profile: resolution.profile,
+		masterGain,
+		masterMuteGain,
+		masterDelay,
+		headphoneDelay
+	});
+	return { context, resolution, wired, masterDelay, topologyNodes: context.created.slice(before) };
+}
+
+/** Highest channel index any topology node or edge addresses, plus one. */
+function channelsAddressed({ context, topologyNodes }) {
+	const widths = topologyNodes.map((node) => node.numberOfInputs ?? node.numberOfOutputs ?? 0);
+	const inputs = context.edges.filter((edge) => edge.to.kind === 'merger').map((edge) => edge.input + 1);
+	return Math.max(context.destination.channelCount, ...widths, ...inputs);
+}
+
+test('CUEOUT-08: a six-channel destination is not asked for more than six channels', () => {
+	const six = wireDjio(6);
+	assert.equal(six.resolution.profile, 'master12-cue34');
+	assert.ok(channelsAddressed(six) <= 6, 'djio requested more channels than the destination reports');
+	assert.equal(six.context.destination.channelCount, 4, 'djio wires its four-channel layout, not every reported channel');
+	assert.equal(six.wired.multichannelMonitorActive, true);
+});
+
+test('CUEOUT-08: a four-channel destination gets the master 1/2 + cue 3/4 layout', () => {
+	const four = wireDjio(4);
+	const dest = four.context.destination;
+	assert.equal(four.resolution.fallback, null);
+	assert.equal(dest.channelCount, 4);
+	assert.equal(dest.channelInterpretation, 'discrete');
+	assert.equal(channelsAddressed(four), 4);
+	const output = four.context.edges.find((edge) => edge.to === dest).from;
+	assert.equal(output.kind, 'merger');
+	assert.deepEqual(
+		four.context.edges.filter((edge) => edge.to === output).map((edge) => edge.input).sort(),
+		[0, 1, 2, 3],
+		'every one of the four output channels is fed'
+	);
+	assert.equal(four.wired.multichannelMonitorActive, true);
+});
+
+test('CUEOUT-08: a two-channel destination falls back to stereo with no partial multichannel wiring', () => {
+	const two = wireDjio(2);
+	assert.equal(two.resolution.profile, null);
+	assert.equal(two.resolution.fallback.available_channels, 2);
+	assert.equal(two.context.destination.channelCount, 2, 'the stereo destination was widened');
+	assert.deepEqual(two.topologyNodes, [], 'a splitter or merger was built for the stereo fallback');
+	assert.deepEqual(two.wired.ownedNodes, []);
+	assert.equal(two.wired.multichannelMonitorActive, false);
+	assert.deepEqual(
+		two.context.edges.filter((edge) => edge.to === two.context.destination).map((edge) => edge.from),
+		[two.masterDelay],
+		'stereo master reaches the destination through the room delay only'
+	);
+	// Control: forcing djio onto two channels throws before building any node.
+	const context = new FakeAudioContext();
+	const node = () => context.createGain();
+	assert.throws(
+		() => topology.wireAudioOutputTopology({
+			context, routing: null, profile: 'master12-cue34',
+			masterGain: node(), masterMuteGain: node(), masterDelay: node(), headphoneDelay: node()
+		}),
+		/needs four output channels/
+	);
+	assert.equal(context.created.filter((created) => created.kind !== 'gain').length, 0);
+	assert.deepEqual(context.edges, []);
+	assert.equal(context.destination.channelCount, 2);
 });

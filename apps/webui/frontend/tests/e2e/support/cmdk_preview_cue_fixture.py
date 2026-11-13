@@ -7,9 +7,9 @@ rekordbox-owned blocks empty), while the production librosa analysis is served
 through ``/beatgrid-fallback``. This builder does what a real local library gets:
 
 1. Real audio is GENERATED with the same accented pulse the deckload fixture
-   uses (``deckload_fixture.write_tone_and_pulse_wav``): a loud downbeat on
+   uses (``deckload_fixture_audio.write_tone_and_pulse_wav``): a loud downbeat on
    every fourth pulse, at 128 and 124 BPM, the two tempos that producer is
-   measured to grid (deckload_fixture.py, "PATTERN_BACKBEAT").
+   measured to grid (deckload_fixture_model.py, "PATTERN_BACKBEAT").
 2. The rows are written by the REAL folder ingest
    (``python -m apps.shared.state.cli ingest-folder``), through the same
    helper the deckload fixture uses.
@@ -32,12 +32,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from apps.webui.frontend.tests.e2e.support import deckload_fixture as deckload
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import FixtureTrack
+from apps.webui.frontend.tests.e2e.support.deckload_fixture_analysis import _run_librosa_analysis
 
 #: Two tracks, so the highlighted row is a choice among real rows, not the only one.
 TRACKS: tuple[FixtureTrack, ...] = (
@@ -48,7 +51,7 @@ TRACKS: tuple[FixtureTrack, ...] = (
 SEARCH_QUERY: str = "cmdk-preview-cue"
 AUDIO_SUBDIR: str = deckload.AUDIO_SUBDIR
 #: The flags this gate needs on, written as the data dir's own override file.
-FLAGS: dict[str, bool] = {"cmdk.v2": True, "cmdk.v2.preview": True}
+FLAGS: dict[str, bool] = {"cmdk.v2": True, "cmdk.v2.preview": True, "cmdk.v2.actions": False}
 #: The one directory this builder may wipe: the e2e fixtures dir's own cue-preview data dir,
 #: which playwright.cmdk-preview-cue.config.ts passes as --data-dir.
 FIXTURES_ROOT: Path = Path(__file__).resolve().parents[1] / "fixtures"
@@ -71,6 +74,35 @@ def checked_data_dir(data_dir: Path) -> Path:
     return resolved
 
 
+def _warm_local_preview_strips(
+    data_dir: Path, rows: list[tuple[str, str | None, str | None]]
+) -> None:
+    """Decode overview strips so cmdk preview is not stuck on row-assets pending."""
+    repo = Path(__file__).resolve().parents[6]
+    env = {**os.environ, "MDT_DATA_DIR": str(data_dir), "MDT_LIBRARY_MODE": "local"}
+    uv = shutil.which("uv") or "uv"
+    for stable_id, _title, _file_path in rows:
+        command = [
+            uv,
+            "run",
+            "--no-sync",
+            "python",
+            "-c",
+            (
+                "from apps.analysis_waveform import local_waveform; "
+                f"local_waveform.ensure_local_peaks({stable_id!r})"
+            ),
+        ]
+        result = subprocess.run(command, cwd=repo, env=env, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            sys.stderr.write(result.stdout)
+            sys.stderr.write(result.stderr)
+            raise SystemExit(
+                f"[ERROR] cmdk-preview-cue local strip decode failed for {stable_id} "
+                f"(exit {result.returncode})"
+            )
+
+
 def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
     data_dir = checked_data_dir(data_dir)
     if data_dir.exists():
@@ -80,7 +112,8 @@ def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
     audio_dir = data_dir / AUDIO_SUBDIR
     files = deckload.ensure_audio(audio_dir, TRACKS)
     rows = deckload._ingest_and_verify(data_dir, audio_dir, files, "cmdk-preview-cue")
-    deckload._run_librosa_analysis(data_dir, rows, TRACKS, "cmdk-preview-cue")
+    _run_librosa_analysis(data_dir, rows, TRACKS, "cmdk-preview-cue")
+    _warm_local_preview_strips(data_dir, rows)
     for stable_id, title, _file_path in rows:
         if title is None or SEARCH_QUERY not in title:
             raise SystemExit(

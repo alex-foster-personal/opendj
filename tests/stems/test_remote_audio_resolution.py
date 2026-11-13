@@ -54,13 +54,14 @@ def test_resolve_audio_path_prefers_local_track_location(tmp_path: Path) -> None
             album=None,
             isrc=None,
             duration_ms=1000,
+            file_path="/Users/dev/Music/ghost.mp3",
+        )
+        writer.upsert_track_location(
+            stable_id=sid,
+            kind="local",
+            role="primary",
             file_path=str(local),
         )
-        conn.execute(
-            "UPDATE tracks SET file_path = ? WHERE stable_id = ?",
-            ("/Users/dev/Music/ghost.mp3", sid),
-        )
-        conn.commit()
     finally:
         writer.close()
         conn.close()

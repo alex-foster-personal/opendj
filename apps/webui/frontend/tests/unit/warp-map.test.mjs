@@ -128,17 +128,27 @@ test('[if] analyzed locked and creative anchors coexist [then] each kind persist
 	assert.deepEqual(reloaded.anchors, mixed.anchors);
 });
 
-test('warp-map fixture manifest slot is checksum-ready', async () => {
+/** Verify the captured PQTZ warp-map fixture bytes and SHA-256 against its manifest, then round-trip it. */
+test('[if] captured PQTZ warp-map fixture [then] bytes and sha256 match manifest and it round-trips', async () => {
 	const mod = await loadTypeScriptModule('src/lib/rb/warp-map.ts');
 	const manifest = JSON.parse(readFileSync(WARP_MAP_MANIFEST, 'utf8'));
 	assert.equal(manifest.schema_version, mod.WARP_MAP_FIXTURE_MANIFEST_SCHEMA);
 	const entry = manifest.files['warp-map-pqtz-captured.json'];
-	assert.ok(entry?.sha256, 'fixture entry needs a sha256 slot');
-	const capture = JSON.parse(readFileSync(WARP_MAP_CAPTURE, 'utf8'));
+	assert.ok(entry, 'manifest needs an entry for the captured fixture');
+	const raw = readFileSync(WARP_MAP_CAPTURE);
+	assert.equal(raw.length, entry.bytes, 'captured fixture byte count differs from manifest');
+	assert.equal(
+		createHash('sha256').update(raw).digest('hex'),
+		entry.sha256,
+		'captured fixture sha256 differs from manifest'
+	);
+	const capture = mod.parseWarpMap(raw.toString('utf8'));
+	assert.equal(capture.anchors.length, REAL_PQTZ_BEATS.length);
 	const seeded = mod.buildWarpMapFromPqtz(REAL_PQTZ_BEATS);
-	const canonical = mod.warpMapChecksumInput(seeded);
-	const checksum = sha256Hex(canonical);
-	assert.equal(checksum.length, 64);
-	void capture;
-	void entry;
+	assert.equal(
+		sha256Hex(mod.warpMapChecksumInput(capture)),
+		sha256Hex(mod.warpMapChecksumInput(seeded)),
+		'captured map must match the map built from the real PQTZ beats'
+	);
+	assert.deepEqual(mod.parseWarpMap(mod.serializeWarpMap(capture)).anchors, capture.anchors);
 });

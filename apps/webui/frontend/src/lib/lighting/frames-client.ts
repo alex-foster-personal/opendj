@@ -171,7 +171,16 @@ export function parsePatch(raw: unknown): StagePatch {
 	}
 	if (raw === null || typeof raw !== 'object') throw new Error('patch: expected object or array');
 	const obj = raw as Record<string, unknown>;
-	const fixturesRaw = obj.fixtures;
+	let fixturesRaw = obj.fixtures;
+	if (fixturesRaw === undefined && Array.isArray(obj.patches)) {
+		// Daemon venue store {version, active, patches}: resolve the active patch.
+		const active = obj.patches.find(
+			(p) =>
+				p !== null && typeof p === 'object' && (p as Record<string, unknown>).name === obj.active
+		);
+		if (active === undefined) throw new Error('patch.active: no patch with that name');
+		fixturesRaw = (active as Record<string, unknown>).fixtures;
+	}
 	if (!Array.isArray(fixturesRaw)) throw new Error('patch.fixtures: expected array');
 	const version = obj.version === undefined ? null : (obj.version as string | number | null);
 	return {

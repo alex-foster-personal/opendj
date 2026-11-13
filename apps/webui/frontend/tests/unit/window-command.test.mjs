@@ -211,6 +211,43 @@ test('in Tauri a window command succeeds through control_shell_window and shell 
 	}
 });
 
+test('in Electron the shell window reporter updates query state from list and onChange', async () => {
+	let labelsHandler = null;
+	let listCalls = 0;
+	globalThis.opendjShell = {
+		kind: 'electron',
+		version: 3,
+		windows: {
+			async open() {},
+			async close() {},
+			async focus() {},
+			async list() {
+				listCalls += 1;
+				return listCalls === 1 ? [] : ['second-screen'];
+			},
+			onChange(listener) {
+				labelsHandler = listener;
+				return () => {
+					labelsHandler = null;
+				};
+			}
+		}
+	};
+	const restore = withBrowserWindow();
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	try {
+		assert.deepEqual(ipc.queryPerformanceState().windows, []);
+		labelsHandler(['second-screen']);
+		assert.deepEqual(ipc.queryPerformanceState().windows, ['second-screen']);
+		labelsHandler([]);
+		assert.deepEqual(ipc.queryPerformanceState().windows, []);
+	} finally {
+		uninstall();
+		restore();
+	}
+});
+
 test('a refused open leaves the reported windows empty', async () => {
 	globalThis.opendjShell = {
 		kind: 'electron',

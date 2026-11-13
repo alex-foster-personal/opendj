@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373199,
+  "measured_with_pr": 373484,
+  "sha": "e854f50d3a",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--12988-palette-ratings-sync grows the library surface; measured +285 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

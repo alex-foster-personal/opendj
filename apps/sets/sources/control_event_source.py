@@ -1,4 +1,4 @@
-"""Browser-posted control-event v2 ingest (SETREC-06)."""
+"""Browser-posted control-event v2 ingest (SETREC-11827)."""
 
 from __future__ import annotations
 

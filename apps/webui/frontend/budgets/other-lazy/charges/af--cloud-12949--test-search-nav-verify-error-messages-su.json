@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557433,
+  "measured_with_pr": 557626,
+  "sha": "3b0a98d863",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--cloud-12949--test-search-nav-verify-error-messages-su grows the other-lazy surface; measured +193 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

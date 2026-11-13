@@ -155,3 +155,58 @@ test('only the explicit pointer-only marker opts a control out of the Tab guard'
 		'an unmarked role="slider" tabindex="-1" element must still be treated as native-interactive'
 	);
 });
+
+// ----- #12548 (A11Y-01): Space on a focused native <summary> -----
+// Regression lines:
+// - if a native summary control has focus and Space is pressed then the
+//   disclosure must own it (routing returns null, no transport action)
+// - if body/page chrome has focus and Space is pressed then the recent-deck
+//   transport path still fires ({ kind: 'space' })
+// The real browser toggle stays with the e2e spec (needs a browser).
+
+/** Build a bare Space keydown aimed at `target` for the routing resolver. */
+function spaceKey(target, extra = {}) {
+	return {
+		code: 'Space',
+		key: ' ',
+		target,
+		metaKey: false,
+		ctrlKey: false,
+		altKey: false,
+		shiftKey: false,
+		repeat: false,
+		...extra
+	};
+}
+
+let summaryRouting;
+
+before(async () => {
+	summaryRouting = await loadTypeScriptModule('src/lib/rb/performance-shortcut-routing.ts');
+});
+
+test('#12548: a focused native summary is a native-interactive target', () => {
+	assert.equal(mod.isNativeInteractiveTarget(element('SUMMARY')), true);
+});
+
+test('#12548: Space on a focused native summary is left to the disclosure', () => {
+	const summary = element('SUMMARY');
+	assert.equal(summaryRouting.resolvePerformanceShortcutAction(spaceKey(summary), {}), null);
+	assert.equal(
+		summaryRouting.resolvePerformanceShortcutAction(spaceKey(summary, { ctrlKey: true }), {}),
+		null,
+		'quantized Space must not reach transport from a focused summary either'
+	);
+});
+
+test('#12548: Space on body focus keeps the recent-deck transport path', () => {
+	const body = element('BODY');
+	assert.deepEqual(summaryRouting.resolvePerformanceShortcutAction(spaceKey(body), {}), {
+		kind: 'space',
+		quantize: false
+	});
+	assert.deepEqual(
+		summaryRouting.resolvePerformanceShortcutAction(spaceKey(body, { ctrlKey: true }), {}),
+		{ kind: 'space', quantize: true }
+	);
+});

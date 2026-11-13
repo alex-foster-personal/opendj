@@ -1,5 +1,5 @@
 /**
- * requirement: WAVEQS-8348c, WAVEQS-8348d
+ * requirement: WAVEQS-8348c, WAVEQS-8348d, WAVEQS-14462
  *
  * The top bar's waveform glyph opens the quick-settings popover, a second view
  * over the Settings catalog (issue #8343).
@@ -9,6 +9,7 @@
  * - if flipping Show sections in the popover does not reach the disk pref and the Settings row then broken
  * - if Escape or a pointer press outside leaves the popover open then broken
  * - if a second click while the chunk loads leaves the popover open then broken
+ * - if focus opens off the first option, or Tab walks out of the open dialog, then broken
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -53,8 +54,8 @@ test('WAVEQS-8348c/8348d: the popover opens, flips sections for Settings and dis
 
 	// The Settings overlay shows the value the popover wrote (one store, two views).
 	await page.keyboard.press('ControlOrMeta+Comma');
-	await page.locator('.so-search').fill('Show sections');
-	await expect(page.locator('input[aria-label="Show sections"]')).toBeChecked({ checked: !before });
+	await page.locator('.so-search').fill('Show segments');
+	await expect(page.locator('input[aria-label="Show segments"]')).toBeChecked({ checked: !before });
 	await page.keyboard.press('Escape');
 
 	await page.locator(BUTTON).click();
@@ -78,4 +79,32 @@ test('WAVEQS-8348d: a second click while the popover chunk loads closes it', asy
 	expect(expanded).toBe('false');
 	await page.waitForTimeout(1500);
 	await expect(page.locator(DIALOG)).toHaveCount(0);
+});
+
+test('WAVEQS-8348d: focus opens on the first option and Tab cycles inside the dialog', async ({
+	page
+}) => {
+	await openPerformance(page);
+	await page.locator(BUTTON).click();
+	const dialog = page.locator(DIALOG);
+	await expect(dialog).toBeVisible();
+	const first = dialog.locator('.wqs-group select, .wqs-group input:not(:disabled)').first();
+	await expect(first).toBeFocused();
+	const stops = await dialog.evaluate(
+		(el) =>
+			el.querySelectorAll(
+				'button:not([tabindex="-1"]), input:not(:disabled), select:not(:disabled)'
+			).length
+	);
+	expect(stops).toBeGreaterThan(10);
+	for (let i = 0; i < stops; i += 1) {
+		await page.keyboard.press('Tab');
+		expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+	}
+	await expect(first).toBeFocused();
+	await page.keyboard.press('Shift+Tab');
+	await expect(dialog.locator('.wqs-all')).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(page.locator(BUTTON)).toBeFocused();
 });

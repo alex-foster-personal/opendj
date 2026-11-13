@@ -47,6 +47,16 @@ def test_rationale_populated() -> None:
     assert "energy" in ranked[0].rationale
 
 
+@pytest.mark.requirement("INTEL-12031")
+def test_tight_bpm_key_neighbour_outscores_distant() -> None:
+    """[if] tight and distant BPM/key pairs compete [then] tight scores higher, [else stop]."""
+    cur = TrackFeature("cur", "A", 120.0, "8A", 5)
+    tight = TrackFeature("tight", "B", 121.0, "8A", 5)
+    distant = TrackFeature("far", "C", 150.0, "12B", 2)
+    ranked = rank_stage1(current_track=cur, candidates=[distant, tight])
+    assert ranked[0].stable_id == "tight"
+
+
 def test_no_literal_neutral_in_source() -> None:
     text = Path(rank_stage1_module.__file__).read_text(encoding="utf-8")
     assert "0.5" not in text

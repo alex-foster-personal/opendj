@@ -59,6 +59,9 @@ export async function restoreStemControls(
 		const control = controls[stem];
 		if (control === undefined) continue;
 		let stems = await awaitReady();
+		// #2571: a track with no stem bundle is a normal settled state, not a
+		// restore failure. Nothing to replay, and nothing to toast.
+		if (stems.status === 'unavailable') return;
 		if (!stems.available_controls.includes(stem)) {
 			// Legacy snapshots include neutral DRUMS even for two-part/no-stem tracks.
 			// A real saved effect must never disappear silently when capability is lost.
@@ -81,4 +84,9 @@ export async function restoreStemControls(
 			await dispatch(command);
 		}
 	}
+}
+
+/** #13771: one operator-facing toast for a deck whose restore really failed: names the deck and the next step. */
+export function restoreFailureToastMessage(deck: DeckId): string {
+	return `Deck ${deck} could not be restored, so it was cleared. Load the track again from the browser.`;
 }

@@ -100,6 +100,7 @@ export default defineConfig({
 		'**/cmdk-preview-cue.spec.ts', // playwright.cmdk-preview-cue.config.ts (real engine, hermetic librosa fallback fixture)
 		'**/cmdk-ttx.spec.ts', // playwright.cmdk-ttx.config.ts (real engine, cmdk.v2 + actions on, 4-track fixture)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
+		'**/leak-cycle-probe.spec.ts', // playwright.performance.config.ts (PERF-LEAK-11717 leak cycle probe; operator-only)
 		'**/pairing-arrow.spec.ts', // playwright.pairing-arrow.config.ts (seeds the 26-track fixture its webServer needs; `just test-pairing-arrow`)
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
 		'**/kpi-first-browse-capture.spec.ts', // playwright.kpi-first-browse-capture.config.ts (S9/S11 first-browse KPI capture; operator-only)
@@ -145,7 +146,8 @@ export default defineConfig({
 		'**/silence-expected-audible.spec.ts', // playwright.silence-expected-audible.config.ts (real backend + bench clips)
 		'**/libm120-scale-bench.spec.ts', // playwright.libm120.config.ts (production build benchmark)
 		'**/color-fx-placement-render.spec.ts', // playwright.color-fx-placement.config.ts (OfflineAudioContext render, no dev server)
-		'**/synth-signals-hash.spec.ts' // playwright.synth-signals.config.ts (synth-signals hashes, no dev server)
+		'**/synth-signals-hash.spec.ts', // playwright.synth-signals.config.ts (synth-signals hashes, no dev server)
+		'**/library-error-zoom.spec.ts' // playwright.library-error-zoom.config.ts (200% zoom search errors)
 	],
 	fullyParallel: false,
 	workers: 1,
@@ -184,7 +186,12 @@ export default defineConfig({
 			cwd: fileURLToPath(new URL('./', import.meta.url)),
 			url: `http://127.0.0.1:${ports.frontendPort}`,
 			reuseExistingServer: false,
-			timeout: 90_000
+			timeout: 90_000,
+			// Every spec shares the one engine above. Auto-REC (SETREC-11802b)
+			// starts a master-mix recording on a spec's first play; it outlives
+			// that page, stalls 12 s after it closes, and every later spec then
+			// shows the failed recording as a toast and a REC rail button.
+			env: { ...process.env, MUSIC_DJ_SET_AUTO_REC: 'off' }
 		}
 	],
 	use: { baseURL: `http://127.0.0.1:${ports.frontendPort}` },

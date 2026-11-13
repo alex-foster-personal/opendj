@@ -31,6 +31,7 @@ from apps.autodj.plan import (
     beat_sync_reach_pct,
     bpm_gap_pct,
     first_dispatch_bar,
+    glide_span,
     live_mapping,
     pair_beat_sync_fold,
     parse_plan,
@@ -38,6 +39,7 @@ from apps.autodj.plan import (
 )
 from apps.autodj.profile import (
     DECK_LOAD_TRIM_DB,
+    VOCAL_BAR_THRESHOLD,
     Section,
     TrackProfile,
     _finite_number,
@@ -47,6 +49,7 @@ from apps.autodj.profile import (
 from apps.autodj.scoring import PairScore, rank_key, score_windows
 from apps.autodj.sections import BREAKDOWN, BRIDGE, PEAK_LABELS, UNKNOWN
 from apps.autodj.styles import (
+    FALLBACK_CROSSFADE_BARS,
     HIT_GATED,
     HIT_ON_ALIGNED_DROP,
     HIT_ON_EXIT,
@@ -57,8 +60,10 @@ from apps.autodj.styles import (
     default_hit_bar,
     exit_bar,
     hit_bounds,
+    plan_tempo_mode,
+    short_crossfade_events,
 )
-from apps.autodj.windows import MixWindow, incoming_mixability_reason, mix_windows, window_at
+from apps.autodj.windows import FALLBACK_BARS, MixWindow, incoming_mixability_reason, mix_windows, window_at
 from apps.shared.harmonic import LIFT, LONG_BLEND_KEY_CLASH_RELATIONS, key_compat
 
 SMOOTH = "smooth"
@@ -184,9 +189,12 @@ class Proposal:
     pair: PairScore
     score: float
     rationale: str
+    fallback: bool = False
+    #: #10152: the repair ladder steps that made this proposal valid, in order; empty when it validated first time.
+    repairs: tuple[str, ...] = ()
 
     def summary(self) -> dict[str, Any]:
-        return {
+        row: dict[str, Any] = {
             "score": round(self.score, 3),
             "style": self.plan.style,
             "bars": self.plan.bars,
@@ -197,10 +205,49 @@ class Proposal:
             "validation": self.validation.to_json(),
             "pair": self.pair.summary(),
         }
+        if self.fallback:
+            row["fallback"] = True  # #10146: the unsynced short crossfade offered when a grid is untrusted
+        if self.repairs:
+            row["repairs"] = list(self.repairs)  # #10152: absent when empty, so an all-valid list stays byte-identical
+        return row
+
+
+#: #10146: an incoming bar this quiet (bar energy) is silence the fallback does not enter on.
+_FALLBACK_SILENCE_ENERGY = 0.05
+
+
+def _fallback_in_bar(profile: TrackProfile) -> int:
+    """The incoming's first phrase start after any leading silence, else bar 1."""
+    for section in profile.sections:
+        if section.energy is None or section.energy > _FALLBACK_SILENCE_ENERGY:
+            return section.start_bar
+    return 1
+
+
+def _fallback_out_bar(profile: TrackProfile, min_out_bar: float | None) -> int | None:
+    """The latest outgoing phrase start the fallback fits after and that is not a vocal bar, else the last 32 bars."""
+    last = profile.bars - FALLBACK_CROSSFADE_BARS
+    floor = 0.0 if min_out_bar is None else min_out_bar
+    vocals = profile.bar_vocals
+    for section in sorted(profile.sections, key=lambda row: row.start_bar, reverse=True):
+        bar = section.start_bar
+        if not floor < bar <= last:
+            continue
+        if vocals is not None and 0 < bar <= len(vocals) and vocals[bar - 1] >= VOCAL_BAR_THRESHOLD:
+            continue
+        return bar
+    if profile.sections:
+        return None
+    bar = max(1, profile.bars - FALLBACK_BARS + 1)
+    bar -= (bar - 1) % 8
+    return bar if floor < bar <= last else None
 
 
 def _in_windows_for(intent: str, profile: TrackProfile, style: Style) -> list[MixWindow]:
     windows = mix_windows(profile, "in", limit=5)
+    if style.name == "drop_swap" and profile.transition_in_bar is not None:
+        # #9719: the DJ's transition-in cue wins; consider() refuses it when it does not start a peak.
+        return windows
     if style.name == "drop_swap":
         # Enter ON a drop: the window starts at a peak section.
         peaks = [s for s in profile.sections if s.label in PEAK_LABELS]
@@ -223,6 +270,20 @@ def _in_windows_for(intent: str, profile: TrackProfile, style: Style) -> list[Mi
     return windows
 
 
+def drop_swap_cue_refusal(profile: TrackProfile) -> str | None:
+    """Why drop_swap cannot enter on the incoming transition-in cue, or None when the cue starts a peak section."""
+    bar = profile.transition_in_bar
+    if bar is None:
+        return None
+    section = profile.section_at(bar)
+    label = section.label if section is not None else UNKNOWN
+    if section is not None and section.start_bar == bar and label in PEAK_LABELS:
+        return None
+    return (
+        f"drop_swap enters on a peak, but the transition-in cue (bar {bar}) is in a {label} section, not a peak start"
+    )
+
+
 def _penalty(validation: Validation, intent: str) -> float:
     if not validation.ok:
         return 1.0
@@ -236,7 +297,7 @@ def _penalty(validation: Validation, intent: str) -> float:
 
 
 def _style_fit(style: Style, pair: PairScore, intent: str) -> float:
-    """Short or beat-free styles for clashing pairs, long blends for good ones."""
+    """Beatmatch, key, and escape-style steering for proposal ranking (not vocal clash)."""
     fit = 0.0
     if style.needs_beatmatch and pair.beatmatchable is False and style.max_bars > 1:
         fit -= 0.4
@@ -246,8 +307,6 @@ def _style_fit(style: Style, pair: PairScore, intent: str) -> float:
             fit -= 0.2
         elif intent == ENERGY_UP and compat.move == LIFT:
             fit += 0.05
-    if pair.vocal_clash_bars and style.default_bars >= 16:
-        fit -= 0.1
     if (
         style.name in _ESCAPE_NAMES
         and pair.beatmatchable is not False
@@ -256,6 +315,43 @@ def _style_fit(style: Style, pair: PairScore, intent: str) -> float:
     ):
         fit -= ESCAPE_ON_A_GOOD_PAIR
     return fit
+
+
+#: #13341: a style defaulting to this many bars or more is a long blend; it is refused on any measured vocal clash.
+LONG_BLEND_VOCAL_GATE_BARS = 8
+
+#: #10152 CFG: validations a failing candidate may spend in the repair ladder (move exit, shorten, cut); DJustify mimicked.
+REPAIR_ROUNDS = 3
+
+
+def outgoing_vocal_run_end(profile: TrackProfile, start_bar: int, bars: int) -> int | None:
+    """The last bar of the first outgoing vocal run that starts inside the overlap, or None when it has none."""
+    vocals = profile.bar_vocals
+    if vocals is None:
+        return None
+    for bar in range(max(1, start_bar), min(start_bar + bars, len(vocals) + 1)):
+        if vocals[bar - 1] >= VOCAL_BAR_THRESHOLD:
+            end = bar
+            while end < len(vocals) and vocals[end] >= VOCAL_BAR_THRESHOLD:
+                end += 1
+            return end
+    return None
+
+
+def next_phrase_start(profile: TrackProfile, after_bar: int) -> int | None:
+    """The first outgoing phrase (section) start after ``after_bar``, or None."""
+    starts = sorted(section.start_bar for section in profile.sections if section.start_bar > after_bar)
+    return starts[0] if starts else None
+
+
+def vocal_clash_refusal(style: Style, pair: PairScore) -> str | None:
+    """Why a long blend is refused for measured vocal overlap, or None (unmeasured maps never refuse)."""
+    clash = pair.vocal_clash_bars
+    if style.default_bars < LONG_BLEND_VOCAL_GATE_BARS or clash is None or clash <= 0:
+        return None
+    return (
+        f"vocal clash: {clash} measured overlapping vocal bar(s), limit 0 for a {style.default_bars}-bar-default blend"
+    )
 
 
 def _incoming_skip_reason(style: Style, in_window: MixWindow) -> str | None:
@@ -914,7 +1010,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
     # Synced proposals play ``fold`` incoming grid bars per plan bar; tempo-none styles start on their own bass and tempo.
     fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, beat_sync_reach_pct(in_profile))
 
-    def consider(
+    def consider(  # noqa: C901, PLR0911 - one gate per early return, then the repair ladder
         style: Style,
         wanted_bars: int,
         rank: int,
@@ -924,6 +1020,18 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         fallback_note: str = "",
     ) -> None:
         style_name = style.name
+        cue_refusal = drop_swap_cue_refusal(in_profile) if style_name == "drop_swap" else None
+        if cue_refusal is not None:
+            not_offered.append(
+                {
+                    "style": style_name,
+                    "bars": wanted_bars,
+                    "out_bar": out_window.start_bar,
+                    "in_bar": in_window.start_bar,
+                    "reason": cue_refusal,
+                }
+            )
+            return
         bars = _overlap_bars(style, wanted_bars, out_window, in_window, out_profile.bars)
         if bars is None:
             not_offered.append(
@@ -993,13 +1101,50 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                 }
             )
             return
+        failure = attempt(style, bars, rank, out_window, entered, hit, fallback_note)
+        if failure is None:
+            return
+        gate, reason, invalid = failure
+        repaired = repair(style, bars, rank, out_window, entered, fallback_note, spent=0 if invalid is None else 1)
+        if repaired is not None:
+            proposals.append(repaired)
+            if repaired.plan.style == style_name:
+                return
+            reason = f"{reason}; repaired as {repaired.plan.style}"  # the blend itself still failed its gate
+        row = {"style": style_name, "bars": bars, "out_bar": out_window.start_bar, "in_bar": entered.start_bar}
+        if invalid is None:
+            not_offered.append({**row, "reason": reason})
+            return
+        rejected.append({**row, "gate": gate, "reason": reason})
+        if repaired is None:
+            proposals.append(invalid)
+
+    glide_gap = bpm_gap_pct(out_profile.judged_bpm, in_profile.judged_bpm)
+
+    def attempt(
+        style: Style,
+        bars: int,
+        rank: int,
+        out_window: MixWindow,
+        entered: MixWindow,
+        hit: HitPlacement,
+        fallback_note: str,
+        repairs: tuple[str, ...] = (),
+    ) -> tuple[str, str, Proposal | None] | None:
+        """Build and validate one candidate: None when it is kept (or skipped), else (gate, reason, invalid proposal)."""
+        style_name = style.name
         pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars)
+        clash_refusal = vocal_clash_refusal(style, pair)
+        if clash_refusal is not None:
+            return _propose_gate(clash_refusal), clash_refusal, None
         rationale = (
             _rationale(style_name, style, bars, out_window, entered)
             + _tempo_note(style, out_profile, in_profile)
             + hit.note
             + fallback_note
         )
+        if repairs:
+            rationale = f"repaired: {'; '.join(repairs)}; {rationale}"
         plan = parse_plan(
             {
                 "out": {
@@ -1015,7 +1160,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                     "trim_reason": trim_reason,
                 },
                 "style": style_name,
-                "tempo": {"mode": style.tempo_mode},
+                "tempo": {"mode": plan_tempo_mode(style, bars, glide_gap, beat_sync_reach_pct(in_profile))},
                 "events": style.build(bars, out_deck, in_deck, hit.hit_bar),
                 "intent": intent or parsed,
                 "rationale": rationale,
@@ -1023,25 +1168,82 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                 "shape": SHAPE_OF_STYLE.get(style_name),
             }
         )
+        span = glide_span(plan)
+        if span is not None:
+            rationale += (
+                f"; glide {out_profile.judged_bpm:g} to {in_profile.judged_bpm:g} BPM over {span[1] - span[0]:g} bars"
+            )
+            plan = replace(plan, rationale=rationale)
         # Codex #7595: the window filter above sees only the start bar; a style's pre-roll (a compensated
         # blend's bar -1 ease) puts its first event earlier, so the whole plan must start after the live bar.
         if min_out_bar is not None and out_window.start_bar + first_dispatch_bar(plan) <= min_out_bar:
-            return
+            return None if not repairs else ("windows", "repair starts before the live bar", None)
         validation = validate_plan(plan, out_profile, in_profile, live=live)
         preference = _preference_bonus(parsed, rank)
         score = pair.score + preference + _style_fit(style, pair, parsed) - _penalty(validation, parsed)
+        proposal = Proposal(plan, validation, pair, score, rationale, repairs=repairs)
         if not validation.ok:
-            rejected.append(
-                {
-                    "style": style_name,
-                    "bars": bars,
-                    "out_bar": out_window.start_bar,
-                    "in_bar": entered.start_bar,
-                    "gate": _propose_gate("", validation),
-                    "reason": "; ".join(validation.errors),
-                }
+            return _propose_gate("", validation), "; ".join(validation.errors), proposal
+        proposals.append(proposal)
+        return None
+
+    def repair(  # noqa: C901 - one ladder, three guarded steps
+        style: Style,
+        bars: int,
+        rank: int,
+        out_window: MixWindow,
+        entered: MixWindow,
+        fallback_note: str,
+        *,
+        spent: int,
+    ) -> Proposal | None:
+        """#10152: the repair ladder (move the exit past the vocal run, shorten, switch to cut), REPAIR_ROUNDS bounded."""
+        start = len(proposals)
+        run_end = outgoing_vocal_run_end(out_profile, out_window.start_bar, bars)
+        after = next_phrase_start(out_profile, run_end) if run_end is not None else None
+        steps: list[tuple[Style, int, MixWindow, str]] = []
+        if after is not None and after != out_window.start_bar:
+            moved = window_at(out_profile, "out", after)
+            moved_bars = _overlap_bars(style, bars, moved, entered, out_profile.bars)
+            if moved_bars is not None:
+                steps.append((style, moved_bars, moved, f"exit moved {out_window.start_bar} -> {after} (vocal run)"))
+        for shorter in range(bars - 1, style.min_bars - 1, -1):
+            if shorter < 1 or style.clamp_bars(shorter) != shorter:
+                continue
+            pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=shorter)
+            if not pair.vocal_clash_bars:
+                steps.append((style, shorter, out_window, f"shortened {bars} -> {shorter} bars (length)"))
+                break
+        cut = STYLES["cut"]
+        if style.name != "cut" and cut.available:
+            cut_bar = after if after is not None else (run_end + 1 if run_end is not None else out_window.start_bar)
+            # A vocal run that reaches the last downbeat leaves no bar to cut on: no cut step, never a raise (#13343).
+            if cut_bar < out_profile.bars:
+                cut_window = window_at(out_profile, "out", cut_bar)
+                steps.append((cut, 1, cut_window, f"switched {style.name} -> cut at bar {cut_window.start_bar}"))
+        for step_style, step_bars, step_out, note in steps:
+            key = (step_style.name, step_bars, step_out.start_bar, entered.start_bar)
+            if spent >= REPAIR_ROUNDS:
+                break
+            if key in seen:
+                continue
+            seen.add(key)
+            spent += 1
+            repairs = (note,)
+            fold_ = fold if step_style.tempo_mode == "sync_to_out" else 1.0
+            step_hit = place_hit(step_style, step_out, in_profile, entered.start_bar, step_bars, fold_)
+            if step_hit.refused is not None:
+                continue
+            step_in = (
+                entered
+                if step_hit.in_start_bar == entered.start_bar
+                else window_at(in_profile, "in", step_hit.in_start_bar)
             )
-        proposals.append(Proposal(plan, validation, pair, score, rationale))
+            if attempt(step_style, step_bars, rank, step_out, step_in, step_hit, fallback_note, repairs) is None:
+                if len(proposals) > start:
+                    return proposals.pop()
+                return None
+        return None
 
     def _try_double_drop() -> None:
         if intent is not None:
@@ -1131,9 +1333,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                     cut_rank,
                     out_window,
                     in_window,
-                    fallback_note=(
-                        f"; cut fallback: every blend needs more bars than the in-window ({in_window.reason})"
-                    ),
+                    fallback_note=(f"; cut fallback: no preferred blend was eligible (in-window: {in_window.reason})"),
                 )
     escape_rank = len(_PREFERENCES[parsed]) + 1
     for style_name, wanted_bars in ESCAPE_STYLES:
@@ -1143,6 +1343,20 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         for out_window in out_windows[:3]:
             for in_window in _in_windows_for(parsed, in_profile, style)[:3]:
                 consider(style, wanted_bars, escape_rank, out_window, in_window)
+    if not (out_profile.grid_trusted and in_profile.grid_trusted):
+        proposals.extend(
+            _short_crossfade_fallback(
+                out_profile,
+                in_profile,
+                out_deck=out_deck,
+                in_deck=in_deck,
+                intent=intent or parsed,
+                parsed=parsed,
+                min_out_bar=min_out_bar,
+                live=live,
+                trim=(trim_db, trim_reason),
+            )
+        )
     ranked_valid = sorted(
         (proposal for proposal in proposals if proposal.validation.ok),
         key=lambda proposal: rank_key(proposal.pair, proposal.score),
@@ -1168,3 +1382,55 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         "rejected": rejected,
         "_valid_proposal_scores": [proposal.score for proposal in ranked_valid],
     }
+
+
+def _short_crossfade_fallback(  # noqa: PLR0913 - keyword-only context of one propose call
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    *,
+    out_deck: int,
+    in_deck: int,
+    intent: str,
+    parsed: str,
+    min_out_bar: float | None,
+    live: dict[str, Any] | None,
+    trim: tuple[float, str | None],
+) -> list[Proposal]:
+    """#10146: the 2-bar unsynced equal-power crossfade at nominal BPM, offered when either grid is untrusted."""
+    out_bar = _fallback_out_bar(out_profile, min_out_bar)
+    if out_bar is None or in_profile.bars < FALLBACK_CROSSFADE_BARS:
+        return []
+    out_window = window_at(out_profile, "out", out_bar)
+    in_window = window_at(in_profile, "in", _fallback_in_bar(in_profile))
+    reason = "; ".join(
+        f"{side} {profile.grid_note or 'grid not trusted'}"
+        for side, profile in (("outgoing", out_profile), ("incoming", in_profile))
+        if not profile.grid_trusted
+    )
+    bars = FALLBACK_CROSSFADE_BARS
+    rationale = (
+        f"fallback: grid untrusted ({reason}); crossfade over {bars} bars at nominal BPM: leave at bar {out_bar} "
+        f"({out_window.label}), enter at bar {in_window.start_bar} ({in_window.label})"
+    )
+    plan = parse_plan(
+        {
+            "out": {"deck": out_deck, "track": out_profile.stable_id, "window": {"start_bar": out_bar, "bars": bars}},
+            "in": {
+                "deck": in_deck,
+                "track": in_profile.stable_id,
+                "window": {"start_bar": in_window.start_bar, "bars": bars},
+                "trim_db": trim[0],
+                "trim_reason": trim[1],
+            },
+            "style": "crossfade",
+            "tempo": {"mode": "none"},
+            "events": short_crossfade_events(out_deck, in_deck),
+            "intent": intent,
+            "rationale": rationale,
+            "shape": SHAPE_OF_STYLE.get("crossfade"),
+        }
+    )
+    validation = validate_plan(plan, out_profile, in_profile, live=live)
+    pair = score_windows(out_profile, in_profile, out_window, in_window, overlap_bars=bars)
+    score = pair.score - _penalty(validation, parsed)
+    return [Proposal(plan, validation, pair, score, rationale, fallback=True)]

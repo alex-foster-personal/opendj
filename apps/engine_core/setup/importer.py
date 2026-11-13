@@ -215,6 +215,8 @@ class FolderImportOutcome:
         "queue and POST /api/v1/analysis-queue/run starts the drain"
     )
     kind: str = "folder"
+    #: Path and probe reason for each refused file, bounded like the ingest report.
+    unplayable_rejections: list[dict[str, str]] = dataclasses.field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -318,6 +320,7 @@ def run_folder_import(
         tracks_written=report.tracks_inserted + report.tracks_unchanged,
         tracks_without_analysis=report.tracks_without_analysis,
         analysis_available=_own_analysis_available(),
+        unplayable_rejections=[{"path": item.path, "reason": item.reason} for item in report.unplayable_rejections],
     )
     emit(
         FOLDER_STAGE_PROGRESS["ingest"],

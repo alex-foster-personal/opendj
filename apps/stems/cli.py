@@ -335,6 +335,7 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
     db = Path(data_dir) / "state" / "state.db"
     path_map = load_path_map(Path(data_dir))
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        # Canonical path is for the error message only; resolution is local_audio_path.
         row = conn.execute(
             "SELECT file_path FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
             (stable_id,),

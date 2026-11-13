@@ -142,6 +142,17 @@ test('a gridless, stick or empty deck names why it cannot be edited', () => {
 	assert.match(edit.gridShiftTitle(null, 'no track is loaded on this deck'), /Unavailable: no track is loaded/);
 });
 
+test('a locked grid disables both deck grid buttons with the GRID_LOCKED reason (GRIDEDIT-9763)', () => {
+	const base = anlzWith(BEATS);
+	const locked = { ...base, beatgrid: { ...base.beatgrid, locked: true } };
+	const reason = edit.gridEditUnavailableReason('a', locked, false);
+	assert.equal(reason, edit.GRID_LOCKED_REASON);
+	assert.match(reason, /GRID_LOCKED/);
+	assert.match(edit.gridAdjustTitle(locked, reason), /Unavailable: the beatgrid is locked/);
+	assert.match(edit.gridShiftTitle(locked, reason), /Unavailable: the beatgrid is locked/);
+	assert.equal(edit.gridEditUnavailableReason('a', base, false), null, 'an unlocked grid stays editable');
+});
+
 test('a mouse press on the left half nudges earlier: pointerdown detail 0 is not a keyboard press', () => {
 	// Pointer Events spec: pointerdown carries detail 0, so it must still use its position.
 	assert.equal(edit.pressOffsetX('pointerdown', 0, 104, 100), 4);

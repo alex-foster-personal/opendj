@@ -20,7 +20,15 @@ import { COLOR_FX_MAX_BPM, COLOR_FX_MIN_BPM } from './color-fx';
 
 /** LFO cycle lengths in beats, 1/16 to 64 (DJM BEAT range). */
 export const MOD_FX_CYCLE_BEATS = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64] as const;
-export type ModFxCycleBeats = (typeof MOD_FX_CYCLE_BEATS)[number];
+/**
+ * Triplet cycle lengths in beats, 1/12 to 12/3 (DJM-A9 TRIPLET FILTER p.55,
+ * mimicked endpoints; interior steps are the duple steps times 2/3, hygiene).
+ * Three cycles span a duple step, so counted from the first downbeat the
+ * trough lands back on a grid beat every third cycle.
+ */
+export const TRIPLET_CYCLE_BEATS = [1 / 12, 1 / 6, 1 / 3, 2 / 3, 4 / 3, 8 / 3, 4] as const;
+export type TripletCycleBeats = (typeof TRIPLET_CYCLE_BEATS)[number];
+export type ModFxCycleBeats = (typeof MOD_FX_CYCLE_BEATS)[number] | TripletCycleBeats;
 
 /** Free (grid-less) LFO cycle bounds in milliseconds (DJM TIME range). */
 export const MOD_FX_TIME_MS = Object.freeze({ min: 10, max: 32000 });
@@ -62,9 +70,10 @@ function _assertFiniteNonNegative(field: string, value: number): void {
 }
 
 function _assertCycleBeats(cycleBeats: number): asserts cycleBeats is ModFxCycleBeats {
-	if (!(MOD_FX_CYCLE_BEATS as readonly number[]).includes(cycleBeats)) {
+	const duple = (MOD_FX_CYCLE_BEATS as readonly number[]).includes(cycleBeats);
+	if (!duple && !(TRIPLET_CYCLE_BEATS as readonly number[]).includes(cycleBeats)) {
 		throw new Error(
-			`mod-fx-lfo: cycleBeats must be one of ${MOD_FX_CYCLE_BEATS.join(', ')}, got ${String(cycleBeats)}`
+			`mod-fx-lfo: cycleBeats must be one of ${MOD_FX_CYCLE_BEATS.join(', ')} or triplet ${TRIPLET_CYCLE_BEATS.join(', ')}, got ${String(cycleBeats)}`
 		);
 	}
 }

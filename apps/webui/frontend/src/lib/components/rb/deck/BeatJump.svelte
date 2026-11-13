@@ -22,6 +22,8 @@
 		type BeatJumpSize
 	} from '$lib/rb/beat-jump-size.svelte';
 	import { formatBeatJumpDelta } from '$lib/rb/format-beat-jump';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { beatJumpSelId } from './deck-pad-selector-ids';
 
 	let {
 		deck,
@@ -109,6 +111,11 @@
 	<button
 		class="size-step"
 		disabled={pending || smaller === size}
+		use:selectorNode={{
+			id: beatJumpSelId(deck.deck_id, 'size-down'),
+			kind: 'leaf',
+			enabled: !(pending || smaller === size)
+		}}
 		data-performance-control="beat-jump-size-down"
 		data-testid={`beat-jump-size-down-deck-${deck.deck_id}`}
 		aria-label={`smaller beat jump size deck ${deck.deck_id}`}
@@ -133,6 +140,11 @@
 	<button
 		class="size-step"
 		disabled={pending || larger === size}
+		use:selectorNode={{
+			id: beatJumpSelId(deck.deck_id, 'size-up'),
+			kind: 'leaf',
+			enabled: !(pending || larger === size)
+		}}
 		data-performance-control="beat-jump-size-up"
 		data-testid={`beat-jump-size-up-deck-${deck.deck_id}`}
 		aria-label={`larger beat jump size deck ${deck.deck_id}`}
@@ -153,6 +165,11 @@
 		<button
 			class="jump"
 			disabled={!_canJump(delta)}
+			use:selectorNode={{
+				id: beatJumpSelId(deck.deck_id, delta < 0 ? 'back' : 'forward'),
+				kind: 'leaf',
+				enabled: _canJump(delta)
+			}}
 			data-performance-control="beat-jump"
 			data-testid={`beat-jump-${delta < 0 ? 'back' : 'forward'}-deck-${deck.deck_id}`}
 			aria-label={`jump ${delta < 0 ? 'back' : 'forward'} ${beatJumpSizeLabel(size)} beats deck ${deck.deck_id}`}

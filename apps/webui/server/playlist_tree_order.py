@@ -46,10 +46,15 @@ def load_order(path: Path) -> list[str]:
     reading it as empty would silently throw away the user's arrangement on
     the next write.
     """
+    return load_id_list(path, "order", "playlist tree order")
+
+
+def load_id_list(path: Path, key: str, what: str) -> list[str]:
+    """The unique playlist ids stored under ``key`` in the JSON overlay at ``path``, or ``[]`` when it is missing."""
     # Codex P2 on #6186 (r4266167694): the metadata probes sit inside the
     # guarded read too, so a permission or I/O error on stat (or a parent that
     # is not a directory) is the contract error, never a raw 500. Only a plain
-    # missing file means "never reordered".
+    # missing file means "never written".
     try:
         try:
             os.lstat(path)
@@ -57,20 +62,20 @@ def load_order(path: Path) -> list[str]:
             return []
         if not path.is_file():
             # LIBTREE-03 fail loud: a directory (or dangling link) in the
-            # overlay's place is corruption, not "never reordered".
-            raise PlaylistTreeOrderError(f"{path}: playlist tree order is not a regular file")
+            # overlay's place is corruption, not "never written".
+            raise PlaylistTreeOrderError(f"{path}: {what} is not a regular file")
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PlaylistTreeOrderError(f"{path}: unreadable playlist tree order: {exc}") from exc
-    order = raw.get("order") if isinstance(raw, dict) else None
-    if not isinstance(order, list) or not all(isinstance(pid, str) for pid in order):
-        raise PlaylistTreeOrderError(f"{path}: 'order' must be a list of playlist ids")
-    # LIBTREE-03: a stored order naming a playlist twice is corruption (the PUT
-    # route refuses it); unique stale ids stay allowed.
-    if len(set(order)) != len(order):
-        dupes = sorted({pid for pid in order if order.count(pid) > 1})
+        raise PlaylistTreeOrderError(f"{path}: unreadable {what}: {exc}") from exc
+    ids = raw.get(key) if isinstance(raw, dict) else None
+    if not isinstance(ids, list) or not all(isinstance(pid, str) for pid in ids):
+        raise PlaylistTreeOrderError(f"{path}: '{key}' must be a list of playlist ids")
+    # LIBTREE-03: a stored list naming a playlist twice is corruption (the
+    # routes refuse it); unique stale ids stay allowed.
+    if len(set(ids)) != len(ids):
+        dupes = sorted({pid for pid in ids if ids.count(pid) > 1})
         raise PlaylistTreeOrderError(f"{path}: playlist ids stored twice: {', '.join(dupes)}")
-    return list(order)
+    return list(ids)
 
 
 def validate_order(order: Sequence[str], live_ids: set[str]) -> list[str]:
@@ -93,7 +98,12 @@ def validate_order(order: Sequence[str], live_ids: set[str]) -> list[str]:
 
 def save_order(path: Path, order: Sequence[str]) -> None:
     """Replace the stored order atomically (same-dir temp file + os.replace)."""
-    text = json.dumps({"order": list(order)}, indent=2) + "\n"
+    write_json_atomic(path, {"order": list(order)})
+
+
+def write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
+    """Replace ``path`` with ``payload`` as LF-ended JSON, atomically (same-dir temp file + os.replace)."""
+    text = json.dumps(payload, indent=2) + "\n"
     with _WRITE_LOCK:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)

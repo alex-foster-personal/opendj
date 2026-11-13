@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
+import threading
+from collections import deque
 from collections.abc import Callable
 
 from apps.analysis.canonical import dependency_stale_row
@@ -157,4 +160,82 @@ def producer_version(backend: str) -> str:
     return versions[backend]
 
 
-__all__ = ["declined_ids", "done_ids", "library_value_sources", "producer_version"]
+#: Completions the throughput ring keeps per phase (PERF-DRAIN-9996).
+THROUGHPUT_RING_SIZE: int = 500
+#: The trailing window ``tracks_per_min_10m`` counts completions in.
+THROUGHPUT_WINDOW_S: float = 600.0
+
+
+class ThroughputRing:
+    """One bounded history of (completed_at, wall_ms) per phase, one entry per finished track.
+
+    Each phase keeps its own ``size`` entries, so a fast phase on a big library
+    cannot push a slower phase's completions out of the window.
+    """
+
+    def __init__(self, started_at: float, size: int = THROUGHPUT_RING_SIZE) -> None:
+        """Start empty; ``started_at`` bounds the window while the drain is younger than it."""
+        self.started_at = started_at
+        self.size = size
+        self.entries: dict[str, deque[tuple[float, float]]] = {}
+        self.totals: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def record(self, phase: str, completed_at: float, wall_ms: float) -> None:
+        """Note one finished track; the phase's oldest entry falls out past the size."""
+        with self._lock:
+            history = self.entries.get(phase)
+            if history is None:
+                history = self.entries[phase] = deque(maxlen=self.size)
+            history.append((completed_at, wall_ms))
+            self.totals[phase] = self.totals.get(phase, 0) + 1
+
+    def summary(self, now: float) -> dict[str, dict[str, float | int | None]]:
+        """The per-phase throughput as of ``now``."""
+        with self._lock:
+            entries = {phase: list(history) for phase, history in self.entries.items()}
+            totals = dict(self.totals)
+        return throughput(entries, totals, started_at=self.started_at, now=now, size=self.size)
+
+
+def throughput(
+    entries: dict[str, list[tuple[float, float]]],
+    totals: dict[str, int],
+    *,
+    started_at: float,
+    now: float,
+    window_s: float = THROUGHPUT_WINDOW_S,
+    size: int = THROUGHPUT_RING_SIZE,
+) -> dict[str, dict[str, float | int | None]]:
+    """Per phase: tracks per minute over the last ``window_s`` (or since start, if
+    shorter), the median wall time of its kept entries, and the lifetime count.
+
+    A full history whose oldest entry is still inside the window has dropped
+    completions the window should count, so its rate is taken over its own span.
+    """
+    window_span_s = max(min(window_s, now - started_at), 1e-9)
+    out: dict[str, dict[str, float | int | None]] = {}
+    for phase, total in totals.items():
+        history = entries.get(phase, [])
+        walls = [wall for _at, wall in history]
+        recent = sum(1 for at, _wall in history if now - at <= window_s)
+        span_s = window_span_s
+        if len(history) >= size and now - history[0][0] <= window_s:
+            span_s = max(now - history[0][0], 1e-9)
+        out[phase] = {
+            "tracks_per_min_10m": round(recent * 60.0 / span_s, 3),
+            "p50_wall_ms": statistics.median(walls) if walls else None,
+            "completed_total": total,
+        }
+    return out
+
+
+__all__ = [
+    "THROUGHPUT_RING_SIZE",
+    "ThroughputRing",
+    "declined_ids",
+    "done_ids",
+    "library_value_sources",
+    "producer_version",
+    "throughput",
+]

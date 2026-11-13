@@ -37,10 +37,8 @@ from typing import Any
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.shared.non_music import is_non_music
+from apps.shared.state.analysis_queue_ids import ITEM_PENDING, ITEM_RUNNING, USER_BATCH_IDS
 from apps.shared.state.locations import bulk_local_audio_paths
-
-from apps.analysis import queue_store
-from apps.analysis.queue_user_lanes import USER_BATCH_IDS
 
 from . import display, findings, groups, jev, jev_store, library_tags, providers, taxonomy
 
@@ -699,7 +697,7 @@ def _active_genre_jobs(conn: sqlite3.Connection) -> set[str]:
         str(r[0])
         for r in conn.execute(
             "SELECT stable_id FROM analysis_queue_item WHERE batch_id = ? AND lane = 'genre' AND state IN (?, ?)",
-            (batch_id, queue_store.ITEM_PENDING, queue_store.ITEM_RUNNING),
+            (batch_id, ITEM_PENDING, ITEM_RUNNING),
         )
     }
 

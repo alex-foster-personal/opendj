@@ -153,6 +153,9 @@ def _tsaf_schema_field_names(blob: bytes) -> list[str]:
             pos += 1
     names: list[str] = []
     if pos < len(blob) and blob[pos] == 0x0B:
+        if pos + 5 > len(blob):
+            # The 0x0b marker has no full uint32 count after it: the blob names no schema fields.
+            return names
         count = struct.unpack_from("<I", blob, pos + 1)[0]
         pos += 5
         for _ in range(count):
@@ -189,6 +192,50 @@ def extract_schema_indexed_uint8(blob: bytes, field_name: str) -> int | None:
     return None
 
 
+class AmbiguousRatingFieldError(ValueError):
+    """Raised when a TSAF blob carries more than one candidate rating field."""
+
+
+def locate_rating_value_offset(blob: bytes) -> int | None:
+    """Return the offset of the one rating value byte safe to mutate, or ``None``.
+
+    Prefers a schema-indexed ``0x0f <uint8> 0x05 <rating idx>`` field; when the
+    schema names no indexed rating, falls back to the legacy ``0x0f <1-5>``
+    tail marker in the last 30 bytes, ignoring pairs indexed to another schema
+    field. ``None`` means no rating field exists (an insert is safe). Raises
+    :class:`AmbiguousRatingFieldError` when two or more candidates exist, so a
+    caller never guesses which byte is the rating.
+    """
+    if not blob:
+        return None
+    names = _tsaf_schema_field_names(blob)
+    rating_idx = names.index("rating") if "rating" in names else None
+    if rating_idx is not None:
+        indexed = [
+            i + 1 for i in range(len(blob) - 3) if blob[i] == 0x0F and blob[i + 2] == 0x05 and blob[i + 3] == rating_idx
+        ]
+        if len(indexed) > 1:
+            raise AmbiguousRatingFieldError(
+                f"{len(indexed)} schema-indexed rating fields at offsets {indexed}; refusing to guess"
+            )
+        if indexed:
+            return indexed[0]
+    start = max(0, len(blob) - 30)
+    tail_hits: list[int] = []
+    for i in range(start, len(blob) - 1):
+        if blob[i] != 0x0F or not 1 <= blob[i + 1] <= 5:
+            continue
+        indexed_elsewhere = i + 3 < len(blob) and blob[i + 2] == 0x05 and blob[i + 3] < len(names)
+        if indexed_elsewhere and blob[i + 3] != rating_idx:
+            continue
+        tail_hits.append(i + 1)
+    if len(tail_hits) > 1:
+        raise AmbiguousRatingFieldError(
+            f"{len(tail_hits)} tail rating markers at offsets {tail_hits}; refusing to guess"
+        )
+    return tail_hits[0] if tail_hits else None
+
+
 def extract_color_index_from_tsaf(blob: bytes) -> int | None:
     """Decode the user's color label (0=none, 1..7) from schema-indexed ``colorIndex``."""
     raw = extract_schema_indexed_uint8(blob, "colorIndex")
@@ -197,6 +244,27 @@ def extract_color_index_from_tsaf(blob: bytes) -> int | None:
     if 1 <= raw <= 7:
         return raw
     return None
+
+
+def locate_color_index_value_offset(blob: bytes) -> int | None:
+    """Return the offset of the schema-indexed ``colorIndex`` value byte, or ``None``.
+
+    ``None`` means the schema names no ``colorIndex`` or the blob has no
+    ``0x0f <uint8> 0x05 <idx>`` token for that field. Raises ``ValueError`` when
+    more than one indexed token exists.
+    """
+    if not blob:
+        return None
+    names = _tsaf_schema_field_names(blob)
+    if "colorIndex" not in names:
+        return None
+    field_idx = names.index("colorIndex")
+    indexed = [
+        i + 1 for i in range(len(blob) - 3) if blob[i] == 0x0F and blob[i + 2] == 0x05 and blob[i + 3] == field_idx
+    ]
+    if len(indexed) > 1:
+        raise ValueError(f"{len(indexed)} schema-indexed colorIndex fields at offsets {indexed}; refusing to guess")
+    return indexed[0] if indexed else None
 
 
 def extract_float32_before_field(blob: bytes, field: bytes) -> float | None:

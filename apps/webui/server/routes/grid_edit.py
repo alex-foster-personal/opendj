@@ -12,9 +12,14 @@ IPC or CLI parity; the CLI twin is ``opendj track grid-edit``).
   POST   /api/v1/tracks/{stable_id}/grid-edit/anchors  {at_s, bpm}: add (or replace within half a beat)
   DELETE /api/v1/tracks/{stable_id}/grid-edit/anchors/{at_s}  remove the anchor near at_s
   POST   /api/v1/tracks/{stable_id}/grid-edit/undo     step back one edit (409 when none)
+  POST   /api/v1/tracks/{stable_id}/grid-edit/at       {t_s, kind}: a beat or bar 1 at the playhead
+                                                       (GRIDEDIT-10115)
   PUT    /api/v1/tracks/{stable_id}/bpm-pick            {"source": "own"|"mik"}: settle a
                                                        disputed tempo (GRID-OCTAVE-02)
   DELETE /api/v1/tracks/{stable_id}/bpm-pick            forget the pick (the dispute shows again)
+  GET    /api/v1/tracks/{stable_id}/grid-lock           whether the grid is locked (GRIDEDIT-9763)
+  PUT    /api/v1/tracks/{stable_id}/grid-lock           {"locked": bool}: lock or unlock the grid;
+                                                       while locked every write above is 409 GRID_LOCKED
 
 ``source`` picks which grid (rekordbox or own) the edit belongs to. Omitted,
 it is the grid ``/anlz`` serves this track right now, resolved by the same
@@ -40,9 +45,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.shared import runtime_policy
+from apps.analysis.canonical import refresh_lanes
 from apps.shared.events import publish
 from apps.shared.state import db as state_db
-from apps.shared.state import grid_edit, tempo_pick
+from apps.shared.state import grid_edit, grid_lock, tempo_pick
 from apps.shared.state.sync_stamp import canonical_now
 from apps.shared.state.writer import StateWriter
 
@@ -114,6 +121,16 @@ class GridEditSetIn(BaseModel):
     anchor_t: float | None = None
 
 
+class GridEditAtIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: grid_edit.GridSource | None = None
+    #: The playhead time the nearest grid line moves onto, in served seconds.
+    t_s: float = Field(ge=0)
+    #: ``beat`` moves the line only; ``downbeat`` also makes it bar 1.
+    kind: Literal["beat", "downbeat"]
+
+
 class GridEditAnchorIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -129,6 +146,20 @@ class BpmPickIn(BaseModel):
 
     #: Whose tempo the deck and the library serve where ours and Mixed In Key's disagree.
     source: tempo_pick.TempoPick
+
+
+class GridLockIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: True locks the grid against edits and re-analysis; false unlocks it.
+    locked: bool
+
+
+class GridLockOut(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    stable_id: str
+    locked: bool
 
 
 class BpmPickOut(BaseModel):
@@ -189,6 +220,12 @@ def _require_track(conn: sqlite3.Connection, stable_id: str) -> None:
         )
 
 
+def _refuse_if_locked(conn: sqlite3.Connection, stable_id: str) -> None:
+    """Refuse a grid write with 409 ``GRID_LOCKED`` while the track's grid is locked (GRIDEDIT-9763)."""
+    if grid_lock.read(conn, stable_id):
+        raise grid_edit.GridEditError(409, grid_lock.LOCKED_CODE, grid_lock.locked_message(stable_id))
+
+
 def _out(stable_id: str, source: grid_edit.GridSource, stored: grid_edit.StoredGridEdits) -> GridEditOut:
     edit = stored.for_source(source)
     return GridEditOut(
@@ -220,6 +257,7 @@ def _write_stored(request: Request, stable_id: str, source: grid_edit.GridSource
     try:
         with StateWriter(conn, actor="webui") as writer, writer.transaction():
             _require_track(conn, stable_id)
+            _refuse_if_locked(conn, stable_id)
             edits, modified_at = plan(conn, resolved, grid_edit.read(conn, stable_id))
             writer.set_field(
                 stable_id,
@@ -447,6 +485,31 @@ def undo_grid_edit(
     return _write_stored(request, stable_id, source, plan)
 
 
+@router.post("/{stable_id}/grid-edit/at", response_model=GridEditOut)
+def grid_edit_at(
+    request: Request,
+    stable_id: str,
+    body: GridEditAtIn,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> GridEditOut:
+    """Put a grid line (``beat``) or bar 1 (``downbeat``) at ``t_s``: the set-bar-1-here control."""
+    from .rb_assets import measured_anlz_payload  # rb_assets imports this module
+
+    payload = measured_anlz_payload(request, stable_id, runtime_policy.ANLZ_POINTS_MIN)
+    served = _served_grid_source(stable_id, payload)
+    if body.source is not None and body.source != served:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "GRID_EDIT_SOURCE_NOT_SERVED",
+                "message": f"/anlz serves the {served} grid for {stable_id}, not {body.source}",
+            },
+        )
+    beats = list((payload.get("beatgrid") or {}).get("beats") or [])
+    place = grid_edit.edit_for_downbeat_at if body.kind == "downbeat" else grid_edit.edit_for_beat_at
+    return _write(request, stable_id, served, lambda edit: place(beats, edit, body.t_s))
+
+
 def _served_grid_source(stable_id: str, payload: dict[str, Any]) -> grid_edit.GridSource:
     source = (payload.get("beatgrid") or {}).get("source")
     if source not in grid_edit.GRID_SOURCES:
@@ -454,24 +517,39 @@ def _served_grid_source(stable_id: str, payload: dict[str, Any]) -> grid_edit.Gr
     return source
 
 
-def stored_grid_edit(request: Request, stable_id: str, payload: dict[str, Any]) -> grid_edit.GridEdit:
-    """This track's stored edit for the grid ``payload`` serves; the identity when none."""
-    source = _served_grid_source(stable_id, payload)
-    stored = grid_edit.NO_EDITS
+def _stored_edits_and_lock(request: Request, stable_id: str) -> tuple[grid_edit.StoredGridEdits, bool]:
+    """This track's stored grid edits and grid lock, read over one connection."""
+    stored, locked = grid_edit.NO_EDITS, False
     conn = state_conn_ro(state_db_path(request))
     if conn is not None:
         try:
             if table_present(conn, "track_fields"):
                 stored = grid_edit.read(conn, stable_id)
+                locked = grid_lock.read(conn, stable_id)
         finally:
             conn.close()
-    return stored.for_source(source)
+    return stored, locked
+
+
+def stored_grid_edit(request: Request, stable_id: str, payload: dict[str, Any]) -> grid_edit.GridEdit:
+    """This track's stored edit for the grid ``payload`` serves; the identity when none."""
+    source = _served_grid_source(stable_id, payload)
+    return _stored_edits_and_lock(request, stable_id)[0].for_source(source)
 
 
 def apply_stored_grid_edit(request: Request, stable_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """Apply this track's stored edit for the grid ``payload`` serves (``/anlz``)."""
+    """Apply this track's stored edit for the grid ``payload`` serves (``/anlz``).
+
+    A locked grid is stamped ``beatgrid.locked: true`` (GRIDEDIT-9763) so the
+    deck's grid buttons can show disabled from the same payload; an unlocked
+    grid carries no key, so its payload and ETag are unchanged.
+    """
     source = _served_grid_source(stable_id, payload)
-    return grid_edit.apply_to_payload(payload, stored_grid_edit(request, stable_id, payload), source)
+    stored, locked = _stored_edits_and_lock(request, stable_id)
+    out = grid_edit.apply_to_payload(payload, stored.for_source(source), source)
+    if locked:
+        out["beatgrid"] = {**(out.get("beatgrid") or {}), "locked": True}
+    return out
 
 
 # ----------------------------------------------------------------- tempo pick (GRID-OCTAVE-02)
@@ -493,6 +571,7 @@ def _write_tempo_pick(request: Request, stable_id: str, pick: tempo_pick.TempoPi
     try:
         with StateWriter(conn, actor="webui") as writer, writer.transaction():
             _require_track(conn, stable_id)
+            _refuse_if_locked(conn, stable_id)
             writer.set_field(
                 stable_id,
                 tempo_pick.FIELD,
@@ -500,6 +579,10 @@ def _write_tempo_pick(request: Request, stable_id: str, pick: tempo_pick.TempoPi
                 source=tempo_pick.OWN_SOURCE,
                 modified_at=canonical_now(),
             )
+    except grid_edit.GridEditError as exc:
+        if conn.in_transaction:
+            conn.rollback()
+        _raise(exc)
     except Exception:
         if conn.in_transaction:
             conn.rollback()
@@ -532,15 +615,75 @@ def clear_bpm_pick(
     return _write_tempo_pick(request, stable_id, None)
 
 
+# ----------------------------------------------------------------- grid lock (GRIDEDIT-9763)
+
+
+@router.get("/{stable_id}/grid-lock", response_model=GridLockOut)
+def get_grid_lock(
+    request: Request,
+    stable_id: str,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> GridLockOut:
+    """Whether this track's grid is locked against edits and re-analysis."""
+    conn = state_conn_ro(state_db_path(request))
+    if conn is None:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "STATE_DB_UNAVAILABLE", "message": "no state database to read"},
+        )
+    try:
+        _require_track(conn, stable_id)
+        locked = grid_lock.read(conn, stable_id)
+    finally:
+        conn.close()
+    return GridLockOut(stable_id=stable_id, locked=locked)
+
+
+@router.put("/{stable_id}/grid-lock", response_model=GridLockOut)
+def set_grid_lock(
+    request: Request,
+    stable_id: str,
+    body: GridLockIn,
+    _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
+) -> GridLockOut:
+    """Lock or unlock this track's grid; the lock is stored with the track and survives restart."""
+    conn = state_db.open_rw(state_db_path(request))
+    try:
+        with StateWriter(conn, actor="webui") as writer, writer.transaction():
+            _require_track(conn, stable_id)
+            writer.set_field(
+                stable_id,
+                grid_lock.FIELD,
+                grid_lock.blob(body.locked),
+                source=grid_lock.OWN_SOURCE,
+                modified_at=canonical_now(),
+            )
+            if not body.locked and table_present(conn, "analysis_canonical"):
+                # Re-analysis that landed while locked takes over now, as if it had just been written.
+                refresh_lanes(conn, stable_id, ("beatgrid", "key"))
+    except Exception:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    finally:
+        conn.close()
+    # An open deck re-reads the grid state (and so its lock) on beatgrid_edit.
+    publish("library.changed", {"kind": EVENT_KIND, "ids": [stable_id]})
+    return GridLockOut(stable_id=stable_id, locked=body.locked)
+
+
 __all__ = [
     "EVENT_KIND",
     "AnchorOut",
     "BpmPickIn",
     "BpmPickOut",
     "GridEditAnchorIn",
+    "GridEditAtIn",
     "GridEditNudgeIn",
     "GridEditOut",
     "GridEditSetIn",
+    "GridLockIn",
+    "GridLockOut",
     "apply_stored_grid_edit",
     "router",
     "stored_grid_edit",

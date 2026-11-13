@@ -26,6 +26,7 @@ import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import {
 	LIBRARY_LAYOUT_SETTING,
 	PERFORMANCE_LAYOUT_SETTING,
+	LIBRARY_FIRST_VARIANT_SETTING,
 	UI_SKIN_SETTING,
 	WAVE_PALETTE_SETTING,
 	WAVE_SPLIT_MASTER_SETTING
@@ -36,6 +37,7 @@ import { WAVE_GRID_LINES_SETTING } from './wave-grid-lines-setting';
 import { WAVE_ZOOM_SETTINGS } from './wave-zoom-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import { VARIANT_REGISTRY } from './variant-setting';
+import './variant-families';
 import { AUTO_ANALYZE_SETTINGS } from './analysis-settings';
 import { SHOW_SECTIONS_SETTING } from './show-sections-setting';
 import { SEGMENT_DISPLAY_SETTINGS } from './segment-display-settings';
@@ -502,6 +504,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'wave_stem_follow',
+		label: 'Main waveform follows soloed stem',
+		group: 'performance',
+		keywords: ['stem', 'stems', 'solo', 'active stem', 'waveform', 'follow'],
+		title: 'Paint the soloed stem on the main waveform',
+		detail:
+			'When on and exactly one stem is audible on a deck, the main waveform paints that stem envelope in its colour (rekordbox ACTIVE STEM waveform, mimicked). Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'deck_hover_link',
 		label: 'Deck hover link highlight',
 		group: 'performance',
@@ -551,6 +564,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	WAVE_GRID_LINES_SETTING,
 	UI_SKIN_SETTING,
 	PERFORMANCE_LAYOUT_SETTING,
+	LIBRARY_FIRST_VARIANT_SETTING,
 	LIBRARY_LAYOUT_SETTING,
 	WAVE_SPLIT_MASTER_SETTING,
 	...WAVE_ZOOM_SETTINGS,
@@ -877,15 +891,26 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'link', href: '/admin?tab=title-fix' }
 	},
 	{
-		id: 'sync.run_ratings_writeback',
-		label: 'Run ratings writeback now',
+		id: 'sync.ratings_sync_status',
+		label: 'Ratings sync status',
 		group: 'sync',
-		keywords: ['apply_ratings', 'writeback', 'sync', 'now', 'cli'],
-		title: 'POST /api/v1/rb-djay-sync/ratings/apply (dry-run default)',
+		keywords: ['ratings', 'stars', 'sync', 'status', 'diff', 'djay', 'rekordbox', 'writeback'],
+		title: 'GET /api/v1/rb-djay-sync/status: ratings diff and writeback gate',
 		detail:
-			'Ratings sync is reachable at POST /api/v1/rb-djay-sync/ratings/apply and python -m apps.sync apply-ratings. Live writes still require explicit risk acknowledgement and the rekordbox writeback gate.',
+			'Reads where ratings-diff.csv lives, when it was last built, and whether the rekordbox writeback gate is on. Read only.',
 		implemented: true,
-		control: { kind: 'link', href: '/api/v1/rb-djay-sync/status' }
+		control: { kind: 'action', action: 'ratings_sync_status' }
+	},
+	{
+		id: 'sync.run_ratings_writeback',
+		label: 'Ratings sync dry run',
+		group: 'sync',
+		keywords: ['apply_ratings', 'ratings', 'stars', 'writeback', 'sync', 'dry run', 'preview', 'cli'],
+		title: 'POST /api/v1/rb-djay-sync/ratings/apply with live off (dry run only)',
+		detail:
+			'Counts the ratings-diff.csv rows per resolution without writing anything. Live writes stay on python -m apps.sync apply-ratings behind explicit risk acknowledgement and the rekordbox writeback gate.',
+		implemented: true,
+		control: { kind: 'action', action: 'ratings_sync_dry_run' }
 	},
 	{
 		id: 'lyrics_global',
@@ -972,8 +997,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	HIDE_TODO_SETTING,
 	DEV_UI_SETTING,
-	// Taste variants (epic #10045): family modules register via defineVariantSetting
-	// and are imported above so ESM evaluates them before this array is built.
+	// Taste variants (epic #10045): family modules register via defineVariantSetting and
+	// are imported through ./variant-families above, so ESM evaluates them before this array.
 	...VARIANT_REGISTRY,
 
 	// ----- cloudsync ((private path) D5) -------------------------

@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 373188,
+  "measured_with_pr": 373352,
+  "sha": "81c5eba7cc",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--13731-drag-autoscroll grows the library surface; measured +164 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

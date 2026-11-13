@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -83,16 +84,20 @@ def _read_env_ports(env_path: Path) -> Ports:
 
 
 def _git_sha() -> str:
+    """Return HEAD via a resolved git path, else the build identity fallback."""
+    git = shutil.which("git")
+    if git is None:
+        return current_build_sha()
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            [git, "rev-parse", "HEAD"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             check=True,
             timeout=5,
         )
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return current_build_sha()
     sha = out.stdout.strip()
     return sha or current_build_sha()

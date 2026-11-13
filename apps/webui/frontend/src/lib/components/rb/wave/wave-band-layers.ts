@@ -3,7 +3,8 @@
  * and filter can rescale each ANLZ band at blit time.
  *
  * One transparent full-track image PER BAND (low, mid, high), keyed once per
- * waveform, zoom, size, design and palette, and held as tiles of `tilePx`
+ * waveform, zoom, width, design and palette (row height is reused by a
+ * vertically scaled blit, PERF-PAINT-10529), and held as tiles of `tilePx`
  * columns built only when a visible span first needs them, like the combined
  * image (WAVEZOOM-01: a whole-track canvas at close zoom outgrows what
  * Chromium paints). A gain change then costs scaled blits and three
@@ -39,7 +40,46 @@ export interface BandLayers {
 	palette: WavePalette;
 	design: WaveformDesign;
 	h: number;
+	liveH: number;
+	liveFrames: number;
 	waveHeight: WaveHeight;
+}
+
+/** Height bookkeeping both band caches carry (PERF-PAINT-10529): the css px height
+ * the tiles were built at, and the live height seen on the last draws. */
+export interface BuiltHeight {
+	h: number;
+	liveH: number;
+	liveFrames: number;
+}
+
+/** True when tiles built at `built.h` may be blitted, vertically scaled, at
+ * `h`; false when the caller must rebuild at `h`. A move past `reuseRatio` of
+ * the built height rebuilds at once; a height held for `settleFrames`
+ * consecutive draws rebuilds so a settled row is pixel-exact again. Mutates the
+ * live-height counters. */
+export function keepBuiltHeight(
+	built: BuiltHeight,
+	h: number,
+	reuseRatio: number,
+	settleFrames: number
+): boolean {
+	if (h === built.h) {
+		built.liveH = h;
+		built.liveFrames = 0;
+		return true;
+	}
+	if (built.h <= MARKER_BAND_PX || h <= MARKER_BAND_PX) return false;
+	if (Math.abs(h - built.h) / built.h > reuseRatio) return false;
+	built.liveFrames = h === built.liveH ? built.liveFrames + 1 : 1;
+	built.liveH = h;
+	return built.liveFrames < settleFrames;
+}
+
+/** Vertical scale of the waveform area (below the marker strip) from a tile
+ * built `builtH` tall to a row `h` tall. */
+export function bandHeightScaleFor(builtH: number, h: number): number {
+	return (h - MARKER_BAND_PX) / (builtH - MARKER_BAND_PX);
 }
 
 interface WaveBandLayers {
@@ -70,9 +110,10 @@ export function newBandCanvas(
 }
 
 /** The cached layer set for `key`, rekeyed on first use, when the key moved,
- * or when `reusable` (render.ts bandImageScaleReusable, PERF-GRID-02) says the
- * live zoom drifted too far from the one it was built at. Tiles are built
- * lazily by blitBandLayers. */
+ * when `reusable` (render.ts bandImageScaleReusable, PERF-GRID-02) says the
+ * live zoom drifted too far from the one it was built at, or when
+ * keepBuiltHeight (PERF-PAINT-10529) says the row height moved past `heightReuse`
+ * or settled. Tiles are built lazily by blitBandLayers. */
 export function cachedBandLayers(
 	waveform: AnlzWaveform,
 	key: string,
@@ -83,10 +124,16 @@ export function cachedBandLayers(
 	design: WaveformDesign,
 	reusable: (builtPxPerS: number, livePxPerS: number) => boolean,
 	tilePx: number,
+	heightReuse: { ratio: number; settleFrames: number },
 	waveHeight: WaveHeight = 'full'
 ): BandLayers {
 	const hit = _layerCache.get(waveform);
-	if (hit !== undefined && hit.key === key && reusable(hit.layers.pxPerS, pxPerS))
+	if (
+		hit !== undefined &&
+		hit.key === key &&
+		reusable(hit.layers.pxPerS, pxPerS) &&
+		keepBuiltHeight(hit.layers, h, heightReuse.ratio, heightReuse.settleFrames)
+	)
 		return hit.layers;
 	const fullW = Math.max(1, Math.ceil(durS * pxPerS));
 	const layers: BandLayers = {
@@ -98,6 +145,8 @@ export function cachedBandLayers(
 		palette,
 		design,
 		h,
+		liveH: h,
+		liveFrames: 0,
 		waveHeight
 	};
 	_layerCache.set(waveform, { layers, key });
@@ -163,6 +212,7 @@ export function blitBandLayers(
 	const sLow = bandHeightScale(gains.low);
 	const sMid = bandHeightScale(gains.mid);
 	const sHigh = bandHeightScale(gains.high);
+	const k = bandHeightScaleFor(layers.h, h);
 	const boosted = sLow > 1 || sMid > 1 || sHigh > 1;
 	if (boosted) {
 		ctx.save();
@@ -187,10 +237,10 @@ export function blitBandLayers(
 		const dx = ((tsx - sx) * w) / sw;
 		const dw = (tsw * w) / sw;
 		ctx.globalAlpha = 1;
-		_blitLayer(ctx, tiles[0], sLow, tsx - x0, tsw, dx, dw, anchorY, h);
+		_blitLayer(ctx, tiles[0], sLow, tsx - x0, tsw, dx, dw, anchorY, k);
 		ctx.globalAlpha = alpha;
-		_blitLayer(ctx, tiles[1], sMid, tsx - x0, tsw, dx, dw, anchorY, h);
-		_blitLayer(ctx, tiles[2], sHigh, tsx - x0, tsw, dx, dw, anchorY, h);
+		_blitLayer(ctx, tiles[1], sMid, tsx - x0, tsw, dx, dw, anchorY, k);
+		_blitLayer(ctx, tiles[2], sHigh, tsx - x0, tsw, dx, dw, anchorY, k);
 	}
 	ctx.globalAlpha = 1;
 	ctx.imageSmoothingEnabled = smoothing;
@@ -206,11 +256,24 @@ function _blitLayer(
 	dx: number,
 	dw: number,
 	anchorY: number,
-	h: number
+	k: number
 ): void {
 	if (scale === 0) return;
-	// Source-rect form: name only the visible columns of this tile.
-	ctx.drawImage(layer, sx, 0, sw, h, dx, anchorY - anchorY * scale, dw, h * scale);
+	// Source-rect form: name only the visible columns of this tile. Rows map by
+	// the built height (k, PERF-PAINT-10529), then the gain scales about anchorY
+	// (full row centre, or the bottom edge in half-height mode).
+	const top = MARKER_BAND_PX * (1 - k);
+	ctx.drawImage(
+		layer,
+		sx,
+		0,
+		sw,
+		layer.height,
+		dx,
+		anchorY + (top - anchorY) * scale,
+		dw,
+		layer.height * k * scale
+	);
 }
 
 /** Paint ONE band's mirrored bars at `gain` (1 for a cached layer). Tri-band

@@ -9,10 +9,13 @@ Every call performs only cheap file metadata reads; a full re-ingest happens
 only when that source state changed (or the index does not exist yet, or its
 schema version is stale).
 
+Metadata FTS5 lives here only; audio-reference, free-text and hybrid semantic
+retrieval are separate HTTP routes via ``semantic_search.py`` (issue #11247).
+
 Indexed columns: title, artist (joined from ``tracks.artists_json``), album
 from ``tracks.album``, the precedence-selected genre shown by the Library, plus
-comments / notes / tags pulled from the ``track_fields`` EAV table
-(apps/shared/state/schema.py).
+comments / notes / tags / label pulled from the ``track_fields`` EAV table
+(apps/shared/state/schema.py). label is the file's record label (issue #10029).
 EAV is sparse by design, so absent fields simply contribute empty text. Query
 tokenisation mirrors the launcher's Tauri
 search command (apps/launcher/src-tauri/src/commands/search.rs
@@ -36,8 +39,8 @@ from apps.genre_infer import library_tags
 from apps.shared.state.db import DEFAULT_BUSY_TIMEOUT_S, is_sqlite_busy
 from apps.webui.soft_deletes import has_soft_deletes
 
-_SCHEMA_VERSION = 5
-_EAV_FIELDS: tuple[str, ...] = ("comments", "notes", "tags")
+_SCHEMA_VERSION = 6
+_EAV_FIELDS: tuple[str, ...] = ("comments", "notes", "tags", "label")
 _SOURCE_READ_ATTEMPTS = 3
 
 
@@ -239,7 +242,7 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
         conn.execute("DROP TABLE IF EXISTS search_meta")
         conn.execute(
             "CREATE VIRTUAL TABLE tracks_fts USING fts5("
-            "stable_id UNINDEXED, title, artist, album, genre, comments, notes, tags, "
+            "stable_id UNINDEXED, title, artist, album, genre, comments, notes, tags, label, "
             "tokenize='unicode61 remove_diacritics 2')"
         )
         conn.execute(
@@ -258,12 +261,13 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
                 _eav_text(eav.get(r["stable_id"], {}).get("comments")),
                 _eav_text(eav.get(r["stable_id"], {}).get("notes")),
                 _eav_text(eav.get(r["stable_id"], {}).get("tags")),
+                _eav_text(eav.get(r["stable_id"], {}).get("label")),
             )
             for r in tracks
         ]
         conn.executemany(
-            "INSERT INTO tracks_fts(stable_id, title, artist, album, genre, comments, notes, tags) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tracks_fts(stable_id, title, artist, album, genre, comments, notes, tags, label) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
         conn.execute(
@@ -344,7 +348,7 @@ def search(
                 "SELECT stable_id, "
                 "snippet(tracks_fts, -1, '', '', ' ... ', 10) AS context "
                 "FROM tracks_fts WHERE tracks_fts MATCH ? "
-                "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 2.0, 1.0, 1.0, 1.0) "
+                "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 2.0, 1.0, 1.0, 1.0, 2.0) "
                 "LIMIT ? OFFSET ?",
                 (fts_query, limit, offset),
             ).fetchall()

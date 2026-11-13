@@ -62,6 +62,7 @@ def _decode_mono_f32(binary: Path, path: Path) -> list[float]:
 
 
 def _ffmpeg_mono_f32(path: Path) -> list[float] | None:
+    """Decode with ffmpeg; None only when ffmpeg is missing, fail when it cannot decode."""
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         return None
@@ -72,7 +73,7 @@ def _ffmpeg_mono_f32(path: Path) -> list[float] | None:
         timeout=120,
     )
     if proc.returncode != 0:
-        return None
+        pytest.fail(f"ffmpeg is installed but could not decode {path.name}: {proc.stderr.decode(errors='replace')}")
     stereo = struct.unpack(f"<{len(proc.stdout) // 4}f", proc.stdout)
     return list(stereo[0::2])
 
@@ -127,6 +128,18 @@ def test_a_non_audio_file_without_id3_fails_probe_quickly(odj_audio: Path, tmp_p
     assert proc.returncode != 0
     msg = (proc.stderr or "") + (proc.stdout or "")
     assert "unrecognized format" in msg or "no audio track" in msg
+
+
+def test_an_installed_ffmpeg_that_cannot_decode_fails_not_skips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An installed ffmpeg that exits non-zero fails the parity check with its stderr, not a skip."""
+    fake = tmp_path / "ffmpeg"
+    fake.write_text("#!/bin/sh\necho 'Invalid data found when processing input' >&2\nexit 1\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda _name: str(fake))
+    with pytest.raises(pytest.fail.Exception, match="Invalid data found"):
+        _ffmpeg_mono_f32(tmp_path / "x.mp3")
 
 
 if __name__ == "__main__":

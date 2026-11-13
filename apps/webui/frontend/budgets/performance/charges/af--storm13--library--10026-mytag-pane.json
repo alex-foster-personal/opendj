@@ -1,0 +1,9 @@
+{
+  "bytes": 18432,
+  "measured_main": 483140,
+  "measured_with_pr": 500614,
+  "sha": "586f63ba60",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--library--10026-mytag-pane grows the performance surface; measured +17474 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

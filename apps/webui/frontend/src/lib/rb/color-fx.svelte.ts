@@ -39,6 +39,7 @@ import {
 import { pushToast } from '$lib/stores.svelte';
 import crushProcessorUrl from './color-fx-crush-processor.js?url';
 import {
+	SPACE_WET_GAIN,
 	detachIdleSpace,
 	driveColorChannel,
 	spliceCrush,
@@ -47,6 +48,7 @@ import {
 	type ColorChannelRuntime,
 	type ColorFxGraph
 } from './color-fx-graph';
+import { afterAudioClock, applyReverbTailEvent, type ReverbTailHost } from './reverb-tail-policy';
 
 /** How often a channel on ECHO re-reads its deck tempo. Polled, not reactive:
  * the effective BPM is derived from the playhead (see beat-fx.svelte.ts). */
@@ -130,6 +132,38 @@ function _drive(deck: DeckId, rt: ChannelRuntime): void {
 	_ensureCrush(deck, rt);
 	driveColorChannel(rt, settings, settings.tempo_bpm, rt.value, CRUSH_PARAMETER);
 	_scheduleSpaceDetach(deck, rt);
+}
+
+/** How often the cut re-checks the audio clock before it detaches (a one-shot wait, not a watch). */
+const TAIL_CUT_RECHECK_MS = 20;
+
+/** SPACE as a reverb tail host: its return, and the same unhook the idle detach uses. */
+function _spaceTailHost(rt: ChannelRuntime): ReverbTailHost {
+	const graph = rt.graph as ColorFxGraph;
+	return {
+		returnGain: graph.spaceReturn.gain,
+		restoreGain: SPACE_WET_GAIN,
+		attached: () => graph.space !== null,
+		detach: () => void detachIdleSpace({ ...rt, spaceQuietSince: 0 }, 0, { spaceIdleDetachSec: 0 })
+	};
+}
+
+/**
+ * FXVERB-05: a track load or eject on `deck` runs the tail policy on its SPACE.
+ * Called from the load and unload command hook (performance-ipc `_execute`) and
+ * the deck-move port, the two places a deck's track changes; no polling.
+ */
+export function reverbTailOnDeckEvent(deck: DeckId, event: 'track_load' | 'eject'): void {
+	const rt = _runtime.get(deck);
+	if (rt === undefined || (rt.graph?.space ?? null) === null) return;
+	const ctx = rt.nodes.colorBus.context;
+	applyReverbTailEvent(event, _spaceTailHost(rt), ctx.currentTime, (sec, done) =>
+		afterAudioClock(ctx, sec, TAIL_CUT_RECHECK_MS, (now) => {
+			done(now);
+			// A send still open re-attaches a fresh, empty convolver for the new track.
+			if (_runtime.get(deck) === rt) _drive(deck, rt);
+		})
+	);
 }
 
 /** One timer per channel, armed while an attached SPACE has a closed send. It

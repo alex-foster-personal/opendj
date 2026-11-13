@@ -9,6 +9,8 @@ existing beats, not as a new field.
 
 from __future__ import annotations
 
+import itertools
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -55,6 +57,24 @@ def _fit_segment_anchor(beat_times: Sequence[float], lo: int, hi: int) -> TempoA
     )
 
 
+def _validate_anchors(anchors: Sequence[TempoAnchor]) -> None:
+    """Refuse a map whose anchors break the spec 2.2 shape rules."""
+    if anchors[0].beat_index != 0:
+        raise ValueError(f"tempo map refused: opening anchor beat_index is {anchors[0].beat_index}, not 0")
+    for anchor in anchors:
+        if not math.isfinite(anchor.at_s):
+            raise ValueError(f"tempo map refused: anchor at_s {anchor.at_s} is not finite")
+        if not math.isfinite(anchor.bpm) or anchor.bpm <= 0.0:
+            raise ValueError(f"tempo map refused: anchor bpm {anchor.bpm} is not a positive finite number")
+    for earlier, later in itertools.pairwise(anchors):
+        if later.beat_index <= earlier.beat_index:
+            raise ValueError(
+                f"tempo map refused: anchor beat_index not strictly increasing ({earlier.beat_index} -> {later.beat_index})"
+            )
+        if later.at_s <= earlier.at_s:
+            raise ValueError(f"tempo map refused: anchor at_s not strictly increasing ({earlier.at_s} -> {later.at_s})")
+
+
 def apply_tempo_map(tempo_map: TempoMap, n_beats: int) -> list[float]:
     """Piecewise-constant reconstruction: t(i) = at_s + (i - beat_index) * 60 / bpm."""
     if n_beats < 1:
@@ -63,6 +83,11 @@ def apply_tempo_map(tempo_map: TempoMap, n_beats: int) -> list[float]:
         raise ValueError("tempo map has no anchors")
 
     anchors = tempo_map.anchors
+    _validate_anchors(anchors)
+    if anchors[-1].beat_index >= n_beats:
+        raise ValueError(
+            f"tempo map applied outside its beat range: last anchor at beat {anchors[-1].beat_index}, n_beats={n_beats}"
+        )
     out: list[float] = []
     anchor_idx = 0
     for i in range(n_beats):

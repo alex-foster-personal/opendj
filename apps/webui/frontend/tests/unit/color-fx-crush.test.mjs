@@ -405,6 +405,9 @@ function fakeContext(addModule) {
 			n.oversample = 'none';
 			return n;
 		},
+		createChannelMerger() {
+			return ctx._node('merger');
+		},
 		createConvolver() {
 			const n = ctx._node('convolver');
 			n.buffer = null;

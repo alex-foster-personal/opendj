@@ -98,3 +98,53 @@ def test_out_of_range_slot_and_backwards_time_raise() -> None:
     policy.packets_due(1.0, bytes(SLOT_COUNT))
     with pytest.raises(ValueError):
         policy.packets_due(0.5, bytes(SLOT_COUNT))
+
+
+@pytest.mark.requirement("TESTINFRA-14132")
+def test_zero_length_frame_refused_before_scheduling() -> None:
+    """[if] a zero-length frame hits the send policy [then] ValueError before any packet decision."""
+    policy = SendPolicy()
+    with pytest.raises(ValueError, match="512 slots"):
+        policy.packets_due(0.0, b"")
+    assert policy.packets_due(0.0, bytes(SLOT_COUNT)) == FIRST_SEND_PACKETS
+
+
+@pytest.mark.requirement("TESTINFRA-14132")
+def test_oversized_frame_refused_before_scheduling() -> None:
+    """[if] a frame longer than one universe hits the policy [then] ValueError before scheduling."""
+    policy = SendPolicy()
+    with pytest.raises(ValueError, match="512 slots"):
+        policy.packets_due(0.0, bytes(SLOT_COUNT + 1))
+
+
+@pytest.mark.requirement("TESTINFRA-14132")
+def test_changing_frame_length_after_send_refused() -> None:
+    """[if] frame length changes after a prior send [then] ValueError and no new packets."""
+    policy = SendPolicy()
+    frame = bytes(SLOT_COUNT)
+    assert policy.packets_due(0.0, frame) == FIRST_SEND_PACKETS
+    short = bytes(100)
+    with pytest.raises(ValueError, match="512 slots"):
+        policy.packets_due(1.0, short)
+    assert policy.packets_due(1.0, frame) == 1
+
+
+@pytest.mark.requirement("TESTINFRA-14132")
+def test_backwards_time_after_send_raises_without_emitting() -> None:
+    """[if] time regresses after a send [then] ValueError and scheduling can continue forward."""
+    policy = SendPolicy()
+    frame = bytes(SLOT_COUNT)
+    assert policy.packets_due(1.0, frame) == FIRST_SEND_PACKETS
+    with pytest.raises(ValueError, match="backwards"):
+        policy.packets_due(0.5, frame)
+    assert policy.packets_due(1.1, frame) == 0
+
+
+@pytest.mark.requirement("TESTINFRA-14132")
+def test_unchanged_frame_at_keepalive_threshold_sends_one_packet() -> None:
+    """[if] an unchanged frame hits the keep-alive interval [then] exactly one packet is due."""
+    policy = SendPolicy(keepalive_s=0.9)
+    frame = bytes(SLOT_COUNT)
+    assert policy.packets_due(0.0, frame) == FIRST_SEND_PACKETS
+    assert policy.packets_due(0.9, frame) == 1
+    assert policy.packets_due(0.91, frame) == 0

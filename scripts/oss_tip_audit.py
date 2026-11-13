@@ -545,6 +545,19 @@ def audit_tracked_tree(root: Path, *, include_records: bool = False) -> AuditRes
     return audit_index(root, include_records=include_records)
 
 
+def audit_fixture_real_content(root: Path) -> tuple:
+    """Refuse publish-gate real-content classes under tests/fixtures and frontend unit fixtures."""
+    from scripts.fixture_real_content_rules import RealContentFinding, fixture_real_content_findings
+
+    findings: list[RealContentFinding] = []
+    for rel, _mode, raw in published_blobs(root):
+        text = _decode_text(raw)
+        if text is None:
+            continue
+        findings.extend(fixture_real_content_findings(rel, text))
+    return tuple(findings)
+
+
 # ----- cli -----------------------------------------------------------------------------
 
 

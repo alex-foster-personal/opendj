@@ -1,0 +1,9 @@
+{
+  "bytes": 4096,
+  "measured_main": 483140,
+  "measured_with_pr": 487099,
+  "sha": "99af907176",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--14068-selector-spoken-names grows the performance surface; measured +3959 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

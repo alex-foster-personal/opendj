@@ -291,3 +291,102 @@ def test_watch_exits_the_child_when_its_stderr_reader_died_with_the_parent(tmp_p
         what="child exits after its parent and stderr reader are gone",
         guard_s=2.0,
     )
+
+
+class _StopLoop(Exception):
+    """Raised by the fake sleep to end an in-process watch loop after its scripted ticks."""
+
+
+def _run_watch_ticks(
+    monkeypatch: pytest.MonkeyPatch,
+    data_dir: Path,
+    env_pid: int,
+    alive: set[int],
+    between_ticks: list[object] | None = None,
+) -> tuple[list[int], int]:
+    """Drive parent_watch._watch_loop in-process; return (pids probed per tick, self-SIGTERM count)."""
+    from apps.engine_core import parent_watch
+
+    probed: list[int] = []
+    terms: list[int] = []
+    steps = list(between_ticks or [])
+
+    def fake_alive(pid: int) -> bool:
+        """Record the probed pid and answer from the scripted live set."""
+        probed.append(pid)
+        return pid in alive
+
+    def fake_sleep(_seconds: float) -> None:
+        """Run the next scripted step between ticks, or stop the loop when none are left."""
+        if not steps:
+            raise _StopLoop
+        step = steps.pop(0)
+        if callable(step):
+            step()
+
+    monkeypatch.setattr(parent_watch, "pid_is_alive", fake_alive)
+    monkeypatch.setattr(parent_watch, "_signal_self_term", lambda: terms.append(1))
+    monkeypatch.setattr(parent_watch.time, "sleep", fake_sleep)
+    try:
+        parent_watch._watch_loop(data_dir, env_pid)
+    except _StopLoop:
+        pass
+    return probed, len(terms)
+
+
+_ENV_PID = 4_000_001
+_MARKER_PID = 4_000_002
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_a_marker_with_a_valid_live_pid_wins_over_a_dead_env_pid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    [if] the parent marker contains a valid live pid [then] the watch probes that pid and the engine keeps running though the env pid is dead, [else stop].
+    """
+    (tmp_path / ".engine.parent").write_text(f"{_MARKER_PID}\n", encoding="utf-8")
+    probed, terms = _run_watch_ticks(monkeypatch, tmp_path, _ENV_PID, alive={_MARKER_PID}, between_ticks=[None, None])
+    assert probed == [_MARKER_PID] * 3
+    assert terms == 0
+
+
+@pytest.mark.requirement("INSTALL-13437")
+@pytest.mark.parametrize(
+    "raw",
+    [b"not-a-pid\n", b"", b"   \n", b"0\n", b"-7\n", b"12abc\n", b"\xff\xfe\x00garbage"],
+    ids=["text", "empty", "blank", "zero", "negative", "trailing-junk", "non-utf8"],
+)
+def test_a_malformed_marker_falls_back_to_the_env_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: bytes
+) -> None:
+    """
+    [if] the parent marker contains invalid text [then] the watch ignores it, probes the env pid, and still stops the engine when that pid is gone, [else stop].
+    """
+    (tmp_path / ".engine.parent").write_bytes(raw)
+    probed, terms = _run_watch_ticks(monkeypatch, tmp_path, _ENV_PID, alive={_ENV_PID}, between_ticks=[None])
+    assert probed == [_ENV_PID, _ENV_PID], "a malformed marker must not replace the env pid"
+    assert terms == 0, "a live env pid keeps the engine running"
+
+    probed, terms = _run_watch_ticks(monkeypatch, tmp_path, _ENV_PID, alive=set())
+    assert probed == [_ENV_PID]
+    assert terms == 1, "a malformed marker must not stop the watch from firing when the env pid is gone"
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_a_marker_that_disappears_after_launch_falls_back_to_the_env_pid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    [if] the parent marker disappears after engine launch [then] the next tick watches the env pid again and stops the engine once it is gone, [else stop].
+    """
+    marker = tmp_path / ".engine.parent"
+    marker.write_text(f"{_MARKER_PID}\n", encoding="utf-8")
+    probed, terms = _run_watch_ticks(
+        monkeypatch, tmp_path, _ENV_PID, alive={_MARKER_PID}, between_ticks=[marker.unlink]
+    )
+    assert probed == [_MARKER_PID, _ENV_PID], "after the marker is removed the env pid is watched again"
+    assert terms == 1, "the env pid is dead, so the engine is stopped"
+
+    marker.write_text(f"{_MARKER_PID}\n", encoding="utf-8")
+    probed, terms = _run_watch_ticks(
+        monkeypatch, tmp_path, _ENV_PID, alive={_MARKER_PID, _ENV_PID}, between_ticks=[marker.unlink, None]
+    )
+    assert probed == [_MARKER_PID, _ENV_PID, _ENV_PID]
+    assert terms == 0, "a removed marker with a live env pid leaves the engine running"

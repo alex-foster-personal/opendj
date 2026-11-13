@@ -14,6 +14,15 @@ export function vocalsStatusHasRegions(vocals: Vocals): boolean {
 	return 'regions' in vocals && vocals.regions.length > 0;
 }
 
+/** When GET vocal status already has regions, skip POST and treat as cached_demucs (issue #11422, #13329). */
+export function vocalsAnalyzeResultFromVocalStatus(
+	stableId: string,
+	vocals: Vocals
+): { claimed: readonly string[]; refused: Readonly<Record<string, string>> } | null {
+	if (!vocalsStatusHasRegions(vocals)) return null;
+	return { claimed: [], refused: { [stableId]: 'cached_demucs' } };
+}
+
 export function vocalsAnalyzeRefusal(stems: StemSummary | null): string | null {
 	if (stems === null || stems.status === 'none') {
 		return 'vocal analysis needs a stem bundle - see PARITY-TODO';

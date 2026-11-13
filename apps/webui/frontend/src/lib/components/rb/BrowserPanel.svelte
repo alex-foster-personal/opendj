@@ -17,6 +17,11 @@
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { replaceState } from '$app/navigation';
+	import { fetchHistoryDay } from '$lib/history/history-api';
+	import { historyNightDate, historyNightNode, historyNightRows } from '$lib/history/history-night-pane';
+	import * as tagList from '$lib/tag-list/tag-list-ops.svelte';
+	import { fetchFolderTracks } from '$lib/explorer/explorer-api';
+	import { explorerFolder, explorerFolderNode, explorerFolderRows } from '$lib/explorer/explorer-pane';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
 	import StemCacheHealthDot from './StemCacheHealthDot.svelte';
@@ -45,6 +50,11 @@
 		smartlistMatchIsTruncated
 	} from '$lib/rb/smartlist-preview';
 	import { midiLoadRow, nextMidiSelection } from './browser/browser-midi-selection';
+	import { browserGridColumns } from './browser/browser-layout';
+	import { planSplitRight, splitDropRefusal, splitPanes } from './browser/split-column';
+	import { TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
+	import { builtTitle } from '$lib/rb/planned-explainers';
+	import { removeMissingTracks } from '$lib/reconcile-api';
 	import { instantDoubleCommand, locateDecision } from '$lib/rb/browser-navigation';
 	import { getRecentDeck } from '$lib/rb/recent-deck';
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
@@ -75,7 +85,6 @@
 		compatibleRowKeyShift,
 		resolveSearchFilterFallback,
 		selectSearchFilterFallback,
-		enqueueLibraryJobsBatched,
 		libraryJobsStore,
 		LibraryJobsChrome,
 		type NextOnlyRef,
@@ -136,8 +145,8 @@
 		PairingGraph,
 		subscribePairingsChanged,
 		pairingOutageToaster,
-		CompatibleFilterPopover,
-		LibraryKeyFilterPopover,
+		loadCompatibleFilterPopover,
+		loadLibraryKeyFilterPopover,
 		loadTrackClipboard,
 		selectAllRows,
 		loadBrowserConfirmDialog,
@@ -301,7 +310,7 @@
 	import AddToPlaylistPicker from './browser/AddToPlaylistPicker.svelte';
 	import { writablePlaylistNodes } from '$lib/rb/add-to-playlist';
 	import {
-		removeFromLibraryConfirmMessage,
+		confirmRemoveFromLibrary,
 		removeFromLibraryToastMessage
 	} from '$lib/components/rb/browser/track-library-menu';
 	import BuildIdentity from './BuildIdentity.svelte';
@@ -400,6 +409,11 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { libraryPaneSelectorId } from './waveform-library-selector-ids';
+	import MyTagPane from './browser/MyTagPane.svelte';
+	import { myTagPaneGroups, myTagToggleWrite, type MyTagPaneTag } from './browser/mytag-pane-state';
+	import { applyTagChange, ensureTagsLoaded, tagState } from '$lib/rb/library-tags.svelte';
 	import OffloadProgress from '$lib/offload/OffloadProgress.svelte';
 	import { rowIsOffloaded } from './browser/browser-row-wire';
 	import { offloadOps } from '$lib/offload/offload-ops.svelte';
@@ -418,6 +432,23 @@
 	let SpotifySourcePanel = $state<typeof import('./browser/SpotifySourcePanel.svelte').default | null>(null);
 	let spotifyPanelLoad: Promise<void> | null = null;
 	let spotifyPanelError = $state<string | null>(null);
+	/** Issue #11466: popover shells stay off /performance first paint until after boot. */
+	let CompatibleFilterPopover = $state<
+		Awaited<ReturnType<typeof loadCompatibleFilterPopover>>['default'] | null
+	>(null);
+	let LibraryKeyFilterPopover = $state<
+		Awaited<ReturnType<typeof loadLibraryKeyFilterPopover>>['default'] | null
+	>(null);
+	/** PLAYS-9745: the History source (rail stopwatch) holds the tree slot while
+	 * open; lazy like the Spotify panel so it stays off the first paint. */
+	let historyOpen = $state(false);
+	let HistorySourcePanel = $state<typeof import('./browser/HistorySourcePanel.svelte').default | null>(null);
+	let historyPanelError = $state<string | null>(null);
+	/** Issue #9747: the Explorer source (rail folder) holds the tree slot while
+	 * open; lazy like the History panel so it stays off the first paint. */
+	let explorerOpen = $state(false);
+	let ExplorerSourcePanel = $state<typeof import('./browser/ExplorerSourcePanel.svelte').default | null>(null);
+	let explorerPanelError = $state<string | null>(null);
 	/**
 	 * LIBWS-01/04/06: set only by the Library workspace (CrateDesk): selection
 	 * goes out via `publish`, deck loads go to Gig via `loadToDeck`, strip
@@ -651,6 +682,28 @@
 	let searchReturnSnap = $state<NavSnap | null>(null);
 
 	const pane = $derived(panes[activePane]);
+	/** Issue #10026: the My Tag pane's checkboxes for the active pane's selection. */
+	const myTagGroups = $derived(
+		uiPrefs.library_mytag_pane
+			? myTagPaneGroups(tagState.catalog, tagState.types, tagState.assignments, pane.selected_ids)
+			: []
+	);
+	let myTagBusy = $state(false);
+	$effect(() => {
+		if (uiPrefs.library_mytag_pane) ensureTagsLoaded();
+	});
+
+	/** Issue #10026: one checkbox click writes the tag on (or off) every selected track. */
+	async function toggleMyTagUi(tag: MyTagPaneTag): Promise<void> {
+		myTagBusy = true;
+		try {
+			await applyTagChange(myTagToggleWrite(tag, pane.selected_ids));
+		} catch (exc) {
+			pushToast(`My Tag ${tag.name} not saved: ${exc instanceof Error ? exc.message : String(exc)}`, 'error');
+		} finally {
+			myTagBusy = false;
+		}
+	}
 	// PERF-RB-03 (pin cba7bf1dbb05): rows that loaded with disk truth pending
 	// settle on screen, so hide-broken and the tree count agree.
 	$effect(() => {
@@ -687,7 +740,16 @@
 	);
 	// SESSION-PLAYED-01: every deck load joins the session played set (green
 	// titles), which the engine keeps on disk across crashes and relaunches.
-	$effect(() => recordSessionPlayed(loadedIds));
+	// Key by sorted stable_ids: loadedIds is a fresh Set each derivation even
+	// when deck ids are unchanged (transport ticks), and re-posting would churn
+	// sessionPlayed and the library (RESCUE-13701).
+	let _lastRecordedDeckKey = '';
+	$effect(() => {
+		const key = [...loadedIds].sort().join('\0');
+		if (key === _lastRecordedDeckKey) return;
+		_lastRecordedDeckKey = key;
+		recordSessionPlayed(loadedIds);
+	});
 	const playedIds = $derived(new Set([...loadedIds, ...sessionPlayed.visible]));
 	const deckLoadBusy = $derived(DECK_IDS.some((d) => performanceCommandStatus.deck_pending[d] > 0));
 	// Pin 2ac3a0: playlist deck-membership + multi-pane tints for PlaylistTree,
@@ -1254,6 +1316,15 @@
 	});
 
 	onMount(() => {
+		bootScheduler.defer('browser:filter-popovers', () => {
+			void loadCompatibleFilterPopover().then((mod) => {
+				CompatibleFilterPopover = mod.default;
+			});
+			void loadLibraryKeyFilterPopover().then((mod) => {
+				LibraryKeyFilterPopover = mod.default;
+			});
+		});
+		void tagList.refreshTagListCount();
 		pairingIndex.start(() => electedMasterStableId);
 		pairingGraph.start();
 		const onPairingsChanged = (): void => {
@@ -1274,6 +1345,8 @@
 		const unregisterPerformanceBrowser = registerPerformanceBrowserAdapter({
 			selectPlaylist: _selectPlaylistForOrder,
 			setRelatedActive,
+			// Issue #9744: the pane tab stepper; same move, clamp and scroll as the browse wheel.
+			stepSelection: _moveMidiSelection,
 			readSnapshot: () => {
 				const p = panes[activePane];
 				const trimmedSearch = p.search.trim();
@@ -1670,8 +1743,11 @@
 	async function _restoreBootPane(): Promise<void> {
 		const target = panes[0];
 		const deepLinked = target.playlist_id !== null; // a deep link already claimed it
-		if (await libraryTabs.restore(!deepLinked)) return;
-		if (deepLinked) return;
+		// A list opened while the saved tabs were being read (a tree click once
+		// the playlists painted) claims the pane too: boot never loads over it.
+		const unclaimed = (): boolean => !deepLinked && target.playlist_id === null;
+		if (await libraryTabs.restore(unclaimed)) return;
+		if (!unclaimed()) return;
 		const choice = resolveBootPlaylist({
 			remembered: uiPrefs.last_playlist,
 			known_playlist_ids: treeNodes.map((n) => n.playlist_id),
@@ -1723,13 +1799,66 @@
 	});
 
 	function selectSpotifySource(): void {
+		historyOpen = false;
+		explorerOpen = false;
 		source = 'spotify';
 		_writeSpotifyQuery(spotifySelectedId);
 	}
 
 	function selectCollectionSource(): void {
+		historyOpen = false;
+		explorerOpen = false;
 		source = 'collection';
 		_syncCollectionPlaylistQuery();
+	}
+
+	function selectHistorySource(): void {
+		if (source !== 'collection') selectCollectionSource();
+		explorerOpen = false;
+		historyOpen = true;
+		if (HistorySourcePanel !== null) return;
+		historyPanelError = null;
+		import('./browser/HistorySourcePanel.svelte').then(
+			(mod) => {
+				HistorySourcePanel = mod.default;
+			},
+			(exc: unknown) => {
+				historyPanelError = exc instanceof Error ? exc.message : String(exc);
+				console.error('[history] History panel failed to load:', exc);
+			}
+		);
+	}
+
+	function selectExplorerSource(): void {
+		if (source !== 'collection') selectCollectionSource();
+		historyOpen = false;
+		explorerOpen = true;
+		if (ExplorerSourcePanel !== null) return;
+		explorerPanelError = null;
+		import('./browser/ExplorerSourcePanel.svelte').then(
+			(mod) => {
+				ExplorerSourcePanel = mod.default;
+			},
+			(exc: unknown) => {
+				explorerPanelError = exc instanceof Error ? exc.message : String(exc);
+				console.error('[explorer] Explorer panel failed to load:', exc);
+			}
+		);
+	}
+
+	/** Issue #9747: an Explorer folder goes through the same bus command agents use. */
+	function openExplorerFolderUi(path: string, recursive: boolean): void {
+		void runPerformanceCommandFromUi({
+			type: 'browser_select_playlist',
+			playlist_id: explorerFolderNode({ path, recursive }).playlist_id
+		});
+	}
+
+	/** A History night saved as a playlist: back to the tree with the new playlist open. */
+	async function openSavedHistoryPlaylist(playlistId: string): Promise<void> {
+		await _refreshPlaylists();
+		selectCollectionSource();
+		await runPerformanceCommandFromUi({ type: 'browser_select_playlist', playlist_id: playlistId });
 	}
 
 	function selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated): void {
@@ -1845,6 +1974,11 @@
 		if (isAutolistId(snap.playlist_id)) {
 			return autolistNode(autolistTitle, 0);
 		}
+		const night = historyNightDate(snap.playlist_id);
+		if (night !== null) return historyNightNode(night);
+		if (tagList.isTagListId(snap.playlist_id)) return tagList.tagListNode(tagList.tagListCount.value ?? 0);
+		const navFolder = explorerFolder(snap.playlist_id);
+		if (navFolder !== null) return explorerFolderNode(navFolder);
 		// Prefix-addressed panes (taglists, Play from USB sticks) are not in
 		// the library tree; their names come from their own sources on load.
 		const prefixKind = snap.playlist_id.startsWith('taglist:')
@@ -2558,7 +2692,10 @@
 			node.kind !== 'taglist' &&
 			node.kind !== 'smartlist' &&
 			node.kind !== 'autolist' &&
-			node.kind !== 'usb'
+			node.kind !== 'usb' &&
+			node.kind !== 'history' &&
+			node.kind !== 'tag_list' &&
+			node.kind !== 'explorer'
 		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
@@ -2583,6 +2720,32 @@
 				// read only; the store also grays and restores them on unplug.
 				const failure = await (await usbPaneSource()).loadUsbPane(p, seq, () => panes);
 				if (failure !== null) pushToast(`playlist load failed: ${failure}`, 'error');
+				return;
+			}
+			if (node.kind === 'history') {
+				// PLAYS-9745: one History night, read only, in play order with Played at.
+				const date = historyNightDate(node.playlist_id);
+				if (date === null) throw new Error(`history: ${node.playlist_id} is not a night id`);
+				const [day, index] = await Promise.all([fetchHistoryDay(date), loadAllTracksIndex()]);
+				p.completeLoad(seq, historyNightRows(day.plays, index, _rowFromIndexWire), false);
+				return;
+			}
+			if (node.kind === 'tag_list') {
+				// Issue #10028: the Tag List in its own order, read only; rows load to decks like any list.
+				const [listed, index] = await Promise.all([tagList.fetchTagList(), loadAllTracksIndex()]);
+				tagList.tagListCount.value = listed.count;
+				p.completeLoad(seq, tagList.tagListRows(listed.items, index, _rowFromIndexWire), false);
+				return;
+			}
+			if (node.kind === 'explorer') {
+				// Issue #9747: one folder's tracks in file-name order, read only; rows load to decks like any list.
+				const folder = explorerFolder(node.playlist_id);
+				if (folder === null) throw new Error(`explorer: ${node.playlist_id} is not a folder id`);
+				const [listed, index] = await Promise.all([
+					fetchFolderTracks(folder.path, folder.recursive),
+					loadAllTracksIndex()
+				]);
+				p.completeLoad(seq, explorerFolderRows(listed.items, index, _rowFromIndexWire), false);
 				return;
 			}
 			if (node.kind === 'autolist') {
@@ -2708,6 +2871,11 @@
 		if (isAutolistId(p.playlist_id) || p.kind === 'autolist') {
 			return autolistNode(p.title, p.rows.length);
 		}
+		const night = historyNightDate(p.playlist_id);
+		if (night !== null) return historyNightNode(night, p.rows.length);
+		if (tagList.isTagListId(p.playlist_id)) return tagList.tagListNode(p.rows.length);
+		const paneFolder = explorerFolder(p.playlist_id);
+		if (paneFolder !== null) return explorerFolderNode(paneFolder, p.rows.length);
 		if (p.kind === 'smartlist') {
 			return {
 				playlist_id: p.playlist_id,
@@ -2816,7 +2984,11 @@
 	// observer also flips row.revealed for the one-time canvas draw.
 
 	function rowVisible(row: BrowserRow): void {
-		updateRowAcrossPanes(panes, row.stable_id, (held) => ({ ...held, revealed: true }));
+		// Already revealed: keep the object, or the row observer re-arms on the new
+		// one and reveals it again every frame.
+		updateRowAcrossPanes(panes, row.stable_id, (held) =>
+			held.revealed === true ? held : { ...held, revealed: true }
+		);
 		void _hydrateRowMeta(row.stable_id);
 	}
 
@@ -3488,6 +3660,110 @@
 		panes[activePane].toggleSort(key);
 	}
 
+	// ------------------------------------------------- split column (LIBUX-9754)
+	/** The pane pinned to the right table, and the one the left table showed last. */
+	let splitRightPane = $state<PaneStore | null>(null);
+	let splitLastLeft = $state<PaneStore | null>(null);
+	/** The pane a drag between the two tables started from, so a drop on itself is left to the table. */
+	let splitDragFrom: PaneStore | null = null;
+	const splitView = $derived(
+		uiPrefs.library_split_column ? splitPanes(panes, pane, splitRightPane, splitLastLeft) : null
+	);
+	const passivePane = $derived(
+		splitView === null ? null : splitView.left === pane ? splitView.right : splitView.left
+	);
+	const passiveRows = $derived(
+		passivePane === null
+			? []
+			: _applyPaneFilters(
+					visibleRowsOf(passivePane, uiPrefs.hide_broken_links && !isMissingTracksId(passivePane.playlist_id))
+				)
+	);
+	const passiveProvider = makeClientRowProvider(
+		() => passiveRows,
+		() => passivePane?.truncated ?? false,
+		() => null
+	);
+	// Split on with no right pane yet (or it was closed): pin the neighbour tab, else open the library root in a new tab.
+	$effect(() => {
+		if (!uiPrefs.library_split_column) return;
+		void panes.length;
+		const active = pane;
+		untrack(() => {
+			if (splitRightPane !== null && panes.includes(splitRightPane)) return;
+			const plan = planSplitRight(panes, active, canAddPaneSlot(panes.length));
+			if (plan === null) return;
+			if (plan.kind === 'pin') {
+				splitRightPane = plan.pane;
+				return;
+			}
+			const node = _nodeForNav({
+				playlist_id: plan.playlist_id,
+				playlist_name: plan.playlist_id,
+				search: '',
+				selected_id: null,
+				scroll_top: 0
+			});
+			if (node === null) return;
+			panes.push(createPaneStore());
+			const right = panes[panes.length - 1];
+			splitRightPane = right;
+			void _loadPane(right, node);
+		});
+	});
+	$effect(() => {
+		const active = pane;
+		if (splitView !== null && active !== splitView.right) untrack(() => (splitLastLeft = active));
+	});
+
+	/** Make the pane under a split table the active one (the header follows it). */
+	function activateSplitPane(target: PaneStore): void {
+		const index = panes.indexOf(target);
+		if (index < 0 || index === activePane) return;
+		setRelatedActive(false);
+		activePane = index;
+	}
+
+	function splitDragOver(event: DragEvent, target: PaneStore): void {
+		if (splitView === null || splitDragFrom === null || splitDragFrom === target) return;
+		if (!event.dataTransfer?.types.includes(TRACK_STABLE_MIME)) return;
+		event.preventDefault();
+	}
+
+	/** Rows dragged from one split table onto the other: append to its playlist, or refuse with the reason. */
+	async function splitDrop(event: DragEvent, target: PaneStore): Promise<void> {
+		const from = splitDragFrom;
+		splitDragFrom = null;
+		if (splitView === null || from === null || from === target) return;
+		const raw = event.dataTransfer?.getData(TRACK_STABLE_MIME) ?? '';
+		event.preventDefault();
+		event.stopPropagation();
+		const ids = raw === '' ? [] : raw.split(',');
+		const refusal = splitDropRefusal(
+			{
+				kind: target.kind ?? '',
+				playlist_id: target.playlist_id,
+				title: target.title === '' ? 'This table' : target.title,
+				writable: target.kind === 'playlist' && canMutatePlaylist(target)
+			},
+			ids.length
+		);
+		if (refusal !== null) {
+			pushToast(`Drop refused: ${refusal}`, 'error');
+			return;
+		}
+		const playlistId = target.playlist_id as string;
+		try {
+			await appendTracksToPlaylist(playlistId, ids);
+			invalidatePlaylistFirstPage(playlistId);
+			const node = _currentNode(target);
+			if (node !== null) await _loadPane(target, node);
+			pushToast(`Added ${ids.length} track(s) to ${target.title}`, 'info');
+		} catch (exc) {
+			pushToast(`add to playlist failed: ${exc instanceof Error ? exc.message : String(exc)}`, 'error');
+		}
+	}
+
 	// event is absent for the column-view lane's plain click (ColumnBrowser
 	// has no multi-select concept) - treated as a non-extending single
 	// select, same as a modifier-less TrackTable click.
@@ -4122,15 +4398,44 @@
 	});
 
 	let addToPlaylistIds = $state<string[] | null>(null);
+	let addToPlaylistFocusStableId = $state<string | null>(null);
+
+	function resolveAddToPlaylistFocusStableId(ids: string[]): string {
+		const active = document.activeElement;
+		if (active instanceof HTMLElement) {
+			const row = active.closest('[data-testid="track-row"]');
+			if (row instanceof HTMLElement) {
+				const stableId = row.getAttribute('data-stable-id');
+				if (stableId !== null && ids.includes(stableId)) return stableId;
+			}
+		}
+		return ids[0];
+	}
 
 	function openAddToPlaylistPicker(ids: string[]): void {
+		if (ids.length === 0) return;
+		addToPlaylistFocusStableId = resolveAddToPlaylistFocusStableId(ids);
 		addToPlaylistIds = ids;
+	}
+
+	function closeAddToPlaylistPicker(): void {
+		const stableId = addToPlaylistFocusStableId;
+		addToPlaylistIds = null;
+		addToPlaylistFocusStableId = null;
+		if (stableId === null) return;
+		const row = document.querySelector(
+			`[data-testid="track-row"][data-stable-id="${CSS.escape(stableId)}"]`
+		);
+		if (row instanceof HTMLElement && row.isConnected) {
+			row.focus();
+		}
 	}
 
 	async function addTracksToPlaylist(node: PlaylistNode): Promise<void> {
 		const ids = addToPlaylistIds;
 		if (ids === null || ids.length === 0) return;
 		addToPlaylistIds = null;
+		addToPlaylistFocusStableId = null;
 		try {
 			await appendTracksToPlaylist(node.playlist_id, ids);
 			invalidatePlaylistFirstPage(node.playlist_id);
@@ -4141,10 +4446,53 @@
 		}
 	}
 
+	// ------------------------------------------------- Tag List (issue #10028)
+
+	function openTagListUi(): void {
+		void runPerformanceCommandFromUi({ type: 'browser_select_playlist', playlist_id: tagList.TAG_LIST_ID });
+	}
+
+	/** Remove, Save as playlist and Clear share one shape: run the route, then re-read the open list. */
+	async function tagListActionUi(label: string, action: () => Promise<string | null>): Promise<void> {
+		try {
+			const message = await action();
+			if (message !== null) pushToast(message, 'info');
+		} catch (exc) {
+			pushToast(`Tag List ${label} failed: ${exc instanceof Error ? exc.message : String(exc)}`, 'error');
+		}
+		const open = panes.find((p) => tagList.isTagListId(p.playlist_id));
+		if (open !== undefined) await _loadPane(open, tagList.tagListNode());
+		else await tagList.refreshTagListCount();
+	}
+
+	function removeTagListSelectionUi(stableIds: string[]): Promise<void> {
+		return tagListActionUi('remove', async () => {
+			await tagList.removeTagListTracks(stableIds);
+			return null;
+		});
+	}
+
+	function saveTagListUi(): Promise<void> {
+		const name = window.prompt('Save Tag List as playlist', 'Tag List');
+		if (name === null || name.trim() === '') return Promise.resolve();
+		return tagListActionUi('save', async () => {
+			const saved = await tagList.saveTagListAsPlaylist(name.trim());
+			await _refreshPlaylists();
+			return `Saved Tag List as playlist "${saved.name}" (${saved.track_count} tracks)`;
+		});
+	}
+
+	function clearTagListUi(count: number): Promise<void> {
+		if (!window.confirm(`Clear the Tag List (${count} tracks)? Playlists saved from it stay.`)) return Promise.resolve();
+		return tagListActionUi('clear', async () => {
+			const { removed } = await tagList.clearTagList();
+			return `Tag List cleared (${removed} tracks)`;
+		});
+	}
+
 	async function removeFromLibraryUi(stableIds: string[]): Promise<void> {
-		const ids = [...new Set(stableIds)];
+		const ids = confirmRemoveFromLibrary(stableIds, (message) => window.confirm(message));
 		if (ids.length === 0) return;
-		if (!window.confirm(removeFromLibraryConfirmMessage(ids.length))) return;
 		let okCount = 0;
 		for (const stableId of ids) {
 			try {
@@ -4156,6 +4504,18 @@
 			}
 		}
 		pushToast(removeFromLibraryToastMessage(okCount), 'info');
+	}
+
+	/** LIBM-78b (issue #12316): one guarded server batch for the Missing Tracks selection. */
+	async function removeSelectedMissingUi(stableIds: string[]): Promise<void> {
+		const ids = confirmRemoveFromLibrary(stableIds, (message) => window.confirm(message));
+		if (ids.length === 0) return;
+		try {
+			const result = await removeMissingTracks(ids);
+			pushToast(removeFromLibraryToastMessage(result.removed.length), 'info');
+		} catch (exc) {
+			pushToast(`remove missing tracks failed: ${exc instanceof Error ? exc.message : String(exc)}`, 'error');
+		}
 	}
 
 	// ------------------------------------------------- sections and moves
@@ -4223,11 +4583,40 @@
 	class="rb-browser"
 	data-library-root
 	data-testid="browser-panel"
-	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
+	class:single-column={uiPrefs.library_single_column}
+	style:grid-template-columns={browserGridColumns(
+		uiPrefs.library_single_column,
+		uiPrefs.playlist_tree_width
+	)}
 >
-	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} oncollection={selectCollectionSource} recordable={library === null} />
-	<div class="tree-panel" data-testid="playlist-tree">
-		{#if source === 'spotify' && SpotifySourcePanel === null}
+	<PerformanceRecorderRail {source} onspotify={selectSpotifySource} oncollection={selectCollectionSource} {historyOpen} onhistory={selectHistorySource} tagListCount={tagList.tagListCount.value} tagListOpen={tagList.isTagListId(pane.playlist_id)} ontaglist={openTagListUi} {explorerOpen} onexplorer={selectExplorerSource} recordable={library === null} />
+	<div
+		class="tree-panel"
+		data-testid="playlist-tree"
+		use:selectorNode={{ id: libraryPaneSelectorId('tree'), kind: 'leaf', enabled: true }}
+	>
+		{#if historyOpen && HistorySourcePanel === null}
+			<p class="spotify-panel-status" role="status">
+				{historyPanelError === null ? 'Loading History...' : `History panel failed to load: ${historyPanelError}`}
+			</p>
+		{:else if historyOpen && HistorySourcePanel !== null}
+			<HistorySourcePanel
+				oncollection={selectCollectionSource}
+				onsaved={(id) => void openSavedHistoryPlaylist(id)}
+				onopennight={(date) => void _loadPane(panes[activePane], historyNightNode(date))}
+				toast={pushToast}
+			/>
+		{:else if explorerOpen && ExplorerSourcePanel === null}
+			<p class="spotify-panel-status" role="status">
+				{explorerPanelError === null ? 'Loading Explorer...' : `Explorer panel failed to load: ${explorerPanelError}`}
+			</p>
+		{:else if explorerOpen && ExplorerSourcePanel !== null}
+			<ExplorerSourcePanel
+				activePath={explorerFolder(pane.playlist_id)?.path ?? null}
+				oncollection={selectCollectionSource}
+				onopenfolder={openExplorerFolderUi}
+			/>
+		{:else if source === 'spotify' && SpotifySourcePanel === null}
 			<p class="spotify-panel-status" role="status">
 				{spotifyPanelError === null ? 'Loading Spotify...' : `Spotify panel failed to load: ${spotifyPanelError}`}
 			</p>
@@ -4307,6 +4696,7 @@
 				ondropplaylist={dropPlaylistOnTabBar}
 				onsaveas={(i) => void saveAsPlaylistUi(i)}
 				onaddpane={addBlankPaneSlot}
+				onstep={(delta) => void runPerformanceCommandFromUi({ type: 'browser_step_selection', delta })}
 			>
 				{#snippet relatedTools()}
 					<RelatedCriteriaPopover
@@ -4333,6 +4723,46 @@
 				{/if}
 				{#if editablePane}
 					<SetTargetReadout summary={setTargetState.summary} onsettarget={(t) => void setTargetState.setTarget(t)} />
+				{/if}
+				{#if isMissingTracksId(pane.playlist_id)}
+					<button
+						class="icon-btn missing-remove"
+						data-testid="missing-remove-selected"
+						disabled={pane.selected_ids.length === 0}
+						title="Remove the selected missing tracks from the library. Files stay on disk; a row that is no longer missing refuses the batch."
+						onclick={() => void removeSelectedMissingUi(pane.selected_ids)}
+					>
+						Remove selected
+					</button>
+				{/if}
+				{#if tagList.isTagListId(pane.playlist_id)}
+					<button
+						class="icon-btn missing-remove"
+						data-testid="tag-list-remove-selected"
+						disabled={pane.selected_ids.length === 0}
+						title="Take the selected tracks off the Tag List (DELETE /api/v1/taglist/items/&lt;stable_id&gt;). The tracks stay in the library."
+						onclick={() => void removeTagListSelectionUi(pane.selected_ids)}
+					>
+						Remove
+					</button>
+					<button
+						class="icon-btn missing-remove"
+						data-testid="tag-list-save"
+						disabled={pane.rows.length === 0}
+						title="Save the Tag List as a new playlist in this order; the Tag List stays (POST /api/v1/taglist:save, opendj taglist save)"
+						onclick={() => void saveTagListUi()}
+					>
+						Save as playlist
+					</button>
+					<button
+						class="icon-btn missing-remove"
+						data-testid="tag-list-clear"
+						disabled={pane.rows.length === 0}
+						title="Empty the Tag List (DELETE /api/v1/taglist, opendj taglist clear)"
+						onclick={() => void clearTagListUi(pane.rows.length)}
+					>
+						Clear
+					</button>
 				{/if}
 				<LibraryHeaderTools
 					hasSelection={pane.selected_ids.length > 0}
@@ -4365,24 +4795,60 @@
 					</svg>
 				</button>
 				<button
-					class="icon-btn rb-inert"
-					disabled
-					title={plannedTitle('single-column-layout')}
+					class="icon-btn"
+					class:active={uiPrefs.library_single_column}
+					title={builtTitle('single-column-layout')}
 					aria-label="single column layout"
+					aria-pressed={uiPrefs.library_single_column}
+					data-testid="single-column-layout"
+					onclick={() =>
+						void runPerformanceCommandFromUi({
+							type: 'library_single_column',
+							enabled: !uiPrefs.library_single_column
+						})}
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 2h12v12H2z" fill="none" stroke="currentColor" stroke-width="1.4" />
 					</svg>
 				</button>
 				<button
-					class="icon-btn rb-inert"
-					disabled
-					title={plannedTitle('split-column-layout')}
+					class="icon-btn"
+					class:active={uiPrefs.library_split_column}
+					title={builtTitle('split-column-layout')}
 					aria-label="split column layout"
+					aria-pressed={uiPrefs.library_split_column}
+					data-testid="split-column-layout"
+					onclick={() =>
+						void runPerformanceCommandFromUi({
+							type: 'library_split_column',
+							enabled: !uiPrefs.library_split_column
+						})}
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path
 							d="M2 2h12v12H2zM8 2v12"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.4"
+						/>
+					</svg>
+				</button>
+				<button
+					class="icon-btn"
+					class:active={uiPrefs.library_mytag_pane}
+					title="My Tag pane - tick the selected tracks' tags by type, docked right of the track table (opendj library_mytag_pane)"
+					aria-label="My Tag pane"
+					aria-pressed={uiPrefs.library_mytag_pane}
+					data-testid="mytag-pane-toggle"
+					onclick={() =>
+						void runPerformanceCommandFromUi({
+							type: 'library_mytag_pane',
+							enabled: !uiPrefs.library_mytag_pane
+						})}
+				>
+					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+						<path
+							d="M2 2h12v12H2zM10 2v12M11.5 5h1M11.5 8h1M11.5 11h1"
 							fill="none"
 							stroke="currentColor"
 							stroke-width="1.4"
@@ -4429,7 +4895,9 @@
 					/>
 					<span>{LIBRARY_FILTER_LABELS.vocals.name}</span>
 				</label>
-				<LibraryKeyFilterPopover {selectedRowKey} decks={DECK_IDS.map((d) => decks[d])} />
+				{#if LibraryKeyFilterPopover}
+					<LibraryKeyFilterPopover {selectedRowKey} decks={DECK_IDS.map((d) => decks[d])} />
+				{/if}
 				<!--
 					pin 5e3ed689ad3a: this control used to live in `.search-options`,
 					which only renders while the search box is focused or non-empty, so
@@ -4441,7 +4909,17 @@
 					user-facing label changes, to the one the maintainer asked for.
 				-->
 				<label class="next-only">
-					<CompatibleFilterPopover mode={uiPrefs.compatible_filter.mode} energyNote={compatibleEnergyNoteText}>
+					{#if CompatibleFilterPopover}
+						<CompatibleFilterPopover mode={uiPrefs.compatible_filter.mode} energyNote={compatibleEnergyNoteText}>
+							<input
+								type="checkbox"
+								aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
+								checked={uiPrefs.next_only_filter}
+								onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+							/>
+							<span>{LIBRARY_FILTER_LABELS.compatible.name}</span>
+						</CompatibleFilterPopover>
+					{:else}
 						<input
 							type="checkbox"
 							aria-label="Show only tracks compatible with the reference deck (master, else playing, else any loaded with key and BPM)"
@@ -4449,7 +4927,7 @@
 							onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
 						/>
 						<span>{LIBRARY_FILTER_LABELS.compatible.name}</span>
-					</CompatibleFilterPopover>
+					{/if}
 				</label>
 				<label
 					class="offline-filter"
@@ -4483,7 +4961,10 @@
 						+ Section
 					</button>
 				{/if}
-				<div class="search-stack">
+				<div
+					class="search-stack"
+					use:selectorNode={{ id: libraryPaneSelectorId('search'), kind: 'leaf', enabled: true }}
+				>
 					{#if searchFocused || pane.search.trim() !== ''}
 						<div class="search-options" aria-label="Search options">
 							<label
@@ -4545,11 +5026,31 @@
 		<SessionPlayedBanner />
 		<SelectionPlayedLength visibleRows={renderedRows} rows={pane.rows} selectedOrders={pane.selected_orders} />
 		<OffloadProgress />
+		<div class="mytag-dock" class:open={uiPrefs.library_mytag_pane}>
+		<div class="split-tables" class:split={splitView !== null}>
+		<div
+			class="split-col"
+			class:split-right={splitView !== null && splitView.right === pane}
+			data-testid="split-active-table"
+			role="region"
+			aria-label="active track table"
+			ondragstartcapture={() => (splitDragFrom = pane)}
+			ondragover={(e) => splitDragOver(e, pane)}
+			ondrop={(e) => void splitDrop(e, pane)}
+		>
+		{#if splitView !== null}
+			<div class="split-title active">{pane.title === '' ? 'Empty pane' : pane.title}</div>
+		{/if}
 		<LibraryLoadIndicator
 			loading={pane.loading}
 			progress={pane.load_progress}
 			searching={pane.searching}
 		/>
+		<!-- #13703: the track table is a selector leaf; W/S stay row movement inside it (#9395). -->
+		<div
+			class="tracks-sel-node"
+			use:selectorNode={{ id: libraryPaneSelectorId('tracks'), kind: 'leaf', enabled: true }}
+		>
 		<TrackTable
 			libraryMode={library !== null}
 			pairedPartnerIds={pairingIndex.partnerIds}
@@ -4620,8 +5121,8 @@
 			onsectiondragitems={sectionsUi.dragItems}
 			oninsertsection={(row) => sectionsUi.insert(row.order - 1)}
 			onmoveentries={sectionsUi.move}
-			onstemsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'stems', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
-			onlyricsdonext={(ids) => void enqueueLibraryJobsBatched({ lane: 'lyrics', stable_ids: ids }).then(() => libraryJobsStore.refresh())}
+			onstemsdonext={(ids) => void libraryJobsStore.doNext('stems', ids, pushToast)}
+			onlyricsdonext={(ids) => void libraryJobsStore.doNext('lyrics', ids, pushToast)}
 			onopeneditmodal={(kind) => void openEditModal(kind)}
 			onremovefromlibrary={(ids) => void removeFromLibraryUi(ids)}
 			onrelocated={() => void _reloadActivePane()}
@@ -4635,6 +5136,78 @@
 			{suggestHoverId}
 			compatibleReferenceKey={nextOnlyRef?.key ?? null}
 		/>
+		</div>
+		</div>
+		{#if splitView !== null && passivePane !== null}
+			{@const other = passivePane}
+			<div
+				class="split-col passive"
+				class:split-right={splitView.right === other}
+				data-testid="split-passive-table"
+				role="region"
+				aria-label="second track table"
+				ondragstartcapture={() => (splitDragFrom = other)}
+				ondragover={(e) => splitDragOver(e, other)}
+				ondrop={(e) => void splitDrop(e, other)}
+			>
+				<button
+					type="button"
+					class="split-title"
+					title="Make this table the active pane: the tabs, search and playlist tree then act on it"
+					onclick={() => activateSplitPane(other)}
+				>
+					{other.title === '' ? 'Empty pane' : other.title}
+				</button>
+				<TrackTable
+					passive
+					libraryMode={library !== null}
+					pairedPartnerIds={pairingIndex.partnerIds}
+					pairPartners={pairingGraph.partners}
+					pairError={pairingGraph.error ?? pairingIndex.error}
+					provider={passiveProvider}
+					stackPlaylistId={other.playlist_id}
+					selectedIds={other.selected_ids}
+					selectedOrders={other.selected_orders}
+					{loadedIds}
+					{playedIds}
+					{vocalsById}
+					{markerAnlzById}
+					{previewStripById}
+					{stripLoadingById}
+					sortKey={other.sort_key}
+					sortDir={other.sort_dir}
+					emptyMessage={other.loading ? null : other.playlist_id === null ? 'Click the title above, then pick a playlist in the tree' : 'No tracks'}
+					restoreKey={`${panes.indexOf(other)}:${navEpoch}`}
+					scrollTop={other.scroll_top}
+					readOnly
+					onscrollcursor={(top) => other.rememberScroll(top)}
+					onsort={(key) => {
+						activateSplitPane(other);
+						sortBy(key);
+					}}
+					onselectrow={(row, event) => {
+						activateSplitPane(other);
+						selectRow(row, event);
+					}}
+					onloadrow={loadRow}
+					onkeycardfailed={(message) => pushToast(message, 'error')}
+					onpickdoubledeck={pickDoubleDeck}
+					onloadconfirmcancelled={_releaseDeckReservation}
+					onrate={rateRow}
+					onrowvisible={rowVisible}
+				/>
+			</div>
+		{/if}
+		</div>
+		{#if uiPrefs.library_mytag_pane}
+			<MyTagPane
+				groups={myTagGroups}
+				selectedCount={pane.selected_ids.length}
+				busy={myTagBusy}
+				ontoggle={(tag) => void toggleMyTagUi(tag)}
+			/>
+		{/if}
+		</div>
 		{/if}
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
@@ -4843,7 +5416,7 @@
 	open={addToPlaylistIds !== null}
 	playlists={writablePlaylistNodes(treeNodes)}
 	onpick={(node) => void addTracksToPlaylist(node)}
-	onclose={() => (addToPlaylistIds = null)}
+	onclose={closeAddToPlaylistPicker}
 />
 
 {#if folderDupPrompt !== null}
@@ -4876,12 +5449,15 @@
 		grid-template-areas:
 			'rail tree divider list'
 			'bottom bottom bottom bottom';
-		grid-template-columns: 30px var(--playlist-tree-width) 6px minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr) 18px;
 		min-height: 0;
 		background: var(--rb-bg);
-		border-top: 1px solid var(--rb-border);
+		/* Top seam is the deck/mixer bottom inset ring only (UIBORDER-01). */
 		font-size: var(--rb-fs-browser);
+		/* SKINLAYOUT-13413: the browser region is the size container its compact
+		 * tier queries (@container browser, after .pane-header), never @media. */
+		container-type: inline-size;
+		container-name: browser;
 	}
 	.tree-panel {
 		grid-area: tree;
@@ -4896,6 +5472,13 @@
 	}
 	.playlist-tree-resize:hover,
 	.playlist-tree-resize:active { background: var(--rb-accent); }
+	/* #13703: the track table selector wrapper stays out of the flex column. */
+	.tracks-sel-node {
+		display: contents;
+	}
+	/* LIBUX-9743: the columns go to zero inline; the tree stays mounted so its folders keep their state. */
+	.rb-browser.single-column .tree-panel,
+	.rb-browser.single-column .playlist-tree-resize { display: none; }
 	/* `overflow: hidden` is load-bearing, not tidiness. TrackTable's LIBUX-01
 	 * `.tt-root` min-height is an ABSOLUTE floor, so on a window too short to
 	 * honor it the table stays at its floor height and, with the default
@@ -4911,6 +5494,66 @@
 	 * `.load-confirm` is `position: fixed`, which this rule cannot clip
 	 * because `.list-panel` establishes no containing block for it (no
 	 * transform/filter/contain here, only `position: relative`). */
+	/* LIBUX-9754: the wrappers vanish from layout until split is on, so one table lays out as before. */
+	.split-tables,
+	.split-tables:not(.split) > .split-col {
+		display: contents;
+	}
+	/* Issue #10026: closed, the dock adds no box; open, the tables and the My Tag pane share a row. */
+	.mytag-dock {
+		display: contents;
+	}
+	.mytag-dock.open {
+		display: flex;
+		flex: 1 1 0;
+		min-height: 0;
+	}
+	.mytag-dock.open > .split-tables {
+		display: flex;
+		flex: 1 1 0;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+	}
+	.mytag-dock.open > .split-tables.split {
+		display: grid;
+	}
+	.split-tables.split {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 4px;
+		flex: 1 1 0;
+		min-height: 0;
+	}
+	.split-tables.split > .split-col {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+		order: 1;
+	}
+	.split-tables.split > .split-col.split-right {
+		order: 2;
+	}
+	.split-title {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		padding: 1px 6px;
+		font-size: 10px;
+		color: var(--rb-text-dim);
+		border-bottom: 1px solid var(--rb-border);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.split-title.active {
+		color: var(--rb-text);
+		box-shadow: inset 0 -2px var(--rb-accent);
+	}
 	.list-panel {
 		grid-area: list;
 		display: flex;
@@ -4985,6 +5628,17 @@
 	@container browser-header (min-width: 864px) {
 		.header-controls-cluster > :global(.rb-lit-button) {
 			flex: none;
+		}
+	}
+	/* SKINLAYOUT-13413: compact browser tier by container query (the
+	 * /performance browser spans the window, so a 1280 px window never
+	 * matches). Under 600 px the pane header lets its controls wrap onto
+	 * extra lines under the tabs instead of clipping them, so every control
+	 * stays on screen and clickable. Nothing hides and no font scales. */
+	@container browser (max-width: 599px) {
+		.pane-header,
+		.header-controls-cluster {
+			flex-wrap: wrap;
 		}
 	}
 	.autoplay-snapshot-notice {
@@ -5102,6 +5756,12 @@
 	.icon-btn.active {
 		color: var(--rb-accent);
 	}
+	/* LIBM-78b: a text button in the icon row, only on the Missing Tracks pane. */
+	.icon-btn.missing-remove {
+		width: auto;
+		padding: 0 6px;
+		white-space: nowrap;
+	}
 	/* PERF-UI-01: at 1280x720 leftover is ~107px after the compact
 	 * wavestack. A wrapping pane-header (~45px) would steal the one
 	 * visible track row. Keep the 24px floor; overflow clips inert
@@ -5206,6 +5866,9 @@
 		align-items: center;
 		gap: 8px;
 		padding: 0 6px;
+		/* Gaps in the 18px bar are chrome, not controls: let pointer hits reach
+		 * the performance surface under the corner (#13523 QuickDraw probe). */
+		pointer-events: none;
 		/* Issue #3097: this row and PerformanceAppNav (position: fixed,
 		 * bottom-left, height 18px) are both anchored to the exact same
 		 * bottom-left rectangle - this row via normal grid flow, the nav via
@@ -5216,6 +5879,9 @@
 		padding-left: var(--rb-perf-nav-w);
 		background: var(--rb-panel);
 		border-top: 1px solid var(--rb-border);
+	}
+	.bottom-bar > :global(*) {
+		pointer-events: auto;
 	}
 	.job-ribbon {
 		position: relative;

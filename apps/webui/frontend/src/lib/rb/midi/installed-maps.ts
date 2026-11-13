@@ -52,7 +52,14 @@
  */
 
 import { RB_API_BASE, RbApiError } from '$lib/rb/api-rb';
-import type { DeviceMap, LedRule, LedTrigger, MidiBinding, MidiMeterOutput } from '$lib/rb/midi/midi-types';
+import type {
+	DeviceMap,
+	LedRule,
+	LedTrigger,
+	MidiAction,
+	MidiBinding,
+	MidiMeterOutput
+} from '$lib/rb/midi/midi-types';
 import {
 	listDeviceMaps,
 	registerDeviceMap,
@@ -132,10 +139,60 @@ async function _getJson<T>(path: string): Promise<T> {
 	return (await r.json()) as T;
 }
 
-/** Strip the UI-only provenance field; what is left IS a DeviceMap. Feedback
+/** Every runtime MidiAction kind. Keyed by the union, so a kind added to
+ * midi-types.ts and not listed here (or listed here and not in the union) is a
+ * type error rather than a silently inert installed binding. */
+const _RUNTIME_ACTION_TYPES: Record<MidiAction['type'], true> = {
+	deck_play_toggle: true,
+	deck_cue: true,
+	deck_hot_cue: true,
+	deck_beat_loop: true,
+	deck_beat_jump: true,
+	deck_auto_loop_toggle: true,
+	deck_loop_exit: true,
+	deck_sync_toggle: true,
+	deck_manual_loop_cycle: true,
+	deck_loop_in: true,
+	deck_loop_out: true,
+	deck_loop_scale: true,
+	deck_key_sync_toggle: true,
+	deck_stem_eq_toggle: true,
+	deck_key_nudge: true,
+	deck_tempo_nudge: true,
+	deck_jog: true,
+	controller_pad_mode: true,
+	controller_pad: true,
+	mixer_channel: true,
+	mixer_global: true,
+	deck_pitch: true,
+	browse_encoder: true,
+	browse_load: true,
+	shift_modifier: true,
+	mixer_deck_pair_select: true,
+	channel_cue: true,
+	headphone_mix: true,
+	headphone_level: true,
+	master_cue: true,
+	color_fx: true
+};
+
+/** The action kinds an installed binding may carry: exactly the runtime union. */
+export const INSTALLED_ACTION_TYPES: ReadonlySet<string> = new Set(
+	Object.keys(_RUNTIME_ACTION_TYPES)
+);
+
+/** Strip the UI-only provenance field; what is left IS a DeviceMap. A binding
+ * whose action type is not in the runtime union throws (fail-fast, above). Feedback
  * lists are only set when non-empty, so a bindings-only document yields exactly
  * the runtime map it always did. */
 export function deviceMapFromDoc(doc: InstalledMapDoc): DeviceMap {
+	for (const [at, binding] of doc.bindings.entries()) {
+		if (!INSTALLED_ACTION_TYPES.has(binding.action.type)) {
+			throw new Error(
+				`deviceMapFromDoc(${doc.id}): bindings[${at}] action type '${binding.action.type}' is not a runtime MidiAction`
+			);
+		}
+	}
 	const map: DeviceMap = {
 		vendor: doc.vendor,
 		nameMatch: doc.nameMatch,
@@ -220,6 +277,15 @@ export async function loadInstalledDeviceMaps(): Promise<DeviceMap[]> {
 		loaded.push(map);
 	}
 	return loaded;
+}
+
+/** Id of the installed (user) map registered for this nameMatch, or null when
+ * the device runs a shipped built-in map (MIDI Learn saves a copy then, #9781). */
+export function installedMapIdFor(nameMatch: string): string | null {
+	for (const [id, registered] of _registered) {
+		if (registered === nameMatch) return id;
+	}
+	return null;
 }
 
 /** Which builtin, if any, an installed map is currently shadowing. Lets the

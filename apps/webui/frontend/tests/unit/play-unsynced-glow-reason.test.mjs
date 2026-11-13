@@ -77,8 +77,13 @@ test('the deck error strip leaves an unsynced-start reason out (PLAY-27: no deck
 		new URL('../../src/lib/components/rb/Deck.svelte', import.meta.url),
 		'utf8'
 	);
+	assert.match(deckSrc, /const controlError[^;]*\$derived\(deckControlError\(deckId\)\);/);
+	const effectsSrc = readFileSync(
+		new URL('../../src/lib/rb/deck-effects.svelte.ts', import.meta.url),
+		'utf8'
+	);
 	assert.match(
-		deckSrc,
+		effectsSrc,
 		/deck_errors\[deckId\] \?\?\s*bannerSyncError\(deck\.sync_error\) \?\?\s*deck\.processor_error/
 	);
 	const banner = readFileSync(

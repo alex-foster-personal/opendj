@@ -69,7 +69,7 @@ class Control:
     w: float
     h: float
     section: str
-    midi: Wire
+    midi: Wire | None  # None: the maker publishes no wire identity (unwired, never invented)
     shift_midi: Wire | None = None
 
 
@@ -330,7 +330,7 @@ def _channel(deck: int) -> list[Control]:
 
 
 def _globals() -> list[Control]:
-    rows: list[tuple[str, str, str, str, str, str, int, str, int, Wire | None]] = [
+    rows: list[tuple[str, str, str, str, str, str, int | None, str | None, int | None, Wire | None]] = [
         ("27", "browse", "encoder", "BROWSE", "Scroll the library", "browse", 7, "cc", 0x40, Wire(7, "cc", 0x64)),
         (
             "28",
@@ -375,9 +375,9 @@ def _globals() -> list[Control]:
             "MASTER LEVEL",
             "Master output level (analog, no MIDI)",
             "mixer",
-            16,
-            "cc",
-            0x00,
+            None,
+            None,
+            None,
             None,
         ),
         (
@@ -399,9 +399,9 @@ def _globals() -> list[Control]:
             "HEADPHONES VOL",
             "Headphone level (analog, no MIDI)",
             "mixer",
-            16,
-            "cc",
-            0x01,
+            None,
+            None,
+            None,
             None,
         ),
         (
@@ -411,9 +411,9 @@ def _globals() -> list[Control]:
             "FILTER FADE",
             "Filter-fade on the crossfader (local LED, no MIDI)",
             "mixer",
-            16,
-            "note",
-            0x00,
+            None,
+            None,
+            None,
             None,
         ),
         (
@@ -432,7 +432,8 @@ def _globals() -> list[Control]:
     out: list[Control] = []
     for fig, cid, typ, label, does, section, ch, kind, num, shift in rows:
         x, y, w, h = _at(cid)
-        out.append(Control(cid, fig, typ, label, does, x, y, w, h, section, Wire(ch, kind, num), shift))
+        wire = None if ch is None or kind is None or num is None else Wire(ch, kind, num)
+        out.append(Control(cid, fig, typ, label, does, x, y, w, h, section, wire, shift))
     return out
 
 
@@ -598,7 +599,7 @@ def build() -> dict[str, object]:
         "out_of_scope": [
             "pad modes other than HOT CUE: pads carry the HOT CUE wire identity (AUTO LOOP mode is bound in the map)",
             "MSB/LSB companion CCs: each control carries its MSB",
-            "MASTER LEVEL, HEADPHONES VOL and FILTER FADE send no MIDI: channel-16 placeholder hints",
+            "MASTER LEVEL, HEADPHONES VOL and FILTER FADE send no MIDI: midi null, unwired and inert",
             "FX ON and LEVEL/BEATS are drawn, inert",
             "jog touch and wheel-side rows, fader-start notes, rear and front panel (MIC LEVEL)",
             "TEMPO and VINYL/KEY LOCK sit on the outer edges (mirrored, not translated)",

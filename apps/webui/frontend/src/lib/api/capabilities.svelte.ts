@@ -242,6 +242,14 @@ export function progressRefusal(): string | null {
 	return UNIDENTIFIED;
 }
 
+/** Why the library job queue (/api/v1/library-jobs, the stems and lyrics "do
+ * next" lanes) is inert, or null when it is offered. Both flavors serve it:
+ * routes/library_jobs.py mounts in the legacy app, which the engine wraps. */
+export function libraryJobsRefusal(): string | null {
+	if (capabilities.flavor === 'engine' || capabilities.flavor === 'legacy') return null;
+	return UNIDENTIFIED;
+}
+
 /** Why the events bus is not connected, or null when it is offered. */
 export function eventsRefusal(): string | null {
 	if (capabilities.flavor === 'engine') return null;

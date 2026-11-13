@@ -17,6 +17,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { openCmdkBar } from './support/open-cmdk-bar';
 import { waitForPerformanceIpc } from './support/performance-ready';
 
 const MENU = '[data-testid="context-menu"]';
@@ -199,16 +200,15 @@ test.describe('W28 right-click registry smokes', () => {
 	});
 
 	test('track chip in the Cmd-K bar', async ({ page }) => {
-		test.fixme(true, 'v1 Cmd-K bar test ids, cmdk.v2 is default-on since #10452, see #13521');
 		await page.getByText('All Tracks', { exact: true }).first().click();
 		await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible();
-		await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+k`);
+		await openCmdkBar(page);
 		const chip = page.getByTestId('command-bar-row').first();
 		await expect(chip).toBeVisible();
 		await chip.click({ button: 'right' });
 		await expect(page.getByTestId('quick-draw-load-ch1')).toBeVisible();
-		await page.keyboard.press('Escape');
 		expect(await browserMenuSuppressed(chip)).toBe(true);
+		await page.keyboard.press('Escape');
 	});
 
 	test('empty performance space keeps the Quick Draw launcher', async ({ page }) => {

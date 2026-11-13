@@ -5,6 +5,10 @@
 // [if] the hygiene check misses a sample over 0 dBFS, a NaN or a subnormal [then] broken
 // [if] arm() does not ramp at the switch time or does not restore processor -> analyser [then] broken
 // [if] arm() blends over a stem processor or one that crossfades its own seeks [then] broken
+// [if] direct and returned paths have equal latency but the ramps or old tail start off the switch [then] broken
+// [if] the returned path is delayed by one sample and the blend does not follow it sample-exactly [then] broken
+// [if] the direct path is delayed by one sample and the old tail offset does not carry it [then] broken
+// [if] a negative latency offset is requested and the blend does not refuse it [then] broken
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -266,4 +270,157 @@ test('a throwing outSrc.start rethrows and leaves processor -> analyser connecte
 		assert.equal(g.log[g.log.length - 1], 'processor->analyser');
 		assert.equal(pending.length, 0);
 	});
+});
+
+//----- latency alignment (spec ef935c2f section 4.4)
+// effectiveWhen is the audible onset, so the blend compensates a path latency by following
+// the switch time it is given, sample-exactly, and refuses a switch time already in the past.
+// "returned" is the audio at the hidden head (processor -> mainGain), "direct" is the old
+// loop tail (buffer source -> outGain).
+
+const LAT_FRAMES = blend.SLIP_RETURN_BLEND_FRAMES;
+const LAT_SWITCH = 2048;
+
+function delayed(x, samples) {
+	const y = new Float32Array(x.length);
+	for (let n = samples; n < x.length; n++) y[n] = x[n - samples];
+	return y;
+}
+
+function renderBlend(direct, returned, switchFrame, frames) {
+	const out = new Float32Array(returned.length);
+	for (let n = 0; n < out.length; n++) {
+		if (n < switchFrame) {
+			out[n] = direct[n];
+			continue;
+		}
+		const g = blend.slipReturnBlendGain(n - switchFrame, frames);
+		out[n] = direct[n] * g.old + returned[n] * g.incoming;
+	}
+	return out;
+}
+
+function armLatency(T, oldPositionSecAt) {
+	const g = fakeGraph();
+	const gains = [];
+	const create = g.ctx.createGain.bind(g.ctx);
+	g.ctx.createGain = () => {
+		const n = create();
+		gains.push(n);
+		return n;
+	};
+	let outcome = null;
+	withTimers(() => {
+		outcome = blend
+			.prepareSlipReturnBlend({
+				context: g.ctx,
+				runtime: g.runtime,
+				isStemProcessor: false,
+				processorCrossfadesSeeks: false,
+				oldPositionSecAt,
+				loop: null,
+				tempoRatio: 1
+			})
+			.arm(T);
+	});
+	return { outcome, g, gains };
+}
+
+function assertRampsAt(gains, T, message) {
+	const end = T + LAT_FRAMES / SR;
+	assert.deepEqual(
+		gains[0].gain.events.slice(1),
+		[
+			['set', 0, T],
+			['ramp', 1, end]
+		],
+		message
+	);
+	assert.deepEqual(
+		gains[1].gain.events.slice(1),
+		[
+			['set', 1, T],
+			['ramp', 0, end]
+		],
+		message
+	);
+}
+
+test('equal path latency: ramps and the old tail start on the same switch sample and null', () => {
+	const T = 2;
+	const { outcome, g, gains } = armLatency(T, (t) => t * 3);
+	assert.equal(outcome, 'blended');
+	assertRampsAt(gains, T, 'if equal-latency ramps do not start on the switch then broken');
+	assert.deepEqual(
+		g.sources[0].started,
+		[T, T * 3],
+		'if the old tail does not start on the switch with equal latency then broken'
+	);
+	const x = sine(SR / 4);
+	const out = renderBlend(x, x, LAT_SWITCH, LAT_FRAMES);
+	for (let n = 0; n < x.length; n++) {
+		assert.ok(
+			Math.abs(out[n] - x[n]) <= 1e-7,
+			`if aligned equal-latency paths do not null at frame ${n} then broken`
+		);
+	}
+});
+
+test('returned path one sample late: the blend follows the shifted onset sample-exactly', () => {
+	const T = 2 + 1 / SR;
+	const { outcome, g, gains } = armLatency(T, (t) => t * 3);
+	assert.equal(outcome, 'blended');
+	assertRampsAt(gains, T, 'if the ramps do not follow a one-sample returned delay then broken');
+	assert.deepEqual(
+		g.sources[0].started,
+		[T, T * 3],
+		'if the old tail does not start on the one-sample-late onset then broken'
+	);
+	const x = sine(SR / 4);
+	const out = renderBlend(x, delayed(x, 1), LAT_SWITCH + 1, LAT_FRAMES);
+	assert.ok(
+		blend.clickRatio(out, [x, delayed(x, 1)], LAT_SWITCH + 1) <= blend.SLIP_RETURN_CLICK_VETO,
+		'if a one-sample returned delay clicks past the veto then broken'
+	);
+});
+
+test('direct path one sample late: the old tail offset carries the sample and the ramps stay put', () => {
+	const T = 2;
+	const lag = 1 / SR;
+	const { outcome, g, gains } = armLatency(T, (t) => t * 3 - lag);
+	assert.equal(outcome, 'blended');
+	assertRampsAt(gains, T, 'if a one-sample direct delay moves the ramps then broken');
+	assert.deepEqual(
+		g.sources[0].started,
+		[T, T * 3 - lag],
+		'if the old tail offset does not carry a one-sample direct delay then broken'
+	);
+	const x = sine(SR / 4);
+	const out = renderBlend(delayed(x, 1), x, LAT_SWITCH, LAT_FRAMES);
+	assert.ok(
+		blend.clickRatio(out, [delayed(x, 1), x], LAT_SWITCH) <= blend.SLIP_RETURN_CLICK_VETO,
+		'if a one-sample direct delay clicks past the veto then broken'
+	);
+});
+
+test('negative latency offset: a switch at or before now and a negative frame are refused', () => {
+	const g = fakeGraph();
+	const deps = {
+		context: g.ctx,
+		runtime: g.runtime,
+		isStemProcessor: false,
+		processorCrossfadesSeeks: false,
+		oldPositionSecAt: () => 0,
+		loop: null,
+		tempoRatio: 1
+	};
+	const handle = blend.prepareSlipReturnBlend(deps);
+	assert.equal(
+		handle.arm(g.ctx.currentTime - 1 / SR),
+		'hard:past',
+		'if a negative one-sample latency offset is blended then broken'
+	);
+	assert.equal(handle.arm(g.ctx.currentTime), 'hard:past');
+	assert.deepEqual(g.log, [], 'if a refused latency offset touches the graph then broken');
+	assert.throws(() => blend.prepareSlipReturnBlend(deps, -1), RangeError);
 });

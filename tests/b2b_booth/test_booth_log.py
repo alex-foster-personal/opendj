@@ -206,6 +206,22 @@ def test_a_replaced_joiner_hello_does_not_reuse_the_old_sessions_refusals() -> N
     assert same_booth(b.inviter, b.joiner)
 
 
+def test_an_old_sessions_proposal_replayed_after_restart_never_commits_twice() -> None:
+    """A pre-restart pid retried after the joiner adopts the snapshot is a duplicate; the next pid is fresh."""
+    b = Pair()
+    old = wire("ops", b.joiner.intent_op(_play(3, T0 + 1), T0 + 1).ops)
+    assert len(committed_ops(b.inviter.receive(old, T0 + 1))) == 1
+    b.joiner = BoothCore("joiner", None, T0 + 2 + b.offset_us)
+    b.joiner.peer_clock.add(T0 + 2 + b.offset_us, T0 + 2, T0 + 2 + b.offset_us)
+    b.joiner.receive(wire("ops", [b.inviter.snapshot_message()]), T0 + 3, reply=True)
+    dup_before = b.inviter.counters.proposals_dup
+    assert committed_ops(b.inviter.receive(old, T0 + 4)) == [], "a replayed pre-restart pid never commits twice"
+    assert b.inviter.counters.proposals_dup == dup_before + 1
+    assert b.inviter.state.seq == 1
+    fresh = b.joiner.intent_op(_play(3, T0 + 5), T0 + 5)
+    assert fresh.pid == 2, "the restarted joiner continues after its restored log"
+
+
 def test_a_retried_proposal_is_committed_once_and_answered_the_same() -> None:
     b = Pair()
     proposal = wire("ops", b.joiner.intent_op({"op": "setting", "side": "inviter", "lock_half_on_turn": True}, T0).ops)

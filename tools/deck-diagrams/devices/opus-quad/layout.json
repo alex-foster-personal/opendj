@@ -1,0 +1,2439 @@
+{
+ "device": "AlphaTheta OPUS-QUAD",
+ "vendor": "AlphaTheta / Pioneer DJ",
+ "plate": {
+  "image": "source/plate-top.png",
+  "width": 1320,
+  "height": 640
+ },
+ "layers": [
+  "base",
+  "shift"
+ ],
+ "out_of_scope": [
+  "jog_illumination_7-1_to_7-5_midi_out",
+  "touch_screen_hid"
+ ],
+ "controls": [
+  {
+   "id": "opus-quad-1-1-L",
+   "fig": "1-1",
+   "label": "JOG [deck 1/3]",
+   "kind": "jog",
+   "x": 9.55,
+   "y": 43.44,
+   "w": 21.82,
+   "h": 45.0,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "jog_top_turn",
+    "type": "cc",
+    "ch": 1,
+    "code": 34,
+    "shift_name": "jog_top_turn_shift"
+   },
+   "notes": "[1-1] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-1-R",
+   "fig": "1-1",
+   "label": "JOG [deck 2/4]",
+   "kind": "jog",
+   "x": 69.02,
+   "y": 43.59,
+   "w": 21.82,
+   "h": 45.0,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "jog_top_turn_deck2",
+    "type": "cc",
+    "ch": 2,
+    "code": 34,
+    "shift_name": "jog_top_turn_shift_deck2"
+   },
+   "notes": "[1-1] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-2-L",
+   "fig": "1-2",
+   "label": "TEMPO [deck 1/3]",
+   "kind": "fader",
+   "x": 34.02,
+   "y": 68.75,
+   "w": 1.67,
+   "h": 20.31,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "tempo_msb",
+    "type": "cc",
+    "ch": 1,
+    "code": 0,
+    "shift_name": null
+   },
+   "notes": "[1-2] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-2-R",
+   "fig": "1-2",
+   "label": "TEMPO [deck 2/4]",
+   "kind": "fader",
+   "x": 93.33,
+   "y": 67.97,
+   "w": 1.67,
+   "h": 20.31,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "tempo_msb_deck2",
+    "type": "cc",
+    "ch": 2,
+    "code": 0,
+    "shift_name": null
+   },
+   "notes": "[1-2] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-3-L",
+   "fig": "1-3",
+   "label": "TEMPO RESET [deck 1/3]",
+   "kind": "button",
+   "x": 31.67,
+   "y": 77.19,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "tempo_reset",
+    "type": "note",
+    "ch": 1,
+    "code": 19,
+    "shift_name": null
+   },
+   "notes": "[1-3] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-3-R",
+   "fig": "1-3",
+   "label": "TEMPO RESET [deck 2/4]",
+   "kind": "button",
+   "x": 91.06,
+   "y": 76.88,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "tempo_reset_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 19,
+    "shift_name": null
+   },
+   "notes": "[1-3] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-4-L",
+   "fig": "1-4",
+   "label": "TEMPO RANGE [deck 1/3]",
+   "kind": "button",
+   "x": 34.02,
+   "y": 56.72,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "tempo_range",
+    "type": "note",
+    "ch": 1,
+    "code": 16,
+    "shift_name": null
+   },
+   "notes": "[1-4] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-4-R",
+   "fig": "1-4",
+   "label": "TEMPO RANGE [deck 2/4]",
+   "kind": "button",
+   "x": 93.48,
+   "y": 56.56,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "tempo_range_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 16,
+    "shift_name": null
+   },
+   "notes": "[1-4] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-5-L",
+   "fig": "1-5",
+   "label": "MASTER TEMPO [deck 1/3]",
+   "kind": "button",
+   "x": 34.02,
+   "y": 62.03,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "master_tempo",
+    "type": "note",
+    "ch": 1,
+    "code": 17,
+    "shift_name": null
+   },
+   "notes": "[1-5] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-5-R",
+   "fig": "1-5",
+   "label": "MASTER TEMPO [deck 2/4]",
+   "kind": "button",
+   "x": 93.48,
+   "y": 62.03,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "master_tempo_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 17,
+    "shift_name": null
+   },
+   "notes": "[1-5] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-6-L",
+   "fig": "1-6",
+   "label": "KEY SYNC [deck 1/3]",
+   "kind": "button",
+   "x": 33.86,
+   "y": 49.22,
+   "w": 1.52,
+   "h": 3.12,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "key_sync",
+    "type": "note",
+    "ch": 1,
+    "code": 2,
+    "shift_name": null
+   },
+   "notes": "[1-6] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-6-R",
+   "fig": "1-6",
+   "label": "KEY SYNC [deck 2/4]",
+   "kind": "button",
+   "x": 93.33,
+   "y": 49.22,
+   "w": 1.52,
+   "h": 3.12,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "key_sync_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 2,
+    "shift_name": null
+   },
+   "notes": "[1-6] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-7-L",
+   "fig": "1-7",
+   "label": "SYNC [deck 1/3]",
+   "kind": "button",
+   "x": 32.5,
+   "y": 44.38,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "sync",
+    "type": "note",
+    "ch": 1,
+    "code": 31,
+    "shift_name": null
+   },
+   "notes": "[1-7] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-7-R",
+   "fig": "1-7",
+   "label": "SYNC [deck 2/4]",
+   "kind": "button",
+   "x": 92.35,
+   "y": 44.38,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "sync_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 31,
+    "shift_name": null
+   },
+   "notes": "[1-7] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-8-L",
+   "fig": "1-8",
+   "label": "MASTER [deck 1/3]",
+   "kind": "button",
+   "x": 34.85,
+   "y": 44.38,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "master",
+    "type": "note",
+    "ch": 1,
+    "code": 30,
+    "shift_name": null
+   },
+   "notes": "[1-8] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-8-R",
+   "fig": "1-8",
+   "label": "MASTER [deck 2/4]",
+   "kind": "button",
+   "x": 94.39,
+   "y": 44.38,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "master_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 30,
+    "shift_name": null
+   },
+   "notes": "[1-8] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-9-L",
+   "fig": "1-9",
+   "label": "JOG MODE [deck 1/3]",
+   "kind": "button",
+   "x": 29.39,
+   "y": 44.38,
+   "w": 1.82,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "jog_mode",
+    "type": "note",
+    "ch": 1,
+    "code": 18,
+    "shift_name": null
+   },
+   "notes": "[1-9] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-9-R",
+   "fig": "1-9",
+   "label": "JOG MODE [deck 2/4]",
+   "kind": "button",
+   "x": 89.17,
+   "y": 44.38,
+   "w": 1.82,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "jog_mode_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 18,
+    "shift_name": null
+   },
+   "notes": "[1-9] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-10-L",
+   "fig": "1-10",
+   "label": "VINYL SPEED ADJ [deck 1/3]",
+   "kind": "knob",
+   "x": 33.94,
+   "y": 35.78,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "vinyl_speed_adjust",
+    "type": "cc",
+    "ch": 1,
+    "code": 30,
+    "shift_name": null
+   },
+   "notes": "[1-10] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-10-R",
+   "fig": "1-10",
+   "label": "VINYL SPEED ADJ [deck 2/4]",
+   "kind": "knob",
+   "x": 93.18,
+   "y": 37.5,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "vinyl_speed_adjust_deck2",
+    "type": "cc",
+    "ch": 2,
+    "code": 30,
+    "shift_name": null
+   },
+   "notes": "[1-10] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-11-L",
+   "fig": "1-11",
+   "label": "DECK SELECT [deck 1/3]",
+   "kind": "button",
+   "x": 26.82,
+   "y": 25.16,
+   "w": 1.67,
+   "h": 6.25,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "deck_select",
+    "type": "note",
+    "ch": 1,
+    "code": 3,
+    "shift_name": null
+   },
+   "notes": "[1-11] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-11-R",
+   "fig": "1-11",
+   "label": "DECK SELECT [deck 2/4]",
+   "kind": "button",
+   "x": 86.21,
+   "y": 25.16,
+   "w": 1.67,
+   "h": 6.25,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "deck_select_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 3,
+    "shift_name": null
+   },
+   "notes": "[1-11] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-12-L",
+   "fig": "1-12",
+   "label": "TRACK SEARCH FWD [deck 1/3]",
+   "kind": "button",
+   "x": 12.73,
+   "y": 30.63,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "track_search_fwd",
+    "type": "note",
+    "ch": 1,
+    "code": 4,
+    "shift_name": null
+   },
+   "notes": "[1-12] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-12-R",
+   "fig": "1-12",
+   "label": "TRACK SEARCH FWD [deck 2/4]",
+   "kind": "button",
+   "x": 72.27,
+   "y": 30.63,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "track_search_fwd_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 4,
+    "shift_name": null
+   },
+   "notes": "[1-12] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-12-rev-L",
+   "fig": "1-12",
+   "label": "TRACK SEARCH REV [deck 1/3]",
+   "kind": "button",
+   "x": 10.76,
+   "y": 30.63,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "track_search_rev",
+    "type": "note",
+    "ch": 1,
+    "code": 5,
+    "shift_name": null
+   },
+   "notes": "[1-12] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-12-rev-R",
+   "fig": "1-12",
+   "label": "TRACK SEARCH REV [deck 2/4]",
+   "kind": "button",
+   "x": 70.38,
+   "y": 30.63,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "track_search_rev_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 5,
+    "shift_name": null
+   },
+   "notes": "[1-12] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-13-L",
+   "fig": "1-13",
+   "label": "DECK QUANTIZE [deck 1/3]",
+   "kind": "button",
+   "x": 5.83,
+   "y": 36.72,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "deck_quantize",
+    "type": "note",
+    "ch": 1,
+    "code": 9,
+    "shift_name": null
+   },
+   "notes": "[1-13] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-13-R",
+   "fig": "1-13",
+   "label": "DECK QUANTIZE [deck 2/4]",
+   "kind": "button",
+   "x": 65.53,
+   "y": 37.81,
+   "w": 1.21,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "deck_quantize_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 9,
+    "shift_name": null
+   },
+   "notes": "[1-13] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-14-L",
+   "fig": "1-14",
+   "label": "BEAT LOOP [deck 1/3]",
+   "kind": "encoder",
+   "x": 5.38,
+   "y": 43.28,
+   "w": 2.27,
+   "h": 4.69,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "beat_loop_press",
+    "type": "note",
+    "ch": 1,
+    "code": 67,
+    "shift_name": "beat_loop_press_shift"
+   },
+   "notes": "[1-14] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-14-R",
+   "fig": "1-14",
+   "label": "BEAT LOOP [deck 2/4]",
+   "kind": "encoder",
+   "x": 64.92,
+   "y": 43.12,
+   "w": 2.27,
+   "h": 4.69,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "beat_loop_press_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 67,
+    "shift_name": "beat_loop_press_shift_deck2"
+   },
+   "notes": "[1-14] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-15-L",
+   "fig": "1-15",
+   "label": "LOOP IN [deck 1/3]",
+   "kind": "button",
+   "x": 4.32,
+   "y": 49.22,
+   "w": 1.52,
+   "h": 3.12,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "loop_in",
+    "type": "note",
+    "ch": 1,
+    "code": 6,
+    "shift_name": null
+   },
+   "notes": "[1-15] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-15-R",
+   "fig": "1-15",
+   "label": "LOOP IN [deck 2/4]",
+   "kind": "button",
+   "x": 64.17,
+   "y": 49.22,
+   "w": 1.52,
+   "h": 3.12,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "loop_in_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 6,
+    "shift_name": null
+   },
+   "notes": "[1-15] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-16-L",
+   "fig": "1-16",
+   "label": "LOOP OUT [deck 1/3]",
+   "kind": "button",
+   "x": 6.89,
+   "y": 49.22,
+   "w": 1.52,
+   "h": 3.12,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "loop_out",
+    "type": "note",
+    "ch": 1,
+    "code": 7,
+    "shift_name": null
+   },
+   "notes": "[1-16] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-16-R",
+   "fig": "1-16",
+   "label": "LOOP OUT [deck 2/4]",
+   "kind": "button",
+   "x": 66.44,
+   "y": 49.22,
+   "w": 1.52,
+   "h": 3.12,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "loop_out_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 7,
+    "shift_name": null
+   },
+   "notes": "[1-16] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-17-L",
+   "fig": "1-17",
+   "label": "BEAT JUMP FWD [deck 1/3]",
+   "kind": "button",
+   "x": 6.74,
+   "y": 57.19,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "beat_jump_fwd",
+    "type": "note",
+    "ch": 1,
+    "code": 44,
+    "shift_name": "beat_jump_fwd_shift"
+   },
+   "notes": "[1-17] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-17-R",
+   "fig": "1-17",
+   "label": "BEAT JUMP FWD [deck 2/4]",
+   "kind": "button",
+   "x": 66.36,
+   "y": 57.19,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "beat_jump_fwd_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 44,
+    "shift_name": "beat_jump_fwd_shift_deck2"
+   },
+   "notes": "[1-17] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-17-rev-L",
+   "fig": "1-17",
+   "label": "BEAT JUMP REV [deck 1/3]",
+   "kind": "button",
+   "x": 4.7,
+   "y": 57.19,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "beat_jump_rev",
+    "type": "note",
+    "ch": 1,
+    "code": 45,
+    "shift_name": "beat_jump_rev_shift"
+   },
+   "notes": "[1-17] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-17-rev-R",
+   "fig": "1-17",
+   "label": "BEAT JUMP REV [deck 2/4]",
+   "kind": "button",
+   "x": 64.32,
+   "y": 57.19,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "beat_jump_rev_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 45,
+    "shift_name": "beat_jump_rev_shift_deck2"
+   },
+   "notes": "[1-17] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-18-L",
+   "fig": "1-18",
+   "label": "SLIP REVERSE [deck 1/3]",
+   "kind": "button",
+   "x": 5.61,
+   "y": 64.84,
+   "w": 1.97,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "slip_reverse",
+    "type": "note",
+    "ch": 1,
+    "code": 33,
+    "shift_name": null
+   },
+   "notes": "[1-18] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-18-R",
+   "fig": "1-18",
+   "label": "SLIP REVERSE [deck 2/4]",
+   "kind": "button",
+   "x": 65.45,
+   "y": 64.69,
+   "w": 1.97,
+   "h": 2.5,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "slip_reverse_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 33,
+    "shift_name": null
+   },
+   "notes": "[1-18] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-19-L",
+   "fig": "1-19",
+   "label": "CUE [deck 1/3]",
+   "kind": "button",
+   "x": 4.85,
+   "y": 74.38,
+   "w": 3.48,
+   "h": 7.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "cue",
+    "type": "note",
+    "ch": 1,
+    "code": 1,
+    "shift_name": null
+   },
+   "notes": "[1-19] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-19-R",
+   "fig": "1-19",
+   "label": "CUE [deck 2/4]",
+   "kind": "button",
+   "x": 64.32,
+   "y": 74.22,
+   "w": 3.48,
+   "h": 7.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "cue_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 1,
+    "shift_name": null
+   },
+   "notes": "[1-19] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-20-L",
+   "fig": "1-20",
+   "label": "PLAY/PAUSE [deck 1/3]",
+   "kind": "button",
+   "x": 4.85,
+   "y": 82.81,
+   "w": 3.48,
+   "h": 7.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "play_pause",
+    "type": "note",
+    "ch": 1,
+    "code": 0,
+    "shift_name": null
+   },
+   "notes": "[1-20] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-20-R",
+   "fig": "1-20",
+   "label": "PLAY/PAUSE [deck 2/4]",
+   "kind": "button",
+   "x": 64.32,
+   "y": 82.81,
+   "w": 3.48,
+   "h": 7.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "play_pause_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 0,
+    "shift_name": null
+   },
+   "notes": "[1-20] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-29-L",
+   "fig": "1-29",
+   "label": "SHIFT [deck 1/3]",
+   "kind": "button",
+   "x": 9.09,
+   "y": 44.53,
+   "w": 1.97,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "shift",
+    "type": "note",
+    "ch": 1,
+    "code": 63,
+    "shift_name": null
+   },
+   "notes": "[1-29] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-29-R",
+   "fig": "1-29",
+   "label": "SHIFT [deck 2/4]",
+   "kind": "button",
+   "x": 68.79,
+   "y": 44.53,
+   "w": 1.97,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "shift_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 63,
+    "shift_name": null
+   },
+   "notes": "[1-29] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-30-L",
+   "fig": "1-30",
+   "label": "LOAD [deck 1/3]",
+   "kind": "button",
+   "x": 63.71,
+   "y": 29.06,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "load",
+    "type": "note",
+    "ch": 1,
+    "code": 81,
+    "shift_name": null
+   },
+   "notes": "[1-30] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-30-R",
+   "fig": "1-30",
+   "label": "LOAD [deck 2/4]",
+   "kind": "button",
+   "x": 66.44,
+   "y": 29.06,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "load_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 81,
+    "shift_name": null
+   },
+   "notes": "[1-30] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-31-L",
+   "fig": "1-31",
+   "label": "NEEDLE POSITION [deck 1/3]",
+   "kind": "meter",
+   "x": 39.32,
+   "y": 22.5,
+   "w": 6.06,
+   "h": 3.44,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "needle_position",
+    "type": "cc",
+    "ch": 1,
+    "code": 28,
+    "shift_name": null
+   },
+   "notes": "[1-31] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-31-R",
+   "fig": "1-31",
+   "label": "NEEDLE POSITION [deck 2/4]",
+   "kind": "meter",
+   "x": 55.53,
+   "y": 22.5,
+   "w": 6.06,
+   "h": 3.44,
+   "layer": "base",
+   "section": "deck",
+   "midi": {
+    "name": "needle_position_deck2",
+    "type": "cc",
+    "ch": 2,
+    "code": 28,
+    "shift_name": null
+   },
+   "notes": "[1-31] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-21-L",
+   "fig": "1-21",
+   "label": "HOT CUE A [deck 1/3]",
+   "kind": "pad",
+   "x": 8.79,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_a",
+    "type": "note",
+    "ch": 1,
+    "code": 8,
+    "shift_name": "hot_cue_a_shift"
+   },
+   "notes": "[1-21] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-21-R",
+   "fig": "1-21",
+   "label": "HOT CUE A [deck 2/4]",
+   "kind": "pad",
+   "x": 68.48,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_a_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 8,
+    "shift_name": "hot_cue_a_shift_deck2"
+   },
+   "notes": "[1-21] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-22-L",
+   "fig": "1-22",
+   "label": "HOT CUE B [deck 1/3]",
+   "kind": "pad",
+   "x": 11.74,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_b",
+    "type": "note",
+    "ch": 1,
+    "code": 11,
+    "shift_name": "hot_cue_b_shift"
+   },
+   "notes": "[1-22] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-22-R",
+   "fig": "1-22",
+   "label": "HOT CUE B [deck 2/4]",
+   "kind": "pad",
+   "x": 71.36,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_b_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 11,
+    "shift_name": "hot_cue_b_shift_deck2"
+   },
+   "notes": "[1-22] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-23-L",
+   "fig": "1-23",
+   "label": "HOT CUE C [deck 1/3]",
+   "kind": "pad",
+   "x": 14.62,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_c",
+    "type": "note",
+    "ch": 1,
+    "code": 13,
+    "shift_name": "hot_cue_c_shift"
+   },
+   "notes": "[1-23] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-23-R",
+   "fig": "1-23",
+   "label": "HOT CUE C [deck 2/4]",
+   "kind": "pad",
+   "x": 74.32,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_c_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 13,
+    "shift_name": "hot_cue_c_shift_deck2"
+   },
+   "notes": "[1-23] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-24-L",
+   "fig": "1-24",
+   "label": "HOT CUE D [deck 1/3]",
+   "kind": "pad",
+   "x": 17.58,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_d",
+    "type": "note",
+    "ch": 1,
+    "code": 15,
+    "shift_name": "hot_cue_d_shift"
+   },
+   "notes": "[1-24] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-24-R",
+   "fig": "1-24",
+   "label": "HOT CUE D [deck 2/4]",
+   "kind": "pad",
+   "x": 77.27,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_d_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 15,
+    "shift_name": "hot_cue_d_shift_deck2"
+   },
+   "notes": "[1-24] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-25-L",
+   "fig": "1-25",
+   "label": "HOT CUE E [deck 1/3]",
+   "kind": "pad",
+   "x": 20.53,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_e",
+    "type": "note",
+    "ch": 1,
+    "code": 21,
+    "shift_name": "hot_cue_e_shift"
+   },
+   "notes": "[1-25] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-25-R",
+   "fig": "1-25",
+   "label": "HOT CUE E [deck 2/4]",
+   "kind": "pad",
+   "x": 80.23,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_e_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 21,
+    "shift_name": "hot_cue_e_shift_deck2"
+   },
+   "notes": "[1-25] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-26-L",
+   "fig": "1-26",
+   "label": "HOT CUE F [deck 1/3]",
+   "kind": "pad",
+   "x": 23.56,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_f",
+    "type": "note",
+    "ch": 1,
+    "code": 23,
+    "shift_name": "hot_cue_f_shift"
+   },
+   "notes": "[1-26] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-26-R",
+   "fig": "1-26",
+   "label": "HOT CUE F [deck 2/4]",
+   "kind": "pad",
+   "x": 83.18,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_f_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 23,
+    "shift_name": "hot_cue_f_shift_deck2"
+   },
+   "notes": "[1-26] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-27-L",
+   "fig": "1-27",
+   "label": "HOT CUE G [deck 1/3]",
+   "kind": "pad",
+   "x": 26.44,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_g",
+    "type": "note",
+    "ch": 1,
+    "code": 25,
+    "shift_name": "hot_cue_g_shift"
+   },
+   "notes": "[1-27] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-27-R",
+   "fig": "1-27",
+   "label": "HOT CUE G [deck 2/4]",
+   "kind": "pad",
+   "x": 86.14,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_g_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 25,
+    "shift_name": "hot_cue_g_shift_deck2"
+   },
+   "notes": "[1-27] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-28-L",
+   "fig": "1-28",
+   "label": "HOT CUE H [deck 1/3]",
+   "kind": "pad",
+   "x": 29.39,
+   "y": 37.19,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_h",
+    "type": "note",
+    "ch": 1,
+    "code": 27,
+    "shift_name": "hot_cue_h_shift"
+   },
+   "notes": "[1-28] on the control; left deck side sends deck 1 (ch 1), or deck 3 (ch 3, rows *_deck3) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-1-28-R",
+   "fig": "1-28",
+   "label": "HOT CUE H [deck 2/4]",
+   "kind": "pad",
+   "x": 89.02,
+   "y": 37.66,
+   "w": 2.42,
+   "h": 2.19,
+   "layer": "both",
+   "section": "deck",
+   "midi": {
+    "name": "hot_cue_h_deck2",
+    "type": "note",
+    "ch": 2,
+    "code": 27,
+    "shift_name": "hot_cue_h_shift_deck2"
+   },
+   "notes": "[1-28] on the control; right deck side sends deck 2 (ch 2), or deck 4 (ch 4, rows *_deck4) after DECK SELECT"
+  },
+  {
+   "id": "opus-quad-3-5-ch3",
+   "fig": "3-5",
+   "label": "TRIM CH3",
+   "kind": "knob",
+   "x": 43.03,
+   "y": 37.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "trim_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 12,
+    "shift_name": null
+   },
+   "notes": "[3-5] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-5-ch1",
+   "fig": "3-5",
+   "label": "TRIM CH1",
+   "kind": "knob",
+   "x": 47.23,
+   "y": 37.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "trim_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 1,
+    "shift_name": null
+   },
+   "notes": "[3-5] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-5-ch2",
+   "fig": "3-5",
+   "label": "TRIM CH2",
+   "kind": "knob",
+   "x": 51.33,
+   "y": 37.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "trim_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 6,
+    "shift_name": null
+   },
+   "notes": "[3-5] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-5-ch4",
+   "fig": "3-5",
+   "label": "TRIM CH4",
+   "kind": "knob",
+   "x": 55.61,
+   "y": 37.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "trim_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 80,
+    "shift_name": null
+   },
+   "notes": "[3-5] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-6-ch3",
+   "fig": "3-6",
+   "label": "EQ HIGH CH3",
+   "kind": "knob",
+   "x": 43.03,
+   "y": 42.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_high_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 14,
+    "shift_name": null
+   },
+   "notes": "[3-6] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-6-ch1",
+   "fig": "3-6",
+   "label": "EQ HIGH CH1",
+   "kind": "knob",
+   "x": 47.23,
+   "y": 42.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_high_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 2,
+    "shift_name": null
+   },
+   "notes": "[3-6] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-6-ch2",
+   "fig": "3-6",
+   "label": "EQ HIGH CH2",
+   "kind": "knob",
+   "x": 51.33,
+   "y": 42.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_high_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 7,
+    "shift_name": null
+   },
+   "notes": "[3-6] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-6-ch4",
+   "fig": "3-6",
+   "label": "EQ HIGH CH4",
+   "kind": "knob",
+   "x": 55.61,
+   "y": 42.03,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_high_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 81,
+    "shift_name": null
+   },
+   "notes": "[3-6] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-7-ch3",
+   "fig": "3-7",
+   "label": "EQ MID CH3",
+   "kind": "knob",
+   "x": 43.03,
+   "y": 47.34,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_mid_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 15,
+    "shift_name": null
+   },
+   "notes": "[3-7] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-7-ch1",
+   "fig": "3-7",
+   "label": "EQ MID CH1",
+   "kind": "knob",
+   "x": 47.23,
+   "y": 47.34,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_mid_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 3,
+    "shift_name": null
+   },
+   "notes": "[3-7] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-7-ch2",
+   "fig": "3-7",
+   "label": "EQ MID CH2",
+   "kind": "knob",
+   "x": 51.33,
+   "y": 47.34,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_mid_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 8,
+    "shift_name": null
+   },
+   "notes": "[3-7] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-7-ch4",
+   "fig": "3-7",
+   "label": "EQ MID CH4",
+   "kind": "knob",
+   "x": 55.61,
+   "y": 47.34,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_mid_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 92,
+    "shift_name": null
+   },
+   "notes": "[3-7] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-8-ch3",
+   "fig": "3-8",
+   "label": "EQ LOW CH3",
+   "kind": "knob",
+   "x": 43.03,
+   "y": 52.97,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_low_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 21,
+    "shift_name": null
+   },
+   "notes": "[3-8] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-8-ch1",
+   "fig": "3-8",
+   "label": "EQ LOW CH1",
+   "kind": "knob",
+   "x": 47.23,
+   "y": 52.97,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_low_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 4,
+    "shift_name": null
+   },
+   "notes": "[3-8] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-8-ch2",
+   "fig": "3-8",
+   "label": "EQ LOW CH2",
+   "kind": "knob",
+   "x": 51.33,
+   "y": 52.97,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_low_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 9,
+    "shift_name": null
+   },
+   "notes": "[3-8] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-8-ch4",
+   "fig": "3-8",
+   "label": "EQ LOW CH4",
+   "kind": "knob",
+   "x": 55.61,
+   "y": 52.97,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "eq_low_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 82,
+    "shift_name": null
+   },
+   "notes": "[3-8] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-2-7-ch3",
+   "fig": "2-7",
+   "label": "COLOR CH3",
+   "kind": "knob",
+   "x": 42.8,
+   "y": 58.98,
+   "w": 2.27,
+   "h": 4.69,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "color_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 22,
+    "shift_name": null
+   },
+   "notes": "[2-7] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-2-7-ch1",
+   "fig": "2-7",
+   "label": "COLOR CH1",
+   "kind": "knob",
+   "x": 47.01,
+   "y": 58.98,
+   "w": 2.27,
+   "h": 4.69,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "color_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 5,
+    "shift_name": null
+   },
+   "notes": "[2-7] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-2-7-ch2",
+   "fig": "2-7",
+   "label": "COLOR CH2",
+   "kind": "knob",
+   "x": 51.1,
+   "y": 58.98,
+   "w": 2.27,
+   "h": 4.69,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "color_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 10,
+    "shift_name": null
+   },
+   "notes": "[2-7] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-2-7-ch4",
+   "fig": "2-7",
+   "label": "COLOR CH4",
+   "kind": "knob",
+   "x": 55.38,
+   "y": 58.98,
+   "w": 2.27,
+   "h": 4.69,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "color_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 83,
+    "shift_name": null
+   },
+   "notes": "[2-7] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-11-ch3",
+   "fig": "3-11",
+   "label": "CH CUE CH3",
+   "kind": "button",
+   "x": 42.65,
+   "y": 65.86,
+   "w": 2.58,
+   "h": 1.56,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_cue_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 72,
+    "shift_name": null
+   },
+   "notes": "[3-11] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-11-ch1",
+   "fig": "3-11",
+   "label": "CH CUE CH1",
+   "kind": "button",
+   "x": 46.86,
+   "y": 65.86,
+   "w": 2.58,
+   "h": 1.56,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_cue_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 70,
+    "shift_name": null
+   },
+   "notes": "[3-11] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-11-ch2",
+   "fig": "3-11",
+   "label": "CH CUE CH2",
+   "kind": "button",
+   "x": 50.95,
+   "y": 65.86,
+   "w": 2.58,
+   "h": 1.56,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_cue_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 71,
+    "shift_name": null
+   },
+   "notes": "[3-11] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-11-ch4",
+   "fig": "3-11",
+   "label": "CH CUE CH4",
+   "kind": "button",
+   "x": 55.23,
+   "y": 65.86,
+   "w": 2.58,
+   "h": 1.56,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_cue_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 73,
+    "shift_name": null
+   },
+   "notes": "[3-11] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-2-ch3",
+   "fig": "3-2",
+   "label": "CH FADER CH3",
+   "kind": "fader",
+   "x": 43.26,
+   "y": 71.09,
+   "w": 1.36,
+   "h": 10.94,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_fader_ch3",
+    "type": "cc",
+    "ch": 5,
+    "code": 19,
+    "shift_name": null
+   },
+   "notes": "[3-2] on the CH3 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-2-ch1",
+   "fig": "3-2",
+   "label": "CH FADER CH1",
+   "kind": "fader",
+   "x": 47.46,
+   "y": 71.09,
+   "w": 1.36,
+   "h": 10.94,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_fader_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 17,
+    "shift_name": null
+   },
+   "notes": "[3-2] on the CH1 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-2-ch2",
+   "fig": "3-2",
+   "label": "CH FADER CH2",
+   "kind": "fader",
+   "x": 51.55,
+   "y": 71.09,
+   "w": 1.36,
+   "h": 10.94,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_fader_ch2",
+    "type": "cc",
+    "ch": 5,
+    "code": 18,
+    "shift_name": null
+   },
+   "notes": "[3-2] on the CH2 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-2-ch4",
+   "fig": "3-2",
+   "label": "CH FADER CH4",
+   "kind": "fader",
+   "x": 55.83,
+   "y": 71.09,
+   "w": 1.36,
+   "h": 10.94,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "ch_fader_ch4",
+    "type": "cc",
+    "ch": 5,
+    "code": 20,
+    "shift_name": null
+   },
+   "notes": "[3-2] on the CH4 control (mixer order 3, 1, 2, 4)"
+  },
+  {
+   "id": "opus-quad-3-1",
+   "fig": "3-1",
+   "label": "CROSSFADER",
+   "kind": "fader",
+   "x": 46.97,
+   "y": 86.88,
+   "w": 6.06,
+   "h": 2.81,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "crossfader",
+    "type": "cc",
+    "ch": 5,
+    "code": 11,
+    "shift_name": null
+   },
+   "notes": "[3-1] on the control"
+  },
+  {
+   "id": "opus-quad-3-3",
+   "fig": "3-3",
+   "label": "CROSSFADER ASSIGN",
+   "kind": "switch",
+   "x": 55.76,
+   "y": 24.53,
+   "w": 2.27,
+   "h": 1.88,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "crossfader_assign_ch1",
+    "type": "cc",
+    "ch": 5,
+    "code": 65,
+    "shift_name": null
+   },
+   "notes": "[3-3] on the control"
+  },
+  {
+   "id": "opus-quad-3-4",
+   "fig": "3-4",
+   "label": "INPUT SELECT",
+   "kind": "switch",
+   "x": 54.7,
+   "y": 17.81,
+   "w": 3.03,
+   "h": 1.88,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "input_select_ch3_deck",
+    "type": "note",
+    "ch": 5,
+    "code": 61,
+    "shift_name": null
+   },
+   "notes": "[3-4] on the control"
+  },
+  {
+   "id": "opus-quad-3-9",
+   "fig": "3-9",
+   "label": "HP MIXING",
+   "kind": "knob",
+   "x": 38.56,
+   "y": 76.72,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "headphones_mixing",
+    "type": "cc",
+    "ch": 5,
+    "code": 27,
+    "shift_name": null
+   },
+   "notes": "[3-9] on the control"
+  },
+  {
+   "id": "opus-quad-3-10",
+   "fig": "3-10",
+   "label": "HP LEVEL",
+   "kind": "knob",
+   "x": 38.56,
+   "y": 82.34,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "headphones_level",
+    "type": "cc",
+    "ch": 5,
+    "code": 26,
+    "shift_name": null
+   },
+   "notes": "[3-10] on the control"
+  },
+  {
+   "id": "opus-quad-3-12",
+   "fig": "3-12",
+   "label": "MASTER LEVEL",
+   "kind": "knob",
+   "x": 60.0,
+   "y": 37.19,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "master_level",
+    "type": "cc",
+    "ch": 5,
+    "code": 24,
+    "shift_name": null
+   },
+   "notes": "[3-12] on the control"
+  },
+  {
+   "id": "opus-quad-3-13",
+   "fig": "3-13",
+   "label": "BOOTH LEVEL",
+   "kind": "knob",
+   "x": 5.53,
+   "y": 27.66,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "booth_monitor_level",
+    "type": "cc",
+    "ch": 5,
+    "code": 25,
+    "shift_name": null
+   },
+   "notes": "[3-13] on the control"
+  },
+  {
+   "id": "opus-quad-3-14",
+   "fig": "3-14",
+   "label": "ZONE LEVEL",
+   "kind": "knob",
+   "x": 5.53,
+   "y": 20.78,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "mixer",
+   "midi": {
+    "name": "zone_level",
+    "type": "cc",
+    "ch": 5,
+    "code": 39,
+    "shift_name": null
+   },
+   "notes": "[3-14] on the control"
+  },
+  {
+   "id": "opus-quad-2-1",
+   "fig": "2-1",
+   "label": "EFFECT SELECT",
+   "kind": "switch",
+   "x": 59.77,
+   "y": 59.69,
+   "w": 1.97,
+   "h": 4.06,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "fx_select_delay",
+    "type": "cc",
+    "ch": 5,
+    "code": 42,
+    "shift_name": null
+   },
+   "notes": "[2-1] on the control"
+  },
+  {
+   "id": "opus-quad-2-2",
+   "fig": "2-2",
+   "label": "TAP",
+   "kind": "button",
+   "x": 60.0,
+   "y": 65.16,
+   "w": 1.52,
+   "h": 2.5,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "fx_tap",
+    "type": "cc",
+    "ch": 5,
+    "code": 78,
+    "shift_name": null
+   },
+   "notes": "[2-2] on the control"
+  },
+  {
+   "id": "opus-quad-2-3",
+   "fig": "2-3",
+   "label": "BEAT LEFT",
+   "kind": "button",
+   "x": 58.79,
+   "y": 69.69,
+   "w": 1.67,
+   "h": 1.88,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "fx_beat_left",
+    "type": "cc",
+    "ch": 5,
+    "code": 76,
+    "shift_name": null
+   },
+   "notes": "[2-3] on the control"
+  },
+  {
+   "id": "opus-quad-2-3-right",
+   "fig": "2-3",
+   "label": "BEAT RIGHT",
+   "kind": "button",
+   "x": 61.29,
+   "y": 69.69,
+   "w": 1.67,
+   "h": 1.88,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "fx_beat_right",
+    "type": "cc",
+    "ch": 5,
+    "code": 77,
+    "shift_name": null
+   },
+   "notes": "[2-3] on the control"
+  },
+  {
+   "id": "opus-quad-2-4",
+   "fig": "2-4",
+   "label": "TIME",
+   "kind": "encoder",
+   "x": 59.85,
+   "y": 73.75,
+   "w": 1.97,
+   "h": 4.06,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "fx_time",
+    "type": "cc",
+    "ch": 5,
+    "code": 45,
+    "shift_name": null
+   },
+   "notes": "[2-4] on the control"
+  },
+  {
+   "id": "opus-quad-2-5",
+   "fig": "2-5",
+   "label": "LEVEL/DEPTH",
+   "kind": "knob",
+   "x": 59.85,
+   "y": 79.69,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "fx_level_depth",
+    "type": "cc",
+    "ch": 5,
+    "code": 91,
+    "shift_name": null
+   },
+   "notes": "[2-5] on the control"
+  },
+  {
+   "id": "opus-quad-2-6",
+   "fig": "2-6",
+   "label": "BEAT FX ON/OFF",
+   "kind": "button",
+   "x": 59.55,
+   "y": 85.47,
+   "w": 2.73,
+   "h": 5.62,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "beat_fx_on_off",
+    "type": "cc",
+    "ch": 5,
+    "code": 114,
+    "shift_name": null
+   },
+   "notes": "[2-6] on the control"
+  },
+  {
+   "id": "opus-quad-2-8",
+   "fig": "2-8",
+   "label": "PARAMETER",
+   "kind": "knob",
+   "x": 38.56,
+   "y": 69.69,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sound_color_parameter",
+    "type": "cc",
+    "ch": 5,
+    "code": 108,
+    "shift_name": null
+   },
+   "notes": "[2-8] on the control"
+  },
+  {
+   "id": "opus-quad-2-9",
+   "fig": "2-9",
+   "label": "SPACE",
+   "kind": "button",
+   "x": 37.42,
+   "y": 58.75,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sc_space",
+    "type": "cc",
+    "ch": 5,
+    "code": 105,
+    "shift_name": null
+   },
+   "notes": "[2-9] on the control"
+  },
+  {
+   "id": "opus-quad-2-10",
+   "fig": "2-10",
+   "label": "DUB ECHO",
+   "kind": "button",
+   "x": 39.55,
+   "y": 58.75,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sc_dub_echo",
+    "type": "cc",
+    "ch": 5,
+    "code": 107,
+    "shift_name": null
+   },
+   "notes": "[2-10] on the control"
+  },
+  {
+   "id": "opus-quad-2-11",
+   "fig": "2-11",
+   "label": "CRUSH",
+   "kind": "button",
+   "x": 37.42,
+   "y": 62.34,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sc_crush",
+    "type": "cc",
+    "ch": 5,
+    "code": 86,
+    "shift_name": null
+   },
+   "notes": "[2-11] on the control"
+  },
+  {
+   "id": "opus-quad-2-12",
+   "fig": "2-12",
+   "label": "SWEEP",
+   "kind": "button",
+   "x": 39.55,
+   "y": 62.34,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sc_sweep",
+    "type": "cc",
+    "ch": 5,
+    "code": 106,
+    "shift_name": null
+   },
+   "notes": "[2-12] on the control"
+  },
+  {
+   "id": "opus-quad-2-13",
+   "fig": "2-13",
+   "label": "NOISE",
+   "kind": "button",
+   "x": 37.42,
+   "y": 66.09,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sc_noise",
+    "type": "cc",
+    "ch": 5,
+    "code": 85,
+    "shift_name": null
+   },
+   "notes": "[2-13] on the control"
+  },
+  {
+   "id": "opus-quad-2-14",
+   "fig": "2-14",
+   "label": "FILTER",
+   "kind": "button",
+   "x": 39.55,
+   "y": 66.09,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "sc_filter",
+    "type": "cc",
+    "ch": 5,
+    "code": 87,
+    "shift_name": null
+   },
+   "notes": "[2-14] on the control"
+  },
+  {
+   "id": "opus-quad-2-15",
+   "fig": "2-15",
+   "label": "SMOOTH ECHO LEVEL",
+   "kind": "knob",
+   "x": 33.86,
+   "y": 23.12,
+   "w": 1.82,
+   "h": 3.75,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "smooth_echo_level",
+    "type": "cc",
+    "ch": 5,
+    "code": 93,
+    "shift_name": null
+   },
+   "notes": "[2-15] on the control"
+  },
+  {
+   "id": "opus-quad-2-16",
+   "fig": "2-16",
+   "label": "SMOOTH ECHO ON/OFF",
+   "kind": "button",
+   "x": 33.79,
+   "y": 28.91,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "base",
+   "section": "effect",
+   "midi": {
+    "name": "smooth_echo_on_off",
+    "type": "cc",
+    "ch": 5,
+    "code": 94,
+    "shift_name": null
+   },
+   "notes": "[2-16] on the control"
+  },
+  {
+   "id": "opus-quad-4-1",
+   "fig": "4-1",
+   "label": "SMART ROTARY SELECTOR",
+   "kind": "encoder",
+   "x": 64.47,
+   "y": 16.72,
+   "w": 3.79,
+   "h": 7.81,
+   "layer": "both",
+   "section": "browser",
+   "midi": {
+    "name": "browse_rotate",
+    "type": "cc",
+    "ch": 1,
+    "code": 79,
+    "shift_name": "browse_rotate_shift"
+   },
+   "notes": "[4-1] on the control"
+  },
+  {
+   "id": "opus-quad-4-2",
+   "fig": "4-2",
+   "label": "BACK",
+   "kind": "button",
+   "x": 63.94,
+   "y": 13.91,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "both",
+   "section": "browser",
+   "midi": {
+    "name": "back",
+    "type": "note",
+    "ch": 1,
+    "code": 50,
+    "shift_name": "back_shift"
+   },
+   "notes": "[4-2] on the control"
+  },
+  {
+   "id": "opus-quad-4-3",
+   "fig": "4-3",
+   "label": "TAG TRACK/REMOVE",
+   "kind": "button",
+   "x": 66.67,
+   "y": 14.22,
+   "w": 1.67,
+   "h": 2.19,
+   "layer": "both",
+   "section": "browser",
+   "midi": {
+    "name": "tag_track_remove",
+    "type": "note",
+    "ch": 1,
+    "code": 48,
+    "shift_name": "tag_track_remove_shift"
+   },
+   "notes": "[4-3] on the control"
+  }
+ ]
+}

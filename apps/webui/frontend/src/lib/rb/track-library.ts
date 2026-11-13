@@ -18,6 +18,17 @@ export interface TrackLifecycleOut {
 	memberships: TrackMembershipRef[];
 }
 
+/** Restore a tombstoned track and the playlist memberships its removal stamped (LIBM-54). */
+export async function undeleteFromLibrary(stableId: string): Promise<TrackLifecycleOut> {
+	// Spec 4b: a stick track is never in the library, so there is nothing to restore.
+	refuseStickWrite(stableId, 'restore to library');
+	return await unwrap(
+		api.POST('/api/v1/tracks/{stable_id}:undelete', {
+			params: { path: { stable_id: stableId } }
+		})
+	);
+}
+
 export async function removeFromLibrary(stableId: string): Promise<TrackLifecycleOut> {
 	// Spec 4b: a stick track is not in the library, and nothing is written for it.
 	refuseStickWrite(stableId, 'remove from library');

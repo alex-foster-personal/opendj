@@ -60,9 +60,6 @@ import {
 	permissionAllowed,
 	readAudioEngineChoice,
 	readBuildStamp,
-	RENDERER_RELOAD_LIMIT,
-	rendererGoneDecision,
-	rendererReloadTarget,
 	shellBuildIdentity,
 	startingWindowSize,
 	validateDataDirContainedInHome,
@@ -92,6 +89,13 @@ import {
 	supervisedOrigin
 } from './supervisor';
 import { applyUpdate } from './updater';
+import {
+	handleBeforeQuit,
+	handleWillQuit,
+	type MainWindowLifecycleDeps,
+	type MainWindowLifecycleState,
+	wireMainWindowLifecycle
+} from './main-window-lifecycle';
 
 /** Test seam, as in the Tauri shell: drive the app against an engine someone else started. */
 const ENGINE_ORIGIN_ENV = 'OPENDJ_ENGINE_ORIGIN';
@@ -248,10 +252,12 @@ function main(): void {
 	let window: BrowserWindow | null = null;
 	let sidePlayer: SidePlayer | null = null;
 	let supervisor: EngineSupervisor | null = null;
-	let quitAllowed = false;
-	let shuttingDown: Promise<void> | null = null;
-	let rendererReloadsMs: number[] = [];
-	let lastTrustedUrl: string | null = null;
+	const windowLifecycle: MainWindowLifecycleState = {
+		quitAllowed: false,
+		shuttingDown: null,
+		rendererReloadsMs: [],
+		lastTrustedUrl: null
+	};
 	let dataDir: string;
 	try {
 		dataDir = engineDataDir(identifier);
@@ -315,7 +321,10 @@ function main(): void {
 			extra.on('moved', persist);
 			extra.on('resized', persist);
 			extra.on('close', persist);
-			extra.on('closed', onClosed);
+			extra.on('closed', () => {
+				onClosed();
+				publishWindowLabelsToMainWindow();
+			});
 			const contents = extra.webContents;
 			installEditContextMenu(contents);
 			const guardNavigation = (event: { preventDefault: () => void }, next: string): void => {
@@ -356,6 +365,12 @@ function main(): void {
 		},
 		saveGeometry
 	});
+	const currentWindowLabels = (): string[] =>
+		secondScreen.isOpen() ? [SECOND_SCREEN_WINDOW_LABEL] : [];
+	const publishWindowLabelsToMainWindow = (): void => {
+		if (window === null || window.webContents.isDestroyed()) return;
+		window.webContents.send('opendj:window-labels', currentWindowLabels());
+	};
 	let savedEngineChoice: PageInit['audioEngineChoice'] = null;
 	try {
 		savedEngineChoice = readAudioEngineChoice(engineChoiceFile);
@@ -372,8 +387,8 @@ function main(): void {
 	};
 
 	const shutdownAll = (reason: string): Promise<void> => {
-		if (shuttingDown === null) {
-			shuttingDown = (async () => {
+		if (windowLifecycle.shuttingDown === null) {
+			windowLifecycle.shuttingDown = (async () => {
 				appendShellLog('shutdown', `shell exit: ${reason}`);
 				if (supervisor !== null) {
 					appendShellLog('shutdown', 'shell exit: stopping runtime supervisor');
@@ -384,11 +399,11 @@ function main(): void {
 				}
 			})();
 		}
-		return shuttingDown;
+		return windowLifecycle.shuttingDown;
 	};
 
 	const exitApp = (code: number, reason: string): void => {
-		quitAllowed = true;
+		windowLifecycle.quitAllowed = true;
 		// A shutdown that could not stop the engine's helpers is a failed exit, never a
 		// clean one, whatever the reason for quitting was (Sol P1 on #6830).
 		let status = code;
@@ -439,17 +454,8 @@ function main(): void {
 		});
 	};
 
-	app.on('before-quit', (event) => {
-		if (quitAllowed) return;
-		event.preventDefault();
-		requestQuitFromWebview('apple-event-quit');
-	});
-	app.on('will-quit', (event) => {
-		if (shuttingDown === null) {
-			event.preventDefault();
-			exitApp(0, 'will-quit');
-		}
-	});
+	app.on('before-quit', (event) => handleBeforeQuit(event, windowLifecycle, requestQuitFromWebview));
+	app.on('will-quit', (event) => handleWillQuit(event, windowLifecycle, () => exitApp(0, 'will-quit')));
 	app.on('window-all-closed', () => exitApp(0, 'all windows closed'));
 
 	// ----- native bridge IPC, origin-checked (D4) ---------------------------
@@ -503,7 +509,7 @@ function main(): void {
 				isPackaged: app.isPackaged,
 				currentVersion: app.getVersion(),
 				allowQuit: () => {
-					quitAllowed = true;
+					windowLifecycle.quitAllowed = true;
 				}
 			},
 			(progress) => event.sender.send('opendj:update-progress', progress)
@@ -544,6 +550,11 @@ function main(): void {
 		if (!trusted(event)) return refuse();
 		const parsed = parseWindowIpcArgs(action, label);
 		secondScreen.control(parsed.action, parsed.label);
+		publishWindowLabelsToMainWindow();
+	});
+	ipcMain.handle('opendj:window-labels', (event) => {
+		if (!trusted(event)) return refuse();
+		return currentWindowLabels();
 	});
 
 	void app.whenReady().then(async () => {
@@ -575,6 +586,7 @@ function main(): void {
 						click: () => {
 							try {
 								secondScreen.control('open', SECOND_SCREEN_WINDOW_LABEL);
+								publishWindowLabelsToMainWindow();
 							} catch (error) {
 								appendShellLog('WARN', `second-screen menu: ${String(error)}`);
 							}
@@ -711,19 +723,13 @@ function main(): void {
 			});
 			// The title is the shell's status line (engine restarting, dead), not the page's.
 			window.on('page-title-updated', (event) => event.preventDefault());
-			window.on('close', (event) => {
-				if (quitAllowed) return;
-				event.preventDefault();
-				appendShellLog('shutdown', 'window-close requested; delegating to webview quit gate');
-				requestQuitFromWebview('window-close');
-			});
 			const contents = window.webContents;
 			contents.on('did-start-navigation', (details) => {
 				if (details.isMainFrame) appendShellLog('webview', `navigation started: ${details.url}`);
 			});
 			contents.on('did-navigate', (_event, url) => {
 				appendShellLog('webview', `navigation finished: ${url}`);
-				if (isTrustedPage(url)) lastTrustedUrl = url;
+				if (isTrustedPage(url)) windowLifecycle.lastTrustedUrl = url;
 			});
 			installEditContextMenu(contents);
 			const guardNavigation = (event: { preventDefault: () => void }, url: string): void => {
@@ -735,38 +741,21 @@ function main(): void {
 			};
 			contents.on('will-navigate', (event, url) => guardNavigation(event, url));
 			contents.on('will-redirect', (event, url) => guardNavigation(event, url));
-			// Row 72: a dead renderer leaves a blank window over a live engine; reload, then give up.
-			contents.on('render-process-gone', (_event, details) => {
-				const decision = rendererGoneDecision({
-					reason: details.reason,
-					nowMs: Date.now(),
-					reloadsMs: rendererReloadsMs,
-					quitting: quitAllowed || shuttingDown !== null
-				});
-				rendererReloadsMs = decision.reloadsMs;
-				if (decision.action === 'ignore') return;
-				appendShellLog('WARN', `renderer gone: ${details.reason} exitCode=${details.exitCode}`);
-				if (decision.action === 'reload') {
-					const target = rendererReloadTarget(contents.getURL(), lastTrustedUrl);
-					appendShellLog('webview', `reloading after renderer crash: ${target}`);
-					contents.loadURL(target).catch((error: unknown) => {
+			const lifecycleDeps: MainWindowLifecycleDeps = {
+				appendShellLog,
+				nowMs: () => Date.now(),
+				loadUrl: (webContents, target) => {
+					webContents.loadURL(target).catch((error: unknown) => {
 						appendShellLog('webview', `crash reload settled early: ${String(error)}`);
 					});
-					return;
-				}
-				const error = new EngineError(
-					"Open DJ's window crashed repeatedly.",
-					`The page renderer went away ${RENDERER_RELOAD_LIMIT + 1} times in 60 seconds (last: ${details.reason}, exit code ${details.exitCode}). See logs/engine.log.`
-				);
-				quitAllowed = true;
-				void shutdownAll('renderer crash loop')
-					.catch((stopError: unknown) =>
-						appendShellLog('shutdown', `[ERROR] shell exit: ${(stopError as Error).message}`)
-					)
-					.finally(() => {
-						reportFatal(error);
-					});
-			});
+				},
+				requestQuitFromWebview,
+				shutdownAll,
+				reportFatal,
+				getUrl: (webContents) => webContents.getURL()
+			};
+			// Row 72: a dead renderer leaves a blank window over a live engine; reload, then give up.
+			wireMainWindowLifecycle(window, contents, windowLifecycle, lifecycleDeps);
 			contents.setWindowOpenHandler(({ url }) => {
 				if (classifyMainFrameNavigation(url) === 'open-external') void shell.openExternal(url);
 				return { action: 'deny' };

@@ -13,6 +13,8 @@ have to compute on demand:
    ``local-waveform-cache/<sid>.strip.json`` (``local_waveform``). This phase
    calls the same writer a deck load calls (``ensure_local_peaks``), two at a
    time, so the Preview column never depends on a deck load.
+   Then the ANLZ cache prewarm (``anlz_prewarm``): one batch of mapped tracks
+   with no current parsed-ANLZ cache entry is built ahead of any browse.
 2. Phase 2, only once phase 1 is empty: the own_* lanes. Tracks with no
    current record (backend + producer version) are enqueued into the v1
    queue and drained through ``apps.analysis.queue_cli`` (the same runner and
@@ -129,7 +131,12 @@ from apps.webui.server import backfill_drain, enrich_songs, enrich_sources
 from apps.webui.server.ahead_analysis_duds import FILENAME as DUDS_FILENAME
 from apps.webui.server.ahead_analysis_duds import DudLedger, is_dud
 from apps.webui.server.ahead_analysis_phases import PhaseRunner, PhaseStillRunning, PhaseTimeout
-from apps.webui.server.ahead_analysis_records import declined_ids, done_ids, library_value_sources
+from apps.webui.server.ahead_analysis_records import (
+    ThroughputRing,
+    declined_ids,
+    done_ids,
+    library_value_sources,
+)
 from apps.webui.server.ahead_analysis_siblings import with_path_siblings
 
 log = logging.getLogger(__name__)
@@ -156,6 +163,7 @@ PHASE_BUDGETS_S: dict[str, float] = {
     "present": 180.0,
     "tags": 120.0,
     "strip": 300.0,
+    "anlz_prewarm": 120.0,
     "plan_idle": 180.0,
     "plan_playing": 180.0,
     "coverage": 300.0,
@@ -186,6 +194,8 @@ LANE_REQUIRES: dict[str, tuple[str, ...]] = {
     "key": ("beatgrid",),
 }
 STRIP_LANE: str = "strip"
+#: Phase 1b: the ANLZ cache prewarm for mapped tracks, after strips (PERF-UI-9702).
+ANLZ_PREWARM_PHASE: str = "anlz_prewarm"
 TAGS_LANE: str = "tags"
 #: Lanes the drain fills WHILE a deck plays, for the set's next tracks only (NATIVE-5886).
 PLAYING_LANES: tuple[str, ...] = ("beatgrid", "key")
@@ -462,6 +472,8 @@ class AheadStatus:
     last_job: dict[str, Any] | None = None
     updated_at: float | None = None
     phase_timeouts: dict[str, int] = field(default_factory=dict)
+    #: phase -> {tracks_per_min_10m, p50_wall_ms, completed_total} (PERF-DRAIN-9996).
+    throughput: dict[str, dict[str, float | int | None]] = field(default_factory=dict)
 
 
 @dataclass
@@ -507,6 +519,9 @@ class AheadSources:
     xruns_fn: Callable[[], int | None] | None = None
     #: Drop the cached present-row snapshot so a fresh ingest is seen this tick.
     invalidate_present_fn: Callable[[], None] | None = None
+    #: Warm one batch of the given mapped ids' ANLZ cache (``anlz_prewarm``,
+    #: PERF-UI-9702); returns ``ran`` when it wrote any. None skips the phase.
+    anlz_prewarm_fn: Callable[[list[str]], str] | None = None
 
 
 class AheadDrain:
@@ -528,6 +543,7 @@ class AheadDrain:
         self._grace_ends_at = monotonic() + startup_grace_s
         self._grace_over = startup_grace_s <= 0
         self._status = AheadStatus()
+        self._throughput = ThroughputRing(started_at=clock())
         self._strip_failed: dict[str, str] = {}
         self._tags_failed: dict[str, str] = {}
         self._lane_failed: dict[str, dict[str, str]] = {lane: {} for lane, _b in LANE_ORDER}
@@ -647,7 +663,17 @@ class AheadDrain:
         return not self._grace_over
 
     def status(self) -> AheadStatus:
+        self._status.throughput = self._throughput.summary(self._clock())
         return self._status
+
+    def _record_done(self, phase: str, ids: Sequence[str], started: float) -> None:
+        """Note each finished track of one run, sharing the run's wall time evenly."""
+        if not ids:
+            return
+        wall_ms = (self._monotonic() - started) * 1000.0 / len(ids)
+        now = self._clock()
+        for _sid in ids:
+            self._throughput.record(phase, now, wall_ms)
 
     def halted(self) -> bool:
         """True once :meth:`stop` was called."""
@@ -703,8 +729,11 @@ class AheadDrain:
         bumped = self._ranking()
         strip_ranking = self._strip_ranking()
         present = self._phases.run("present", self._src.present_fn)
-        phase_rankings = {TAGS_LANE: bumped, STRIP_LANE: strip_ranking}
-        for name, phase in ((TAGS_LANE, self._tags_phase), (STRIP_LANE, self._strip_phase)):
+        phase_rankings = {TAGS_LANE: bumped, STRIP_LANE: strip_ranking, ANLZ_PREWARM_PHASE: []}
+        phases = [(TAGS_LANE, self._tags_phase), (STRIP_LANE, self._strip_phase)]
+        if self._src.anlz_prewarm_fn is not None:
+            phases.append((ANLZ_PREWARM_PHASE, self._anlz_prewarm_phase))
+        for name, phase in phases:
             try:
                 if self._phases.run(name, phase, present, phase_rankings[name]):
                     return f"ran:{name}"
@@ -804,6 +833,7 @@ class AheadDrain:
             return
         if self._xrun_anchor is not None:
             self._xrun_anchor[0] = self._xrun_tick_sample
+        started = self._monotonic()
         try:
             errors = self._src.run_lane_fn(lane, backend, [sid])
         except LaneRunYielded:
@@ -814,6 +844,7 @@ class AheadDrain:
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": [sid], "at": self._clock(), "errors": errors,
                                  "while_playing": True}
+        self._record_done(lane, [sid] if sid not in errors else [], started)
         _chunk, errors = self._set_aside_duds(lane, [sid], errors)
         self._lane_failed[lane].update(errors)
         if sid in self._lane_failed[lane] and sid in self._lane_set_aside[lane]:
@@ -848,6 +879,12 @@ class AheadDrain:
                 if not self._src.has_strip_fn(sid) and sid not in self._strip_failed
             ]
         return bool(targets)
+
+    def _anlz_prewarm_phase(self, present: list[str], _ranking: list[str]) -> bool:
+        """Warm one batch of the mapped present tracks' ANLZ cache (PERF-UI-9702)."""
+        assert self._src.anlz_prewarm_fn is not None
+        mapped = self._src.mapped_fn(present)
+        return self._src.anlz_prewarm_fn([sid for sid in present if sid in mapped]) == "ran"
 
     def _lane_done(self, lane: str, backend: str) -> set[str]:
         """Rows with the lane's result, plus same-bytes siblings (#5578)."""
@@ -988,8 +1025,10 @@ class AheadDrain:
                 return sid, "the decode finished but produced no strip"
             return sid, None
 
+        started = self._monotonic()
         with ThreadPoolExecutor(max_workers=STRIP_BATCH, thread_name_prefix="ahead-strip") as pool:
             results = list(pool.map(one, targets))
+        self._record_done(STRIP_LANE, [sid for sid, error in results if error is None], started)
         for sid, error in results:
             if error is None:
                 self._status.strips_written += 1
@@ -1001,9 +1040,11 @@ class AheadDrain:
     def _run_lane(self, lane: str, backend: str, chunk: list[str]) -> None:
         if self._halt.is_set():
             return
+        started = self._monotonic()
         errors = self._src.run_lane_fn(lane, backend, chunk)
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
+        self._record_done(lane, [sid for sid in chunk if sid not in errors], started)
         chunk, errors = self._set_aside_duds(lane, chunk, errors)
         per_track = {sid: why for sid, why in errors.items() if _is_per_track_reason(why)}
         if per_track:
@@ -1103,6 +1144,7 @@ class AheadDrain:
             "lane_batches": self._status.lane_batches,
             "last_job": self._status.last_job,
             "phase_timeouts": dict(self._status.phase_timeouts),
+            "throughput": self._throughput.summary(now),
             "while_playing": {
                 "next_up": self._next_up_snapshot(),
                 "xrun_hold_s": max(0.0, round(self._xrun_hold_until - self._monotonic(), 1)),
@@ -1808,6 +1850,7 @@ def build_for_app(app: Any) -> AheadDrain:
     from apps.shared.state import db as state_db
     from apps.shared.state.ingest import tag_refresh
     from apps.shared.state.writer import StateWriter
+    from apps.webui.server.anlz_prewarm import AnlzPrewarm
     from apps.webui.server.coverage_drain_analysis import DeckGate
     from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
     from apps.webui.server.routes import ingest as ingest_routes
@@ -1836,6 +1879,7 @@ def build_for_app(app: Any) -> AheadDrain:
 
     deck_gate = DeckGate(mirror)
     built: list[AheadDrain] = []
+    app.state.anlz_prewarm = AnlzPrewarm(playing_fn=deck_gate)
 
     def must_yield() -> bool:
         """Asked by a lane run that has just won the runner gate.
@@ -1897,6 +1941,7 @@ def build_for_app(app: Any) -> AheadDrain:
             deck_tracks_fn=lambda: mirror_deck_tracks(mirror()),
             xruns_fn=xruns,
             invalidate_present_fn=rows.invalidate,
+            anlz_prewarm_fn=app.state.anlz_prewarm.run_pass,
         ),
         startup_grace_s=STARTUP_GRACE_S,
         xrun_anchor=anchor,

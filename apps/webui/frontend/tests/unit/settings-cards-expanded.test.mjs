@@ -2,6 +2,9 @@
 // [if] the settings overlay opens [then] EVERY card shows its full description with no hover or selection, so nothing expands or moves on hover, [else stop].
 // [if] a settings card renders [then] it carries no hover explainer tooltip (the catalog `title` summary) on the card or its control, [else stop].
 // [if] the explainer tooltips are removed [then] every control still has an accessible name equal to the setting label, [else stop].
+// [if] a user hovers a settings card [then] no :hover rule restyles the card or its description, so nothing expands or moves, [else stop].
+// [if] a card contains an inert control [then] its todo marker keeps the PARITY-TODO refusal tooltip, [else stop].
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -90,4 +93,44 @@ test('CHROME-17 if dropping the explainers also dropped the accessible names the
 	);
 	for (const def of rendered)
 		assert.ok(named(def), `${def.id}: control has no aria-label "${def.label}"`);
+});
+
+/** The overlay component source, read once for the style and inert-row checks. */
+const OVERLAY_SRC = readFileSync(
+	new URL('../../src/lib/components/settings/SettingsOverlay.svelte', import.meta.url),
+	'utf8'
+);
+
+/** Every CSS selector in the overlay's style block that applies on :hover. */
+function hoverSelectors() {
+	const style = OVERLAY_SRC.slice(OVERLAY_SRC.indexOf('<style'));
+	return [...style.matchAll(/([^{}]+)\{/g)]
+		.flatMap((m) => m[1].split(','))
+		.map((sel) => sel.trim())
+		.filter((sel) => sel.includes(':hover'));
+}
+
+test('CHROME-17 if a user hovers a settings card and a :hover rule restyles the card or its description then the card moves under the pointer', () => {
+	const sels = hoverSelectors();
+	assert.ok(sels.length > 0, 'control: the overlay style block was parsed (category hover exists)');
+	for (const sel of sels)
+		assert.doesNotMatch(
+			sel,
+			/\.so-(row|detail|row-main|meta|label)\b/,
+			`hover rule targets a card: ${sel}`
+		);
+});
+
+test('CHROME-17 if dropping the explainers also dropped the inert-row refusal tooltip then todo rows stop saying why they are inert', () => {
+	// The catalog has no inert rows today, so the template itself is pinned: an unimplemented row
+	// still renders its todo marker carrying the PARITY-TODO refusal tooltip.
+	assert.ok(
+		OVERLAY_SRC.includes(`const INERT = '${INERT_TITLE}';`),
+		'the overlay INERT tooltip text changed or was removed'
+	);
+	assert.match(
+		OVERLAY_SRC,
+		/\{#if !def\.implemented\}\s*<span class="so-inert" title=\{INERT\}>todo<\/span>/,
+		'inert rows no longer render the todo marker with the PARITY-TODO tooltip'
+	);
 });

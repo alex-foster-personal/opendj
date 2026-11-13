@@ -119,3 +119,22 @@ test('[if] pin is harvested [then] exposure reports harvested state, [else stop]
 test('[if] comment-pins defines element tag [then] the tag name is comment-pins, [else stop]', () => {
 	assert.equal(constantsMod.COMMENT_PINS_TAG, 'comment-pins');
 });
+
+test('[if] no fetchFn is injected [then] the default fetch runs with globalThis as receiver, [else stop]', async () => {
+	/** Default client must not call native fetch with the CommentPinsApi instance as `this` (#12617). */
+	const original = globalThis.fetch;
+	const receivers = [];
+	globalThis.fetch = function (url) {
+		receivers.push(this);
+		if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+		return Promise.resolve(new Response(JSON.stringify({ comments: [PIN] }), { status: 200 }));
+	};
+	try {
+		const client = new apiMod.CommentPinsApi({ apiBase: 'http://x' });
+		const comments = await client.listComments();
+		assert.equal(comments.length, 1);
+		assert.equal(receivers.length, 1);
+	} finally {
+		globalThis.fetch = original;
+	}
+});

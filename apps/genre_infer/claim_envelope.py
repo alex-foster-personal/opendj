@@ -34,6 +34,8 @@ SEMANTIC_DIMENSIONS: frozenset[str] = frozenset(
         "character",
     }
 )
+# Segment-scoped mood/energy/movement/voice/instrument evidence (ENRICH-13622).
+SEGMENT_EVIDENCE_DIMENSIONS: frozenset[str] = frozenset({"mood", "energy", "movement", "vocals", "instrumentation"})
 GENERATED_DIMENSIONS: frozenset[str] = frozenset({"description", "lyric_transcript"})
 
 
@@ -260,6 +262,7 @@ __all__ = [
     "ENVELOPE_VERSION",
     "EnrichmentClaim",
     "GENERATED_DIMENSIONS",
+    "SEGMENT_EVIDENCE_DIMENSIONS",
     "SEMANTIC_DIMENSIONS",
     "SegmentScope",
     "deterministic_fact",

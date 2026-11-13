@@ -114,12 +114,14 @@ export function performerOf(overlay: WorksOverlay, stableId: string): string {
 	return values === undefined ? '' : join([values.soloist, values.ensemble, values.conductor], ', ');
 }
 
-export function labelOf(overlay: WorksOverlay, stableId: string): string {
-	return overlay.classical[stableId]?.label ?? '';
+/** The Label cell: the confirmed classical label, else the file's own tag (issue #10029). */
+export function labelOf(overlay: WorksOverlay, stableId: string, tagged: string | null = null): string {
+	return overlay.classical[stableId]?.label ?? tagged ?? '';
 }
 
-export function yearOf(overlay: WorksOverlay, stableId: string): number | null {
-	return overlay.classical[stableId]?.recording_year ?? null;
+/** The Year cell: the confirmed recording year, else the file's own tag year (issue #10029). */
+export function yearOf(overlay: WorksOverlay, stableId: string, tagged: number | null = null): number | null {
+	return overlay.classical[stableId]?.recording_year ?? tagged;
 }
 
 /** The classical work a track IS a performance of. A remix, cover or edit is filed
@@ -182,7 +184,13 @@ export function tracksViaWork(overlay: WorksOverlay, query: string): Set<string>
 	return hits;
 }
 
-type SortableRow = { stable_id: string; title?: string | null; artist?: string | null };
+type SortableRow = {
+	stable_id: string;
+	title?: string | null;
+	artist?: string | null;
+	year?: number | null;
+	label?: string | null;
+};
 
 /** A sort value for works columns, or undefined when the key is not ours to answer. */
 export function worksSortValue(
@@ -195,8 +203,8 @@ export function worksSortValue(
 	if (key === 'work') return text(workCellText(overlay, row.stable_id));
 	if (key === 'composer') return text(composerOf(overlay, row.stable_id));
 	if (key === 'ensemble') return text(performerOf(overlay, row.stable_id));
-	if (key === 'label') return text(labelOf(overlay, row.stable_id));
-	if (key === 'year') return yearOf(overlay, row.stable_id);
+	if (key === 'label') return text(labelOf(overlay, row.stable_id, row.label ?? null));
+	if (key === 'year') return yearOf(overlay, row.stable_id, row.year ?? null);
 	if (classicalLayout && key === 'title') {
 		return classicalTitle(overlay, row.stable_id, row.title ?? '').toLocaleLowerCase();
 	}

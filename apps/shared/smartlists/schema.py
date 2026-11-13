@@ -37,6 +37,12 @@ FIELD_TYPES: dict[str, str] = {
     "loudness_lufs": "number",
     "key_change_count": "number",
     "tempo_change_count": "number",
+    # rekordbox intelligent-playlist text conditions (issue #10022).
+    # Matched case-insensitively and trimmed by apps.smartlists.text_fields.
+    "title": "string",
+    "artist": "string",
+    "album": "string",
+    "comments": "string",
 }
 ALLOWED_FIELDS: tuple[str, ...] = tuple(FIELD_TYPES.keys())
 
@@ -62,9 +68,23 @@ ALLOWED_OPS_BY_FIELD: dict[str, tuple[str, ...]] = {
     "loudness_lufs": _NUMERIC_OPS,
     "key_change_count": _NUMERIC_OPS,
     "tempo_change_count": _NUMERIC_OPS,
+    "title": _STRING_OPS,
+    "artist": _STRING_OPS,
+    "album": _STRING_OPS,
+    "comments": _STRING_OPS,
 }
 
 LOGICAL_OPS: tuple[str, ...] = ("and", "or", "not")
+
+# LIBM-85 (issue #12318): a bounded "top N by <field>" selection node,
+# {"op": "top_n", "n": 3, "sort_field": "added_date", "children": [<rule>]}.
+# It keeps the first ``n`` tracks matching its one optional child (the whole
+# library when absent), ordered by the sort field: newest first for
+# ``added_date``, highest first for ``rating``. Any other key is refused, so a
+# clause the planner cannot honour fails loudly instead of being dropped.
+TOP_N_OP = "top_n"
+TOP_N_SORT_FIELDS: tuple[str, ...] = ("added_date", "rating")
+_TOP_N_KEYS: frozenset[str] = frozenset({"op", "n", "sort_field", "children"})
 
 
 def _err(path: str, msg: str) -> SmartlistRuleError:
@@ -150,11 +170,32 @@ def _validate_predicate(node: dict, path: str) -> None:
 _MAX_RULE_DEPTH = 32
 
 
+def _validate_top_n(node: dict, path: str, depth: int) -> None:
+    unknown = sorted(set(node) - _TOP_N_KEYS)
+    if unknown:
+        raise _err(path, f"top_n does not support {unknown}; expected only {sorted(_TOP_N_KEYS)}")
+    n = node.get("n")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        raise _err(f"{path}.n", f"top_n expects a positive whole number, got {n!r}")
+    sort_field = node.get("sort_field")
+    if sort_field not in TOP_N_SORT_FIELDS:
+        raise _err(f"{path}.sort_field", f"top_n sort_field {sort_field!r} not in {TOP_N_SORT_FIELDS}")
+    if "children" not in node:
+        return
+    children = node["children"]
+    if not isinstance(children, list) or len(children) != 1:
+        raise _err(f"{path}.children", "top_n takes at most one child rule, given as a one-item 'children' list")
+    _validate_node(children[0], f"{path}.children[0]", depth + 1)
+
+
 def _validate_node(node: Any, path: str, depth: int = 0) -> None:
     if depth > _MAX_RULE_DEPTH:
         raise _err(path, f"rule nesting exceeds the maximum depth of {_MAX_RULE_DEPTH}")
     if not isinstance(node, dict):
         raise _err(path, f"expected object, got {type(node).__name__}")
+    if node.get("op") == TOP_N_OP:
+        _validate_top_n(node, path, depth)
+        return
     if "op" in node and node["op"] in LOGICAL_OPS:
         op = node["op"]
         children = node.get("children")
@@ -182,6 +223,8 @@ __all__ = [
     "ALLOWED_OPS_BY_FIELD",
     "FIELD_TYPES",
     "LOGICAL_OPS",
+    "TOP_N_OP",
+    "TOP_N_SORT_FIELDS",
     "SmartlistRuleError",
     "validate_rule",
 ]

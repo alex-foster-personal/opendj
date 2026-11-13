@@ -500,6 +500,11 @@ def test_no_page_returns_503() -> None:
             {"type": "headphone_alignment_mode", "value": "delay_all"},
         ),
         (
+            "/api/v1/performance/headphones/calibration-probe",
+            {"value": "click_train"},
+            {"type": "headphone_calibration_probe", "value": "click_train"},
+        ),
+        (
             "/api/v1/performance/headphones/master-delay",
             {"value": 700},
             {"type": "master_delay_ms", "value": 700.0},
@@ -550,6 +555,11 @@ def test_headphone_post_routes_reach_the_page(
             "/api/v1/performance/headphones/alignment-mode",
             {"value": "serato"},
             "headphone alignment_mode must be headphones_only, delay_all, or hybrid; got serato",
+        ),
+        (
+            "/api/v1/performance/headphones/calibration-probe",
+            {"value": "pink_noise"},
+            "calibration probe must be chirp or click_train, got pink_noise",
         ),
         (
             "/api/v1/performance/headphones/master-delay",

@@ -134,3 +134,36 @@ def test_main_refuses_when_probe_reports_live_decks(tmp_path: Path, monkeypatch:
     files = list(tmp_path.glob("bug-report-refused-*.json"))
     assert len(files) == 1
     assert not list(tmp_path.glob("bug-report-2*.json"))
+
+
+@pytest.mark.requirement("OBS-12015")
+def test_git_sha_launches_resolved_git_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] git resolves on PATH [then] _git_sha launches the resolved absolute path, [else stop]."""
+    calls: list[list[str]] = []
+
+    class _Done:
+        stdout = "deadbeef\n"
+
+    def _fake_run(argv: list[str], **_kw: object) -> _Done:
+        """Record argv and return a fake completed process."""
+        calls.append(argv)
+        return _Done()
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None)
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+    assert mod._git_sha() == "deadbeef"
+    assert calls == [["/usr/bin/git", "rev-parse", "HEAD"]]
+
+
+@pytest.mark.requirement("OBS-12015")
+def test_git_sha_falls_back_when_git_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] git is not on PATH [then] _git_sha returns the build identity without spawning, [else stop]."""
+
+    def _boom(*_a: object, **_kw: object) -> None:
+        """Fail the test if a subprocess is spawned."""
+        raise AssertionError("subprocess.run must not be called")
+
+    monkeypatch.setattr(mod.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(mod.subprocess, "run", _boom)
+    monkeypatch.setattr(mod, "current_build_sha", lambda: "build-identity")
+    assert mod._git_sha() == "build-identity"

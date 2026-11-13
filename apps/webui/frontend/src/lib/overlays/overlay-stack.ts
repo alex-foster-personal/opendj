@@ -25,7 +25,8 @@ export const OVERLAY_Z_INDEX = {
 	setupBackdrop: 380,
 	preflightStrip: 360,
 	stage: 350,
-	setupChip: 370
+	/** Minimised setup chip shares the BL corner with fb-dock; must stay above it (#13523). */
+	setupChip: 10052
 } as const;
 
 export type OverlayStackId = keyof typeof OVERLAY_Z_INDEX;

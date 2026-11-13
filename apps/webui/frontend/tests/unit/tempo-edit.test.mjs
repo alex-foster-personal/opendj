@@ -165,6 +165,37 @@ describe('runTempoWrites', () => {
 	});
 });
 
+describe('DECKUX-13420 Beat Sync follower tempo lock', () => {
+	test('a playing Beat Sync follower is locked, with the engine reason', () => {
+		// Intent: the engine refuses every tempo write on a playing follower, so the editor says so.
+		const { followerTempoLock } = tempoEdit;
+		assert.equal(
+			followerTempoLock({ deck: 2, playing: true, beatSync: true, syncMaster: 1 }),
+			'Tempo locked while CH2 follows CH1 with Beat Sync: disable Beat Sync before changing follower deck 2'
+		);
+	});
+
+	test('a stopped follower, the master and a deck without Beat Sync are not locked', () => {
+		// Intent: nothing the engine allows is blocked.
+		const { followerTempoLock } = tempoEdit;
+		assert.equal(followerTempoLock({ deck: 2, playing: false, beatSync: true, syncMaster: 1 }), null);
+		assert.equal(followerTempoLock({ deck: 1, playing: true, beatSync: true, syncMaster: 1 }), null);
+		assert.equal(followerTempoLock({ deck: 2, playing: true, beatSync: false, syncMaster: 1 }), null);
+		assert.equal(followerTempoLock({ deck: 2, playing: true, beatSync: true, syncMaster: null }), null);
+	});
+
+	test('a stopped follower still widens its pitch range for a type-in', () => {
+		// Intent: the engine lets a stopped follower widen, so the writes are the ordinary ones.
+		assert.deepEqual(
+			tempoEdit.tempoWritesFromTargetBpm({ deck: 2, targetBpm: 150, baseBpm: 128, currentRange: 8 }),
+			[
+				{ type: 'pitch_range', deck: 2, range: 100 },
+				{ type: 'tempo', deck: 2, ratio: 150 / 128 }
+			]
+		);
+	});
+});
+
 describe('TempoEditModal commit path', () => {
 	const modal = readSrc('src/lib/components/rb/deck/TempoEditModal.svelte');
 

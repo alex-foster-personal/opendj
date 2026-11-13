@@ -12,13 +12,8 @@
 	} from '$lib/rb/headphone-mix-step';
 	import { acquireHeadphoneSignalMeters, headphoneLivenessAlertForState, headphoneMixAccent, inputLooksLikeHandsfree, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, nativeCueSinkAvailable, twoOutputsWarning } from '$lib/player/headphones';
 	import { ioMeterFill, ioTestDeviceId, ioTestEnvelope, ioTestRefusal, passiveInputMeterBlockedReason, type IoTestBus } from '$lib/player/io-device-test';
-	import {
-		assertCalibrationProbe,
-		calibrationProbeDiagnostics,
-		type CalibrationProbeKind
-	} from '$lib/player/cue-latency';
+	import { assertCalibrationProbe, type CalibrationProbeKind } from '$lib/player/cue-latency';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
-	import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 	import { recordPerfEvent } from '$lib/rb/perf-event-log';
 	import { remoteSpeakerBuildFlag } from '$lib/player/remote-speaker-flag';
 	import { pickThenMirror, type DevicePick } from './device-select-mirror';
@@ -43,6 +38,8 @@
 	import { ioHoverSummary, ioShouldAlert, outputsUnset } from '$lib/rb/io-outputs-button';
 	import { ioOutputsSession, noteSetOutputsClicked } from '$lib/rb/io-outputs-session.svelte';
 	import Knob from './Knob.svelte';
+	import { selectorNode } from '$lib/keyboard/selector-register';
+	import { HEADPHONE_SEL_KNOBS, headphoneSelId } from './headphone-selector-ids';
 	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import { _defaultBooth } from '$lib/player/state.svelte';
 	import type {
@@ -74,6 +71,8 @@
 		/** CUEOUT-14: open the mic calibration modal. */
 		oncalibrate: () => void;
 		onAlignmentMode: (mode: HeadphoneAlignmentMode) => void;
+		/** CUEOUT-12692: choose the calibration stimulus via IPC `headphone_calibration_probe`. */
+		onprobe: (probe: CalibrationProbeKind) => void;
 		/** Runs a Test under the dispatcher's ownership (`runAudioIoTest`): it
 		 * rejects with no route session or while a preset owns the lifecycle. */
 		testrun: <T>(work: (stillCurrent: () => boolean, signal: AbortSignal) => Promise<T>) => Promise<T>;
@@ -96,6 +95,7 @@
 		onmode,
 		oncalibrate,
 		onAlignmentMode,
+		onprobe,
 		testrun
 	}: Props = $props();
 	let boothPickerRevealed = $state(false);
@@ -132,20 +132,13 @@
 	// Pin 3cfdec80ba0a: the preferred mic is not a choice. Calibration will not
 	// start until the operator picks the mic that can hear the speakers.
 	let calibrationMicId = $state('');
-	let calibrationProbe = $state<CalibrationProbeKind>(loadMixerConfig().calibration_probe);
+	// CUEOUT-12692: the select shows the serialized read model, and a pick goes
+	// through the typed dispatcher (`headphone_calibration_probe`) like an agent's.
+	const calibrationProbe = $derived<CalibrationProbeKind>(headphoneState.calibration.diagnostics.probe);
 
 	function chooseCalibrationStimulus(raw: string): void {
 		assertCalibrationProbe(raw);
-		calibrationProbe = raw;
-		persistMixerConfig({ calibration_probe: raw });
-		const prior = headphoneState.calibration.diagnostics;
-		headphoneState.calibration.diagnostics = {
-			...calibrationProbeDiagnostics(raw),
-			failure: prior.failure,
-			master_measurements_ms: prior.master_measurements_ms,
-			cue_measurements_ms: prior.cue_measurements_ms,
-			spread_ms: prior.spread_ms
-		};
+		onprobe(raw);
 	}
 	/** Shown in AUDIO IN immediately, before the headphone command lands. */
 	let audioInPendingId = $state<string | null>(null);
@@ -389,7 +382,9 @@
 		ioOutsideClicks += 1;
 		if (ioOutsideClicks >= 2) {
 			ioOutsideClicks = 0;
-			closeIo();
+			// Capture runs before the outside target's handlers; close after this
+			// press so row/deck clicks still land (IOPIN-20 / #13523).
+			queueMicrotask(() => closeIo());
 		}
 	}
 
@@ -670,7 +665,10 @@
 	<svg class="hp-caption-icon" viewBox="0 0 12 12" width="8" height="8" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 {/snippet}
 
+<!-- #14334: each knob and button sits in its own selector leaf under mixer.headphones, so Enter
+     on a leaf presses that control. The knob leaves name their knob for the selector arrows. -->
 <div class="hp" data-performance-control="headphones">
+	<div class="sel-leaf" data-sel-knob={HEADPHONE_SEL_KNOBS.mix} use:selectorNode={{ id: headphoneSelId('mix'), kind: 'leaf', enabled: true }}>
 	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" tooltip={TOOLTIP_HEADPHONE_CLUSTER}>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
@@ -684,6 +682,8 @@
 			accentColor={headphoneMixAccent(headphoneState.mix)}
 		/>
 	</ControlExplainer>
+	</div>
+	<div class="sel-leaf" data-sel-knob={HEADPHONE_SEL_KNOBS.level} use:selectorNode={{ id: headphoneSelId('level'), kind: 'leaf', enabled: true }}>
 	<ControlExplainer title="VOL" bullets={levelBullets} tooltip={TOOLTIP_HEADPHONE_CLUSTER}>
 		<Knob
 			knobId={knobId('hp', 'hp-level')}
@@ -694,6 +694,8 @@
 			onchange={onlevel}
 		/>
 	</ControlExplainer>
+	</div>
+	<div class="sel-leaf" use:selectorNode={{ id: headphoneSelId('io'), kind: 'leaf', enabled: true }}>
 	<ControlExplainer
 		title="Audio I/O quick settings"
 		bullets={ioBullets}
@@ -712,6 +714,8 @@
 			onclick={handleSetOutputs}><span>SET</span><span>OUTPUTS</span></button
 		>
 	</ControlExplainer>
+	</div>
+	<div class="sel-leaf" use:selectorNode={{ id: headphoneSelId('midi'), kind: 'leaf', enabled: true }}>
 	<ControlExplainer
 		title="MIDI"
 		bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}
@@ -726,6 +730,7 @@
 			>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
 		>
 	</ControlExplainer>
+	</div>
 </div>
 
 {#if ioSurface.open}
@@ -980,6 +985,10 @@
 		align-items: center;
 		gap: 4px;
 		min-width: 0;
+	}
+	/* A selector leaf adds no box: the .hp flex row still lays out the explainers as before. */
+	.sel-leaf {
+		display: contents;
 	}
 	.hp-btn {
 		font: inherit;

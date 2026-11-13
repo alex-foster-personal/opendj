@@ -464,6 +464,9 @@ def _validate_key(payload: Mapping[str, Any]) -> None:
     _require_camelot("key", payload, "camelot")
     _require_confidence("key", payload, "confidence")
     _validate_key_segments(payload["segments"])
+    enrichment = payload.get("enrichment_segments")
+    if enrichment is not None:
+        validate_enrichment_segments_block(enrichment)
     # Lazy: apps.analysis_key pulls numpy, and sync_drift_lint imports this
     # file's package in a numpy-less isolated env.
     from apps.analysis_key.lane_payload import validate_key_depends_on
@@ -597,4 +600,26 @@ def check_lane_confidence(lane: str, confidence: float | None) -> None:
         )
 
 
-__all__ = ["check_lane_confidence", "validate_lane_payload"]
+def validate_enrichment_segments_block(block: Mapping[str, Any]) -> None:
+    """Optional enrichment segment index on a lane payload."""
+    if not isinstance(block, Mapping):
+        raise LaneContractError(f"enrichment_segments must be a mapping, got {block!r}")
+    segments = block.get("segments")
+    if segments is None:
+        return
+    _require_list("enrichment_segments", block, "segments")
+    for index, segment in enumerate(segments):
+        where = f"enrichment_segments.segments[{index}]"
+        if not isinstance(segment, Mapping):
+            raise LaneContractError(f"{where} must be a mapping")
+        _require_keys(where, segment, ("start_ms", "end_ms", "dimension"))
+        start_ms = segment["start_ms"]
+        end_ms = segment["end_ms"]
+        if not isinstance(start_ms, int) or not isinstance(end_ms, int):
+            raise LaneContractError(f"{where} start_ms/end_ms must be integers")
+        if end_ms < start_ms:
+            raise LaneContractError(f"{where} end_ms must be >= start_ms")
+        _require_str(where, segment, "dimension")
+
+
+__all__ = ["check_lane_confidence", "validate_enrichment_segments_block", "validate_lane_payload"]

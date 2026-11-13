@@ -33,6 +33,11 @@ export interface PerfEvent {
 	/** Non-ms numeric facts (bytes, flags) beside `stages`. */
 	facts?: Record<string, number>;
 	/**
+	 * Named blocking deck-load KPI stages (ms only). Kept separate from `stages`
+	 * so aggregators never mix internal timers with first-class load KPI keys.
+	 */
+	blocking_stages?: Record<string, number>;
+	/**
 	 * Non-numeric facts about the row, e.g. which stem layout a deck load
 	 * actually played. Optional and additive: rows written before this field
 	 * existed stay valid, and readers must treat it as possibly absent.

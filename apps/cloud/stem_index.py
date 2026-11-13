@@ -224,6 +224,11 @@ def _decode(body: bytes) -> StemAssetIndex:
     return stable_ids
 
 
+def decode_index(body: bytes) -> StemAssetIndex:
+    """Validate and decode an index body fetched by any transport (a presigned GET)."""
+    return _decode(body)
+
+
 def publish_index(cfg: CloudConfig, s3: S3Client, index: StemAssetIndex) -> str:
     """Merge ``index`` into the shared R2 pointer object under CAS.
 
@@ -638,6 +643,7 @@ __all__ = [
     "build_index_from_local_manifests",
     "build_parser",
     "bundled_stable_ids",
+    "decode_index",
     "entry_from_bundle_dir",
     "fetch_index",
     "is_allowed_stem_filename",

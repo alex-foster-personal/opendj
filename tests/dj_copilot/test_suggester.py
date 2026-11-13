@@ -1,4 +1,4 @@
-"""suggest_next end-to-end tests (AI-01); find-similar Generic mode (INTEL-12016)."""
+"""suggest_next end-to-end tests (AI-01); find-similar modes (INTEL-12031b, INTEL-12031)."""
 
 from __future__ import annotations
 
@@ -130,7 +130,7 @@ def _genre_conn(state) -> sqlite3.Connection:
     return conn
 
 
-@pytest.mark.requirement("INTEL-12016")
+@pytest.mark.requirement("INTEL-12031b")
 def test_find_similar_generic_returns_genre_cosine_neighbours(tmp_path) -> None:
     """[if] Generic mode runs on a measured track [then] candidates match genre similar, [else stop]."""
     _data, state = library(tmp_path)
@@ -144,7 +144,7 @@ def test_find_similar_generic_returns_genre_cosine_neighbours(tmp_path) -> None:
     assert ranked["candidates"] == expected["similar"]
 
 
-@pytest.mark.requirement("INTEL-12016")
+@pytest.mark.requirement("INTEL-12031b")
 def test_find_similar_generic_errors_when_unmeasured(tmp_path) -> None:
     """[if] the query track has no genre vector [then] Generic raises unmeasured, [else stop]."""
     _data, state = library(tmp_path)
@@ -153,13 +153,41 @@ def test_find_similar_generic_errors_when_unmeasured(tmp_path) -> None:
         find_similar_tracks(conn, stable_id="t-id", mode="generic", limit=20)
 
 
-@pytest.mark.requirement("INTEL-12016")
-def test_find_similar_specific_mode_is_not_implemented_yet(tmp_path) -> None:
-    """[if] Specific mode is requested today [then] the engine refuses before ranking, [else stop]."""
-    _data, state = library(tmp_path)
-    conn = _genre_conn(state)
-    with pytest.raises(findings.GenreInputError, match="not implemented"):
-        find_similar_tracks(conn, stable_id="t-fred", mode="specific", limit=20)
+def _specific_lib() -> list[TrackFeature]:
+    return [
+        TrackFeature("cur", "A", 120.0, "8A", 5),
+        TrackFeature("tight", "B", 121.0, "8A", 5),
+        TrackFeature("distant", "C", 150.0, "12B", 2),
+    ]
+
+
+@pytest.mark.requirement("INTEL-12031")
+def test_find_similar_specific_ranks_by_harmonic_score() -> None:
+    """[if] Specific runs with bpm and key [then] rationale has bpm/key/energy scores, [else stop]."""
+    conn = sqlite3.connect(":memory:")
+    try:
+        doc = find_similar_tracks(conn, stable_id="cur", mode="specific", limit=10, library=_specific_lib())
+    finally:
+        conn.close()
+    assert doc["provider"] == "harmonic"
+    assert doc["candidates"][0]["stable_id"] == "tight"
+    nums = doc["candidates"][0]["rationale_numbers"]
+    assert {"camelot", "bpm", "energy"} <= set(nums)
+
+
+@pytest.mark.requirement("INTEL-12031")
+def test_find_similar_specific_missing_bpm_is_insufficient() -> None:
+    """[if] the current track is missing bpm [then] Specific raises insufficient_data, [else stop]."""
+    lib = [TrackFeature("cur", "A", None, "8A", 5), TrackFeature("x", "B", 120.0, "8A", 5)]
+    conn = sqlite3.connect(":memory:")
+    try:
+        from apps.dj_copilot.play_it import InsufficientDataError
+
+        with pytest.raises(InsufficientDataError) as exc:
+            find_similar_tracks(conn, stable_id="cur", mode="specific", limit=10, library=lib)
+        assert exc.value.missing["bpm"] == ["cur"]
+    finally:
+        conn.close()
 
 
 @pytest.mark.requirement("SETPREP-12113")
@@ -197,6 +225,30 @@ def test_played_recently_tag_with_history_weight(tmp_path) -> None:
         assert "days_since_played" not in row_default.rationale_numbers
     finally:
         conn.close()
+
+
+@pytest.mark.requirement("INTEL-12031")
+def test_find_similar_specific_tight_beats_distant() -> None:
+    """[if] tight and distant neighbours exist [then] tight ranks above distant, [else stop]."""
+    conn = sqlite3.connect(":memory:")
+    try:
+        doc = find_similar_tracks(conn, stable_id="cur", mode="specific", limit=10, library=_specific_lib())
+    finally:
+        conn.close()
+    ids = [row["stable_id"] for row in doc["candidates"]]
+    assert ids.index("tight") < ids.index("distant")
+
+
+@pytest.mark.requirement("INTEL-12031")
+def test_find_similar_specific_empty_when_solo_track() -> None:
+    """[if] Specific has no library neighbours [then] candidates is empty, [else stop]."""
+    lib = [TrackFeature("solo", "A", 120.0, "8A", 5)]
+    conn = sqlite3.connect(":memory:")
+    try:
+        doc = find_similar_tracks(conn, stable_id="solo", mode="specific", limit=10, library=lib)
+    finally:
+        conn.close()
+    assert doc["candidates"] == []
 
 
 @pytest.mark.requirement("SETPREP-12113")
