@@ -29,6 +29,9 @@ import { startMirrorPublishTicker } from './mirror-publish-ticker';
 import { countVisibleTrackRows } from './track-row-visibility';
 import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-mirror-controls';
 import { deckLoadErrors } from '$lib/player/state.svelte';
+import { sampler, slotPhase } from '$lib/player/sampler/sampler-store.svelte';
+import { buildSamplerMirror } from '$lib/player/sampler/sampler-mirror';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { DeckId } from '$lib/rb/deck-id';
 
 /** CUEOUT-18: one id per page load, so the engine can keep two open tabs'
@@ -227,6 +230,8 @@ export function buildUiMirror(): Record<string, unknown> {
 		open_overlays: [...document.querySelectorAll('[role="dialog"], .overlay, .modal')].map((element, index) =>
 			controlPreferredName(element, index)
 		),
+		// SAMPLER: edge sampler state for agent parity (spec 10); a pass over the slots, no per-frame work.
+		sampler: buildSamplerMirror(sampler, uiPrefs.sampler_enabled, slotPhase),
 		controls: _controls()
 	};
 }

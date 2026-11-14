@@ -410,6 +410,13 @@ import {
 	beatFxView
 } from '$lib/rb/beat-fx-live.svelte';
 import { jobsStore } from '$lib/rb/jobs-store.svelte';
+import {
+	isClassicSamplerCommandType,
+	type ClassicSamplerCommand
+} from '$lib/player/sampler/classic-sampler-ipc-guards';
+import { applyClassicSamplerCommand } from '$lib/player/sampler/classic-sampler-ipc';
+import { isSamplerCommandType, type SamplerCommand } from '$lib/player/sampler/sampler-ipc-guards';
+import { applySamplerCommand } from '$lib/player/sampler/sampler-ipc';
 
 import type {
 	AutoPlayNextController,
@@ -1719,6 +1726,8 @@ export function performanceCommandQueueScopes(
 	if (command.type === 'rescue_resume' || command.type === 'rescue_stop_all') {
 		return PERFORMANCE_RESCUE_COMMAND_SCOPES;
 	}
+	// SAMPLER: the edge sampler's commands own no deck and no engine write to serialize.
+	if (isSamplerCommandType(command.type) || isClassicSamplerCommandType(command.type)) return null;
 	if (
 		command.type === 'headphone_outputs_refresh' ||
 		command.type === 'headphone_output_acquire' ||
@@ -1986,8 +1995,30 @@ function _loadWouldBeBlocked(deck: DeckId): boolean {
 	}
 }
 
+function _isSamplerCommand(
+	command: PerformanceCommand
+): command is Extract<PerformanceCommand, { type: SamplerCommand['type'] }> {
+	return isSamplerCommandType(command.type);
+}
+
+function _isClassicSamplerCommand(
+	command: PerformanceCommand
+): command is Extract<PerformanceCommand, { type: ClassicSamplerCommand['type'] }> {
+	return isClassicSamplerCommandType(command.type);
+}
+
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// SAMPLER: edge sampler parity commands run through the sampler store (sampler-ipc.ts).
+	if (_isSamplerCommand(command)) {
+		await applySamplerCommand(command);
+		return;
+	}
+	// SAMPLER: classic sampler unit parity commands run through its store (classic-sampler-ipc.ts).
+	if (_isClassicSamplerCommand(command)) {
+		await applyClassicSamplerCommand(command);
+		return;
+	}
 	// Empty-deck transport is a user/agent mistake, not an engine fault.
 	// Refuse here (same copy as MIDI action-glue) so Quick Draw, Trackify,
 	// CLI, and a play queued across an unload never reach _requireLoaded's
@@ -2940,7 +2971,8 @@ function _persistCommandError(
 	let subcontrol = '';
 	if (command !== undefined && 'band' in command) subcontrol = command.band;
 	else if (command !== undefined && 'stem' in command) subcontrol = command.stem;
-	else if (command !== undefined && 'slot' in command) subcontrol = command.slot;
+	// String(): a hot cue slot is a letter, a classic sampler unit slot (sampler_unit_*) a number.
+	else if (command !== undefined && 'slot' in command) subcontrol = String(command.slot);
 	const toastKey =
 		command === undefined ? undefined : `performance:${deck}:${command.type}:${subcontrol}`;
 	if (_isEmptyDeckTransportError(messageText)) {

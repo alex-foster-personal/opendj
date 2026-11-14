@@ -1,0 +1,9 @@
+{
+  "bytes": 14336,
+  "measured_main": 399919,
+  "measured_with_pr": 414006,
+  "sha": "4c400ddb77",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 8 (PR 14939, branch rc-main-direct--r3-b8) grows the library surface by its 47 members' code: CI measured +14087 B gzip at the cut 4c400ddb77 over main 434ca4c3af (run 43524909421, the frontend job's budget step); the charge is exactly the KiB ceiling of that. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}

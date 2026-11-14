@@ -6,7 +6,11 @@ import { isNativeInteractiveTarget } from './performance-hotkeys-target';
 import type { DeckId } from '$lib/player/constants';
 import type { TempoKeyAction } from './tempo-keys';
 import type { SelectorCommandId, SelectorLeafCommandId } from '$lib/keyboard/command-registry';
-import { isForwardedSelectorKey, selectorLeafCommandForKey } from '$lib/keyboard/selector-activate';
+import {
+	isForwardedSelectorKey,
+	isSelectorLeafActivation,
+	selectorLeafCommandForKey
+} from '$lib/keyboard/selector-activate';
 
 /** KEYB-11383: the deck verbs C, V and K send for the recent deck. */
 export type RecentDeckVerb = 'cue' | 'beat-sync' | 'master-tempo';
@@ -93,7 +97,7 @@ export interface PerformanceShortcutHandlers {
 	selectorCommand?: (command: SelectorCommandId) => void;
 	/** #9395: Esc drops the selection and hides the ring. */
 	clearSelector?: () => void;
-	/** #13708: Enter activates the selected leaf, the arrows adjust it. */
+	/** #13708: Enter activates the selected leaf (Shift+Enter as a Shift+click, #14522), the arrows adjust it. */
 	selectorLeafCommand?: (command: SelectorLeafCommandId) => void;
 }
 
@@ -123,10 +127,11 @@ function selectorAction(
 ): PerformanceShortcutAction | null {
 	const active = context.selectorActive === true;
 	if (e.key === 'Escape') return active ? { kind: 'selector-clear' } : null;
-	if (e.shiftKey === true) return null;
+	// #14522: Shift+Enter on a selected leaf is a Shift+click; every other Shift key passes.
 	const leafCommand = selectorLeafKeyCommand(e, context);
 	if (leafCommand !== null)
 		return { kind: 'selector-leaf', command: leafCommand, repeat: e.repeat === true };
+	if (e.shiftKey === true) return null;
 	if (e.key.length !== 1) return null;
 	const command = SELECTOR_LETTERS[e.key.toLowerCase()];
 	if (command === undefined) return null;
@@ -153,9 +158,9 @@ function selectorLeafKeyCommand(
 ): SelectorLeafCommandId | null {
 	const leafId = context.selectorLeafId ?? null;
 	if (leafId === null || context.selectorInLibrary === true) return null;
-	const command = selectorLeafCommandForKey(e.key);
+	const command = selectorLeafCommandForKey(e.key, e.shiftKey === true);
 	if (command === null) return null;
-	if (command !== 'selector.activate' && context.selectorLeafAdjustable?.(leafId) !== true)
+	if (!isSelectorLeafActivation(command) && context.selectorLeafAdjustable?.(leafId) !== true)
 		return null;
 	if (isForwardedSelectorKey(e)) return null;
 	if (_insidePopup(e.target)) return null;
@@ -391,8 +396,8 @@ export function handlePerformanceShortcutKeydown(
 		case 'selector-leaf':
 			// The leaf's own control must not also see the key (a focused knob would step twice).
 			e.stopPropagation?.();
-			// A held arrow keeps stepping (OS key repeat); a held Enter activates once.
-			if (!action.repeat || action.command !== 'selector.activate')
+			// A held arrow keeps stepping (OS key repeat); a held Enter or Shift+Enter activates once.
+			if (!action.repeat || !isSelectorLeafActivation(action.command))
 				handlers.selectorLeafCommand?.(action.command);
 			break;
 		case 'hot-cue-trigger':

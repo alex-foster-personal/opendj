@@ -74,6 +74,7 @@
   {"id":"dial.position.9","group":"Dials","feature_flag":null,"mac":{"chord":"9","description":"Glide selected dial or fader to 9 (1) over the move length"},"other":{"chord":"9","description":"Glide selected dial or fader to 9 (1) over the move length"}},
   {"id":"dial.jump.9","group":"Dials","feature_flag":null,"mac":{"chord":"Mod+9","description":"Jump selected dial or fader to 9 (1)"},"other":{"chord":"Mod+9","description":"Jump selected dial or fader to 9 (1)"}},
   {"id":"dial.duration.longer","group":"Dials","feature_flag":null,"mac":{"chord":"= / +","description":"Double the commanded move length (1, 2, 4, 8, 16 beats)"},"other":{"chord":"= / +","description":"Double the commanded move length (1, 2, 4, 8, 16 beats)"}},
-  {"id":"dial.duration.shorter","group":"Dials","feature_flag":null,"mac":{"chord":"- / _","description":"Halve the commanded move length (1, 2, 4, 8, 16 beats)"},"other":{"chord":"- / _","description":"Halve the commanded move length (1, 2, 4, 8, 16 beats)"}}
+  {"id":"dial.duration.shorter","group":"Dials","feature_flag":null,"mac":{"chord":"- / _","description":"Halve the commanded move length (1, 2, 4, 8, 16 beats)"},"other":{"chord":"- / _","description":"Halve the commanded move length (1, 2, 4, 8, 16 beats)"}},
+  {"id":"selector.shift-activate","group":"Selector controls","feature_flag":null,"mac":{"chord":"Shift+Enter","description":"Shift-click selected control"},"other":{"chord":"Shift+Enter","description":"Shift-click selected control"}}
  ]
 }

@@ -14,6 +14,8 @@ import type { AnlzBeat, DeckAudioSnapshot } from '$lib/rb/deck-state-types';
 import type { Vocals } from '$lib/rb/api-rb';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { MixerDeckPairId } from '$lib/rb/midi/midi-types';
+import type { Edge, SlotSettings } from '$lib/player/sampler/sampler-types';
+import type { EdgeFilters } from '$lib/player/sampler/edge-search';
 import type { PadModeSnapshot } from './pad-mode-catalog';
 import type {
 	DeckState,
@@ -192,6 +194,44 @@ export type PerformanceCommand =
 	| { type: 'seek'; deck: DeckId; position_ms: number; exact?: boolean }
 	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
 	| { type: 'set_waveform_design'; design?: WaveformDesignPref; height?: WaveHeight }
+	/** SAMPLER: edge sampler agent parity (sampler-ipc-guards.ts). A slot is exactly one of slot_id or ref ("S1-05", "R-03"). */
+	| { type: 'sampler_enabled'; on: boolean }
+	| { type: 'sampler_trigger'; slot_id?: string; ref?: string }
+	| { type: 'sampler_stop'; slot_id?: string; ref?: string; all?: true }
+	| { type: 'sampler_release'; slot_id?: string; ref?: string }
+	| { type: 'sampler_preview'; slot_id?: string; ref?: string; stop?: true }
+	| { type: 'sampler_set_page'; edge: Edge; set?: number; delta?: number }
+	| { type: 'sampler_pin'; slot_id?: string; ref?: string; pinned: boolean }
+	| { type: 'sampler_search'; edge: Edge; query: string }
+	| { type: 'sampler_filter'; edge: Edge; filter: keyof EdgeFilters; on: boolean }
+	| { type: 'sampler_results'; edge: Edge; show: boolean }
+	| {
+			type: 'sampler_slot_update';
+			slot_id?: string;
+			ref?: string;
+			name?: string;
+			description?: string;
+			settings?: Partial<SlotSettings>;
+	  }
+	| { type: 'sampler_set_name'; set_id: string; name: string; description: string }
+	| { type: 'sampler_capture'; deck: 1 | 2 | 3 | 4; set: number; index: number }
+	| { type: 'sampler_edit'; slot_id?: string; ref?: string; close?: true }
+	| { type: 'sampler_delete'; slot_id?: string; ref?: string }
+	/** SAMPLER: classic 4 x 16 sampler unit agent parity (classic-sampler-ipc-guards.ts); bank 0..3, slot 0..15. */
+	| {
+			type: 'sampler_unit_load';
+			bank: number;
+			slot: number;
+			stable_id?: string;
+			path?: string;
+			title?: string;
+			duration_ms?: number;
+	  }
+	| { type: 'sampler_unit_trigger'; bank: number; slot: number; held?: boolean }
+	| { type: 'sampler_unit_stop'; bank?: number; slot?: number }
+	| { type: 'sampler_unit_mode'; bank: number; slot: number; mode: 'one_shot' | 'loop' | 'gate' }
+	| { type: 'sampler_unit_gain'; bank: number; slot: number; gain_db: number }
+	| { type: 'sampler_unit_master_gain'; gain_db: number }
 	/** ARTNUM-9649: the deck number drawn over each deck's artwork. */
 	| { type: 'set_deck_number_art'; mode: DeckNumberArt }
 	/** WAVEQS-8348e: the quick-settings popover's overlay switches (waveform-overlay-command.ts). */

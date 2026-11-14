@@ -72,6 +72,14 @@ _IN_LABEL_WEIGHT = {INTRO: 1.0, BUILD: 0.8, INSTRUMENTAL: 0.7}
 #: so a caller that merges windows from elsewhere still ranks the user's cue first.
 USER_CUE_SCORE = 2.0
 _OTHER_LABEL_WEIGHT = 0.3
+#: Weight of the MIK ``fall`` term on out windows (spec 17 section 5c; first guess, mimicked snap rule).
+FALL_WEIGHT = 0.15
+#: A MIK step up of at least this many levels at an in window's end is a rise landing.
+RISE_MIN_STEP = 2
+
+
+#: #12485: in-window evidence, in fallback priority order (Mixxx AutoDJ section 2.2).
+IN_SOURCES = ("transition_in_cue", "phrase_cue", "analyzed_section", "time_fallback")
 
 
 @dataclass(frozen=True)
@@ -90,9 +98,14 @@ class MixWindow:
     pinned: bool = False
     #: Outro tail shorter than 4 bars on the grid (issue #11180); later blends may refuse.
     too_short: bool = False
+    #: #10144: the grid trust tier over this window's span (BAR, BEAT, NONE) and why when not BAR.
+    grid_tier: str = "BAR"
+    grid_reason: str | None = None
+    #: #12485: the evidence an in window came from (one of IN_SOURCES); empty on out windows.
+    source: str = ""
 
     def summary(self) -> dict[str, Any]:
-        return {
+        doc = {
             "role": self.role,
             "start_bar": self.start_bar,
             "max_bars": self.max_bars,
@@ -104,6 +117,11 @@ class MixWindow:
             "reason": self.reason,
             "too_short": self.too_short,
         }
+        if self.source:
+            doc["source"] = self.source
+        if self.grid_tier != "BAR":
+            doc |= {"grid_tier": self.grid_tier, "grid_reason": self.grid_reason}
+        return doc
 
 
 def incoming_mixability_reason(window: MixWindow) -> str | None:
@@ -162,6 +180,47 @@ def _in_position_prior(bars: int, start_bar: int) -> float:
     return max(0.0, (bars_eff - start_bar) / (bars_eff - band_end))
 
 
+def _mik_step_at(profile: TrackProfile, bar: int) -> tuple[int, int] | None:
+    """``(level_before, level_after)`` of the snapped MIK boundary at ``bar``, if any."""
+    if profile.mik_bar_level is None:
+        return None
+    for boundary in profile.mik_boundaries:
+        if boundary.snapped_bar == bar:
+            return boundary.level_before, boundary.level_after
+    return None
+
+
+def _offer_fall_windows(profile: TrackProfile, offer: Callable[[MixWindow], None]) -> None:
+    tail_from = max(1, int(profile.bars * 0.5))
+    outro = next(
+        (s.start_bar for s in profile.sections if s.label == OUTRO and s.start_bar >= tail_from), profile.bars + 1
+    )
+    falls: list[MixWindow] = []
+    for boundary in profile.mik_boundaries if profile.mik_bar_level is not None else ():
+        bar = boundary.snapped_bar
+        drop = boundary.level_before - boundary.level_after
+        if bar is None or drop < 1 or not tail_from <= bar < outro:
+            continue
+        section = profile.section_at(bar)
+        label = section.label if section is not None else "unknown"
+        why = f"energy falls {boundary.level_before} to {boundary.level_after} at bar {bar}"
+        window = _out_window(profile, bar, label, why)
+        if window is not None:
+            falls.append(replace(window, score=window.score + FALL_WEIGHT * min(1.0, drop / 3.0)))
+    if falls:
+        last = max(falls, key=lambda window: window.start_bar)
+        top = max(window.score for window in falls)
+        if last.score < top:
+            falls[falls.index(last)] = replace(last, score=top + 0.001)
+    for window in falls:
+        offer(window)
+
+
+def _tier_fields(profile: TrackProfile, start_bar: int, bars: int) -> dict[str, Any]:
+    tier = profile.grid_tier(start_bar, bars)
+    return {"grid_tier": tier.tier, "grid_reason": tier.reason}
+
+
 def _out_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> MixWindow | None:
     last_bar = profile.bars  # the last downbeat on the grid
     # The blend must be over BY the last downbeat: the bar after it is the
@@ -191,6 +250,7 @@ def _out_window(profile: TrackProfile, start_bar: int, label: str, why: str) -> 
         score=score,
         reason="; ".join(reasons),
         too_short=label == OUTRO and max_bars < MIN_BLEND_BARS,
+        **_tier_fields(profile, start_bar, max_bars),
     )
 
 
@@ -208,11 +268,17 @@ def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str, *, p
     vocal_term = 1.0 if vocal_free is None else vocal_free / max_bars
     length_term = min(1.0, max_bars / 16.0)
     landing = 1.0 if peak is not None else 0.0
+    step = _mik_step_at(profile, start_bar + max_bars)
+    rise = step is not None and step[1] - step[0] >= RISE_MIN_STEP
+    if rise:
+        landing = 1.0
     score = 0.4 * label_weight + 0.15 * vocal_term + 0.15 * position + 0.15 * length_term + 0.15 * landing
     score *= _in_position_prior(profile.bars, start_bar)
     reasons = [why, f"{max_bars} usable bars"]
     if peak is not None:
         reasons.append(f"lands on a peak at bar {peak}")
+    if rise and step is not None:
+        reasons.append(f"lands on an energy rise {step[0]} to {step[1]} at bar {start_bar + max_bars}")
     if first_vocal is not None and first_vocal >= start_bar:
         reasons.append(f"first vocal at bar {first_vocal}")
     window = MixWindow(
@@ -226,11 +292,22 @@ def _in_window(profile: TrackProfile, start_bar: int, label: str, why: str, *, p
         score=USER_CUE_SCORE if pinned else score,
         reason="; ".join(reasons),
         pinned=pinned,
+        **_tier_fields(profile, start_bar, max_bars),
     )
+    window = replace(window, source=_in_source(profile, start_bar, pinned))
     refusal = incoming_mixability_reason(window)
     if refusal is not None:
         return replace(window, score=0.0, reason=f"{window.reason}; {refusal}")
     return window
+
+
+def _in_source(profile: TrackProfile, start_bar: int, pinned: bool) -> str:
+    """Which evidence an in window at ``start_bar`` rests on (#12485)."""
+    if pinned:
+        return "transition_in_cue"
+    if profile.section_at(start_bar) is None:
+        return "time_fallback"
+    return "phrase_cue" if profile.sections_source == "rekordbox" else "analyzed_section"
 
 
 def _offer_out_windows(
@@ -246,6 +323,7 @@ def _offer_out_windows(
             _offer_if_open(
                 offer, _out_window(profile, section.start_bar, section.label, "phrase start in the back half")
             )
+    _offer_fall_windows(profile, offer)
     fallback = max(1, profile.bars - FALLBACK_BARS + 1)
     fallback -= (fallback - 1) % 8  # keep it on an 8-bar boundary from bar 1
     if not candidates:

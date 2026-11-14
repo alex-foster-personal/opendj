@@ -112,6 +112,7 @@
 	import { previewAssets, requestPreviewAssets, watchPreview } from '$lib/rb/cmdk-preview-data.svelte';
 	import { createCuePreview, type CuePreviewCommand, type CuePreviewTrack } from '$lib/rb/cmdk-cue-preview.svelte';
 	import type { PaletteIpcCommand } from '$lib/palette/commands';
+	import { installedKeyboardRunner, keyboardCommandRows, runKeyboardCommandRow } from '$lib/palette/keyboard-command-rows';
 	import { barPhase, downbeatTimes, snapStops } from '$lib/rb/cmdk-preview-grid';
 	import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
 	import { shouldUseBeatgridFallback } from '$lib/rb/beatgrid-fallback';
@@ -405,11 +406,12 @@
 						title: decks[id].title,
 						load_generation: decks[id].load_generation
 					}));
-					return [
+					const base = [
 						...commandCandidates(rows, query, { secondScreen: SECOND_SCREEN_ROW }),
 						...paletteCommandRows({ target, decks: rows }, query),
 						...(dialScope === null ? [] : registryCommandCandidates(performanceCommandsInScope(dialScope)))
 					];
+					return [...base, ...keyboardCommandRows(installedKeyboardRunner(), base)];
 				})()
 			: []
 	);
@@ -715,6 +717,13 @@
 			} catch (exc) {
 				return fail(`${action.label} did not run: ${exc instanceof Error ? exc.message : String(exc)}`);
 			}
+			if (source === 'user-ui') noteCommandPick(commandKey(action));
+			closeBar();
+			return null;
+		}
+		if (command.type === 'keyboard') {
+			const refused = runKeyboardCommandRow(installedKeyboardRunner(), { label: action.label, command });
+			if (refused !== null) return fail(refused);
 			if (source === 'user-ui') noteCommandPick(commandKey(action));
 			closeBar();
 			return null;

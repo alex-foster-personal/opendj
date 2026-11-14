@@ -112,6 +112,22 @@ _OWN: Final[dict[str, str]] = {
 }
 
 
+#: Section source and labels made from MIK energy boundaries when no phrases are served.
+MIK_ENERGY_SOURCE: Final = "mik-energy"
+ENERGY_UP: Final = "energy_up"
+ENERGY_DOWN: Final = "energy_down"
+ENERGY_FLAT: Final = "energy_flat"
+
+
+def mik_step_label(level_before: int, level_after: int) -> str:
+    """The section label for one MIK energy step, from the sign of the step."""
+    if level_after > level_before:
+        return ENERGY_UP
+    if level_after < level_before:
+        return ENERGY_DOWN
+    return ENERGY_FLAT
+
+
 def pssi_label(kind: int, mood: int) -> tuple[str, str]:
     """``(raw, label)`` for one PSSI entry; unknown pairs say ``unknown``."""
     raw_label = _PSSI.get(mood, {}).get(kind)

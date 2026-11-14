@@ -29,9 +29,10 @@ export type PresetCommandId = `preset.run.${TransitionPresetId}`;
 export type SelectorCommandId =
 	`selector.move.${SelectorDirection}` | 'selector.drill-in' | 'selector.drill-out';
 
-/** #13708: operate the selected selector leaf (Enter, arrows). */
+/** #13708: operate the selected selector leaf (Enter, Shift+Enter #14522, arrows). */
 export const SELECTOR_LEAF_COMMAND_IDS = [
 	'selector.activate',
+	'selector.shift-activate',
 	'selector.adjust.up',
 	'selector.adjust.down'
 ] as const;
@@ -40,7 +41,8 @@ export type SelectorLeafCommandId = (typeof SELECTOR_LEAF_COMMAND_IDS)[number];
 
 /** The live selector leaf the leaf commands operate (performance-hotkeys.ts). */
 export interface SelectorLeafHost {
-	activate(): string;
+	/** Press the leaf's control; `shift` presses it as a Shift+click (#14522). */
+	activate(shift: boolean): string;
 	adjust(direction: 1 | -1): string;
 }
 
@@ -184,7 +186,15 @@ const SELECTOR_LEAF_COMMAND_DEFINITIONS: readonly KeyboardCommandDefinition[] = 
 		defaultKeys: ['Enter'],
 		scopes: ['global'],
 		scope: 'global',
-		run: (ctx) => _selectorLeaf(ctx).activate()
+		run: (ctx) => _selectorLeaf(ctx).activate(false)
+	},
+	{
+		id: 'selector.shift-activate',
+		label: 'Shift-click selected control',
+		defaultKeys: ['Shift+Enter'],
+		scopes: ['global'],
+		scope: 'global',
+		run: (ctx) => _selectorLeaf(ctx).activate(true)
 	},
 	{
 		id: 'selector.adjust.up',

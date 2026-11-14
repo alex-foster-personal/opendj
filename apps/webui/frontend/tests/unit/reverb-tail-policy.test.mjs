@@ -121,11 +121,34 @@ function rmsDb(y, from, to) {
 	return 10 * Math.log10(Math.max(s / (to - from), 1e-30));
 }
 
+/**
+ * The shipped SPACE impulse's left channel at unit peak. The impulse carries its own
+ * level for a convolver with normalize off (FXVERB-14450), so its raw samples sit far
+ * below full scale; the cut automation is linear, so the tail is measured at unit peak.
+ */
 function spaceImpulseLeft() {
 	const left = [];
 	const createBuffer = () => ({ copyToChannel: (src, ch) => ch === 0 && left.push(src) });
 	graph.spaceImpulseBuffer({ sampleRate: SR, createBuffer });
-	return left[0];
+	let peak = 0;
+	for (const v of left[0]) peak = Math.max(peak, Math.abs(v));
+	assert.ok(peak > 0, 'the SPACE impulse is not silent');
+	return Float32Array.from(left[0], (v) => v / peak);
+}
+
+/** RBJ constant-peak bandpass, one third of an octave wide (Q 4.32), applied offline (space-impulse.test.mjs). */
+function bandpass(x, f0) {
+	const w = (2 * Math.PI * f0) / SR;
+	const alpha = Math.sin(w) / (2 * 4.32);
+	const a0 = 1 + alpha;
+	const [b0, b2, a1, a2] = [alpha / a0, -alpha / a0, (-2 * Math.cos(w)) / a0, (1 - alpha) / a0];
+	const y = new Float64Array(x.length);
+	let [x1, x2, y1, y2] = [0, 0, 0, 0];
+	for (let i = 0; i < x.length; i += 1) {
+		y[i] = b0 * x[i] + b2 * x2 - a1 * y1 - a2 * y2;
+		[x2, x1, y2, y1] = [x1, x[i], y1, y[i]];
+	}
+	return y;
 }
 
 describe('reverb tail policy', () => {
@@ -231,7 +254,8 @@ describe('reverb tail policy', () => {
 		assert.equal(clock.runs.length, 0);
 		assert.equal(host.isAttached, true);
 		const ir = spaceImpulseLeft();
-		const out = renderThroughReturn(ir, host.returnGain, null);
+		// The impulse decays per band (FXVERB-14450): SPACE_RT60_SEC is the low band's RT60, measured at 500 Hz.
+		const out = bandpass(renderThroughReturn(ir, host.returnGain, null), 500);
 		// Decay rate between two windows well inside the tail: 60 dB over SPACE_RT60_SEC.
 		const w = Math.round(0.1 * SR);
 		const [t1, t2] = [0.3, 1.5];

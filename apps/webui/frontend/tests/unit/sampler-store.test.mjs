@@ -210,13 +210,14 @@ test('with no engine a fired tab stays not-playing and says why', async () => {
 	assert.equal(S.sampler.engineReady, false);
 	await S.fireSlot(S.edgeItems('R')[0]);
 	assert.equal(S.slotPhase('s0'), 'free');
+	assert.equal(S.slotPlayhead('s0'), null);
 	assert.ok(S.toasts.some((t) => t.kind === 'error' && /no audio engine yet/.test(t.message)));
 	await S.togglePreview(S.edgeItems('R')[1], false);
 	assert.equal(S.slotPhase('s1'), 'free');
 });
 
-test('a registered engine receives the plays and warms the visible tabs', async () => {
-	/** [if] an engine registers [then] engineReady is true, a fired tab reaches its toggle, a reload warms the shown tabs, [else stop]. */
+test('a registered engine receives the plays and a reload does no residency work', async () => {
+	/** [if] an engine registers [then] engineReady is true, a fired tab reaches its toggle, an asleep reload feeds nothing, [else stop]. */
 	const { S } = await loadedStore(Array.from({ length: 25 }, (_, i) => slot(i)));
 	const calls = [];
 	S.registerSamplerEngine({
@@ -224,15 +225,14 @@ test('a registered engine receives the plays and warms the visible tabs', async 
 		stop: (id) => void calls.push(['stop', id]),
 		preview: async (s) => void calls.push(['preview', s.slot_id]),
 		stopPreview: () => void calls.push(['stopPreview']),
-		warm: (slots) => void calls.push(['warm', slots.length]),
-		phase: () => 'playing'
+		reside: (view) => void calls.push(['reside', view.visible.length]),
+		phase: () => 'playing',
+		playhead: (id) => (id === 's2' ? 0.25 : null)
 	});
 	assert.equal(S.sampler.engineReady, true);
-	S.fireEdgeTab('R', 2);
+	assert.equal(S.slotPlayhead('s2'), 0.25);
+	await S.fireSlot(S.edgeItems('R')[2]);
 	await S.loadSampler();
-	assert.deepEqual(calls, [
-		['toggle', 's2'],
-		['warm', 25]
-	]);
+	assert.deepEqual(calls, [['toggle', 's2']]);
 	assert.equal(S.slotPhase('s2'), 'playing');
 });

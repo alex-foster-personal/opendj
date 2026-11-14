@@ -13,7 +13,7 @@
 	import { effectiveWavePalette, effectiveWaveScheme } from '$lib/rb/ui-skin';
 	import { resolveWaveBandColors } from '$lib/rb/wave-palette';
 	import { PLAY_TRIANGLE_PATH } from '$lib/ui/icon-glyphs';
-	import { drawRegionBeats, drawRegionPeaks } from './region-wave-draw';
+	import { CUE_DECK_WAVE_FILL, drawRegionBeats, drawRegionPeaks } from './region-wave-draw';
 
 	let { slot, info }: { slot: SamplerSlot; info: string } = $props();
 
@@ -35,7 +35,7 @@
 
 	function redraw(): void {
 		if (!canvas || canvas.clientWidth === 0) return;
-		drawRegionPeaks(canvas, slot.peaks, colors);
+		drawRegionPeaks(canvas, slot.peaks, colors, CUE_DECK_WAVE_FILL);
 		drawRegionBeats(canvas, slot.beats, slot.settings.downbeat_offset);
 	}
 	onMount(() => {

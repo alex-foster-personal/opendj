@@ -31,6 +31,7 @@ from .title_fix_store_types import (
     CFG,
     BatchReleasedError,
     ConfigError,
+    FenceExitError,
     IdentifyItem,
     ProposalState,
     ScanLeaseLostError,

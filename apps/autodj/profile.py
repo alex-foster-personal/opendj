@@ -24,12 +24,15 @@ from __future__ import annotations
 import bisect
 import math
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from itertools import pairwise
 from typing import Any, Literal
 
 from apps.autodj.contract.models import (
+    GRID_BAR,
+    GRID_BEAT,
+    GRID_NONE,
     MIK_BOUNDARY_SNAP_BARS,
     VOCAL_BAR_THRESHOLD,
     HotCue,
@@ -39,7 +42,7 @@ from apps.autodj.contract.models import (
     Section,
     TrackProfile,
 )
-from apps.autodj.sections import UNKNOWN, phrase_label
+from apps.autodj.sections import MIK_ENERGY_SOURCE, UNKNOWN, mik_step_label, phrase_label
 from apps.shared.harmonic import key_to_camelot
 
 
@@ -53,11 +56,7 @@ class ResolvedKey:
 
 
 def _bar_in_segment(start: object, end: object, bar: int) -> bool:
-    return (
-        isinstance(start, (int, float))
-        and isinstance(end, (int, float))
-        and start <= bar <= end
-    )
+    return isinstance(start, (int, float)) and isinstance(end, (int, float)) and start <= bar <= end
 
 
 def resolve_key_at_bar(profile: TrackProfile, bar: int) -> ResolvedKey:
@@ -306,9 +305,7 @@ def _key_segments(anlz: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
     # inclusive, so a segment [s, e) covers profile bars s+1 through e.
     return tuple(
         {
-            "start_bar": segment["start_bar"] + 1
-            if _is_bar(segment.get("start_bar"))
-            else segment.get("start_bar"),
+            "start_bar": segment["start_bar"] + 1 if _is_bar(segment.get("start_bar")) else segment.get("start_bar"),
             "end_bar": segment.get("end_bar"),
             "key": segment.get("key_camelot"),
             "confidence": segment.get("confidence"),
@@ -346,6 +343,19 @@ def _grid_trust(beatgrid: Mapping[str, Any]) -> tuple[bool, str | None]:
     if grid_status == "ok" and not beatgrid.get("static_grid_untrusted", False):
         return True, None
     return False, str(beatgrid.get("reason") or f"grid status {grid_status!r}")
+
+
+def _grid_base_tier(beatgrid: Mapping[str, Any], trusted: bool) -> str:
+    """#10144: NONE on a GRIDFLAG failure, BAR when bar positions are trusted, else BEAT."""
+    if str(beatgrid.get("gridflag_verdict") or "").lower() == "fail":
+        return GRID_NONE
+    return GRID_BAR if trusted else GRID_BEAT
+
+
+def _change_bars(anlz: Mapping[str, Any], bar_at: Callable[[float], float]) -> tuple[int, ...]:
+    """The bars where the served tempo changes fall: /anlz's top-level ``tempo_changes[].at_s``."""
+    times = [float(m["at_s"]) for m in _records(anlz.get("tempo_changes")) if isinstance(m.get("at_s"), (int, float))]
+    return tuple(sorted({round(bar_at(t)) for t in times}))
 
 
 def _timing(
@@ -483,6 +493,35 @@ def _mik_boundaries(
     return tuple(rows)
 
 
+def _mik_sections(
+    boundaries: tuple[MikBoundary, ...],
+    downbeats: tuple[float, ...],
+    energy: tuple[float, ...] | None,
+    bass: tuple[float, ...] | None,
+    vocals: tuple[float, ...] | None,
+) -> tuple[Section, ...]:
+    """Sections that start at snapped MIK boundaries, for a track served with no phrases."""
+    phrases: list[dict[str, Any]] = []
+    for boundary in boundaries:
+        bar = boundary.snapped_bar
+        if bar is None or not 1 <= bar <= len(downbeats):
+            continue
+        if phrases and phrases[-1]["bar"] >= bar:
+            continue
+        phrases.append(
+            {
+                "bar": bar,
+                "start_s": downbeats[bar - 1],
+                "label": mik_step_label(boundary.level_before, boundary.level_after),
+            }
+        )
+    for index, phrase in enumerate(phrases):
+        phrase["end_s"] = phrases[index + 1]["start_s"] if index + 1 < len(phrases) else downbeats[-1] + 1e-6
+    rows = _sections(phrases, downbeats, energy, bass, vocals)
+    # phrase_label maps unknown strings to "unknown"; keep the energy step label instead.
+    return tuple(replace(row, label=row.raw) for row in rows)
+
+
 def _mik_grid_note(boundaries: tuple[MikBoundary, ...]) -> str | None:
     unsnapped = [boundary for boundary in boundaries if boundary.snapped_bar is None]
     if not unsnapped:
@@ -516,9 +555,7 @@ def _mik_from_anlz(
     if level is not None and (not isinstance(level, int) or isinstance(level, bool)):
         raise ProfileError(f"anlz payload energy_level {level!r} is not an int or null")
     if not segments and level is None:
-        raise ProfileError(
-            "anlz payload energy_source is mik but carries neither energy_level nor energy_segments"
-        )
+        raise ProfileError("anlz payload energy_source is mik but carries neither energy_level nor energy_segments")
     if not segments:
         return {
             "mik_bar_level": None,
@@ -547,6 +584,9 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
     beatgrid = anlz.get("beatgrid") or {}
     beats, downbeats = _grid(stable_id, beatgrid)
     grid_trusted, grid_note = _grid_trust(beatgrid)
+    base_tier = _grid_base_tier(beatgrid, grid_trusted)
+    if base_tier == GRID_NONE:
+        grid_note = grid_note or "GRIDFLAG verdict: fail"
     notes: list[str] = []
     bpm, duration_s, bar_s = _timing(track, beats, downbeats, notes)
     waveform = anlz.get("waveform") or {}
@@ -572,6 +612,10 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         return 1.0 + index + (seconds - start) / (end - start)
 
     mik = _mik_from_anlz(anlz, downbeats, bar_s, bar_at)
+    if sections_source == "none" and not sections and mik["mik_boundaries"]:
+        sections = _mik_sections(mik["mik_boundaries"], downbeats, energy, bass, vocal_series)
+        if sections:
+            sections_source = MIK_ENERGY_SOURCE
     return TrackProfile(
         stable_id=stable_id,
         title=_text(track, "title"),
@@ -580,8 +624,10 @@ def profile_from_payloads(anlz: Mapping[str, Any], track: Mapping[str, Any] | No
         key=_camelot(track.get("key")),
         duration_s=duration_s,
         downbeats_s=downbeats,
-        grid_trusted=grid_trusted,
+        grid_trusted=base_tier == GRID_BAR,
         grid_note=grid_note,
+        grid_base_tier=base_tier,
+        grid_change_bars=_change_bars(anlz, bar_at),
         sections=sections,
         sections_source=sections_source,
         bar_energy=energy,

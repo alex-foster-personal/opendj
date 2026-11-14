@@ -83,3 +83,23 @@ test('flags read failure hides the chip and skips the status route', async () =>
 	});
 	assert.deepEqual(thrown, { outputEnabled: null, state: null });
 });
+
+test('a remote daemon base prefixes both the flags read and the status read', async () => {
+	/** [if] VITE_API_BASE points the UI at a remote daemon [then] the flags read and the status read both go to that daemon, [else stop]. */
+	const base = 'http://daemon.test:9000';
+	const remote = await loadTypeScriptModule('src/lib/rb/lighting-status.svelte.ts', {
+		viteApiBase: base
+	});
+	const calls = [];
+	const fetchFn = async (url) => {
+		calls.push(url);
+		return url.endsWith(remote.FLAGS_PATH)
+			? res(200, flagsBody(true))
+			: res(200, { enabled: true, feed_connected: true });
+	};
+	assert.deepEqual(await remote.pollLightingChip(null, fetchFn), {
+		outputEnabled: true,
+		state: 'on'
+	});
+	assert.deepEqual(calls, [`${base}${remote.FLAGS_PATH}`, `${base}${remote.LIGHTING_STATUS_PATH}`]);
+});

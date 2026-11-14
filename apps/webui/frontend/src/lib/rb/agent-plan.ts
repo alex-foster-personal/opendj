@@ -54,14 +54,15 @@ const PLAN_COMMAND_TYPES: ReadonlySet<string> = new Set([
 	'crossfader',
 	'tempo',
 	'color_fx',
-	'stem_gain'
+	'stem_gain',
+	'key_shift'
 ]);
 /** The command types a plan may ramp (crossfader and tempo included, AGENT-24). */
 const PLAN_RAMP_TYPES: ReadonlySet<string> = new Set(['fader', 'trim', 'filter', 'eq', 'crossfader', 'tempo', 'color_fx', 'stem_gain']);
 /** What `prepare` may carry: the compiler's setup (cue, tempo, Beat Sync, hoisted incoming-deck sets), never a transport play. */
-const PREPARE_TYPES: ReadonlySet<string> = new Set(['master', 'seek', 'beat_sync', 'tempo', 'fader', 'trim', 'filter', 'eq']);
+const PREPARE_TYPES: ReadonlySet<string> = new Set(['master', 'seek', 'beat_sync', 'key_shift', 'tempo', 'fader', 'trim', 'filter', 'eq']);
 /** Setup the compiler emits only into `prepare`: a seek or Beat Sync fired mid-plan jumps the audible deck or re-syncs it. */
-const SETUP_ONLY_TYPES: ReadonlySet<string> = new Set(['seek', 'beat_sync']);
+const SETUP_ONLY_TYPES: ReadonlySet<string> = new Set(['seek', 'beat_sync', 'key_shift']);
 const PLAN_TICK_MS = 16;
 /**
  * AGENT-30: step sets (a fader cut, an EQ kill or swap) fire on the AUDIO clock, not on the tick. A step whose bar

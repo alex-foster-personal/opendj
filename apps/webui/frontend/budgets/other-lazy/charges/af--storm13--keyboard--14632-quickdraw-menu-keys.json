@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557769,
+  "measured_with_pr": 558121,
+  "sha": "0ac0ae818f",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--14632-quickdraw-menu-keys grows the other-lazy surface; measured +352 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

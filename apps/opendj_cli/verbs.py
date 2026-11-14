@@ -261,6 +261,10 @@ def parse_invocation(tokens: Sequence[str], deck_scope: int | None = None) -> In
     named, positionals = _named_tokens(verb.args, positionals)
     values, leftover = _consume(verb.args, positionals, named)
     _reject_leftover(verb, values, leftover, any(a.key == "deck" for a in verb.args))
+    try:
+        verb.check(values)
+    except ValueError as error:
+        raise InvocationError(str(error)) from error
     command = verb.build(values)
     allowed = (*DECK_VALUES, "all") if verb.command_type == "color_fx" else DECK_VALUES
     if "deck" in command and command["deck"] not in allowed:

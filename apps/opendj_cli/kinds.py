@@ -418,6 +418,108 @@ def reset_parts_value(key: str, raw: str) -> list[str]:
     return parts
 
 
+# SAMPLER: twin of parseRef in apps/webui/frontend/src/lib/player/sampler/sampler-store-logic.ts.
+_SAMPLER_REF = re.compile(r"^(?:S[1-9]\d*|R)-\d{2,}$")
+
+
+def sampler_ref_value(key: str, raw: str) -> str:
+    """An edge tab reference: ``S<set>-<nn>`` (1-based) or ``R-<nn>`` for search results."""
+    if not _SAMPLER_REF.match(raw) or raw.endswith("-00"):
+        raise ValueError(f"{key} must look like S1-05 or R-03, got {raw!r}")
+    return raw
+
+
+def any_text_value(_key: str, raw: str) -> str:
+    """Free text that may be empty (a cleared search, a blank description)."""
+    return raw
+
+
+# SAMPLER: twins of the settings guard in sampler-ipc-guards.ts (sampler-types.ts SlotSettings).
+SAMPLER_SETTINGS_ENUMS: dict[str, tuple[str, ...]] = {
+    "launch": ("bar", "beat", "4bars", "off"),
+    "key": ("auto", "master_tempo", "off"),
+    "tempo": ("match", "own"),
+    "mode": ("loop", "one_shot", "gate"),
+}
+SAMPLER_REPEAT_VALUES: tuple[str | int, ...] = ("once", "loop", 4, 2, 8)
+SAMPLER_INT_RANGES: dict[str, tuple[int, int]] = {"downbeat_offset": (-3, 3), "level": (0, 100)}
+
+
+def _sampler_setting(key: str, name: str, value: str) -> str | int:
+    if name in SAMPLER_SETTINGS_ENUMS:
+        parsed: str | int = enum_value(SAMPLER_SETTINGS_ENUMS[name])(f"{key}.{name}", value)
+        return parsed
+    if name == "repeat":
+        repeat: str | int = int(value) if value.isdigit() else value
+        if repeat not in SAMPLER_REPEAT_VALUES:
+            raise ValueError(f"{key}.repeat must be one of once|loop|4|2|8, got {value!r}")
+        return repeat
+    if name in SAMPLER_INT_RANGES:
+        low, high = SAMPLER_INT_RANGES[name]
+        number = int_value(f"{key}.{name}", value)
+        if number < low or number > high:
+            raise ValueError(f"{key}.{name} must be within {low}..{high}, got {value!r}")
+        return number
+    fields = "|".join([*SAMPLER_SETTINGS_ENUMS, "repeat", *SAMPLER_INT_RANGES])
+    raise ValueError(f"{key} field must be one of {fields}, got {name!r}")
+
+
+def sampler_settings_value(key: str, raw: str) -> dict[str, Any]:
+    """``field:value[,field:value...]`` -> a partial SlotSettings, e.g. ``launch:bar,level:80``."""
+    out: dict[str, Any] = {}
+    for chunk in raw.split(","):
+        name, sep, value = chunk.strip().partition(":")
+        if not sep:
+            raise ValueError(f"{key} entry must be field:value, got {chunk!r}")
+        if name in out:
+            raise ValueError(f"{key} names {name} twice")
+        out[name] = _sampler_setting(key, name, value)
+    return out
+
+
+# SAMPLER: twins of classic-sampler-logic.ts (4 banks x 16 slots, 0-based; gain domains in dB).
+SAMPLER_UNIT_INT_RANGES: dict[str, tuple[int, int]] = {"bank": (0, 3), "slot": (0, 15)}
+SAMPLER_UNIT_DB_RANGES: dict[str, tuple[float, float]] = {"slot": (-24.0, 6.0), "master": (-60.0, 0.0)}
+
+
+def sampler_unit_index_value(key: str, raw: str) -> int:
+    """A 0-based classic sampler bank (0..3) or slot (0..15), keyed by the arg name."""
+    low, high = SAMPLER_UNIT_INT_RANGES[key]
+    parsed = int_value(key, raw)
+    if parsed < low or parsed > high:
+        raise ValueError(f"{key} must be a whole number within {low}..{high} (0-based), got {raw!r}")
+    return parsed
+
+
+def sampler_unit_db_value(scope: str) -> Callable[[str, str], float]:
+    """A gain in dB inside the slot (-24..+6) or master (-60..0) domain."""
+    low, high = SAMPLER_UNIT_DB_RANGES[scope]
+
+    def parse(key: str, raw: str) -> float:
+        parsed = number_value(key, raw)
+        if parsed < low or parsed > high:
+            raise ValueError(f"{key} must be within {low:g}..{high:g} dB, got {raw!r}")
+        return parsed
+
+    return parse
+
+
+def non_negative_int_value(key: str, raw: str) -> int:
+    """A whole number of zero or more (a 0-based index)."""
+    parsed = int_value(key, raw)
+    if parsed < 0:
+        raise ValueError(f"{key} must be a whole number >= 0, got {raw!r}")
+    return parsed
+
+
+def nonzero_int_value(key: str, raw: str) -> int:
+    """A whole number other than zero (a signed page step)."""
+    parsed = int_value(key, raw)
+    if parsed == 0:
+        raise ValueError(f"{key} must be a non-zero whole number, got {raw!r}")
+    return parsed
+
+
 @dataclass(frozen=True)
 class Arg:
     """One command field, parsed from one positional token (two for ``loop``)."""

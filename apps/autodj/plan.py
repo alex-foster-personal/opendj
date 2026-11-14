@@ -198,7 +198,25 @@ def _side(document: Any, where: str) -> Side:
         bars=_int(window.get("bars"), f"{where}.window.bars", minimum=1),
         trim_db=None if trim_db is None else float(trim_db),
         trim_reason=_trim_reason(document.get("trim_reason"), where),
+        **_key_fields(document, where),
     )
+
+
+#: #10142: the static key shift a plan may ask of the incoming deck (spec 07 section 3, range 0..3 either way).
+KEY_SHIFT_LIMIT = 3
+
+
+def _key_fields(document: Mapping[str, Any], where: str) -> dict[str, Any]:
+    """#10142: ``key_shift_semitones`` and ``keylock`` of the incoming side, each refused by name when malformed."""
+    shift = document.get("key_shift_semitones", 0)
+    keylock = document.get("keylock", True)
+    if where != "in" and ("key_shift_semitones" in document or "keylock" in document):
+        raise PlanError("only the incoming side carries key_shift_semitones and keylock")
+    if isinstance(shift, bool) or not isinstance(shift, int) or abs(shift) > KEY_SHIFT_LIMIT:
+        raise PlanError(f"{where}.key_shift_semitones must be an integer -3..3, got {shift!r}")
+    if not isinstance(keylock, bool):
+        raise PlanError(f"{where}.keylock must be true or false, got {keylock!r}")
+    return {"key_shift_semitones": shift, "keylock": keylock}
 
 
 def _member(value: Any, allowed: frozenset[str], where: str) -> str:
@@ -696,6 +714,32 @@ def _beat_sync_fold(plan: TransitionPlan, in_profile: TrackProfile, live: Mappin
     return ratio * in_profile.bpm / float(out_bpm)
 
 
+def live_beat_sync_fold(
+    live: Mapping[str, Any] | None, out_deck: int, in_deck: int, in_profile: TrackProfile
+) -> float | None:
+    """#11559: the fold live Beat Sync uses for this pair (outgoing effective BPM, incoming pitch range), or None offline.
+
+    The same arithmetic as :func:`_beat_sync_fold` (``sync_tempo_ratio * in / out``); None when the mirror lacks a
+    deck, the outgoing effective BPM or the incoming pitch range, so the caller keeps its profile-only fold.
+    """
+    decks = (live or {}).get("decks")
+    if not isinstance(decks, Mapping):
+        return None
+    out_state, in_state = decks.get(str(out_deck)), decks.get(str(in_deck))
+    if not isinstance(out_state, Mapping) or not isinstance(in_state, Mapping):
+        return None
+    range_pct = in_state.get("pitch_range")
+    out_bpm = out_state.get("effective_bpm")
+    if not isinstance(range_pct, (int, float)) or range_pct <= 0:
+        return None
+    if not isinstance(out_bpm, (int, float)) or out_bpm <= 0 or not in_profile.bpm or in_profile.bpm <= 0:
+        return None
+    ratio = sync_tempo_ratio(out_state, in_profile, float(range_pct))
+    if ratio is None:
+        return None
+    return ratio * in_profile.bpm / float(out_bpm)
+
+
 def _clock_pitch(plan: TransitionPlan, live: Mapping[str, Any] | None) -> float:
     """The clock deck's current pitch ratio: the base rate's effective tempo already includes it. 1.0 when unknown."""
     decks = live_child((live or {}), "decks", "live mirror decks")
@@ -1052,12 +1096,34 @@ def validate_plan(
     _check_structure(plan, out_profile, in_profile, result, base, scale, clock_pitch)
     _check_trim(plan, _channel_start(live_child((live or {}), "mixer"), plan.in_.deck), result)
     _check_fit(plan, out_profile, in_profile, result)
+    _check_detune(plan, _incoming_playback_rate(plan, (out_profile, in_profile), base, live), result)
     _check_clashes(
         plan, out_profile, in_profile, result, live_child((live or {}), "mixer"), base, scale, (clock_pitch, in_pitch)
     )
     if live is not None:
         _validate_live(plan, (out_profile, in_profile), live, result)
     return result
+
+
+def _incoming_playback_rate(
+    plan: TransitionPlan, profiles: tuple[TrackProfile, TrackProfile], fold: float, live: Mapping[str, Any] | None
+) -> float:
+    """#10142: the incoming deck's playback rate: Beat Sync's ``fold * out / in`` when synced, else its live pitch."""
+    out_bpm, in_bpm = profiles[0].judged_bpm, profiles[1].judged_bpm
+    if plan.tempo_mode == "sync_to_out" and out_bpm and in_bpm:
+        return fold * out_bpm / in_bpm
+    return _incoming_pitch(plan, live)
+
+
+def _check_detune(plan: TransitionPlan, rate: float, result: Validation) -> None:
+    """#10142: with the incoming key lock off its rate moves its pitch; the detune off the nearest semitone is said."""
+    if plan.in_.keylock or rate <= 0:
+        return
+    semis = 12.0 * math.log2(rate)
+    detune = abs(semis - round(semis))
+    result.metrics["in_detune_semitones"] = round(detune, 2)
+    if detune >= 0.35:
+        result.warnings.append("half a semitone out: keep keylock on or shift")
 
 
 def _check_trim(plan: TransitionPlan, start: ChannelStart, result: Validation) -> None:
@@ -1178,9 +1244,7 @@ def _incoming_channel_start(plan: TransitionPlan, mixer: Mapping[str, Any]) -> C
 
 def _incoming_play_authored(plan: TransitionPlan) -> float | None:
     """The authored bar of the incoming deck's first play, when the plan has one."""
-    plays = [
-        e.at_bar for e in plan.events if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck
-    ]
+    plays = [e.at_bar for e in plan.events if e.kind == "do" and e.name == "play" and e.deck == plan.in_.deck]
     return min(plays) if plays else None
 
 
@@ -1297,7 +1361,9 @@ def _fx_errors(plan: TransitionPlan) -> list[str]:
     uses_fx = any(e.name in FX_CONTROLS for e in plan.events)
     if not uses_fx:
         return errors
-    if not any(e.kind == "do" and e.name == "fx_reset" and e.deck == out and e.at_bar == plan.bars for e in plan.events):
+    if not any(
+        e.kind == "do" and e.name == "fx_reset" and e.deck == out and e.at_bar == plan.bars for e in plan.events
+    ):
         errors.append(
             f"the plan sets {', '.join(sorted({e.name for e in plan.events if e.name in FX_CONTROLS}))} but never "
             f"runs fx_reset at the handover (bar {plan.bars}): the deck would keep its effect"
@@ -1418,7 +1484,29 @@ def _check_fit(plan: TransitionPlan, out_profile: TrackProfile, in_profile: Trac
     _check_tempo_fit(plan, out_profile, in_profile, result)
     if not out_profile.grid_trusted or not in_profile.grid_trusted:
         result.warnings.append("a beatgrid is untrusted; bar positions may be off")
+    _check_grid_tier(plan, out_profile, in_profile, result)
     _check_key_fit(plan, out_profile, in_profile, result)
+    _check_energy_cliff(plan, out_profile, in_profile, result)
+
+
+def _check_grid_tier(
+    plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation
+) -> None:
+    """#10144: warn (never error) when the plan is longer than its style allows on a span's grid tier."""
+    style_doc = STYLES.get(plan.style)
+    if style_doc is None:
+        return
+    for side, profile, start in (
+        ("outgoing", out_profile, plan.out.start_bar),
+        ("incoming", in_profile, plan.in_.start_bar),
+    ):
+        tier = profile.grid_tier(start, plan.bars)
+        legal = style_doc.legal_bars_by_tier[tier.tier]
+        if plan.bars > legal:
+            result.warnings.append(
+                f"{side} {tier.tier} tier at bars {start}..{start + plan.bars}: {tier.reason}; "
+                f"{plan.style} allows {legal} bars on this tier, the plan runs {plan.bars}"
+            )
 
 
 def _check_tempo_fit(
@@ -1501,6 +1589,28 @@ def _check_key_fit(
     )
     if warning:
         result.warnings.append(warning)
+
+
+def seam_levels(
+    out_profile: TrackProfile, in_profile: TrackProfile, out_start: int, in_start: int, bars: int
+) -> tuple[int, int] | None:
+    """#10129: MIK levels at the outgoing's last overlap bar and the incoming's landing bar; None without both series."""
+    out_level = _bar_value(out_profile.mik_bar_level, out_start + bars - 1)
+    in_level = _bar_value(in_profile.mik_bar_level, in_start + bars)
+    if out_level is None or in_level is None:
+        return None
+    return int(out_level), int(in_level)
+
+
+def _check_energy_cliff(
+    plan: TransitionPlan, out_profile: TrackProfile, in_profile: TrackProfile, result: Validation
+) -> None:
+    """#10129: a MIK step of 4 or more inside a blend is said; cuts and drop swaps are meant to jump."""
+    if plan.style in ("cut", "drop_swap"):
+        return
+    levels = seam_levels(out_profile, in_profile, plan.out.start_bar, plan.in_.start_bar, plan.out.bars)
+    if levels is not None and abs(levels[1] - levels[0]) >= 4:
+        result.warnings.append(f"energy cliff: level {levels[0]} into {levels[1]} inside a blend")
 
 
 def _bar_value(series: tuple[float, ...] | None, bar: int) -> float | None:
@@ -1743,9 +1853,7 @@ def _report_clashes(
     if not vocals_known:
         result.warnings.append("vocals are not analyzed on one side: vocal clashes were not checked")
     if in_profile.bar_bass is None:
-        result.warnings.append(
-            "the incoming track has no bar_bass series; the bass hit was not placed from the music"
-        )
+        result.warnings.append("the incoming track has no bar_bass series; the bass hit was not placed from the music")
     if bass_known and bass_overlap > 1:
         result.warnings.append(f"two basslines play together for {bass_overlap} bars")
     if silent_bars:

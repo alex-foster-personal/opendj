@@ -25,6 +25,7 @@ from apps.opendj_cli.kinds import (
     DECK_VALUES,
     LAYOUT_REGION_BOUNDS,
     Arg,
+    any_text_value,
     arg,
     auto_gain_offset_value,
     beat_jump_beats_value,
@@ -45,6 +46,8 @@ from apps.opendj_cli.kinds import (
     layout_px_value,
     loop_value,
     master_delay_ms_value,
+    non_negative_int_value,
+    nonzero_int_value,
     number_enum_value,
     number_value,
     positive_int_value,
@@ -54,6 +57,10 @@ from apps.opendj_cli.kinds import (
     rescue_decks_value,
     reset_parts_value,
     roll_beats_value,
+    sampler_ref_value,
+    sampler_settings_value,
+    sampler_unit_db_value,
+    sampler_unit_index_value,
     text_value,
     unit_value,
 )
@@ -76,6 +83,9 @@ BOOTH_SIGNAL_MODE_VALUES: tuple[str, ...] = ("off", "follows_master", "independe
 MIDI_TAKEOVER_MODE_VALUES: tuple[str, ...] = ("pickup", "jump")
 PITCH_RANGE_VALUES: tuple[int, ...] = (8, 16, 100)
 KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
+# SAMPLER: edge sampler ((private path) section 10); twin of sampler-ipc-guards.ts.
+SAMPLER_EDGE_VALUES: tuple[str, ...] = ("L", "R")
+SAMPLER_FILTER_VALUES: tuple[str, ...] = ("broken", "remixes", "vocals", "offline", "compatible")
 KEY_SYNC_MODE_VALUES: tuple[str, ...] = ("exact", "relative", "compatible")
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
 BEAT_JUMP_SIZE_VALUES: tuple[float, ...] = (0.5, 1, 2, 4, 8, 16, 32, 64)
@@ -255,6 +265,24 @@ class Verb:
     quick_draws: tuple[str, ...] = ()
     observes: tuple[Observe, ...] = ()
     note: str = ""
+    # Groups of keys of which exactly one must be given (SAMPLER: slot_id vs ref).
+    exactly_one: tuple[tuple[str, ...], ...] = ()
+    # Keys of which at least one must be given (SAMPLER: a slot update names what it changes).
+    at_least_one: tuple[str, ...] = ()
+    # Groups of keys of which at most one may be given (SAMPLER: a unit load's stable_id vs path).
+    at_most_one: tuple[tuple[str, ...], ...] = ()
+
+    def check(self, values: Mapping[str, Any]) -> None:
+        """Raise ValueError when an ``exactly_one``, ``at_most_one`` or ``at_least_one`` group is not met."""
+        for group in self.exactly_one:
+            given = [key for key in group if key in values]
+            if len(given) != 1:
+                raise ValueError(f"{self.name} needs exactly one of {' or '.join(group)}, got {len(given)}")
+        for group in self.at_most_one:
+            if sum(key in values for key in group) > 1:
+                raise ValueError(f"{self.name} takes at most one of {' or '.join(group)}")
+        if self.at_least_one and not any(key in values for key in self.at_least_one):
+            raise ValueError(f"{self.name} needs at least one of {', '.join(self.at_least_one)}")
 
     def build(self, values: Mapping[str, Any]) -> dict[str, Any]:
         command: dict[str, Any] = {"type": self.command_type}
@@ -1431,6 +1459,166 @@ _VERBS: tuple[Verb, ...] = (
         "query().windows and the UI mirror windows field list the labels that are open.",
     ),
 )
+
+# SAMPLER: a slot is addressed by a positional ref (S1-05, R-03) or by slot_id=<id>; exactly one.
+_SAMPLER_REF = arg("ref", "text", sampler_ref_value, "S<set>-<nn>|R-<nn>", optional=True)
+_SAMPLER_SLOT_ID = arg("slot_id", "text", text_value, "give as slot_id=<id>", optional=True)
+_SAMPLER_EDGE = arg("edge", "enum", enum_value(SAMPLER_EDGE_VALUES), "L|R")
+_SAMPLER_ADDRESS = (("ref", "slot_id"),)
+
+
+def _sampler_slot_verb(name: str, middle: tuple[Arg, ...] = (), note: str = "") -> Verb:
+    return Verb(name, name, (_SAMPLER_REF, *middle, _SAMPLER_SLOT_ID), exactly_one=_SAMPLER_ADDRESS, note=note)
+
+
+_SAMPLER_VERBS: tuple[Verb, ...] = (
+    Verb(
+        "sampler_enabled",
+        "sampler_enabled",
+        (arg("on", "bool", bool_value, "true|false"),),
+        observes=(Observe(("sampler", "enabled"), "on"),),
+        note="SAMPLER: the edge sampler on/off switch.",
+    ),
+    _sampler_slot_verb("sampler_trigger", note="SAMPLER: fire (or stop) a slot, as a tab press."),
+    _sampler_slot_verb("sampler_stop", note="SAMPLER: stop one slot's voice."),
+    _sampler_slot_verb("sampler_release", note="SAMPLER: let go of a slot's press; a gate slot stops."),
+    Verb("sampler_stop_all", "sampler_stop", (), fixed=(("all", True),), note="SAMPLER: stop every sampler voice."),
+    _sampler_slot_verb("sampler_preview", note="SAMPLER: cue-only preview of a slot."),
+    Verb("sampler_preview_stop", "sampler_preview", (), fixed=(("stop", True),), note="SAMPLER: stop the preview."),
+    Verb(
+        "sampler_set_page",
+        "sampler_set_page",
+        (
+            _SAMPLER_EDGE,
+            arg("set", "int", non_negative_int_value, "0-based set index", optional=True),
+            arg("delta", "int", nonzero_int_value, "give as delta=<+-n> to flip", optional=True),
+        ),
+        exactly_one=(("set", "delta"),),
+        note="SAMPLER: show a set on an edge (set) or flip pages (delta=).",
+    ),
+    _sampler_slot_verb(
+        "sampler_pin",
+        (arg("pinned", "bool", bool_value, "true|false"),),
+        note="SAMPLER: pin or unpin a slot.",
+    ),
+    Verb(
+        "sampler_search",
+        "sampler_search",
+        (_SAMPLER_EDGE, arg("query", "text", any_text_value, "text; empty clears")),
+        note="SAMPLER: the edge search box.",
+    ),
+    Verb(
+        "sampler_filter",
+        "sampler_filter",
+        (
+            _SAMPLER_EDGE,
+            arg("filter", "enum", enum_value(SAMPLER_FILTER_VALUES), "|".join(SAMPLER_FILTER_VALUES)),
+            arg("on", "bool", bool_value, "true|false"),
+        ),
+        note="SAMPLER: the edge filter chips.",
+    ),
+    Verb(
+        "sampler_results",
+        "sampler_results",
+        (_SAMPLER_EDGE, arg("show", "bool", bool_value, "true|false")),
+        note="SAMPLER: show all search results on an edge (true) or go back to its set (false).",
+    ),
+    Verb(
+        "sampler_slot_update",
+        "sampler_slot_update",
+        (
+            _SAMPLER_REF,
+            arg("name", "text", any_text_value, "give as name=<text>; empty clears", optional=True),
+            arg("description", "text", any_text_value, "give as description=<text>", optional=True),
+            arg("settings", "settings", sampler_settings_value, "launch:bar,level:80,...", optional=True),
+            _SAMPLER_SLOT_ID,
+        ),
+        exactly_one=_SAMPLER_ADDRESS,
+        at_least_one=("name", "description", "settings"),
+        note="SAMPLER: the slot editor; name=, description= and settings=field:value,... (launch, key, "
+        "tempo, mode, repeat, downbeat_offset, level).",
+    ),
+    Verb(
+        "sampler_set_name",
+        "sampler_set_name",
+        (
+            arg("set_id", "text", text_value),
+            arg("name", "text", text_value),
+            arg("description", "text", any_text_value),
+        ),
+        note="SAMPLER: name and describe a set.",
+    ),
+    Verb(
+        "sampler_capture",
+        "sampler_capture",
+        (
+            _DECK,
+            arg("set", "int", non_negative_int_value, "0-based set index"),
+            arg("index", "int", non_negative_int_value, "0-based slot index"),
+        ),
+        note="SAMPLER: save the deck's engaged loop into a set slot (the loop drag).",
+    ),
+    _sampler_slot_verb("sampler_edit", note="SAMPLER: open the slot editor."),
+    Verb("sampler_edit_close", "sampler_edit", (), fixed=(("close", True),), note="SAMPLER: close the slot editor."),
+    _sampler_slot_verb("sampler_delete", note="SAMPLER: delete a captured slot (a cue slot is refused)."),
+)
+
+# SAMPLER: the classic 4 x 16 unit (#9987, #9989); twin of classic-sampler-ipc-guards.ts. Named
+# sampler_unit_* because the edge sampler already owns sampler_trigger, sampler_stop and sampler_release.
+_SAMPLER_UNIT_SLOT = (
+    arg("bank", "int", sampler_unit_index_value, "0..3"),
+    arg("slot", "int", sampler_unit_index_value, "0..15"),
+)
+SAMPLER_UNIT_MODE_VALUES: tuple[str, ...] = ("one_shot", "loop", "gate")
+
+_SAMPLER_UNIT_VERBS: tuple[Verb, ...] = (
+    Verb(
+        "sampler_unit_load",
+        "sampler_unit_load",
+        (
+            *_SAMPLER_UNIT_SLOT,
+            arg("stable_id", "text", text_value, "give as stable_id=<id>", optional=True),
+            arg("title", "text", text_value, "give as title=<text>", optional=True),
+            arg("duration_ms", "number", positive_number_value, "give as duration_ms=<ms>", optional=True),
+            # Last, so an at-most-one sample (stable_id) never spills a positional token into it.
+            arg("path", "text", text_value, "give as path=<file>", optional=True),
+        ),
+        at_most_one=(("stable_id", "path"),),
+        note="SAMPLER: load a library track (stable_id=) or a file (path=) into a unit slot; neither clears it.",
+    ),
+    Verb("sampler_unit_trigger", "sampler_unit_trigger", _SAMPLER_UNIT_SLOT, note="SAMPLER: press a unit pad."),
+    Verb(
+        "sampler_unit_release",
+        "sampler_unit_trigger",
+        _SAMPLER_UNIT_SLOT,
+        fixed=(("held", False),),
+        note="SAMPLER: let go of a unit pad; a gate slot stops.",
+    ),
+    Verb("sampler_unit_stop", "sampler_unit_stop", _SAMPLER_UNIT_SLOT, note="SAMPLER: stop one unit slot."),
+    Verb("sampler_unit_stop_all", "sampler_unit_stop", (), note="SAMPLER: stop every unit slot."),
+    Verb(
+        "sampler_unit_mode",
+        "sampler_unit_mode",
+        (
+            *_SAMPLER_UNIT_SLOT,
+            arg("mode", "enum", enum_value(SAMPLER_UNIT_MODE_VALUES), "|".join(SAMPLER_UNIT_MODE_VALUES)),
+        ),
+        note="SAMPLER: a unit slot's play mode, from its next trigger.",
+    ),
+    Verb(
+        "sampler_unit_gain",
+        "sampler_unit_gain",
+        (*_SAMPLER_UNIT_SLOT, arg("gain_db", "number", sampler_unit_db_value("slot"), "-24..6")),
+        note="SAMPLER: a unit slot's gain in dB, from its next trigger.",
+    ),
+    Verb(
+        "sampler_unit_master_gain",
+        "sampler_unit_master_gain",
+        (arg("gain_db", "number", sampler_unit_db_value("master"), "-60..0"),),
+        note="SAMPLER: the sampler unit's master gain in dB, from each slot's next trigger.",
+    ),
+)
+_VERBS = (*_VERBS, *_SAMPLER_VERBS, *_SAMPLER_UNIT_VERBS)
 
 VERBS: dict[str, Verb] = {verb.name: verb for verb in _VERBS}
 VERB_NAMES: tuple[str, ...] = tuple(verb.name for verb in _VERBS)

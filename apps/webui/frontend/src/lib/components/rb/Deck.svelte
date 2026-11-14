@@ -74,6 +74,7 @@
 	import { padModeFor } from '$lib/rb/pad-mode-state.svelte';
 	import JogDial from './deck/JogDial.svelte';
 	import LoopCluster from './deck/LoopCluster.svelte';
+	import DeckLoopDragHandle from './sampler/DeckLoopDragHandle.svelte';
 	import PadStrip from './deck/PadStrip.svelte';
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
@@ -706,6 +707,7 @@
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
 		<div class="loop-col" data-priority="2" use:selectorNode={{ id: selId.deckPart(deckId, 'loop'), kind: 'group', enabled: true }}>
 			<LoopCluster {deck} {deckId} {pending} onEngage={engageBeatLoop} onDisengage={disengageLoop} onSafetySave={saveSafetyLoop} onSafetyArm={armSafetyLoop} onSafetyClear={clearSafetyLoop} onIntervalMode={setLoopIntervalMode} onIntervalBase={setLoopIntervalBase} onStoredLoop={engageStoredLoop} onLoopIn={loopIn} onLoopOut={loopOut} onReloop={reloop} onSetActive={setActiveMemoryLoop} />
+			<DeckLoopDragHandle {deck} {deckId} />
 			<div class="prio-slot" data-priority="3">
 				<BeatJump {deck} {pending} onJump={beatJump} onSize={setBeatJumpSize} />
 			</div>

@@ -3,8 +3,8 @@
 	 * Top tab for one edge (spec 7.4, mock variant D `.whead`): the 132 px band opening to
 	 * 476 px, a dashed tick at rest. Inside: set name, `set n / N` and the paging arrows; the
 	 * search box (Enter shows all matches, Esc clears); the library's four filter icons with
-	 * their own hover sentences, "compatible" and its caret (the library's compatible settings,
-	 * one shared prefs object); the counts line. Right-click names the shown set (`onrename`).
+	 * their own hover sentences, "compatible" and its caret (`oncompat` opens EdgeCompatPop, the
+	 * mock's "Compatible with master" popover on the library's shared prefs); the counts line. Right-click names the shown set (`onrename`).
 	 * Width is written by EdgeWave's frame loop.
 	 */
 	import { countsLine } from '$lib/player/sampler/edge-search';
@@ -24,17 +24,23 @@
 	} from '$lib/player/sampler/sampler-store.svelte';
 	import type { Edge } from '$lib/player/sampler/sampler-types';
 	import { LIBRARY_FILTER_LABELS } from '$lib/rb/library-filter-labels';
-	import { pushToast } from '$lib/stores.svelte';
 	import { PLAY_TRIANGLE_PATH } from '$lib/ui/icon-glyphs';
 	import './edge-sampler-tokens.css';
-
-	type PanelModule = typeof import('../browser/CompatibleFilterPanel.svelte');
 
 	let {
 		edge,
 		onrename,
+		compatOpen,
+		oncompat,
 		el = $bindable()
-	}: { edge: Edge; onrename: () => void; el?: HTMLDivElement | undefined } = $props();
+	}: {
+		edge: Edge;
+		onrename: () => void;
+		/** The "Compatible with master" popover (EdgeCompatPop, owned by EdgeWave) is open. */
+		compatOpen: boolean;
+		oncompat: () => void;
+		el?: HTMLDivElement | undefined;
+	} = $props();
 
 	const ICON_FILTERS = ['broken', 'remixes', 'vocals', 'offline'] as const;
 	/** Stroke icons from the mock's `ICONS` table. */
@@ -59,20 +65,6 @@
 			clearEdgeResults(edge);
 			(ev.currentTarget as HTMLInputElement).blur();
 		} else if (ev.key === 'Enter') showEdgeResults(edge);
-	}
-
-	let compatOpen = $state(false);
-	let Panel = $state<PanelModule['default'] | null>(null);
-	function toggleCompat(ev: MouseEvent): void {
-		ev.stopPropagation();
-		compatOpen = !compatOpen;
-		if (!compatOpen || Panel !== null) return;
-		import('../browser/CompatibleFilterPanel.svelte')
-			.then((m) => (Panel = m.default))
-			.catch((err: unknown) => {
-				compatOpen = false;
-				pushToast(`Compatible settings failed to load: ${String(err)}`, 'error', undefined, err);
-			});
 	}
 </script>
 
@@ -145,21 +137,17 @@
 				/>
 				{LIBRARY_FILTER_LABELS.compatible.name}
 			</label>
-			<span class="caret-wrap">
-				<button
-					type="button"
-					class="caret"
-					aria-label="Compatible settings"
-					aria-expanded={compatOpen}
-					onclick={toggleCompat}
-					><svg viewBox="0 0 16 16" aria-hidden="true"
-						><path d="M3 5 L13 5 L8 12 Z" fill="currentColor" /></svg
-					></button
-				>
-				{#if compatOpen && Panel !== null}
-					<Panel onEnter={() => undefined} onLeave={() => undefined} />
-				{/if}
-			</span>
+			<button
+				type="button"
+				class="caret"
+				aria-label="Compatible settings"
+				aria-expanded={compatOpen}
+				onpointerdown={(ev) => ev.stopPropagation()}
+				onclick={oncompat}
+				><svg viewBox="0 0 16 16" aria-hidden="true"
+					><path d="M3 5 L13 5 L8 12 Z" fill="currentColor" /></svg
+				></button
+			>
 		</div>
 		<div class="counts">
 			{#if counts !== null}
@@ -190,9 +178,6 @@
 		background: var(--es-head-bg);
 		font: 13px/1.2 var(--es-font-body);
 		color: var(--es-fg);
-	}
-	.whead:has(.caret[aria-expanded='true']) {
-		overflow: visible;
 	}
 	.tick {
 		position: absolute;
@@ -318,10 +303,6 @@
 		width: 14px;
 		height: 14px;
 	}
-	.caret-wrap {
-		position: relative;
-		flex: none;
-	}
 	.caret {
 		background: transparent;
 		border: 1px solid var(--es-line);
@@ -331,6 +312,7 @@
 		height: 26px;
 		padding: 0 7px;
 		cursor: pointer;
+		flex: none;
 	}
 	.counts {
 		display: flex;

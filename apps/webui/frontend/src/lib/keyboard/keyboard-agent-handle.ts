@@ -23,6 +23,7 @@ import {
 	type SelectorLeafHost
 } from './command-registry';
 import type { Keymap } from './keymap';
+import { isSelectorLeafRefusal, type SelectorLeafRefusalCode } from './selector-activate';
 import { keymapCommandTarget, type KeymapCommand } from './keymap-commands';
 import {
 	describeSelectorSelection,
@@ -43,7 +44,12 @@ export interface KeyboardCommandListing {
 }
 
 export type KeyboardRefusal =
-	'no_selector' | 'no_leaf_selected' | 'no_dial_selected' | 'no_shortcut_handlers' | string;
+	| 'no_selector'
+	| 'no_leaf_selected'
+	| 'no_dial_selected'
+	| 'no_shortcut_handlers'
+	| SelectorLeafRefusalCode
+	| string;
 
 export type KeyboardRunResult =
 	| { ok: true; id: string; selected: string | null }
@@ -172,7 +178,14 @@ export function createKeyboardAgentHandle(deps: KeyboardKeymapRuntimeDeps): Keyb
 				if (selectorLeaf === null) return _refused(id, 'no_leaf_selected');
 				ctx = { timeStamp: ctx.timeStamp, selectorLeaf };
 			}
-			const selected = runCommand(id, ctx);
+			let selected: unknown;
+			try {
+				selected = runCommand(id, ctx);
+			} catch (error) {
+				// #14522: Enter on a leaf with nothing to press (the jog) is a refusal, not a crash.
+				if (isSelectorLeafRefusal(error)) return _refused(id, error.code);
+				throw error;
+			}
 			if (typeof selected !== 'string') {
 				throw new Error(`selector command ${id} did not return a selected node id`);
 			}

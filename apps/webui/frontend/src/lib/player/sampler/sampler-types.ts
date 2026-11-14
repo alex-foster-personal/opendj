@@ -119,6 +119,8 @@ export interface VoiceState {
 	voice: 5 | 6 | 7 | 8;
 	slot_id: string | null;
 	phase: 'free' | 'armed' | 'playing';
+	/** launched with no master playing: native tempo, no quantise (the deck's FREE) */
+	free: boolean;
 	/** AudioContext seconds the region starts (or started) */
 	start_ctx_sec: number | null;
 	/** seconds per loop pass at the current rate, for the playhead */

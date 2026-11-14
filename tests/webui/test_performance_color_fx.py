@@ -34,10 +34,15 @@ def test_color_fx_strip_and_banner_share_the_deck_read_model() -> None:
     mixer = (FRONTEND / "components/rb/Mixer.svelte").read_text(encoding="utf-8")
     strip = (FRONTEND / "components/rb/mixer/ChannelStrip.svelte").read_text(encoding="utf-8")
     deck = (FRONTEND / "components/rb/Deck.svelte").read_text(encoding="utf-8")
+    effects = (FRONTEND / "rb/deck-effects.svelte.ts").read_text(encoding="utf-8")
     assert "commandPending={performanceCommandStatus.deck_pending[deck] > 0}" in mixer
     assert "commandError={performanceCommandStatus.deck_errors[deck]}" in mixer
     assert "aria-busy={commandPending}" in strip
     assert "if (commandError !== null) return commandError;" in strip
-    assert "performanceCommandStatus.deck_errors[deckId]" in deck
+    # PR #11852 moved the banner's read into the shared deck-effects store, so
+    # the deck reads the command error through deckControlError.
+    assert "performanceCommandStatus.deck_errors[deckId]" in effects
+    assert "$derived(deckControlError(deckId))" in deck
+    assert "error={controlError}" in deck
     assert "<DeckErrorBanner" in deck
     assert "runPerformanceCommandFromUi({ type: 'color_fx', deck, effect })" in mixer

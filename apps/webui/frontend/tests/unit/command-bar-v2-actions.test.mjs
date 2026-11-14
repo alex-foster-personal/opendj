@@ -1014,7 +1014,7 @@ test('Sol P1, #6689: closing or reopening the bar ends a pending eject, a draine
 	assert.match(close, /barLife \+= 1;[\s\S]*?ejectOp \+= 1;/, 'closing invalidates an eject still draining');
 	const adapter = bar.slice(bar.indexOf('let openTurn = 0;'), bar.indexOf('close: () => closeBar()'));
 	assert.match(adapter, /ejectGuard = null;\s*ejectOp \+= 1;/, 'a reopen with a query clears the eject guard and any pending eject');
-	const eject = bar.slice(bar.indexOf('async function runAction'), bar.indexOf('async function runAction') + 6000);
+	const eject = bar.slice(bar.indexOf('async function runAction'), bar.indexOf('/** Enter, a click or a quick pick on any row. */'));
 	assert.match(eject, /if \(!decks\[command\.deck\]\.stable_id\) return null;/, 'an eject that drained onto an emptied deck is left alone');
 	assert.match(bar, /quickModifierHeld\(event, quickMod\)\) void confirmEject/);
 });

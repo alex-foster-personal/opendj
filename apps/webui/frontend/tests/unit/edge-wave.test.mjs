@@ -1,4 +1,4 @@
-// requirement: EDGESAMP-11954, EDGESAMP-14180
+// requirement: EDGESAMP-11954, EDGESAMP-14180, EDGESAMP-14535
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -99,6 +99,26 @@ test('[if] a drag ends inside the zone [then] the edge stays disarmed until leav
 	assert.equal(armed.value, true);
 });
 
+test('[if] a deck loop drag from inside the app reaches the zone [then] the edge wakes', () => {
+	/** [if] an app drag enters the zone with a button held [then] it stays armed and wakes; edge drags still do not, [else stop]. */
+	const armed = { value: true };
+	wave.updateArming(armed, 40, 8, 1, true);
+	assert.equal(armed.value, true);
+	assert.equal(
+		wave.shouldWake(wake({ buttonsHeld: true, appDrag: true }), wave.DEFAULT_WAVE),
+		true
+	);
+	assert.equal(
+		wave.shouldWake(wake({ buttonsHeld: true, armed: false, appDrag: true }), wave.DEFAULT_WAVE),
+		true
+	);
+	wave.updateArming(armed, 40, 8, 1, false);
+	assert.equal(
+		wave.shouldWake(wake({ buttonsHeld: true, armed: armed.value }), wave.DEFAULT_WAVE),
+		false
+	);
+});
+
 test('[if] the edge is awake [then] tab width follows the Gaussian with spread 2.2', () => {
 	const w0 = wave.tabTargetWidth(tabIn({ dy: 0 }), wave.DEFAULT_WAVE);
 	assert.equal(w0, wave.DEFAULT_WAVE.pop);
@@ -175,7 +195,6 @@ test('with no catalogue every slot is empty, inert and drawn with the dashed emp
 	);
 	assert.equal(ssr.ui.edgeItems('R').length, 0);
 	assert.equal(ssr.ui.pinEdgeTabOnClick('R', 0, 476, 1000), false);
-	ssr.ui.fireEdgeTab('R', 0);
 	assert.equal(ssr.ui.sampler.pinned.length, 0);
 	const empty = wave.tabTargetWidth(tabIn({ filled: false, held: true }), wave.DEFAULT_WAVE);
 	assert.equal(empty, wave.EMPTY_POP_W);

@@ -24,6 +24,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from apps.autodj.contract.models import GRID_BAR, GRID_BEAT, GRID_NONE
+
 Event = dict[str, Any]
 
 
@@ -34,6 +36,8 @@ class Builder(Protocol):
 
 
 FLAT = 0.5
+#: #10144: the longest blend a BEAT-tier grid span allows (beats trusted, bar phase not).
+BEAT_TIER_MAX_BARS = 2
 KILL = 0.0
 HIGHPASS_SWEEP = 0.85
 #: The lowpass end of a sweep, mirrored about FLAT. Hygiene, mimicked: the FILTER knob's taper is the in-repo law
@@ -176,7 +180,18 @@ class Style:
 
     def __post_init__(self) -> None:
         if self.tempo_mode not in STYLE_TEMPO_MODES:
-            raise ValueError(f"style {self.name!r} tempo_mode must be one of {STYLE_TEMPO_MODES}, got {self.tempo_mode!r}")
+            raise ValueError(
+                f"style {self.name!r} tempo_mode must be one of {STYLE_TEMPO_MODES}, got {self.tempo_mode!r}"
+            )
+
+    @property
+    def legal_bars_by_tier(self) -> dict[str, int]:
+        """#10144: the longest legal length per grid tier; BEAT at most 2 bars, NONE only without beatmatch (0 = none)."""
+        return {
+            GRID_BAR: self.max_bars,
+            GRID_BEAT: min(self.max_bars, BEAT_TIER_MAX_BARS),
+            GRID_NONE: 0 if self.needs_beatmatch else self.max_bars,
+        }
 
     def clamp_bars(self, bars: int) -> int:
         return max(self.min_bars, min(self.max_bars, bars))
@@ -201,9 +216,7 @@ class Style:
             if self.hit == HIT_ON_HANDOVER and hit_bar != float(clamped):
                 raise ValueError(f"style {self.name!r} lands the incoming drop on the handover, bar {clamped}")
             if self.hit == HIT_ON_ALIGNED_DROP and hit_bar != float(clamped):
-                raise ValueError(
-                    f"style {self.name!r} lands the aligned incoming drop on the handover, bar {clamped}"
-                )
+                raise ValueError(f"style {self.name!r} lands the aligned incoming drop on the handover, bar {clamped}")
             if self.hit == HIT_ON_EXIT and hit_bar != exit_bar(clamped):
                 raise ValueError(
                     f"style {self.name!r} lands the incoming bass on its exit bar, bar {exit_bar(clamped):g}"
@@ -230,6 +243,7 @@ class Style:
             "params": None if self.params is None else self.params.doc(),
             "spotify": self.spotify,
             "tempo_mode": self.tempo_mode,
+            "legal_bars_by_tier": self.legal_bars_by_tier,
         }
 
 
@@ -595,6 +609,9 @@ def _after_hit(
             # the incoming fader is trimmed to keep out_low + in_low at one deck, by at most CROSSOVER_TRIM_DB.
             # Never under the pre-hit level: a quieter drop than its own lead-in is the dip D8 forbids.
             f_in = min(f_in, max(pre, f_in * CROSSOVER_TRIM_FLOOR, (1.0 - f_out * planned) / in_amp))
+        if shape == "linear":
+            # #11581 (D8): a linear fade never drops the incoming fader under its pre-hit level.
+            f_in = max(f_in, pre)
         room = (LOW_BAND_TARGET - f_in * in_amp) / f_out if f_out > 1e-6 else 0.0
         f_outs.append(f_out)
         f_ins.append(f_in)
@@ -619,13 +636,16 @@ def _after_hit(
 def _crossover_at(bar: float, cross: float, tail: float, pre: float) -> tuple[float, float, float]:
     """The incoming fader, the incoming low amplitude and the outgoing low amplitude asked for at ``bar``.
 
-    the maintainer's rule, exactly (r7, p15): the incoming LO rises from its 1/3-down park to flat while the outgoing LO falls to
-    that same 1/3 and HOLDS there until the incoming is flat; only then does it fall with the body fade. Never killed
-    on the hit in a crossover."""
+    the maintainer's rule (r7, p15): the incoming LO rises from its 1/3-down park to flat while the outgoing LO falls to that
+    same 1/3 and HOLDS there until the incoming is flat; only then does it fall with the body fade. Never killed on the
+    hit in a crossover. #11581: in the band the two lows cross equal-power (in^2 + out^2 = 1) until the hold binds."""
     u = min(1.0, bar / cross)
     past = (bar - cross) / max(tail, 1e-9)
-    planned = knob_amp(_lerp(FLAT, PRE_HIT_LOW, u)) if bar <= cross else knob_amp(PRE_HIT_LOW) * (1.0 - past)
-    return _lerp(pre, 1.0, u), knob_amp(_lerp(PRE_HIT_LOW, FLAT, u)), planned
+    park = knob_amp(PRE_HIT_LOW)
+    theta0 = math.asin(park)
+    theta = theta0 + u * (math.pi / 2 - theta0)
+    planned = max(park, math.cos(theta)) if bar <= cross else park * (1.0 - past)
+    return _lerp(pre, 1.0, u), math.sin(theta), planned
 
 
 def _out_band(f_in: float, f_out: float) -> float:

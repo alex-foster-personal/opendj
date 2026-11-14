@@ -40,6 +40,18 @@ class StyleParamsWire(_Wire):
     pre_hit_db: float
 
 
+class StyleTierBars(_Wire):
+    """#10144: a style's longest legal length on each grid trust tier; 0 means the tier forbids the style.
+
+    One field per tier (``GRID_TIERS``), so the JSON reads ``{"BAR": n, "BEAT": n, "NONE": n}`` and
+    the value cannot be changed in place after validation.
+    """
+
+    BAR: int
+    BEAT: int
+    NONE: int
+
+
 class StyleSummary(_Wire):
     """One named transition style as an agent reads it (``list_styles``)."""
 
@@ -57,6 +69,8 @@ class StyleSummary(_Wire):
     spotify: str | None
     # The tempo mode the style's plans carry: "none" for cut, drop_swap, echo_out and noise_build, else "sync_to_out".
     tempo_mode: str = "sync_to_out"
+    # #10144: the longest legal length per grid trust tier (BAR, BEAT, NONE); 0 means the tier forbids the style.
+    legal_bars_by_tier: StyleTierBars | None = None
 
 
 VOCAL_BAR_THRESHOLD = 0.25
@@ -178,6 +192,20 @@ class MikBoundary:
 MIK_BOUNDARY_SNAP_BARS = 0.25
 
 
+GRID_BAR = "BAR"
+GRID_BEAT = "BEAT"
+GRID_NONE = "NONE"
+GRID_TIERS = (GRID_BAR, GRID_BEAT, GRID_NONE)
+
+
+@dataclass(frozen=True)
+class GridTier:
+    """How far a grid can be trusted over one span (#10144): BAR, BEAT or NONE, and why when not BAR."""
+
+    tier: str
+    reason: str | None = None
+
+
 @dataclass(frozen=True)
 class TrackProfile:
     stable_id: str
@@ -222,6 +250,21 @@ class TrackProfile:
     #: Count of MIK boundaries that could not snap to a downbeat within :data:`MIK_BOUNDARY_SNAP_BARS`.
     mik_grid_suspect: int = 0
     mik_grid_note: str | None = None
+    #: #10144: the whole-track grid tier before change points (BAR, BEAT or NONE) and the bars where tempo changes.
+    grid_base_tier: str | None = None
+    grid_change_bars: tuple[int, ...] = ()
+
+    def grid_tier(self, start_bar: int, bars: int) -> GridTier:
+        """The grid trust tier over bars ``start_bar .. start_bar + bars``, with the reason when it is not BAR."""
+        base = self.grid_base_tier or (GRID_BAR if self.grid_trusted else GRID_BEAT)
+        if base == GRID_NONE:
+            return GridTier(GRID_NONE, self.grid_note or "no trackable pulse")
+        inside = [bar for bar in self.grid_change_bars if start_bar < bar < start_bar + bars]
+        if inside:
+            return GridTier(GRID_BEAT, f"change point at bar {inside[0]}")
+        if base == GRID_BEAT:
+            return GridTier(GRID_BEAT, self.grid_note or "bar phase untrusted")
+        return GridTier(GRID_BAR)
 
     @property
     def judged_bpm(self) -> float | None:
@@ -335,6 +378,9 @@ class Side:
     bars: int
     trim_db: float | None = None
     trim_reason: str | None = None
+    #: #10142: the incoming deck's static key shift (semitones, -3..3) and key lock; the outgoing side keeps defaults.
+    key_shift_semitones: int = 0
+    keylock: bool = True
 
 
 @dataclass(frozen=True)
@@ -422,6 +468,9 @@ class TransitionPlan:
                 "window": {"start_bar": self.in_.start_bar, "bars": self.in_.bars},
                 "trim_db": self.in_.trim_db,
                 "trim_reason": self.in_.trim_reason,
+                # #10142: only when not the default, so every existing plan prints byte-identical.
+                **({"key_shift_semitones": self.in_.key_shift_semitones} if self.in_.key_shift_semitones else {}),
+                **({} if self.in_.keylock else {"keylock": False}),
             },
             "anchor": self.anchor,
             "style": self.style,
@@ -461,7 +510,9 @@ class RenderLayout:
     out_ratio: float = 1.0
 
     def out_downbeats_render_s(self, out_profile: TrackProfile, until_s: float) -> list[float]:
-        downs = [(d - self.start_out_s) / self.out_ratio for d in out_profile.downbeats_s if d >= self.start_out_s - 1e-9]
+        downs = [
+            (d - self.start_out_s) / self.out_ratio for d in out_profile.downbeats_s if d >= self.start_out_s - 1e-9
+        ]
         if not downs:
             raise RenderPlanError(f"{out_profile.stable_id}: no downbeat at or after the render's start")
         step = self.out_bar_s / self.out_ratio

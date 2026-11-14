@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import traceback
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path

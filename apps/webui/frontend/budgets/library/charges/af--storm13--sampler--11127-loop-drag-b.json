@@ -1,0 +1,9 @@
+{
+  "bytes": 10240,
+  "measured_main": 373163,
+  "measured_with_pr": 382633,
+  "sha": "edc9985938",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--11127-loop-drag-b grows the library surface; measured +9470 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

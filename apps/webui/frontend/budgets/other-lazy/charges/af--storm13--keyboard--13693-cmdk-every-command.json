@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 557615,
+  "measured_with_pr": 558045,
+  "sha": "c5d3e9fa07",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--keyboard--13693-cmdk-every-command grows the other-lazy surface; measured +430 B gzip over main, measured with its stacked base #13762 (keyboard agent handle, no charge of its own) plus the Cmd K keyboard command rows; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

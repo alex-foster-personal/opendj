@@ -288,6 +288,8 @@ def main() -> None:
     done = _compact_cache(args.out)
     todo = [p for p in paths if p not in done]
     print(f"[live_detect] {len(paths)} paths, {len(todo)} to score -> {args.out}", flush=True)
+    if not todo:
+        sys.exit(0)
     model = Model()
     t0 = time.time()
     with args.out.open("a", encoding="utf-8", newline="\n") as fh:

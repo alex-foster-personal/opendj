@@ -1,0 +1,9 @@
+{
+  "bytes": 10240,
+  "measured_main": 373163,
+  "measured_with_pr": 382650,
+  "sha": "00e1c5d339",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10784-mock-sweep grows the library surface; measured +9487 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

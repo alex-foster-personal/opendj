@@ -270,7 +270,19 @@ test('if the overlay opens in grid view [then] one Selector controls group lists
 	assert.equal(_groupNames(rows).filter((g) => g === 'Selector controls').length, 1);
 	assert.deepEqual(
 		_selectorRows(rows).map((row) => row.entry.chord),
-		['W', 'A', 'S', 'D', 'E', 'Q', 'Esc', 'Enter', 'ArrowUp / ArrowRight', 'ArrowDown / ArrowLeft']
+		[
+			'W',
+			'A',
+			'S',
+			'D',
+			'E',
+			'Q',
+			'Esc',
+			'Enter',
+			'ArrowUp / ArrowRight',
+			'ArrowDown / ArrowLeft',
+			'Shift+Enter'
+		]
 	);
 });
 
@@ -298,6 +310,7 @@ test('if a selector action is shown [then] its row names move, drill in (enter),
 	assert.match(byChord.Q, /drill out/i);
 	assert.match(byChord.Esc, /clear/i);
 	assert.match(byChord.Enter, /activate/i);
+	assert.match(byChord['Shift+Enter'], /shift-click/i); // #14522
 	assert.match(byChord['ArrowUp / ArrowRight'], /adjust .* up/i);
 	assert.match(byChord['ArrowDown / ArrowLeft'], /adjust .* down/i);
 });

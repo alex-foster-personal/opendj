@@ -1,4 +1,4 @@
-// requirement: KEYB-13838, KEYB-13983, KEYB-14000, KEYB-14023, KEYB-14370
+// requirement: KEYB-13838, KEYB-13983, KEYB-14000, KEYB-14023, KEYB-14370, KEYB-14533
 /**
  * #13770: installPerformanceHotkeys registers its live selector session and shortcut handlers
  * behind `window.__odjKeyboard`, so an agent's run(id) drives what the keys drive.
@@ -14,6 +14,7 @@
  * - if run('selector.adjust.up') does not step the dial by what the Up arrow steps then broken
  * - if a leaf command with no leaf selected throws instead of refusing then broken
  * - if ArrowDown on a jog leaf does not run the keymap's own tempo nudge down for that deck then broken
+ * - if Enter on the jog leaf throws, or run('selector.activate') there does not refuse with no_control, then broken
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -36,10 +37,10 @@ function sectionElement(x) {
 }
 
 /**
- * A leaf registered under `parent`, findable by `data-sel-node`, with one button that counts clicks.
- * The node is unregistered and the page lookup removed by `dispose`.
+ * A leaf registered under `parent`, findable by `data-sel-node`, with one button that counts clicks
+ * (none when `withControl` is false, like the jog). The node and page lookup go with `dispose`.
  */
-function leafUnder(parent, id) {
+function leafUnder(parent, id, withControl = true) {
 	const el = sectionElement(0);
 	el.parentElement = { closest: () => parent };
 	const control = { tagName: 'BUTTON', getAttribute: () => null, clicks: 0 };
@@ -48,7 +49,7 @@ function leafUnder(parent, id) {
 	};
 	el.getAttribute = () => null;
 	el.matches = () => false;
-	el.querySelector = () => control;
+	el.querySelector = () => (withControl ? control : null);
 	const node = m.selectorNode(el, { id, kind: 'leaf', enabled: true });
 	globalThis.CSS = { escape: (value) => value };
 	globalThis.document = {
@@ -337,12 +338,43 @@ test('ArrowDown on the deck 2 jog leaf runs the same tempo nudge as the keymap',
 	}
 });
 
+// [if] Enter is pressed on the jog dial leaf (no control, adjustable) [then] nothing throws and a refusal is reported, [else stop].
+test('KEYB-14522 Enter on the jog leaf is a no-op that refuses with no_control', () => {
+	const leaf = leafUnder(leftSection, 'deck.2.jog', false);
+	const uninstall = m.installPerformanceHotkeys();
+	const rows = [];
+	const original = console.debug;
+	console.debug = (...args) => rows.push(args.map(String).join(' '));
+	try {
+		const handle = agentHandle();
+		selectLeftLeaf(handle);
+		assert.equal(handle.selector().selectedId, 'deck.2.jog');
+		keydown('Enter', 'Enter');
+		assert.deepEqual(
+			rows.filter((row) => row.startsWith('[selector]')),
+			['[selector] selector.activate: Selector leaf deck.2.jog refused: no_control']
+		);
+		for (const id of ['selector.activate', 'selector.shift-activate']) {
+			assert.deepEqual(handle.run(id), { ok: false, id, refusal: 'no_control' });
+		}
+	} finally {
+		console.debug = original;
+		uninstall();
+		leaf.dispose();
+	}
+});
+
 test('leaf commands with no leaf selected return a refusal instead of throwing', () => {
 	/** [if] no leaf is selected and a leaf command is run by id [then] run returns no_leaf_selected and does not throw, [else stop]. */
 	const uninstall = m.installPerformanceHotkeys();
 	try {
 		const handle = agentHandle();
-		for (const id of ['selector.activate', 'selector.adjust.up', 'selector.adjust.down']) {
+		for (const id of [
+			'selector.activate',
+			'selector.shift-activate',
+			'selector.adjust.up',
+			'selector.adjust.down'
+		]) {
 			assert.deepEqual(handle.run(id), { ok: false, id, refusal: 'no_leaf_selected' });
 		}
 		handle.run('selector.move.right');

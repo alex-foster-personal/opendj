@@ -94,6 +94,7 @@ from scripts.ci_e2e_selection_constants import (  # noqa: F401 re-exported publi
     STATIC_GATES,
     SWITCH_VARIABLE,
     FullSuite,
+    Git,
 )
 from scripts.ci_e2e_selection_decide import (  # noqa: F401 re-exported public surface
     MERGE_COMMIT,

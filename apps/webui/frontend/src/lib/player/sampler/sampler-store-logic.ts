@@ -16,6 +16,8 @@
  *     [if] the library's prefs narrow the BPM window [then] the sampler's verdict changes with it [else ⛔️]
  *   ✔︎ stems pending: captured stem settings change the sound but the track has no stem-set yet
  *     [if] bass is muted and stems_ready is false [then] stemsPending is true [else ⛔️]
+ *   ✔︎ a drop PUTs only the sets it reflows: changed sets up to the first ranked (unstored) one
+ *     [if] a capture lands on a full stored set-1 and set-2 is ranked [then] set-1 and set-2 are saved, set-3 is not [else ⛔️]
  *   → the Starter set (spec 3.3) lands with the starter rows; starter slots are kept out of user sets
  */
 
@@ -28,7 +30,7 @@ import type { CompatibleFilterPrefs } from '$lib/rb/compatible-filter-prefs';
 import type { SlotPatch, SlotsQuery } from './api-sampler';
 import type { SearchableSlot } from './edge-search';
 import type { SampleSet } from './sampler-sets';
-import { regionBars, type SamplerSlot, type SetMeta } from './sampler-types';
+import { regionBars, type Edge, type SamplerSlot, type SetMeta } from './sampler-types';
 
 /** The master re-rank runs at most this often. */
 export const RERANK_MIN_MS = 5000;
@@ -142,6 +144,49 @@ export function changedSets(
 	return after.filter(
 		(s, i) => before[i] === undefined || setSlotIds(before[i]).join('|') !== setSlotIds(s).join('|')
 	);
+}
+
+/**
+ * The sets a drop PUTs: the changed sets in order, up to and including the first with no stored
+ * layout. Past that set the computed layout already moves every slot down one, so nothing is
+ * lost and the ranked sets stay ranked instead of all freezing into stored layouts.
+ */
+export function setsToSave(
+	before: readonly SampleSet<SamplerSlot>[],
+	after: readonly SampleSet<SamplerSlot>[],
+	metas: readonly SetMeta[]
+): SampleSet<SamplerSlot>[] {
+	const stored = new Set(metas.filter((m) => m.slot_ids !== null).map((m) => m.id));
+	const saves: SampleSet<SamplerSlot>[] = [];
+	for (const s of changedSets(before, after)) {
+		saves.push(s);
+		if (!stored.has(s.id)) break;
+	}
+	return saves;
+}
+
+//----- loop drag
+
+/** A tab a deck loop is dropped on: the edge and the 0-based slot index of its shown set. */
+export interface DropTarget {
+	edge: Edge;
+	index: number;
+}
+
+/** The drop target a tab's `data-drop-edge` / `data-drop-index` name; a malformed tab throws. */
+export function dropTargetOf(data: { dropEdge?: string; dropIndex?: string }): DropTarget {
+	const index = Number(data.dropIndex);
+	const edge = data.dropEdge;
+	if ((edge !== 'L' && edge !== 'R') || data.dropIndex === '' || !Number.isInteger(index))
+		throw new Error(`sampler tab has a bad drop target: ${edge}/${data.dropIndex}`);
+	return { edge, index };
+}
+
+/** A deck loop's length for the drag chip: "4 bars", "1 bar", or "loop" with no beat length. */
+export function loopBarsLabel(beatLength: number | null | undefined): string {
+	if (beatLength == null) return 'loop';
+	const bars = Math.max(1, Math.round(beatLength / 4));
+	return `${bars} ${bars === 1 ? 'bar' : 'bars'}`;
 }
 
 //----- optimistic patch

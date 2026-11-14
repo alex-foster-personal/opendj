@@ -5,13 +5,16 @@
 	 * and the pencil. They render as direct children of EdgeTab's `.in` grid with the title and
 	 * meta (`children`) between repeat and waveform, the mock's DOM order; CSS orders them per
 	 * side so play sits at the screen edge. Every click passes the tab's guard (`guard`) and
-	 * stops there, so it never also pins the card.
+	 * stops there, so it never also pins the card. A gate slot's play is a press instead: it fires
+	 * on pointer down and lets go (store `releaseSlot`) on up, cancel or lost capture.
 	 */
 	import { onMount, type Snippet } from 'svelte';
+	import { createGatePress } from '$lib/player/sampler/sampler-gate-press';
 	import { nextRepeat, repeatTip } from '$lib/player/sampler/sampler-repeat';
 	import {
 		fireSlot,
 		openSlotEditor,
+		releaseSlot,
 		slotPhase,
 		togglePreview,
 		updateSlot
@@ -63,6 +66,23 @@
 		if (guard()) void fn();
 	}
 
+	const gate = createGatePress<SamplerSlot>((s) => void fireSlot(s), releaseSlot);
+
+	/** A gate slot plays while held: down fires (captured), and up, cancel or lost capture releases. */
+	function onPlayDown(ev: PointerEvent): void {
+		if (slot.settings.mode !== 'gate' || ev.button !== 0) return;
+		ev.stopPropagation();
+		if (!guard()) return;
+		(ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+		gate.down(slot);
+	}
+
+	/** Play's click: a gate slot already fired on pointer down, so its click only stops there. */
+	function onPlayClick(ev: MouseEvent): void {
+		if (slot.settings.mode === 'gate') ev.stopPropagation();
+		else act(ev, () => fireSlot(slot));
+	}
+
 	function cycleRepeat(): Promise<unknown> {
 		const next = nextRepeat(repeat);
 		const mode =
@@ -83,7 +103,11 @@
 	class="play"
 	aria-label={busy ? 'Pause: stop this sample' : 'Play on the master at the next downbeat'}
 	title={busy ? 'Pause' : 'Play at the next downbeat'}
-	onclick={(ev) => act(ev, () => fireSlot(slot))}
+	onpointerdown={onPlayDown}
+	onpointerup={gate.up}
+	onpointercancel={gate.up}
+	onlostpointercapture={gate.up}
+	onclick={onPlayClick}
 	>{#if busy}&#10074;&#10074;{:else}<svg viewBox="0 0 16 16" aria-hidden="true"
 			><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg
 		>{/if}</button

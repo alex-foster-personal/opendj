@@ -1,0 +1,9 @@
+{
+  "bytes": 7168,
+  "measured_main": 373163,
+  "measured_with_pr": 379437,
+  "sha": "de5b024ca3",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10780-engine grows the library surface; measured +6274 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

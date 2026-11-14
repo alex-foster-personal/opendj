@@ -171,9 +171,20 @@ export default {
 		'src/lib/player/sampler/{sampler-types,sampler-repeat,api-sampler}.ts',
 		'src/lib/player/sampler/{edge-search,sampler-sets,sampler-store-logic}.ts',
 		'src/lib/player/sampler/sampler-store.svelte.ts',
-		// Edge sampler engine sub-chain (#10782 warm pool, #11127 capture vector): pure modules
-		// loaded only by unit tests until the engine (port map row 18) imports them.
-		'src/lib/player/sampler/{sampler-warm,sampler-capture-vector}.ts',
+		// Edge sampler engine sub-chain (#10782 warm pool, #11127 capture vector, #10781 launch
+		// plan): pure modules loaded only by unit tests until the engine (port map row 18) imports them.
+		'src/lib/player/sampler/{sampler-warm,sampler-capture-vector,sampler-launch}.ts',
+		// #10781 phase lock: the voice bank imports it, but its law constants and seam check
+		// are read by unit tests only.
+		'src/lib/player/sampler/sampler-phase-lock.ts',
+		// #10782 residency plan: the pool takes its Tier type; its budgets, pins, plan and pointer
+		// intent are read by unit tests until the store and the edge overlay wire them.
+		'src/lib/player/sampler/sampler-residency.ts',
+		// Classic sampler unit core (#9987): banks client and pure unit, loaded only by unit
+		// tests until the store, the pad mode UI and the sampler_load/trigger/stop commands import them.
+		'src/lib/player/sampler/{api-sampler-banks,classic-sampler-logic}.ts',
+		// Classic sampler store (#9987): unit-test-only until the pad mode UI registers the engine.
+		'src/lib/player/sampler/classic-sampler.svelte.ts',
 		'tests/unit/color-fx-noise-entry.mjs',
 		'tests/unit/variant-setting-entry.mjs',
 		'tests/unit/variant-setting-test-row.mjs'

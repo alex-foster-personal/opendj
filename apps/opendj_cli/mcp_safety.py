@@ -44,6 +44,10 @@ _DESTRUCTIVE_PATH_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("POST", re.compile(r"^/api/v1/tracks/[^/]+:delete$")),
 )
 
+#: Bus commands whose page handler calls a DELETE /api/v1/* route, so an agent
+#: order meets the same switch the route itself does.
+_DESTRUCTIVE_COMMAND_TYPES: frozenset[str] = frozenset({"sampler_delete"})
+
 _WRITEBACK_HTTP_MARKERS: tuple[str, ...] = tuple(
     marker
     for surface in WRITE_SURFACES
@@ -130,6 +134,20 @@ def prepend_master_mute(order: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     return {SEQUENCE: steps}, True
 
 
+def guard_destructive_commands(order: Mapping[str, Any], environ: Mapping[str, str] | None = None) -> None:
+    """Refuse an order that erases user data unless the destructive gate is open."""
+    if destructive_enabled(environ):
+        return
+    for command in _commands_in_order(order):
+        kind = command.get("type")
+        if kind in _DESTRUCTIVE_COMMAND_TYPES:
+            raise SafetyRefusal(
+                "destructive_blocked",
+                f"destructive command blocked: {kind}; set {ENABLE_DESTRUCTIVE_ENV}=1 to allow it",
+                command=kind,
+            )
+
+
 def _refuse_muted_session_order(order: Mapping[str, Any]) -> None:
     """A muted session keeps the master closed: an unmute would make a running or later transition audible, and a raw
     ``finish_now`` plays a live-scheduled plan's remaining steps at once with no master mute (AGENT-25, as DjService.amend)."""
@@ -164,6 +182,7 @@ def guard_order(
             "plan_use_schedule",
             "a plan runs only through schedule_plan, which serializes its track load; a raw plan is refused",
         )
+    guard_destructive_commands(order, environ)
     if agent_audio_mode(environ) == "live":
         return order, None
     _refuse_muted_session_order(order)

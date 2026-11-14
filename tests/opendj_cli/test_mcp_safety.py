@@ -440,3 +440,25 @@ def test_a_sequence_re_mutes_immediately_before_each_audible_play() -> None:
     play_at = next(i for i, command in enumerate(commands) if command.get("type") == "play")
     assert commands[play_at - 1] == {"type": "master_mute", "muted": True, "persist": False}, commands
     assert [c for c in commands if c.get("type") == "load"] == [{"type": "load", "deck": 1, "stable_id": "trk-a"}]
+
+
+@pytest.mark.requirement("EDGESAMP-14815")
+@pytest.mark.parametrize(
+    "order",
+    [
+        {"single": {"type": "sampler_delete", "slot_id": "cap-1"}},
+        {"sequence": [{"type": "fader", "deck": 1, "value": 0.5}, {"type": "sampler_delete", "ref": "S1-05"}]},
+    ],
+)
+@pytest.mark.parametrize("audio", [{}, {"OPENDJ_AGENT_AUDIO": "live"}])
+def test_a_sampler_delete_order_needs_the_destructive_switch(order: dict, audio: dict[str, str]) -> None:
+    """[if] an agent order deletes a captured sample [then] it is refused unless the destructive switch is on, as DELETE /api/v1/* is, [else stop]."""
+    with pytest.raises(SafetyRefusal) as refused:
+        guard_order(order, environ=audio)
+    assert refused.value.code == "destructive_blocked"
+    with pytest.raises(SafetyRefusal):
+        guard_library_request("DELETE", "/api/v1/sampler/slots/cap-1", environ=audio)
+    # Control: with the switch on, both the order and the route go out.
+    opened = {**audio, "OPENDJ_MCP_ENABLE_DESTRUCTIVE": "1"}
+    assert guard_order(order, environ=opened) == (order, None)
+    guard_library_request("DELETE", "/api/v1/sampler/slots/cap-1", environ=opened)

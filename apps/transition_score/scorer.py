@@ -215,6 +215,13 @@ BASS_OVERLAP_DEPTH_KNEE_DB = BASS_BOTH_FULL_KNEE_BEATS * -BASS_BOTH_FULL_DB
 BASS_REF_PRESENT_DB = -40.0
 #: The low band both readings use (the band the shared-low-end reading always used; under the engine's 250 Hz shelf).
 LOW_BAND_HZ = (20.0, 150.0)
+#: #12478: the mid band read for the diagnostic mid_clash_s (spec 10 section 3), and how far under its own solo level a
+#: deck still counts as active there (10 dB, the spec's line). Reported only: no factor, no veto.
+MID_CLASH_BAND_HZ = (300.0, 3000.0)
+MID_CLASH_ACTIVE_DB = -10.0
+#: #12476: Tail Intrusion Ratio (spec 09 section 7) reads the first bar after the handover. Reported only: its band is
+#: still to be calibrated with the maintainer, so no factor, no veto.
+TAIL_INTRUSION_BARS = 1.0
 #: Vocal activity: stem RMS above this (spec 10, Mosaikbox), 50 ms frames.
 VOCAL_ACTIVE_DBFS = -40.0
 VOCAL_FRAME_S = 0.05
@@ -947,6 +954,54 @@ def _bass_overlap(t: _Tally, mix: np.ndarray, out_deck: np.ndarray, in_deck: np.
     _low_continuity(t, _beat_levels(mix_low, sr, overlap_beats), mix_a, mix_b, overlap_beats, ctx)
 
 
+def mid_clash_seconds(out_rel_db: np.ndarray, in_rel_db: np.ndarray, hop_s: float) -> float:
+    """Seconds where both decks' mid band sits within MID_CLASH_ACTIVE_DB of its own solo level (0 for no frames)."""
+    both = (out_rel_db >= MID_CLASH_ACTIVE_DB) & (in_rel_db >= MID_CLASH_ACTIVE_DB)
+    return round(float(np.sum(both)) * hop_s, 2)
+
+
+def _mid_clash(t: _Tally, out_deck: np.ndarray, in_deck: np.ndarray, ctx: RenderContext) -> None:
+    """#12478: the diagnostic mid_clash_s, each deck's 300 Hz-3 kHz envelope over the overlap against its solo median."""
+    sr, hop_s = ctx.sample_rate, signals.envelope_hop_s(ctx.sample_rate)
+    (a0, a1), (b0, b1) = _solo_spans(ctx, len(out_deck) / sr)
+    start, end = (int(x / hop_s) for x in ctx.overlap_s)
+    rel = []
+    for deck, (s0, s1) in ((out_deck, (a0, a1)), (in_deck, (b0, b1))):
+        env_db = 20.0 * np.log10(np.maximum(signals.band_envelope(deck, sr, MID_CLASH_BAND_HZ), 1e-10))
+        solo = env_db[int(s0 / hop_s) : int(s1 / hop_s)]
+        if len(solo) == 0:
+            t.unknown["mid_clash_s"] = "needs each deck alone outside the overlap"
+            return
+        rel.append(env_db[start:end] - float(np.median(solo)))
+    t.metrics["mid_clash_s"] = mid_clash_seconds(rel[0], rel[1], hop_s)
+
+
+def tail_intrusion_db(out_deck: np.ndarray, in_deck: np.ndarray, sr: int, span_s: tuple[float, float]) -> float | None:
+    """K-weighted outgoing-deck energy over the incoming deck's in span_s, in dB, or None when either is silent there."""
+    lo, hi = (int(x * sr) for x in span_s)
+    energies = [float(np.sum(signals.k_weighted(signals.mono(deck), sr)[lo:hi] ** 2)) for deck in (out_deck, in_deck)]
+    if hi <= lo or energies[1] <= 0.0:
+        return None
+    return round(10.0 * np.log10(max(energies[0], 1e-20) / energies[1]), 2)
+
+
+def _tail_intrusion(t: _Tally, out_deck: np.ndarray | None, in_deck: np.ndarray, ctx: RenderContext) -> None:
+    """#12476: TIR from the per-deck renders only; unknown without isolated outgoing audio, never read from the mix."""
+    if out_deck is None or len(out_deck) == 0:
+        t.unknown["tail_intrusion_db"] = "no isolated outgoing audio: TIR is never read from the mixed render"
+        return
+    handover, label = _handover_s(ctx)
+    if handover is None:
+        t.unknown["tail_intrusion_db"] = label
+        return
+    span = (handover, min(handover + TAIL_INTRUSION_BARS * 4 * ctx.beat_s, len(in_deck) / ctx.sample_rate))
+    tir = tail_intrusion_db(out_deck, in_deck, ctx.sample_rate, span)
+    if tir is None:
+        t.unknown["tail_intrusion_db"] = "the incoming deck is silent over the first bar after the handover"
+        return
+    t.metrics["tail_intrusion_db"] = tir
+
+
 def _content_switch(
     in_rel: np.ndarray,
     raw_out: np.ndarray,
@@ -1271,6 +1326,8 @@ def score_render(mix: np.ndarray, out_deck: np.ndarray, in_deck: np.ndarray, ctx
     _parity(t, ctx)
     _loudness(t, mix, ctx)
     _bass_overlap(t, mix, out_deck, in_deck, ctx)
+    _mid_clash(t, out_deck, in_deck, ctx)
+    _tail_intrusion(t, out_deck, in_deck, ctx)
     _vocal_overlap(t, ctx)
     _vocal_cut(t, out_deck, ctx)
     _cut_to_downbeat(t, {"out": out_deck, "in": in_deck}, ctx)

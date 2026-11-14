@@ -443,6 +443,9 @@ def compile_plan(
     trim = _trim_command(plan)
     if trim is not None:
         prepare.append(trim)
+    if plan.in_.key_shift_semitones:
+        # #10142: the KEY buttons' command, held for the whole play (the engine bound is -12..12).
+        prepare.append({"type": "key_shift", "deck": plan.in_.deck, "semitones": plan.in_.key_shift_semitones})
     ratio = _launch_tempo(plan, in_profile, live)
     if ratio is not None:
         prepare.append(control_command(plan.in_.deck, "tempo", ratio))
@@ -472,6 +475,9 @@ def compile_plan(
     events.sort(key=lambda row: row["at_bar"])
     master_tempo, keylock_notes = keylock_decisions(plan, led, ratio, live)
     notes.extend(keylock_notes)
+    if not plan.in_.keylock:
+        master_tempo[str(plan.in_.deck)] = False  # #10142: the plan asks key lock off on the incoming deck
+        notes.append(f"deck {plan.in_.deck} key lock off: the plan asks for it")
     return {
         "plan": {
             "id": plan_id,

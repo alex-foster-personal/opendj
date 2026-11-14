@@ -18,13 +18,17 @@
  *     [if] PUT /pins answers 500 [then] the pin list is back to what it was [else ⛔️]
  *   ✔︎ with no engine a play is refused out loud
  *     [if] a tab fires before an engine registers [then] it stays 'free' and an error toast shows [else ⛔️]
- *   → starter set (port map row 29) and loop capture / drag (row 28) land later
+ *   ✔︎ a deck loop dropped on a tab and sampler_capture run one capture path (captureToSet)
+ *     [if] a loop drops on tab 3 of a full set [then] it is slot 03 and the old last slot opens the next set [else ⛔️]
+ *     [if] a drop lands off the tabs or on search results [then] nothing is posted and a toast says why [else ⛔️]
+ *   → starter set (port map row 29) lands later
  */
 
 import { untrack } from 'svelte';
 import { pushToast } from '$lib/stores.svelte';
 import { getDeckState } from '$lib/player/state.svelte';
 import { DECK_IDS } from '$lib/player/constants';
+import type { DeckId } from '$lib/rb/deck-id';
 import {
 	computeNextOnlyRef,
 	compatibleKeyChecked,
@@ -36,6 +40,7 @@ import {
 	fetchSamplerSets,
 	fetchSamplerSlots,
 	patchSamplerSlot,
+	postSamplerCapture,
 	putSamplerPin,
 	putSamplerSet,
 	type FetchFn,
@@ -43,22 +48,36 @@ import {
 } from './api-sampler';
 import { DEFAULT_WAVE, clickAllowed, tabRef } from './edge-wave';
 import { NO_FILTERS, haystack, matchesSlot, passesFilters, type EdgeFilters } from './edge-search';
-import { NO_ENGINE, type SamplerEngine, type SlotPhase } from './sampler-engine-seam';
-import { pageWrap, type SampleSet } from './sampler-sets';
+import {
+	NO_ENGINE,
+	shareSamplerEngine,
+	sharedSamplerEngine,
+	type SamplerEngine,
+	type SlotPhase
+} from './sampler-engine-seam';
+import { captureDeckLoop } from './sampler-capture';
+import { residencyInputs } from './sampler-residency-feed';
+import { insertIntoSet, pageWrap, type SampleSet } from './sampler-sets';
 import {
 	layoutSets,
+	loopBarsLabel,
 	patchWithRollback,
 	rerankDelay,
 	resolveRefIn,
 	sameMaster,
+	setSlotIds,
+	setsToSave,
 	slotIsCompatible,
 	slotsQueryFor,
 	toSearchable,
-	withPin
+	withPin,
+	type DropTarget
 } from './sampler-store-logic';
 import { displayName, type Edge, type SamplerSlot, type SetMeta } from './sampler-types';
 
 const PAGE_LIMIT = 500;
+/** How long a freshly dropped tab wears the just-dropped ring (mock `.justdropped`). */
+const JUST_DROPPED_MS = 1500;
 
 export type FilterId = keyof EdgeFilters;
 
@@ -71,9 +90,22 @@ export interface EdgeState {
 	rpage: number;
 	/** written by the overlay's wave loop: pointer in the edge zone or a tab held */
 	awake: boolean;
+	/** written by the overlay's pointer samples: the pointer is heading for this edge (#10782) */
+	intent: boolean;
 	searchFocus: boolean;
 	/** performance.now() of the last flip, for the top-to-bottom pop */
 	flipAt: number;
+}
+
+/** An in-app drag of a deck's loop toward an edge (spec 7.4 "Drag a loop in"). */
+interface LoopDrag {
+	deck: DeckId;
+	/** "4 bars" for the ghost */
+	bars: string;
+	x: number;
+	y: number;
+	/** the tab under the pointer, outlined as the drop target */
+	over: DropTarget | null;
 }
 
 const _edge = (set: number): EdgeState => ({
@@ -83,6 +115,7 @@ const _edge = (set: number): EdgeState => ({
 	results: null,
 	rpage: 0,
 	awake: false,
+	intent: false,
 	searchFocus: false,
 	flipAt: -1e9
 });
@@ -103,7 +136,10 @@ export const sampler = $state({
 	/** the catalogue's rekordbox read status ("ok" or "unavailable: <reason>"), null until loaded */
 	rekordbox: null as string | null,
 	/** false until a real audio engine registers; plays are refused until then */
-	engineReady: false
+	engineReady: false,
+	drag: null as LoopDrag | null,
+	/** the slot a drop just saved, ringed for JUST_DROPPED_MS */
+	justDropped: null as string | null
 });
 
 /** Lowercased search text per slot id, rebuilt on load and rename (one pass per keystroke). */
@@ -112,7 +148,8 @@ const _hay = new Map<string, string>();
 //----- seams: transport and engine
 
 let _fetch: FetchFn = (input, init) => fetch(input, init);
-let _engine: SamplerEngine = NO_ENGINE;
+/** Gate presses whose voice is still loading, by slot id; true once the press was released. */
+const _gatePresses = new Map<string, boolean>();
 
 /** Send the store's API calls through `fetchFn` (tests, fixtures); the global fetch until set. */
 export function setSamplerFetch(fetchFn: FetchFn): void {
@@ -121,7 +158,7 @@ export function setSamplerFetch(fetchFn: FetchFn): void {
 
 /** Plug the audio engine in (the engine module's one registration line); NO_ENGINE unplugs it. */
 export function registerSamplerEngine(engine: SamplerEngine): void {
-	_engine = engine;
+	shareSamplerEngine(engine);
 	sampler.engineReady = engine !== NO_ENGINE;
 }
 
@@ -130,7 +167,12 @@ export function registerSamplerEngine(engine: SamplerEngine): void {
 export const isPinned = (id: string): boolean => sampler.pinned.includes(id);
 
 /** What the slot's voice is doing; always 'free' while no engine is registered. */
-export const slotPhase = (id: string): SlotPhase => _engine.phase(id);
+export const slotPhase = (id: string): SlotPhase =>
+	sampler.engineReady ? sharedSamplerEngine().phase(id) : 'free';
+
+/** 0..1 through the slot's current pass (voice or preview), for the playheads; null when silent. */
+export const slotPlayhead = (id: string): number | null =>
+	sampler.engineReady ? sharedSamplerEngine().playhead(id) : null;
 
 /** The tabs an edge shows now: its set, or its page of search results. */
 export function edgeItems(edge: Edge): Array<SamplerSlot | null> {
@@ -220,14 +262,6 @@ function _relayout(): void {
 	sampler.sets = layoutSets(sampler.slots, sampler.perSet, sampler.metas);
 	const n = sampler.sets.length;
 	for (const e of Object.values(sampler.edges)) e.set = n === 0 ? 0 : Math.min(e.set, n - 1);
-	_warmVisible();
-}
-
-function _warmVisible(): void {
-	const visible = [...edgeItems('L'), ...edgeItems('R')].filter(
-		(s): s is SamplerSlot => s !== null
-	);
-	if (visible.length > 0) _engine.warm(visible);
 }
 
 /** The master deck reference the compat sort ranks against, or null with no usable deck. */
@@ -313,6 +347,13 @@ export function startSampler(): () => void {
 			const ref = masterRef();
 			untrack(() => _onMaster(ref));
 		});
+		// Residency (#10782): a wake, sleep, intent, flip, relayout or pin hands the engine a new view.
+		$effect(() => {
+			void sampler.engineReady;
+			const view = residencyInputs(sampler);
+			const pins = [...sampler.pinned];
+			untrack(() => sharedSamplerEngine().reside(view, pins));
+		});
 	});
 	return () => {
 		stop();
@@ -328,7 +369,10 @@ export function setSamplerEnabled(on: boolean): void {
 	setSamplerEnabledPref(on);
 	if (!on) {
 		sampler.editing = null;
-		for (const e of Object.values(sampler.edges)) e.awake = false;
+		for (const e of Object.values(sampler.edges)) {
+			e.awake = false;
+			e.intent = false;
+		}
 	}
 }
 
@@ -340,7 +384,6 @@ export function flipSet(edge: Edge, delta: number): void {
 	else e.set = pageWrap(e.set, delta, sampler.sets.length);
 	e.flipAt = performance.now();
 	sampler.lastEdge = edge;
-	_warmVisible();
 }
 
 /** Show set `setIndex` on an edge; throws when it is out of range. */
@@ -353,7 +396,6 @@ export function setEdgeSet(edge: Edge, setIndex: number): void {
 	e.set = setIndex;
 	e.flipAt = performance.now();
 	sampler.lastEdge = edge;
-	_warmVisible();
 }
 
 /** Type into an edge's search; clearing it drops the edge back to its set. */
@@ -378,7 +420,6 @@ export function showEdgeResults(edge: Edge): void {
 	e.rpage = 0;
 	e.flipAt = performance.now();
 	sampler.lastEdge = edge;
-	_warmVisible();
 }
 
 /** Leave search results and show the edge's set again. */
@@ -470,21 +511,150 @@ export async function nameSet(setId: string, name: string, description: string):
 	}
 }
 
+//----- capture (a dropped deck loop, or sampler_capture on the bus)
+
+/** The set a drop on an empty catalogue lands in. */
+const _firstSet = (): SampleSet<SamplerSlot> => ({
+	id: 'set-1',
+	name: 'Set 1',
+	description: '',
+	items: []
+});
+
+function _markDropped(id: string): void {
+	sampler.justDropped = id;
+	setTimeout(() => {
+		if (sampler.justDropped === id) sampler.justDropped = null;
+	}, JUST_DROPPED_MS);
+}
+
+/**
+ * Save deck `deck`'s engaged loop and mix at `index` of set `setIndex`: POST it as a capture,
+ * then PUT the sets the insert reflows. A drop and the agent's sampler_capture both land here.
+ */
+export async function captureToSet(
+	deck: DeckId,
+	setIndex: number,
+	index: number
+): Promise<SamplerSlot> {
+	const target =
+		sampler.sets[setIndex] ?? (sampler.sets.length === 0 && setIndex === 0 ? _firstSet() : null);
+	if (target === null) throw new Error(`captureToSet: no set at index ${setIndex}`);
+	let slot: SamplerSlot;
+	try {
+		slot = await postSamplerCapture({ ...captureDeckLoop(deck), set_id: target.id, index }, _fetch);
+	} catch (err) {
+		_toast('Not saved', err);
+	}
+	const before = sampler.sets.map((s) => ({ ...s, items: [...s.items] }));
+	const after = before.map((s) => ({ ...s, items: [...s.items] }));
+	insertIntoSet(after, setIndex, index, slot, sampler.perSet);
+	try {
+		const saved = await Promise.all(
+			setsToSave(before, after, sampler.metas).map((s) =>
+				putSamplerSet(
+					s.id,
+					{ name: s.name, description: s.description, slot_ids: setSlotIds(s) },
+					_fetch
+				)
+			)
+		);
+		sampler.metas = [...sampler.metas.filter((m) => !saved.some((x) => x.id === m.id)), ...saved];
+	} catch (err) {
+		await loadSampler();
+		_toast('Loop saved, but its place in the set was not', err);
+	}
+	sampler.slots = [...sampler.slots, slot];
+	_hay.set(slot.slot_id, haystack(toSearchable(slot, true)));
+	_relayout();
+	const at = sampler.sets[setIndex]?.items.findIndex((x) => x?.slot_id === slot.slot_id) ?? -1;
+	_markDropped(slot.slot_id);
+	pushToast(
+		`Saved to ${target.name} slot ${String(at + 1).padStart(2, '0')}, with the deck's EQ, filter and stem settings`
+	);
+	return slot;
+}
+
+//----- in-app loop drag (deck loop -> edge tab)
+
+/** Start dragging deck `deck`'s loop: the edges may wake with a button held, the editor closes. */
+export function beginLoopDrag(deck: DeckId, x: number, y: number): void {
+	sampler.drag = {
+		deck,
+		bars: loopBarsLabel(getDeckState(deck).loop?.beat_length),
+		x,
+		y,
+		over: null
+	};
+	openSlotEditor(null);
+}
+
+/** Follow the pointer; `over` is the tab under it (the caller hit-tests the DOM). */
+export function moveLoopDrag(x: number, y: number, over: DropTarget | null): void {
+	const d = sampler.drag;
+	if (d === null) return;
+	d.x = x;
+	d.y = y;
+	if (over?.edge !== d.over?.edge || over?.index !== d.over?.index) d.over = over;
+}
+
+/** End the drag: a drop on a set's tab captures there; off the tabs or on search results it toasts why. */
+export async function endLoopDrag(
+	over: DropTarget | null,
+	cancelled: boolean
+): Promise<SamplerSlot | null> {
+	const d = sampler.drag;
+	sampler.drag = null;
+	if (d === null || cancelled) return null;
+	const at = over ?? d.over;
+	if (at === null) {
+		pushToast('Not saved: drop the loop on a tab at either screen edge', 'warn');
+		return null;
+	}
+	const e = sampler.edges[at.edge];
+	if (e.results !== null) {
+		pushToast('Not saved: clear the search first, then drop it into a set', 'warn');
+		return null;
+	}
+	return captureToSet(d.deck, e.set, at.index);
+}
+
 //----- engine wrappers (every rejection is a toast)
 
 /** Play or stop a slot on the master; with no engine it stays not-playing and an error toasts. */
-export function fireSlot(slot: SamplerSlot): Promise<void> {
-	return _engine
-		.toggle(slot)
-		.catch((err: unknown) =>
-			pushToast(`Could not play ${displayName(slot)}: ${String(err)}`, 'error', undefined, err)
-		);
+export async function fireSlot(slot: SamplerSlot): Promise<void> {
+	const id = slot.slot_id;
+	const gatePress = slot.settings.mode === 'gate' && slotPhase(id) === 'free';
+	if (gatePress) _gatePresses.set(id, false);
+	try {
+		await sharedSamplerEngine().toggle(slot);
+	} catch (err) {
+		pushToast(`Could not play ${displayName(slot)}: ${String(err)}`, 'error', undefined, err);
+	} finally {
+		// A gate key let go while its clip loaded: the voice has started by now, so stop it.
+		const releasedEarly = gatePress && _gatePresses.get(id) === true;
+		if (gatePress) _gatePresses.delete(id);
+		if (releasedEarly) stopSampleSlot(id);
+	}
+}
+
+/** Let go of a slot's press: a gate slot stops (or will, once its voice starts); other modes ignore it. */
+export function releaseSlot(id: string): void {
+	const slot = sampler.slots.find((s) => s.slot_id === id);
+	if (slot === undefined) throw new Error(`sampler: no slot ${id}`);
+	if (slot.settings.mode !== 'gate') return;
+	if (_gatePresses.has(id)) {
+		_gatePresses.set(id, true);
+		return;
+	}
+	const phase = slotPhase(id);
+	if (phase === 'armed' || phase === 'playing') stopSampleSlot(id);
 }
 
 /** Stop one slot's voice. */
 export function stopSampleSlot(id: string): void {
 	try {
-		_engine.stop(id);
+		sharedSamplerEngine().stop(id);
 	} catch (err) {
 		pushToast(`Could not stop the sample: ${String(err)}`, 'error', undefined, err);
 	}
@@ -494,21 +664,15 @@ export function stopSampleSlot(id: string): void {
 export function togglePreview(slot: SamplerSlot, previewing: boolean): Promise<void> {
 	if (previewing) {
 		try {
-			_engine.stopPreview();
+			sharedSamplerEngine().stopPreview();
 		} catch (err) {
 			pushToast(`Could not stop the preview: ${String(err)}`, 'error', undefined, err);
 		}
 		return Promise.resolve();
 	}
-	return _engine
+	return sharedSamplerEngine()
 		.preview(slot)
 		.catch((err: unknown) =>
 			pushToast(`Could not preview ${displayName(slot)}: ${String(err)}`, 'error', undefined, err)
 		);
-}
-
-/** Fire the tab at `index` of the edge's shown set; an empty slot does nothing. */
-export function fireEdgeTab(edge: Edge, index: number): void {
-	const s = edgeItems(edge)[index];
-	if (s) void fireSlot(s);
 }

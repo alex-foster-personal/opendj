@@ -1,4 +1,4 @@
-"""Regression tests for scripts/live_detect.py cache compaction and verdict thresholds.
+"""Regression tests for scripts/live_detect.py cache compaction, verdict thresholds and main no-op runs.
 
 - if cache file missing then _compact_cache returns empty set without creating file
 - if ok rows present then retained; missing/decode_error omitted for retry
@@ -16,6 +16,9 @@
 - if duration is shorter than EDGE_S then every edge window has start >= 0 and start + length <= duration
 - if duration is shorter than MID_S then every middle window has start >= 0 and start + length <= duration
 - if duration is long enough for baseline windows then edge and mid tuples match the pre-fix unclamped geometry
+- if db yields no paths then main exits without Model construction
+- if every path is cached ok then main exits without Model construction
+- if one path is uncached then main constructs Model before score_file
 """
 
 from __future__ import annotations
@@ -291,3 +294,68 @@ def test_score_file_decode_error_text_is_bounded(tmp_path, live_detect_mod, monk
     assert result.status == "decode_error"
     assert result.error is not None
     assert len(result.error) <= 200
+
+
+@pytest.mark.requirement("TESTINFRA-14309")
+def test_main_skips_model_when_db_yields_no_paths(monkeypatch, tmp_path, live_detect_mod):
+    """[if] db selection yields no paths [then] main exits without Model construction, [else stop]."""
+    cache = tmp_path / "live.jsonl"
+    db = tmp_path / "state.db"
+    db.write_bytes(b"")
+    built: list[str] = []
+
+    class StubModel:
+        def __init__(self) -> None:
+            built.append("model")
+
+    monkeypatch.setattr(live_detect_mod, "_paths_from_db", lambda _db: [])
+    monkeypatch.setattr(live_detect_mod, "Model", StubModel)
+    monkeypatch.setattr(sys, "argv", ["live_detect", "--db", str(db), "--out", str(cache)])
+    with pytest.raises(SystemExit) as exited:
+        live_detect_mod.main()
+    assert exited.value.code == 0
+    assert built == []
+
+
+@pytest.mark.requirement("TESTINFRA-14309")
+def test_main_skips_model_when_every_path_cached_ok(monkeypatch, tmp_path, live_detect_mod):
+    """[if] every path is cached ok [then] main exits without Model construction, [else stop]."""
+    path = "/cached.mp3"
+    cache = tmp_path / "live.jsonl"
+    cache.write_text(_ok_line(path) + "\n", encoding="utf-8")
+    built: list[str] = []
+
+    class StubModel:
+        def __init__(self) -> None:
+            built.append("model")
+
+    monkeypatch.setattr(live_detect_mod, "Model", StubModel)
+    monkeypatch.setattr(sys, "argv", ["live_detect", "--paths", path, "--out", str(cache)])
+    with pytest.raises(SystemExit) as exited:
+        live_detect_mod.main()
+    assert exited.value.code == 0
+    assert built == []
+
+
+@pytest.mark.requirement("TESTINFRA-14309")
+def test_main_loads_model_before_score_when_uncached(monkeypatch, tmp_path, live_detect_mod):
+    """[if] one path is uncached [then] Model is constructed before score_file, [else stop]."""
+    cache = tmp_path / "live.jsonl"
+    uncached = "/todo.mp3"
+    events: list[str] = []
+
+    class StubModel:
+        def __init__(self) -> None:
+            events.append("model")
+
+    def stub_score(_model, path: str):
+        events.append("score")
+        return live_detect_mod.Result(path, "missing")
+
+    monkeypatch.setattr(live_detect_mod, "Model", StubModel)
+    monkeypatch.setattr(live_detect_mod, "score_file", stub_score)
+    monkeypatch.setattr(sys, "argv", ["live_detect", "--paths", uncached, "--out", str(cache)])
+    with pytest.raises(SystemExit) as exited:
+        live_detect_mod.main()
+    assert exited.value.code == 0
+    assert events == ["model", "score"]

@@ -1,4 +1,4 @@
-// requirement: EDGESAMP-14011
+// requirement: EDGESAMP-14011, EDGESAMP-14530
 /**
  * Issue #11102 (S7/S7b): the edge sampler store's pure parts ((private path) 7.4, 10).
  * Refs, the compat sort hand-off, set layout, optimistic patches, pins and compatibility.
@@ -9,6 +9,8 @@
  * - if set-1 has a saved layout then it keeps it and set-2 starts at the first unplaced slot
  * - if a slot patch fails then the slot rolls back and the error reaches the caller
  * - if the library's compatible prefs change then the sampler's verdict follows the same object
+ * - if a drop reflows ranked sets then every ranked set is PUT and the ranking freezes
+ * - if a tab's drop data is malformed then the drop goes to a made-up tab instead of failing
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -18,8 +20,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 let L;
 let next;
 let prefsMod;
+let sets;
 before(async () => {
 	L = await loadTypeScriptModule('src/lib/player/sampler/sampler-store-logic.ts');
+	sets = await loadTypeScriptModule('src/lib/player/sampler/sampler-sets.ts');
 	next = await loadTypeScriptModule('src/lib/rb/next-only-filter.ts');
 	prefsMod = await loadTypeScriptModule('src/lib/rb/compatible-filter-prefs.ts');
 });
@@ -246,4 +250,50 @@ test('a slot reads for search with its cue label and flags', () => {
 	assert.equal(L.cueLabel({ cue_letter: null, beats: 16, source: 'capture' }), 'loop 4 bars');
 	assert.equal(L.cueLabel({ cue_letter: null, beats: 4, source: 'memory_loop' }), '1 bar');
 	assert.equal(L.toSearchable(slot(1, { key: null }), false).key, '');
+});
+
+/** The layout after `cap` is inserted at `index` of set `setIndex` (the store's drop step). */
+function dropInto(layout, setIndex, index, cap) {
+	const after = layout.map((s) => ({ ...s, items: [...s.items] }));
+	sets.insertIntoSet(after, setIndex, index, cap, 20);
+	return after;
+}
+
+test('a drop on a ranked set saves only that set', () => {
+	/** [if] a capture drops on tab 3 of ranked set-1 of 45 slots [then] only set-1 is PUT, holding it at 3 and 20 long, [else stop]. */
+	const before = L.layoutSets(catalogue, 20, []);
+	const saves = L.setsToSave(before, dropInto(before, 0, 2, slot('cap')), []);
+	assert.deepEqual(
+		saves.map((s) => s.id),
+		['set-1']
+	);
+	assert.equal(saves[0].items[2].slot_id, 'scap');
+	assert.equal(saves[0].items.length, 20);
+	const relaid = L.layoutSets([...catalogue, slot('cap')], 20, [
+		meta('set-1', L.setSlotIds(saves[0]), 'Set 1')
+	]);
+	assert.equal(relaid[1].items[0].slot_id, 's19');
+	assert.equal(relaid.flatMap((s) => L.setSlotIds(s)).filter((id) => id !== null).length, 46);
+});
+
+test('a drop on a full stored set saves it and the ranked set its last slot opens', () => {
+	/** [if] stored set-1 is full and set-2 ranked [then] set-1 and set-2 are PUT, set-3 is not, [else stop]. */
+	const stored = [meta('set-1', L.setSlotIds(L.layoutSets(catalogue, 20, [])[0]), 'Mine')];
+	const before = L.layoutSets(catalogue, 20, stored);
+	const saves = L.setsToSave(before, dropInto(before, 0, 0, slot('cap')), stored);
+	assert.deepEqual(
+		saves.map((s) => s.id),
+		['set-1', 'set-2']
+	);
+	assert.equal(saves[1].items[0].slot_id, 's19');
+});
+
+test('a tab names its drop target or the drop fails loudly', () => {
+	/** [if] a tab reads R / 3 [then] it is edge R index 3; a bad edge or index throws; 8 beats read 2 bars, [else stop]. */
+	assert.deepEqual(L.dropTargetOf({ dropEdge: 'R', dropIndex: '3' }), { edge: 'R', index: 3 });
+	assert.throws(() => L.dropTargetOf({ dropEdge: 'X', dropIndex: '3' }), /bad drop target/);
+	assert.throws(() => L.dropTargetOf({ dropEdge: 'L', dropIndex: '' }), /bad drop target/);
+	assert.equal(L.loopBarsLabel(8), '2 bars');
+	assert.equal(L.loopBarsLabel(2), '1 bar');
+	assert.equal(L.loopBarsLabel(null), 'loop');
 });

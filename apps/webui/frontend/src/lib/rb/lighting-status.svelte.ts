@@ -77,7 +77,7 @@ export async function fetchLightingOutputEnabled(
 	fetchFn: typeof fetch = fetch
 ): Promise<boolean | null> {
 	try {
-		const res = await fetchFn(FLAGS_PATH);
+		const res = await fetchFn(`${API_BASE}${FLAGS_PATH}`);
 		return res.status === 200 ? lightingOutputEnabled(await res.json()) : null;
 	} catch {
 		return null;

@@ -183,3 +183,34 @@ def test_a_store_written_before_the_policy_column_is_migrated_with_a_blank_polic
     conn.close()
     store = ProposalStore(paths)
     assert store.get_scan("old").auto_apply_policy == "", "if the column is not added an older store cannot be opened"
+
+
+class _CommitFails(sqlite3.Connection):
+    """A connection whose COMMIT fails the way a full disk or an I/O error makes it fail."""
+
+    def execute(self, sql: str, *args: Any) -> sqlite3.Cursor:
+        if sql == "COMMIT":
+            raise sqlite3.OperationalError("disk I/O error")
+        return super().execute(sql, *args)
+
+
+@pytest.mark.requirement("TFIX-01")
+def test_a_fence_whose_own_commit_fails_raises_the_fence_exit_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the fence's own COMMIT fails after the caller's write [then] the store raises FenceExitError, [else stop]."""
+    store = _store(tmp_path)
+    with store.exclusive():
+        pass  # control: a healthy fence exits without raising
+    real_connect = sqlite3.connect
+
+    def connect_with_a_failing_commit(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        return real_connect(*args, factory=_CommitFails, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_a_failing_commit)
+    with pytest.raises(title_fix_store.FenceExitError) as raised, store.exclusive():
+        pass
+    assert "disk I/O error" in str(raised.value), (
+        "if the fence exit raises anything else then the apply and the undo, which catch FenceExitError to keep"
+        f" the record of a write that already committed, lose that record: {raised.value!r}"
+    )

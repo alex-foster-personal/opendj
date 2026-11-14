@@ -21,6 +21,7 @@ OPENAPI: Path = REPO_ROOT / "apps" / "webui" / "openapi.json"
 PANEL: Path = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/library-jobs/LibraryJobQueuePanel.svelte"
 BROWSER: Path = REPO_ROOT / "apps/webui/frontend/src/lib/components/rb/BrowserPanel.svelte"
 API_CLIENT: Path = REPO_ROOT / "apps/webui/frontend/src/lib/rb/api-library-jobs.ts"
+STORE: Path = REPO_ROOT / "apps/webui/frontend/src/lib/rb/library-jobs-store.svelte.ts"
 
 CONTROLS: tuple[tuple[str, str], ...] = (
     ("enqueue", "user-enqueue"),
@@ -111,8 +112,15 @@ def test_every_control_is_reachable_from_the_ui_panel() -> None:
         "cancelLibraryJob",
     ):
         assert needle in client_src, needle
-    # Enqueue is the library menu; list/reorder/cancel live in the panel.
-    assert "enqueueLibraryJobsBatched" in browser_src
+    # Enqueue is the library menu; list/reorder/cancel live in the panel. Since
+    # PR #14168 the menu enqueues through the store, which holds the capability
+    # refusal and is the one caller of the batched client call. Since PR #14845
+    # the menu calls the store's doNext, which enqueues and toasts a refusal.
+    store_src = STORE.read_text(encoding="utf-8")
+    assert "libraryJobsStore.doNext('stems', ids, pushToast)" in browser_src
+    assert "libraryJobsStore.doNext('lyrics', ids, pushToast)" in browser_src
+    assert "const refusal = await this.enqueue(lane, stableIds);" in store_src
+    assert "await enqueueLibraryJobsBatched({ lane, stable_ids: stableIds })" in store_src
     for fn in ("listLibraryJobs", "reorderLibraryJob", "cancelLibraryJob"):
         assert fn in panel_src, fn
 

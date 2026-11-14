@@ -21,11 +21,12 @@ and then rename or reorder it. Every write also carries ``X-Undo-Session:
 OJ_UNDO_SESSION``, as each web UI window does, so the library-organization
 routes that require it (My Tags, tag types, sections, ``POST /api/v1/undo``)
 answer OJ and its edits share one undo history; routes that do not read the
-header ignore it. The ``command`` tool does NOT apply
-``guard_order``: its only effect is to prepend a master mute to an audible
-play, which is right for an unattended MCP agent and wrong here, where the
-user approves every command and a hidden mute would make "play deck 2"
-silent. Order shape is validated by ``POST /api/v1/commands`` itself (422).
+header ignore it. The ``command`` tool applies the destructive switch
+(``guard_destructive_commands``) but NOT ``guard_order``, whose other effect is
+to prepend a master mute to an audible play, which is right for an unattended
+MCP agent and wrong here, where the user approves every command and a hidden
+mute would make "play deck 2" silent. Order shape is validated by
+``POST /api/v1/commands`` itself (422).
 """
 
 from __future__ import annotations
@@ -46,7 +47,12 @@ from apps.engine_core.assistant.agent_contract import (
     ToolSpec,
 )
 from apps.opendj_cli.catalog import VERBS
-from apps.opendj_cli.mcp_safety import SafetyRefusal, guard_library_request, validate_api_path
+from apps.opendj_cli.mcp_safety import (
+    SafetyRefusal,
+    guard_destructive_commands,
+    guard_library_request,
+    validate_api_path,
+)
 from apps.opendj_cli.orders import ramp_deadline_s, single
 from apps.opendj_cli.verbs import InvocationError, parse_invocation
 from apps.shared.telemetry.live import mirror_decks_live
@@ -186,12 +192,16 @@ def _order(args: dict[str, Any]) -> dict[str, Any]:
     verb = _arg(args, "verb", str, required=False)
     if (order is None) == (verb is None):
         raise ToolFailure("invalid_arguments", "give exactly one of order or verb")
-    if order is not None:
-        return order
+    if order is None:
+        try:
+            order = single(parse_invocation(shlex.split(verb)))
+        except (InvocationError, ValueError) as exc:
+            raise ToolFailure("invalid_arguments", str(exc)) from exc
     try:
-        return single(parse_invocation(shlex.split(verb)))
-    except (InvocationError, ValueError) as exc:
-        raise ToolFailure("invalid_arguments", str(exc)) from exc
+        guard_destructive_commands(order)
+    except SafetyRefusal as exc:
+        raise ToolFailure(exc.code, str(exc)) from exc
+    return order
 
 
 async def read_audible(ctx: ToolContext) -> bool:

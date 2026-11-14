@@ -8,7 +8,8 @@
 // Cmd+, / Ctrl+, is owned by settings/hotkeys.ts (meta/ctrl ignored here).
 // Digits 1-8 are the transport deck's hot cues (#10354); Shift saves an empty
 // slot, Cmd+Shift clears. The edge sampler takes digits and PageUp / PageDown
-// only while one of its edges is awake (#13720).
+// only while one of its edges is awake (#13720), and sends them as the same
+// performance bus commands agents use; a digit's keyup releases its slot (#12169).
 // #10357: , . (Shift coarse) step tempo; Shift+K reset; P cycles pitch range.
 // #9395: W A S D move the keyboard selector, E drills in, Q out, Esc clears it.
 // #13708: on a selected leaf, Enter presses its control and the arrows step its dial.
@@ -49,10 +50,16 @@ import type { SectionJumpDirection } from './section-jump';
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { isModalDialogTarget } from '$lib/keyboard/modal-dialog-target';
 import { trackTypeAhead } from '$lib/components/rb/browser/track-table-type-ahead';
-import { fireEdgeTab, flipSet, sampler } from '$lib/player/sampler/sampler-store.svelte';
-import { awakeSamplerEdge, samplerKeyAction } from '$lib/player/sampler/sampler-keys';
+import { edgeItems, sampler } from '$lib/player/sampler/sampler-store.svelte';
+import {
+	awakeSamplerEdge,
+	samplerKeyDown,
+	samplerKeyUp,
+	type SamplerKeyHolds
+} from '$lib/player/sampler/sampler-keys';
 import { nativeShellKind } from '$lib/shell/native-shell';
 import { tempoKeyCommand, type TempoKeyAction } from './tempo-keys';
+import { isMenuItemKeyTarget } from './performance-hotkeys-target';
 import {
 	activeKeyboardPreset,
 	handleKeymapKeydown,
@@ -77,6 +84,7 @@ import {
 import { runCommand, type SelectorLeafHost } from '$lib/keyboard/command-registry';
 import {
 	createSelectorLeafHost,
+	isSelectorLeafRefusal,
 	selectorLeafAdjustTarget,
 	type SelectorLeafHostDeps
 } from '$lib/keyboard/selector-activate';
@@ -384,7 +392,13 @@ function _shortcutHandlers(
 		selectorLeafCommand: (command) => {
 			const selectorLeaf = _selectedLeafHost(selector);
 			if (selectorLeaf === null) throw new Error(`${command}: no selector leaf is selected`);
-			runCommand(command, { timeStamp: press.timeStamp, selectorLeaf });
+			try {
+				runCommand(command, { timeStamp: press.timeStamp, selectorLeaf });
+			} catch (error) {
+				// #14522: a refused leaf command (Enter on the jog) is a no-op the log names, not a crash.
+				if (!isSelectorLeafRefusal(error)) throw error;
+				console.debug(`[selector] ${command}: ${error.message}`);
+			}
 		}
 	};
 }
@@ -416,21 +430,34 @@ export function installPerformanceHotkeys(): () => void {
 	};
 	// #13720: existing bindings win; the sampler takes digits and PageUp /
 	// PageDown only while an edge is awake (sampler-keys.ts), never [ or ].
+	// #12169: they run as bus commands, so keyboard, tab and agent share a path.
+	const samplerHolds: SamplerKeyHolds = new Map();
 	function tryEdgeSamplerHotkey(e: KeyboardEvent): boolean {
 		if (!uiPrefs.sampler_enabled || nativeShellKind() !== 'electron') return false;
-		const action = samplerKeyAction(e, {
+		const ctx = {
 			inTextField: isTextEntryTarget(e.target),
 			awakeEdge: awakeSamplerEdge(
 				{ L: sampler.edges.L.awake, R: sampler.edges.R.awake },
 				sampler.lastEdge
 			)
-		});
-		if (action === null) return false;
-		if (action.kind === 'flip') flipSet(action.edge, action.delta);
-		else if (action.kind === 'fire') fireEdgeTab(action.edge, action.index);
+		};
+		const slotIdAt = (edge: 'L' | 'R', index: number): string | null =>
+			edgeItems(edge)[index]?.slot_id ?? null;
+		const { claimed, command } = samplerKeyDown(e, ctx, slotIdAt, samplerHolds);
+		if (!claimed) return false;
 		e.preventDefault();
+		if (command !== null) void runPerformanceCommandFromUi(command, e.timeStamp);
 		return true;
 	}
+	// A held fire key lets go on keyup, or on blur when the window loses the keyup.
+	const releaseSamplerKey = (key: string): void => {
+		const command = samplerKeyUp(key, samplerHolds);
+		if (command !== null) void runPerformanceCommandFromUi(command);
+	};
+	const onKeyUp = (e: KeyboardEvent): void => releaseSamplerKey(e.key);
+	const onBlur = (): void => {
+		for (const key of [...samplerHolds.keys()]) releaseSamplerKey(key);
+	};
 
 	const onKey = (e: KeyboardEvent): void => {
 		// #14604: a key typed inside a modal dialog is the dialog's, not the page's.
@@ -438,6 +465,9 @@ export function installPerformanceHotkeys(): () => void {
 		// LIBM-82b: an open type-ahead prefix on a track row owns every printable key.
 		if (trackTypeAhead.ownsKey(e)) return;
 		if (tryEdgeSamplerHotkey(e)) return;
+		// #14632: arrows, Home/End, Enter, Space, Esc and Tab on a focused menu item move,
+		// activate or close the menu, ahead of a user keymap and the selector's leaf keys.
+		if (isMenuItemKeyTarget(e.target, e.key)) return;
 		const handlers = _shortcutHandlers(selector, { timeStamp: e.timeStamp, target: e.target });
 		if (handleKeymapKeydown(e, handlers)) return;
 		if (!legacyPerformanceChordsActive(activeKeyboardPreset())) return;
@@ -455,6 +485,8 @@ export function installPerformanceHotkeys(): () => void {
 	};
 	window.addEventListener('pointerdown', onPointer, { capture: true });
 	window.addEventListener('keydown', onKey, { capture: true });
+	window.addEventListener('keyup', onKeyUp, { capture: true });
+	window.addEventListener('blur', onBlur);
 	// #13770: `__odjKeyboard.run` drives this same session and these same handlers.
 	const selectorHost = {
 		...selector.commandHost(() => performance.now()),
@@ -477,6 +509,8 @@ export function installPerformanceHotkeys(): () => void {
 		stopReconcile();
 		window.removeEventListener('pointerdown', onPointer, { capture: true });
 		window.removeEventListener('keydown', onKey, { capture: true });
+		window.removeEventListener('keyup', onKeyUp, { capture: true });
+		window.removeEventListener('blur', onBlur);
 		setKeyboardSelectorProvider(null);
 		setKeyboardShortcutHandlersProvider(null);
 		selector.clear();

@@ -57,6 +57,7 @@ export interface CommandAction {
 		| { type: 'open_settings'; query: string }
 		| { type: 'open_second_screen' }
 		| { type: 'performance'; id: PerformanceCommandId }
+		| { type: 'keyboard'; id: string }
 		| { type: 'palette'; run: PaletteBarRun };
 	/** Registry keywords for ranking and `actionRows` token matching. */
 	keywords?: readonly string[];

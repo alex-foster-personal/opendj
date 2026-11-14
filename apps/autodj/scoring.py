@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from apps.autodj.plan import STRONG_BASS, _overlaps, beat_sync_reach_pct, bpm_gap_pct, pair_beat_sync_fold
+from apps.autodj.plan import STRONG_BASS, _overlaps, beat_sync_reach_pct, bpm_gap_pct, pair_beat_sync_fold, seam_levels
 from apps.autodj.profile import VOCAL_BAR_THRESHOLD, TrackProfile, resolve_key_at_bar
 from apps.autodj.windows import MixWindow, mix_windows
 from apps.shared.harmonic import CamelotKey, camelot_distance, key_compat
@@ -33,7 +33,21 @@ from apps.shared.harmonic import CamelotKey, camelot_distance, key_compat
 #: Overlap assumed when scoring windows without a style chosen yet.
 DEFAULT_OVERLAP_BARS = 16
 #: The pair terms and their weights; a term not measured is left out of the mean, never valued.
-TERM_WEIGHTS: dict[str, float] = {"harmony": 0.3, "tempo": 0.25, "vocals": 0.2, "windows": 0.25}
+TERM_WEIGHTS: dict[str, float] = {
+    "harmony": 0.255,
+    "tempo": 0.2125,
+    "vocals": 0.17,
+    "windows": 0.2125,
+    "energy": 0.15,
+}
+#: #10129: the MIK seam step each intent accepts (low, high); None is no target (every step fits).
+ENERGY_BANDS: dict[str, tuple[int, int] | None] = {
+    "smooth": (-1, 1),
+    "vocals_clean": (-1, 1),
+    "energy_up": (1, 2),
+    "wind_down": (-2, -1),
+    "showy": None,
+}
 
 
 @dataclass(frozen=True)
@@ -55,6 +69,8 @@ class PairScore:
     out_window: MixWindow
     in_window: MixWindow
     reasons: tuple[str, ...]
+    #: #10129: the MIK seam ``{out_level, in_level, seam_step, term}``; None when a MIK series is missing.
+    energy: dict[str, Any] | None = None
     #: Terms that could not be measured, each with why: they carry no value in ``score``.
     unscored: tuple[tuple[str, str], ...] = ()
 
@@ -76,6 +92,7 @@ class PairScore:
             "vocal_clash_bars": self.vocal_clash_bars,
             "bass_clash_bars": self.bass_clash_bars,
             "energy_delta": None if self.energy_delta is None else round(self.energy_delta, 2),
+            "energy": None if self.energy is None else {**self.energy, "term": round(self.energy["term"], 3)},
             "overlap_bars": self.overlap_bars,
             "out_window": self.out_window.summary(),
             "in_window": self.in_window.summary(),
@@ -219,6 +236,36 @@ def _key_term(
     return key_distance, compat.relation, compat.score
 
 
+def energy_term(seam_step: int, intent: str | None) -> float:
+    """How well a MIK seam step fits the intent's band: 1 inside it, falling by a third per level outside."""
+    band = ENERGY_BANDS.get(intent or "smooth", ENERGY_BANDS["smooth"])
+    if band is None:
+        return 1.0
+    low, high = band
+    distance = max(low - seam_step, 0, seam_step - high)
+    return min(1.0, max(0.0, 1.0 - distance / 3))
+
+
+def _energy_seam(
+    out_profile: TrackProfile,
+    in_profile: TrackProfile,
+    out_start: int,
+    in_start: int,
+    bars: int,
+    intent: str | None,
+    reasons: list[str],
+) -> dict[str, Any] | None:
+    """The MIK seam (None, unscored, when either side has no MIK series), noting it in ``reasons``."""
+    levels = seam_levels(out_profile, in_profile, out_start, in_start, bars)
+    if levels is None:
+        reasons.append("a MIK energy series is missing: energy not scored")
+        return None
+    out_level, in_level = levels
+    step = in_level - out_level
+    reasons.append(f"energy {out_level} -> {in_level} (MIK track levels)")
+    return {"out_level": out_level, "in_level": in_level, "seam_step": step, "term": energy_term(step, intent)}
+
+
 def score_windows(
     out_profile: TrackProfile,
     in_profile: TrackProfile,
@@ -226,6 +273,7 @@ def score_windows(
     in_window: MixWindow,
     *,
     overlap_bars: int | None = None,
+    intent: str | None = None,
 ) -> PairScore:
     # An explicit overlap is capped to both windows: bars past either window are not heard, so they cannot clash.
     bars = min(overlap_bars or DEFAULT_OVERLAP_BARS, out_window.max_bars, in_window.max_bars)
@@ -257,10 +305,22 @@ def score_windows(
     if out_window.energy is not None and in_window.energy is not None:
         energy_delta = in_window.energy - out_window.energy
         reasons.append(f"relative energy {out_window.energy:.2f} -> {in_window.energy:.2f} (within each track)")
+    energy = _energy_seam(out_profile, in_profile, out_window.start_bar, in_window.start_bar, bars, intent, reasons)
     window_term = (out_window.score + in_window.score) / 2.0
-    candidates = {"harmony": key_term, "tempo": tempo_term, "vocals": vocal_term, "windows": window_term}
+    candidates = {
+        "harmony": key_term,
+        "tempo": tempo_term,
+        "vocals": vocal_term,
+        "windows": window_term,
+        "energy": None if energy is None else energy["term"],
+    }
     measured = {name: value for name, value in candidates.items() if value is not None}
-    why = {"harmony": "a key is unknown", "tempo": "a tempo is unknown", "vocals": "a vocal map is missing"}
+    why = {
+        "harmony": "a key is unknown",
+        "tempo": "a tempo is unknown",
+        "vocals": "a vocal map is missing",
+        "energy": "a MIK energy series is missing",
+    }
     unscored = tuple((name, why[name]) for name, value in candidates.items() if value is None)
     return PairScore(
         score=_weighted_mean(measured),
@@ -278,6 +338,7 @@ def score_windows(
         out_window=out_window,
         in_window=in_window,
         reasons=tuple(reasons),
+        energy=energy,
     )
 
 

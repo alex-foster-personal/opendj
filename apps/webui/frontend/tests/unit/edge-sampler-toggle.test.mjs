@@ -5,6 +5,7 @@
  * Regression lines:
  * - if the performance screen renders then the chip sits in the wave area, not the top bar
  * - if the chip is clicked then sampler_enabled flips, and the accent border shows only when on
+ * - if the click does not go through the performance bus then it does nothing (no command session)
  * - if the chip renders then it has the mock's box, ring, icon size and hover sentences
  *
  * SSR proves markup and scoped CSS; on-screen pixel placement still needs a browser (e2e not run).
@@ -26,6 +27,7 @@ before(async () => {
 			"export { default as EdgeSamplerToggle } from '$lib/components/rb/sampler/EdgeSamplerToggle.svelte';",
 			"export * as chip from '$lib/player/sampler/edge-sampler-toggle';",
 			"export { uiPrefs } from '$lib/rb/prefs.svelte';",
+			"export { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';",
 			"export { toasts } from '$lib/stores.svelte';",
 			"export { render } from 'svelte/server';"
 		].join('\n'),
@@ -79,17 +81,38 @@ test('the performance screen mounts the chip in the wave area beside ZOOM, not i
 	assert.doesNotMatch(top, /edge-sampler-toggle/);
 });
 
-test('a click flips sampler_enabled and the accent border shows only when on', () => {
-	/** [if] the chip's click handler runs [then] the pref flips and the chip renders accent only when on, [else stop]. */
+/** One chip click with a live performance command session, as the app runs it. */
+async function clickWithBus() {
+	globalThis.window = {};
+	const uninstall = ssr.installPerformanceBrowserIpc();
+	try {
+		return await ssr.chip.toggleEdgeSampler();
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+}
+
+test('a click with no command session changes nothing', async () => {
+	/** [if] the chip is clicked before the performance bus installs [then] the pref stays and no toast shows, [else stop]. */
 	ssr.uiPrefs.sampler_enabled = true;
-	assert.equal(ssr.chip.toggleEdgeSampler(), false);
+	const toastsBefore = ssr.toasts.length;
+	assert.equal(await ssr.chip.toggleEdgeSampler(), true);
+	assert.equal(ssr.uiPrefs.sampler_enabled, true);
+	assert.equal(ssr.toasts.length, toastsBefore);
+});
+
+test('a click flips sampler_enabled and the accent border shows only when on', async () => {
+	/** [if] the chip's click runs the sampler_enabled bus command [then] the pref flips and accent shows only when on, [else stop]. */
+	ssr.uiPrefs.sampler_enabled = true;
+	assert.equal(await clickWithBus(), false);
 	assert.equal(ssr.uiPrefs.sampler_enabled, false);
 	assert.equal(ssr.toasts.at(-1)?.message, 'Edge sampler off: playing samples keep going');
 	const off = renderOf(ssr.EdgeSamplerToggle);
 	assert.match(off.body, /aria-pressed="false"/);
 	assert.doesNotMatch(off.body, /sampler-on/);
 
-	assert.equal(ssr.chip.toggleEdgeSampler(), true);
+	assert.equal(await clickWithBus(), true);
 	assert.equal(ssr.uiPrefs.sampler_enabled, true);
 	assert.equal(ssr.toasts.at(-1)?.message, 'Edge sampler on');
 	const on = renderOf(ssr.EdgeSamplerToggle);

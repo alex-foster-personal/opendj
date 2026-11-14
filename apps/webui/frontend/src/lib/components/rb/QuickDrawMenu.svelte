@@ -69,6 +69,7 @@
 	import { STEM_CONTROL_IDS, type StemControl } from '$lib/rb/stem-types';
 	import { cancelAnimation, dialAnimations, openAnimatePrompt } from '$lib/rb/dial-animations.svelte';
 	import AnimatePrompt from './AnimatePrompt.svelte';
+	import { firstEnabledIndex, quickDrawMenuKeyAction } from './quick-draw-menu-keys';
 
 	type CtxItem = {
 		id: string;
@@ -102,6 +103,8 @@
 	let root = $state<Root>('unload');
 	let loopLeaf = $state<LoopLeaf | null>(null);
 	let menuEl: HTMLDivElement | undefined = $state();
+	/** #14632: the element focused before the menu opened; keyboard closes hand focus back. */
+	let opener: HTMLElement | null = null;
 
 	// The stem ladder is static config, so fetch it once. Estimates are
 	// per-track and land asynchronously; until they do, the label says
@@ -669,7 +672,16 @@
 		loopLeaf = null;
 		setMenuHighlightStableId(_stableIdFromTarget(t));
 		leaveArmed = false;
+		loadPressArmed = false;
+		const active = document.activeElement;
+		if (!(active instanceof HTMLElement && menuEl?.contains(active))) {
+			opener = active instanceof HTMLElement && active !== document.body ? active : null;
+		}
 		open = true;
+		void tick().then(() => {
+			const items = _menuItems();
+			items[firstEnabledIndex(items.map((b) => !b.disabled))]?.focus();
+		});
 	}
 
 	function _close(): void {
@@ -692,10 +704,43 @@
 		_close();
 	}
 
+	/** Keyboard order: contextual actions (at the click), then the quick-draw roots, then the open leaf. */
+	function _menuItems(): HTMLButtonElement[] {
+		const menu = menuEl;
+		if (menu === undefined) return [];
+		return ['.qd-ctx [role^="menuitem"]', '.qd-quick > [role="menuitem"]', '.qd-mid [role="menuitem"]'].flatMap(
+			(selector) => [...menu.querySelectorAll<HTMLButtonElement>(selector)]
+		);
+	}
+
+	function _restoreFocus(): void {
+		void tick().then(() => {
+			if (!open && opener?.isConnected) opener.focus();
+		});
+	}
+
 	function onKeydown(e: KeyboardEvent): void {
-		if (e.key !== 'Escape' || !open) return;
-		if (blend.isActive()) blend.abort();
-		_close();
+		if (!open) return;
+		const items = _menuItems();
+		const current = items.findIndex((b) => b === document.activeElement);
+		const action = quickDrawMenuKeyAction(e.key, current, items.map((b) => !b.disabled));
+		if (action === null) return;
+		if (action.kind === 'close') {
+			if (e.key !== 'Escape' && current < 0) return;
+			e.preventDefault();
+			if (blend.isActive()) blend.abort();
+			_close();
+			_restoreFocus();
+		} else if (action.kind === 'activate') {
+			e.preventDefault();
+			// A keyboard press is a plain click: never the tail of a pointer blend gesture.
+			loadPressArmed = false;
+			items[current].click();
+			_restoreFocus();
+		} else if (action.kind === 'focus') {
+			e.preventDefault();
+			items[action.index].focus();
+		}
 	}
 
 	function onLoadPointerDown(e: PointerEvent, item: CtxItem): void {

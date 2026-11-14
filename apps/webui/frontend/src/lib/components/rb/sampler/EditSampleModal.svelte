@@ -20,7 +20,12 @@
 		type EditField
 	} from '$lib/player/sampler/sample-edit';
 	import { keyPlanFor, stemsPending } from '$lib/player/sampler/sampler-store-logic';
-	import { sampler, updateSlot } from '$lib/player/sampler/sampler-store.svelte';
+	import {
+		sampler,
+		slotPhase,
+		slotPlayhead,
+		updateSlot
+	} from '$lib/player/sampler/sampler-store.svelte';
 	import { displayName, type Edge, type SamplerSlot } from '$lib/player/sampler/sampler-types';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { PENCIL_PATH } from '$lib/ui/icon-glyphs';
@@ -48,6 +53,7 @@
 	const side = `${HEAD_OPEN_W + 10}px`;
 
 	let popEl: HTMLDivElement | undefined = $state();
+	let deck: CueOnlyDeck | undefined = $state();
 	let popH = $state(560);
 	let explain = $state(IDLE);
 	let editing = $state<EditField | null>(null);
@@ -64,6 +70,14 @@
 		ro.observe(popEl);
 		return () => ro.disconnect();
 	});
+
+	/** Move the CUE deck's playhead; true while this slot previews (the overlay's frame loop calls it). */
+	export function paint(): boolean {
+		const f = slotPhase(slot.slot_id) === 'previewing' ? slotPlayhead(slot.slot_id) : null;
+		if (deck === undefined || f === null) return false;
+		deck.paint(f);
+		return true;
+	}
 
 	function startEdit(field: EditField): void {
 		editing = field;
@@ -182,7 +196,7 @@
 	>
 		Source: <b>{src.title}</b>{src.rest}
 	</div>
-	<CueOnlyDeck {slot} info={cueInfo(masterBpm, plan)} />
+	<CueOnlyDeck bind:this={deck} {slot} info={cueInfo(masterBpm, plan)} />
 	{#if slot.vector !== null}
 		<div
 			class="vec"

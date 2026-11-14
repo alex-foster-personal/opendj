@@ -32,6 +32,7 @@ from apps.autodj.plan import (
     bpm_gap_pct,
     first_dispatch_bar,
     glide_span,
+    live_beat_sync_fold,
     live_mapping,
     pair_beat_sync_fold,
     parse_plan,
@@ -64,7 +65,7 @@ from apps.autodj.styles import (
     short_crossfade_events,
 )
 from apps.autodj.windows import FALLBACK_BARS, MixWindow, incoming_mixability_reason, mix_windows, window_at
-from apps.shared.harmonic import LIFT, LONG_BLEND_KEY_CLASH_RELATIONS, key_compat
+from apps.shared.harmonic import LIFT, LONG_BLEND_KEY_CLASH_RELATIONS, best_key_shift, key_compat, shift_camelot
 
 SMOOTH = "smooth"
 ENERGY_UP = "energy_up"
@@ -354,6 +355,13 @@ def vocal_clash_refusal(style: Style, pair: PairScore) -> str | None:
     )
 
 
+def _incoming_bars(style: Style, in_window: MixWindow) -> int:
+    """The incoming bars a style may blend over: a gated blend runs on past the window's hit by its body fade (#11559)."""
+    if style.hit == HIT_GATED and style.max_bars > 1:
+        return in_window.max_bars + style.min_body_fade_bars
+    return in_window.max_bars
+
+
 def _incoming_skip_reason(style: Style, in_window: MixWindow) -> str | None:
     """Only cut, drop-swap and pinned cues bypass incoming forward mixability."""
     if style.name in {"cut", "drop_swap"}:
@@ -366,14 +374,17 @@ def _overlap_bars(
 ) -> int | None:
     """The overlap a style gets in these windows, or None when the pair is not proposed: a window shorter than the style's
     minimum (clamping up to it would blend past the window the scoring and validation see), or a blend that runs past the
-    last bar of the grid. Non-exempt incoming windows also need 16 bars of forward capacity."""
-    if out_window.max_bars < style.min_bars or (style.max_bars > 1 and in_window.max_bars < style.min_bars):
+    last bar of the grid. Non-exempt incoming windows also need 16 bars of forward capacity; a gated blend's incoming
+    capacity is the window plus its body fade past the hit (#11559)."""
+    if out_window.max_bars < style.min_bars or (
+        style.max_bars > 1 and _incoming_bars(style, in_window) < style.min_bars
+    ):
         return None
     if _incoming_skip_reason(style, in_window) is not None:
         return None
     bars = style.clamp_bars(min(wanted_bars, out_window.max_bars))
     if style.max_bars > 1:
-        bars = style.clamp_bars(min(bars, in_window.max_bars))
+        bars = style.clamp_bars(min(bars, _incoming_bars(style, in_window)))
     if out_window.start_bar + bars > grid_bars:
         return None
     return bars
@@ -385,14 +396,14 @@ def _overlap_skip_reason(
     """Why ``_overlap_bars`` would return None, or None when the pair overlaps."""
     if out_window.max_bars < style.min_bars:
         return f"out-window max_bars={out_window.max_bars} < {style.name} min_bars={style.min_bars}"
-    if style.max_bars > 1 and in_window.max_bars < style.min_bars:
+    if style.max_bars > 1 and _incoming_bars(style, in_window) < style.min_bars:
         return f"in-window max_bars={in_window.max_bars} < {style.name} min_bars={style.min_bars} ({in_window.reason})"
     refusal = _incoming_skip_reason(style, in_window)
     if refusal is not None:
         return refusal
     bars = style.clamp_bars(min(wanted_bars, out_window.max_bars))
     if style.max_bars > 1:
-        bars = style.clamp_bars(min(bars, in_window.max_bars))
+        bars = style.clamp_bars(min(bars, _incoming_bars(style, in_window)))
     if out_window.start_bar + bars > grid_bars:
         return (
             f"past the outgoing grid: {style.name} min_bars={style.min_bars} from out-window bar "
@@ -605,15 +616,23 @@ def _fit_lull(style: Style, out_profile: TrackProfile, out_start: int, bars: int
 
 
 def place_hit(
-    style: Style, out_window: MixWindow, in_profile: TrackProfile, in_start: int, bars: int, fold: float = 1.0
+    style: Style,
+    out_window: MixWindow,
+    in_profile: TrackProfile,
+    in_start: int,
+    bars: int,
+    fold: float = 1.0,
+    out_profile: TrackProfile | None = None,
 ) -> HitPlacement:
     """D11 for every style: nothing on the outgoing deck before the incoming bass has landed.
 
     ``fold`` is the pair's Beat Sync fold (``pair_beat_sync_fold``, incoming grid bars per plan bar, as ``layout_of``
     renders it). A cut must start the incoming on its bass, a blend lands the hit between its intro and its body fade,
     and lull_then_drop lands the incoming drop on the handover. When the scored in-window cannot do that, the window is
-    moved to the bass entry, or the pair is refused with the reason; a missing bass series is said, never guessed."""
-    if style.hit == HIT_ON_HANDOVER and not is_lull(out_window):
+    moved to the bass entry, or the pair is refused with the reason; a missing bass series is said, never guessed.
+    With ``out_profile`` the lull test is the outgoing start's own section (``lull_bars``), not the window mean (#11565)."""
+    in_lull = lull_bars(out_profile, out_window.start_bar) > 0 if out_profile is not None else is_lull(out_window)
+    if style.hit == HIT_ON_HANDOVER and not in_lull:
         reason = f"the outgoing window at bar {out_window.start_bar} ({out_window.label}) is not a lull"
         return HitPlacement(in_start, 0.0, None, "", reason)
     if not in_profile.bar_bass:
@@ -679,6 +698,8 @@ def _rationale(style_name: str, style: Style, bars: int, out_window: MixWindow, 
     )
     if in_window.peak_bar is not None and style.max_bars > 1:
         rationale += f"; its peak lands at bar {in_window.peak_bar}"
+    if in_window.source:
+        rationale += f"; in-window from {in_window.source.replace('_', ' ')}"
     return rationale
 
 
@@ -847,6 +868,33 @@ def _best_valid(proposals: list[Proposal], top: int | None) -> list[Proposal]:
     return valid if top is None else valid[: max(1, top)]
 
 
+def suggested_key_shift(proposal: Proposal) -> dict[str, Any] | None:
+    """#10142: the incoming key shift spec 07's search suggests for ``proposal``, or None; never applied to the plan."""
+    pair, side = proposal.pair, proposal.plan.in_
+    if not pair.key_out or not pair.key_in:
+        return None
+    try:
+        shift, gain = best_key_shift(
+            pair.key_out, pair.key_in, keylock_in=side.keylock, vocal_overlap=bool(pair.vocal_clash_bars)
+        )
+        landed = shift_camelot(pair.key_in, shift) if shift else None
+    except ValueError:  # a key the Camelot reader does not know: no suggestion
+        return None
+    if landed is None:
+        return None
+    return {"semitones": shift, "from": pair.key_in, "to": landed, "net_gain": round(gain, 3)}
+
+
+def _attach_key_shift(summary: dict[str, Any], proposal: Proposal) -> None:
+    """Write ``suggested_key_shift`` on ``summary`` and say it in the rationale; the plan field stays 0."""
+    suggestion = suggested_key_shift(proposal)
+    summary["suggested_key_shift"] = suggestion
+    if suggestion is not None:
+        summary["rationale"] = (
+            f"{summary['rationale']}; suggest key {suggestion['semitones']:+d}: {suggestion['from']} lands on {suggestion['to']}"
+        )
+
+
 def _outgoing_trim_db(live: Mapping[str, Any] | None, out_deck: int) -> tuple[float, str | None]:
     """The outgoing channel's live trim in dB, with why it is unity when the mirror carries none (Sol P1 #7594).
 
@@ -979,6 +1027,21 @@ def _with_live_reach(in_profile: TrackProfile, live: Mapping[str, Any] | None, i
     return replace(in_profile, deck_pitch_range_pct=float(pitch_range))
 
 
+def grid_tier_refusal(
+    style: Style, bars: int, out_profile: TrackProfile, out_bar: int, in_profile: TrackProfile, in_bar: int
+) -> str | None:
+    """#10144: why a grid tier forbids ``bars`` of ``style`` on either span, or None; it never clamps the length."""
+    for side, profile, start in (("outgoing", out_profile, out_bar), ("incoming", in_profile, in_bar)):
+        tier = profile.grid_tier(start, bars)
+        legal = style.legal_bars_by_tier[tier.tier]
+        if bars > legal:
+            return (
+                f"{tier.tier} tier at bars {start}..{start + bars}: {tier.reason} "
+                f"({side}; {style.name} allows {legal} bars on this tier)"
+            )
+    return None
+
+
 def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one entry point; preference loop plus cut fallback
     out_profile: TrackProfile,
     in_profile: TrackProfile,
@@ -1008,7 +1071,10 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
     seen: set[tuple[str, int, int, int]] = set()
     trim_db, trim_reason = match_live_trim_db(out_profile, in_profile, live, out_deck, in_deck)
     # Synced proposals play ``fold`` incoming grid bars per plan bar; tempo-none styles start on their own bass and tempo.
-    fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, beat_sync_reach_pct(in_profile))
+    offline_fold = pair_beat_sync_fold(out_profile.judged_bpm, in_profile.judged_bpm, beat_sync_reach_pct(in_profile))
+    # #11559: with a live mirror, place on the fold live Beat Sync will actually use; offline keeps the profile fold.
+    live_fold = live_beat_sync_fold(live, out_deck, in_deck, in_profile)
+    fold = offline_fold if live_fold is None else live_fold
 
     def consider(  # noqa: C901, PLR0911 - one gate per early return, then the repair ladder
         style: Style,
@@ -1059,8 +1125,15 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
                 )
                 return
             bars = fitted
+        tier_refusal = grid_tier_refusal(
+            style, bars, out_profile, out_window.start_bar, in_profile, in_window.start_bar
+        )
+        if tier_refusal is not None:
+            row = {"style": style_name, "bars": bars, "out_bar": out_window.start_bar, "in_bar": in_window.start_bar}
+            rejected.append({**row, "gate": "grid", "reason": tier_refusal})
+            return
         style_fold = fold if style.tempo_mode == "sync_to_out" else 1.0
-        hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, style_fold)
+        hit = place_hit(style, out_window, in_profile, in_window.start_bar, bars, style_fold, out_profile)
         pinned_moved = in_window.pinned and hit.refused is None and hit.in_start_bar != in_window.start_bar
         # Sentry #7818: two scored windows can move to one bass entry; dedupe on the window actually entered.
         entered_bar = in_window.start_bar if (hit.refused is not None or pinned_moved) else hit.in_start_bar
@@ -1133,7 +1206,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
     ) -> tuple[str, str, Proposal | None] | None:
         """Build and validate one candidate: None when it is kept (or skipped), else (gate, reason, invalid proposal)."""
         style_name = style.name
-        pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars)
+        pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=bars, intent=parsed)
         clash_refusal = vocal_clash_refusal(style, pair)
         if clash_refusal is not None:
             return _propose_gate(clash_refusal), clash_refusal, None
@@ -1210,7 +1283,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
         for shorter in range(bars - 1, style.min_bars - 1, -1):
             if shorter < 1 or style.clamp_bars(shorter) != shorter:
                 continue
-            pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=shorter)
+            pair = score_windows(out_profile, in_profile, out_window, entered, overlap_bars=shorter, intent=parsed)
             if not pair.vocal_clash_bars:
                 steps.append((style, shorter, out_window, f"shortened {bars} -> {shorter} bars (length)"))
                 break
@@ -1231,7 +1304,7 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
             spent += 1
             repairs = (note,)
             fold_ = fold if step_style.tempo_mode == "sync_to_out" else 1.0
-            step_hit = place_hit(step_style, step_out, in_profile, entered.start_bar, step_bars, fold_)
+            step_hit = place_hit(step_style, step_out, in_profile, entered.start_bar, step_bars, fold_, out_profile)
             if step_hit.refused is not None:
                 continue
             step_in = (
@@ -1365,6 +1438,8 @@ def propose_transition(  # noqa: C901, PLR0913 - keyword-only options of one ent
     best = ranked_valid if top is None else ranked_valid[: max(1, top)]
     summaries = [proposal.summary() for proposal in best]
     _attach_confidence(summaries, best, ranked_valid, out_profile, in_profile)
+    for summary, proposal in zip(summaries, best, strict=True):
+        _attach_key_shift(summary, proposal)
     for row in not_offered:
         rejected.append({**row, "gate": _propose_gate(str(row.get("reason") or ""))})
     for gate in {row["gate"] for row in rejected}:
@@ -1431,6 +1506,6 @@ def _short_crossfade_fallback(  # noqa: PLR0913 - keyword-only context of one pr
         }
     )
     validation = validate_plan(plan, out_profile, in_profile, live=live)
-    pair = score_windows(out_profile, in_profile, out_window, in_window, overlap_bars=bars)
+    pair = score_windows(out_profile, in_profile, out_window, in_window, overlap_bars=bars, intent=parsed)
     score = pair.score - _penalty(validation, parsed)
     return [Proposal(plan, validation, pair, score, rationale, fallback=True)]

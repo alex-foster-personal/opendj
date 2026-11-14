@@ -2,7 +2,9 @@
  * Operating the selected selector leaf (#13708, epic #9372).
  *
  * Selecting is not operating: once W A S D / E / Q sit on a leaf, Enter activates it and the
- * arrows adjust it. Enter clicks the leaf's primary control (the leaf itself when it is a
+ * arrows adjust it. #14522: Shift+Enter presses the same control as a Shift+click (a `click`
+ * MouseEvent with `shiftKey`), so a control's own Shift+click action (stem solo) is reachable,
+ * and Enter on a leaf with no control but an adjust route (the jog) refuses with `no_control`. Enter clicks the leaf's primary control (the leaf itself when it is a
  * control, #14379, else its `data-sel-primary` element, else the first control in DOM order),
  * or focuses it when that control is a text input, select or slider. The arrows step a mixer
  * dial or fader leaf by the knob key step, through the same knob registry its own arrow keys
@@ -29,8 +31,38 @@ const LEAF_KEYS: Readonly<Record<string, SelectorLeafCommandId>> = {
 };
 
 /** The leaf command a key runs while a selector leaf is selected, or null when the key is not one. */
-export function selectorLeafCommandForKey(key: string): SelectorLeafCommandId | null {
+export function selectorLeafCommandForKey(
+	key: string,
+	shiftKey: boolean
+): SelectorLeafCommandId | null {
+	if (shiftKey) return key === 'Enter' ? 'selector.shift-activate' : null;
 	return LEAF_KEYS[key] ?? null;
+}
+
+/** #14522: the leaf commands that press the control; a held key runs them once, not on repeat. */
+export function isSelectorLeafActivation(command: SelectorLeafCommandId): boolean {
+	return command === 'selector.activate' || command === 'selector.shift-activate';
+}
+
+/** #14522: why a leaf command did nothing, in the agent handle's refusal vocabulary. */
+export type SelectorLeafRefusalCode = 'no_control';
+
+const SELECTOR_LEAF_REFUSAL = 'SelectorLeafRefusal';
+
+/** #14522: a leaf command that cannot act on this leaf by design; callers report it, never crash. */
+export class SelectorLeafRefusal extends Error {
+	readonly code: SelectorLeafRefusalCode;
+
+	constructor(leafId: string, code: SelectorLeafRefusalCode) {
+		super(`Selector leaf ${leafId} refused: ${code}`);
+		this.name = SELECTOR_LEAF_REFUSAL;
+		this.code = code;
+	}
+}
+
+/** True for a SelectorLeafRefusal from any bundle copy of this module (unit tests load several). */
+export function isSelectorLeafRefusal(error: unknown): error is SelectorLeafRefusal {
+	return error instanceof Error && error.name === SELECTOR_LEAF_REFUSAL;
 }
 
 const CHANNEL_CONTROL = /^mixer\.ch(\d)\.(trim|high|mid|low|filter|fader)$/;
@@ -90,8 +122,17 @@ export function selectorLeafPrimaryControl(leaf: Element): HTMLElement | null {
 	);
 }
 
-/** Enter on a leaf: click its primary control once, or focus it when it is an input or slider. */
-export function activateSelectorLeaf(leaf: Element): 'click' | 'focus' {
+/** One Shift+click on a control: a bubbling `click` MouseEvent carrying `shiftKey`. */
+function _shiftClick(control: HTMLElement): void {
+	const init = { bubbles: true, cancelable: true, composed: true, shiftKey: true };
+	control.dispatchEvent(new MouseEvent('click', init));
+}
+
+/**
+ * Enter on a leaf: click its primary control once, or focus it when it is an input or slider.
+ * With `shift` (#14522) the click is a Shift+click; focus targets ignore it.
+ */
+export function activateSelectorLeaf(leaf: Element, shift = false): 'click' | 'focus' {
 	const control = selectorLeafPrimaryControl(leaf);
 	if (control === null) {
 		const id = leaf.getAttribute('data-sel-node');
@@ -101,7 +142,8 @@ export function activateSelectorLeaf(leaf: Element): 'click' | 'focus' {
 		control.focus();
 		return 'focus';
 	}
-	control.click();
+	if (shift) _shiftClick(control);
+	else control.click();
 	return 'click';
 }
 
@@ -177,10 +219,15 @@ export function createSelectorLeafHost(
 	deps: SelectorLeafHostDeps
 ): SelectorLeafHost {
 	return {
-		activate(): string {
+		activate(shift): string {
 			const leaf = deps.findLeaf(leafId);
 			if (leaf === null) throw new Error(`Selector leaf ${leafId} is not in the page`);
-			activateSelectorLeaf(leaf);
+			// #14522: a jog (or other adjust-only leaf) has nothing to press; the arrows operate it.
+			const adjustOnly =
+				selectorLeafPrimaryControl(leaf) === null &&
+				selectorLeafAdjustTarget(leafId, deps) !== null;
+			if (adjustOnly) throw new SelectorLeafRefusal(leafId, 'no_control');
+			activateSelectorLeaf(leaf, shift);
 			return leafId;
 		},
 		adjust(direction): string {

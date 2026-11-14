@@ -218,7 +218,7 @@ export function describeSelectorSelection(
 	if (node.kind !== 'leaf' || _isWithin(byId, selectedId, selId.section('library'))) {
 		leafOps = [];
 	} else if (selectorLeafControlId(selectedId) === null) {
-		leafOps = ['selector.activate'];
+		leafOps = ['selector.activate', 'selector.shift-activate'];
 	} else {
 		leafOps = [...SELECTOR_LEAF_COMMAND_IDS];
 	}

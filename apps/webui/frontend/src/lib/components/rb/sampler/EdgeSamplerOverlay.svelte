@@ -2,13 +2,28 @@
 	/**
 	 * Both edge waves (spec 7.4). One rAF loop only while an edge is awake or easing (EDGESAMP-07).
 	 * On the Electron shell it also starts the sampler store (catalogue load, master follow)
-	 * for its own lifetime.
+	 * and plugs the Web Audio engine into it for its own lifetime. While a deck loop is dragged
+	 * in it draws the ghost under the pointer (mock `.ghost`). Its pointer samples mark the edge the
+	 * pointer is heading for (`intent`), so the residency feed warms that page first (#10782).
 	 */
 	import { onMount } from 'svelte';
 	import { prefersReducedMotion } from '$lib/motion/reduced-motion';
 	import { OVERLAY_Z } from '$lib/overlays/stack';
 	import { DEFAULT_WAVE, ZONE_PX } from '$lib/player/sampler/edge-wave';
-	import { sampler, startSampler } from '$lib/player/sampler/sampler-store.svelte';
+	import { samplerEngine, stopSamplerVoices } from '$lib/player/sampler/sampler-engine.svelte';
+	import {
+		INTENT_HISTORY_POINTS,
+		pointerIntent,
+		type PointerPoint
+	} from '$lib/player/sampler/sampler-residency';
+	import { NO_ENGINE } from '$lib/player/sampler/sampler-engine-seam';
+	import {
+		edgeItems,
+		registerSamplerEngine,
+		sampler,
+		slotPhase,
+		startSampler
+	} from '$lib/player/sampler/sampler-store.svelte';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { nativeShellKind } from '$lib/shell/native-shell';
 	import EdgeWave, { type Pointer } from './EdgeWave.svelte';
@@ -45,6 +60,18 @@
 		if (raf === 0) raf = requestAnimationFrame(frame);
 	}
 
+	/** The last INTENT_HISTORY_POINTS pointer samples, oldest first. */
+	const trail: PointerPoint[] = [];
+
+	function markIntent(ev: PointerEvent): void {
+		trail.push({ t: ev.timeStamp, x: ev.clientX });
+		if (trail.length > INTENT_HISTORY_POINTS) trail.shift();
+		for (const edge of ['L', 'R'] as const) {
+			const on = pointerIntent(trail, edge, window.innerWidth, ZONE_PX);
+			if (sampler.edges[edge].intent !== on) sampler.edges[edge].intent = on;
+		}
+	}
+
 	const nearEdge = (x: number): boolean => x <= ZONE_PX || window.innerWidth - x <= ZONE_PX;
 
 	function onMove(ev: PointerEvent): void {
@@ -55,6 +82,7 @@
 		ptr.inWindow = true;
 		for (const w of waves()) w.onPointerMove(prevX, ptr);
 		if (!enabled) return;
+		markIntent(ev);
 		let animating = false;
 		for (const w of waves()) {
 			if (!w.collapsed()) animating = true;
@@ -82,10 +110,17 @@
 		void sampler.edges.L.flipAt;
 		void sampler.edges.R.flipAt;
 		void sampler.pinned;
+		// A loop drag starting or ending wakes or settles the edges.
+		void (sampler.drag === null);
+		// A voice arming, starting or stopping (slotPhase reads the engine's $state) holds or frees a tab.
+		void sampler.engineReady;
+		for (const edge of ['L', 'R'] as const)
+			for (const s of edgeItems(edge)) if (s) void slotPhase(s.slot_id);
 		ensureLoop();
 	});
 
 	onMount(() => {
+		if (shellOk) registerSamplerEngine(samplerEngine);
 		const stopSampler = shellOk ? startSampler() : null;
 		const onResize = (): void => {
 			innerH = window.innerHeight;
@@ -108,6 +143,10 @@
 			document.removeEventListener('pointerout', docLeave);
 			if (raf !== 0) cancelAnimationFrame(raf);
 			stopSampler?.();
+			if (shellOk) {
+				stopSamplerVoices();
+				registerSamplerEngine(NO_ENGINE);
+			}
 		};
 	});
 </script>
@@ -137,6 +176,21 @@
 			{enabled}
 			{reduceMotion}
 		/>
+		{#if sampler.drag !== null}
+			<div
+				class="ghost"
+				style:left="{sampler.drag.x}px"
+				style:top="{sampler.drag.y}px"
+				data-testid="edge-sampler-drag-ghost"
+			>
+				<svg viewBox="0 0 16 16" aria-hidden="true"
+					><path
+						d="M3 7a5 5 0 018.5-3.5L13 5M13 2v3h-3M13 9a5 5 0 01-8.5 3.5L3 11M3 14v-3h3"
+					/></svg
+				>
+				<span>Deck {sampler.drag.deck} loop . {sampler.drag.bars} . mix kept</span>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -145,6 +199,33 @@
 		position: fixed;
 		inset: 0;
 		pointer-events: none;
+	}
+	.ghost {
+		position: fixed;
+		/* above the edge waves (z-index 340) */
+		z-index: 360;
+		pointer-events: none;
+		white-space: nowrap;
+		display: flex;
+		gap: 6px;
+		align-items: center;
+		padding: 6px 10px;
+		border-radius: 5px;
+		background: var(--es-ghost-bg);
+		border: 1px solid var(--es-accent);
+		color: var(--es-fg);
+		font: 12.5px var(--es-font-body);
+		transform: translate(-50%, -120%);
+		box-shadow: 0 8px 24px var(--es-shadow-ghost);
+	}
+	.ghost svg {
+		width: 15px;
+		height: 15px;
+		stroke: var(--es-accent);
+		fill: none;
+		stroke-width: 1.7;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	.edge-sampler.off :global(.wslot:not(.held)),
 	.edge-sampler.off :global(.whead) {

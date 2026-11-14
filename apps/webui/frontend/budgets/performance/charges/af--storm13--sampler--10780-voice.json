@@ -1,0 +1,9 @@
+{
+  "bytes": 2048,
+  "measured_main": 483140,
+  "measured_with_pr": 484672,
+  "sha": "ca9199dc78",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10780-voice grows the performance surface; measured +1532 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

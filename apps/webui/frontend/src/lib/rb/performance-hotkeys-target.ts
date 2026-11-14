@@ -74,3 +74,12 @@ export function isNativeInteractiveTarget(target: EventTarget | null): boolean {
 	if (target.tagName === 'A' && target.hasAttribute('href')) return true;
 	return false;
 }
+
+const MENU_ITEM_ROLES = new Set(['menuitem', 'menuitemcheckbox', 'menuitemradio']);
+const MENU_KEYS = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' ', 'Escape', 'Tab']);
+
+/** True when a menu key lands on a focused menu item, so the menu owns it, not a page hotkey (#14632). */
+export function isMenuItemKeyTarget(target: EventTarget | null, key: string): boolean {
+	if (!(target instanceof Element)) return false;
+	return MENU_ITEM_ROLES.has(target.getAttribute('role') ?? '') && MENU_KEYS.has(key);
+}

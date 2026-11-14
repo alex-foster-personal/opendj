@@ -1,4 +1,4 @@
-// requirement: EDGESAMP-13957
+// requirement: EDGESAMP-13957, EDGESAMP-14584
 // Edge sampler key policy (#13720): existing /performance bindings win over the sampler.
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -112,4 +112,66 @@ test('a claimed key, a modifier chord or a text field keeps the sampler out', ()
 	for (const mod of ['metaKey', 'ctrlKey', 'altKey'])
 		assert.equal(keys.samplerKeyAction(press('3', { [mod]: true }), awake('R')), null, mod);
 	assert.equal(keys.samplerKeyAction(press('3'), { inTextField: true, awakeEdge: 'R' }), null);
+});
+
+const NO_SLOT = () => null;
+const slotAt = (edge, index) => `${edge}${index}`;
+
+test('a digit sends sampler_trigger for the awake edge tab and its keyup sends sampler_release', () => {
+	/** [if] 3 goes down then up with R awake [then] the bus gets trigger then release of that tab's slot, [else stop]. */
+	const holds = new Map();
+	assert.deepEqual(keys.samplerKeyDown(press('3'), awake('R'), slotAt, holds), {
+		claimed: true,
+		command: { type: 'sampler_trigger', slot_id: 'R2' }
+	});
+	assert.deepEqual(keys.samplerKeyUp('3', holds), { type: 'sampler_release', slot_id: 'R2' });
+	assert.equal(keys.samplerKeyUp('3', holds), null, 'one release per press');
+	assert.equal(keys.samplerKeyUp('7', holds), null, 'a key the sampler never took');
+});
+
+test('the keyup releases the slot the press fired, even after the edge sleeps', () => {
+	/** [if] the edge sleeps or pages between a digit's press and its keyup [then] the pressed slot still releases, [else stop]. */
+	const holds = new Map();
+	keys.samplerKeyDown(press('1'), awake('L'), slotAt, holds);
+	assert.deepEqual(keys.samplerKeyUp('1', holds), { type: 'sampler_release', slot_id: 'L0' });
+});
+
+test('an auto-repeat of a held digit is claimed and sends nothing', () => {
+	/** [if] a held digit auto-repeats [then] it is claimed (no hot cue) and sends no second trigger, [else stop]. */
+	const holds = new Map();
+	keys.samplerKeyDown(press('2'), awake('L'), slotAt, holds);
+	assert.deepEqual(keys.samplerKeyDown(press('2', { repeat: true }), awake('L'), slotAt, holds), {
+		claimed: true,
+		command: null
+	});
+});
+
+test('PageUp and PageDown send sampler_set_page with a delta', () => {
+	/** [if] PageDown / PageUp go down with an edge awake [then] the bus gets set_page delta 1 / -1 for it, [else stop]. */
+	const holds = new Map();
+	assert.deepEqual(keys.samplerKeyDown(press('PageDown'), awake('L'), slotAt, holds).command, {
+		type: 'sampler_set_page',
+		edge: 'L',
+		delta: 1
+	});
+	assert.deepEqual(keys.samplerKeyDown(press('PageUp'), awake('R'), slotAt, holds).command, {
+		type: 'sampler_set_page',
+		edge: 'R',
+		delta: -1
+	});
+	assert.equal(holds.size, 0, 'paging holds no slot');
+});
+
+test('a digit on an empty tab is claimed with no command; asleep it is not claimed', () => {
+	/** [if] a digit hits an empty tab [then] it is claimed but sends nothing; with no edge awake it is left alone, [else stop]. */
+	const holds = new Map();
+	assert.deepEqual(keys.samplerKeyDown(press('4'), awake('L'), NO_SLOT, holds), {
+		claimed: true,
+		command: null
+	});
+	assert.deepEqual(keys.samplerKeyDown(press('4'), ASLEEP, slotAt, holds), {
+		claimed: false,
+		command: null
+	});
+	assert.equal(holds.size, 0);
 });

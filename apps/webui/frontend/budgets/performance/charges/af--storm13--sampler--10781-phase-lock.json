@@ -1,0 +1,9 @@
+{
+  "bytes": 16384,
+  "measured_main": 483140,
+  "measured_with_pr": 499119,
+  "sha": "ba3d88db7d",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10781-phase-lock grows the performance surface; measured +15979 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

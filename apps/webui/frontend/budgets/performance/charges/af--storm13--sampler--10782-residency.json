@@ -1,0 +1,9 @@
+{
+  "bytes": 1024,
+  "measured_main": 499119,
+  "measured_with_pr": 499332,
+  "sha": "415ce09bc9",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10782-residency grows the performance surface; measured +213 B gzip over its parent af--storm13--sampler--10781-phase-lock (ba3d88db7d), the baseline CI measures this stacked PR against; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

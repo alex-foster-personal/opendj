@@ -21,6 +21,7 @@ NL Tests:
 from __future__ import annotations
 
 import contextlib
+import math
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -654,3 +655,36 @@ def harmonic_missing_for_rank(feature: TrackFeature) -> dict[str, list[str]]:
     if feature.energy is None:
         missing["energy"].append(feature.stable_id)
     return missing
+
+
+#: #10142, spec 07 section 3: the cost of a static key shift by its size, and the extra cost per semitone on vocals.
+KEY_SHIFT_COSTS: dict[int, float] = {0: 0.0, 1: 0.05, 2: 0.15, 3: 0.30}
+KEY_SHIFT_VOCAL_COST = 0.10
+#: The net gain over no shift a suggestion must clear.
+KEY_SHIFT_MIN_GAIN = 0.15
+
+
+def best_key_shift(
+    key_out: str,
+    key_in: str,
+    *,
+    max_shift: int = 2,
+    keylock_in: bool = True,
+    ratio_in: float = 1.0,
+    vocal_overlap: bool = False,
+) -> tuple[int, float]:
+    """The incoming key shift that lands best in key, and its net gain over none; ``(0, 0.0)`` below the bar."""
+    out_key = str(key_to_camelot(key_out))
+    in_key = str(key_to_camelot(key_in))
+    tempo_semis = 0.0 if keylock_in else 12.0 * math.log2(ratio_in)
+
+    def net(shift: int) -> float:
+        heard = shift + tempo_semis
+        detune = abs(heard - round(heard))
+        score = key_compat(out_key, shift_camelot(in_key, round(heard))).score * (1.0 - (detune / 0.5) ** 2)
+        return score - KEY_SHIFT_COSTS[abs(shift)] - (KEY_SHIFT_VOCAL_COST * abs(shift) if vocal_overlap else 0.0)
+
+    shifts = sorted(range(-max_shift, max_shift + 1), key=abs)
+    best = max(shifts, key=net)  # max keeps the first of ties, the smaller |s|
+    gain = net(best) - net(0)
+    return (best, round(gain, 6)) if best != 0 and gain >= KEY_SHIFT_MIN_GAIN - 1e-9 else (0, 0.0)

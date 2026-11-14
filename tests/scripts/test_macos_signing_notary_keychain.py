@@ -15,8 +15,10 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 
 - if notarize ignores MDT_MACOS_NOTARY_KEYCHAIN, a headless build dies on the
   locked login keychain -> broken.
-- if notarize invents a --keychain flag when none is configured, GUI-session
-  hosts that resolve the profile from the login keychain break -> broken.
+- if notarize falls back to the default keychain when none is named, a
+  headless build dies on the locked login keychain minutes in -> broken. The
+  keychain is always named since PR #3944 (OPS-44): a GUI Mac whose profile
+  is in its login keychain names that file.
 - if notarize submits with a notary keychain path that is not a file, the
   failure surfaces minutes later as an opaque notary error instead of
   refusing up front -> broken.
@@ -83,12 +85,12 @@ def test_notarize_passes_the_configured_notary_keychain(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("INSTALL-04")
-def test_notarize_without_a_notary_keychain_keeps_the_default_lookup(tmp_path: Path) -> None:
-    """[if] notarize invents --keychain when none is configured [then] GUI-session login-keychain lookup breaks, [else stop]."""
+def test_notarize_without_a_notary_keychain_is_refused_before_notarytool(tmp_path: Path) -> None:
+    """[if] notarize falls back to the default keychain when none is named [then] a headless build dies on the locked login keychain, [else stop]."""
     result, calls = _notarize_with(tmp_path)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "notarytool submit" in calls, calls
-    assert "--keychain " not in calls, calls
+    assert result.returncode != 0
+    assert "MDT_MACOS_NOTARY_KEYCHAIN is not set" in result.stderr, result.stderr
+    assert "notarytool" not in calls, calls
 
 
 @pytest.mark.requirement("INSTALL-04")

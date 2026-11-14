@@ -61,6 +61,12 @@ import { isMixerPlacement } from '$lib/rb/prefs.svelte';
 import { assertRollBeats, ROLL_BEATS_LABEL } from '$lib/player/transport/roll-state';
 import { MEMORY_CUE_CALL_DIRECTIONS, type MemoryCueCallDirection } from '$lib/rb/memory-cue-call';
 
+import {
+	isClassicSamplerCommandType,
+	parseClassicSamplerCommand
+} from '$lib/player/sampler/classic-sampler-ipc-guards';
+import { isSamplerCommandType, parseSamplerCommand } from '$lib/player/sampler/sampler-ipc-guards';
+
 import type { PerformanceCommand } from './performance-ipc-types';
 
 type UnknownRecord = Record<string, unknown>;
@@ -951,6 +957,10 @@ export function _parseCommand(message: unknown): PerformanceCommand {
 			enabled: _boolean('enabled', record.enabled)
 		};
 	}
+	// SAMPLER: edge sampler parity commands (sampler-ipc-guards.ts).
+	if (isSamplerCommandType(type)) return parseSamplerCommand(record);
+	// SAMPLER: classic sampler unit parity commands (classic-sampler-ipc-guards.ts).
+	if (isClassicSamplerCommandType(type)) return parseClassicSamplerCommand(record);
 	if (type === 'set_waveform_design') {
 		_exactKeys(record, ['type', 'design', 'height']);
 		const design = parseWaveformDesignPref(record.design);

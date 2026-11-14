@@ -167,6 +167,8 @@ def _profile_digest_without_new_bands(p) -> str:
         "mik_grid_suspect",
         "mik_grid_note",
         "stem_layout",
+        "grid_base_tier",
+        "grid_change_bars",
     ):
         data.pop(key, None)
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()

@@ -7,9 +7,14 @@
  * edge zone or a tab popped): digits 1 to 9 and 0 fire that edge's tabs 1 to
  * 10, PageUp / PageDown page its set. `[` and `]` are never sampler keys. A
  * key an earlier handler already claimed (preventDefault), a modifier chord or
- * a focused text field gives no action. Pure: no store import, the caller
- * passes the awake edge in.
+ * a focused text field gives no action. Keys reach the store as performance
+ * bus commands (samplerKeyDown, samplerKeyUp), the ones agents send: a fire key's
+ * keyup sends sampler_release for the slot its press fired, which stops a gate
+ * slot (#12169). Pure: no store import, the caller passes the awake edge and the
+ * slot lookup in.
  */
+
+import type { SamplerCommand } from './sampler-ipc-guards';
 
 export type SamplerEdge = 'L' | 'R';
 
@@ -23,6 +28,8 @@ export interface SamplerKeyEvent {
 	ctrlKey: boolean;
 	altKey: boolean;
 	defaultPrevented: boolean;
+	/** true for the browser's auto-repeat keydowns while a key is held */
+	repeat?: boolean;
 }
 
 export interface SamplerKeyContext {
@@ -59,4 +66,37 @@ export function samplerKeyAction(
 	if (delta !== undefined) return { kind: 'flip', edge, delta };
 	const index = ev.key.length === 1 ? SAMPLER_FIRE_KEYS.indexOf(ev.key) : -1;
 	return index >= 0 ? { kind: 'fire', edge, index } : null;
+}
+
+/** Fire keys held down now, each mapped to the slot id its press fired. */
+export type SamplerKeyHolds = Map<string, string>;
+
+/** Whether the sampler claims a keydown, and the bus command it sends (none for a repeat or an empty tab). */
+export function samplerKeyDown(
+	ev: SamplerKeyEvent,
+	ctx: SamplerKeyContext,
+	slotIdAt: (edge: SamplerEdge, index: number) => string | null,
+	holds: SamplerKeyHolds
+): { claimed: boolean; command: SamplerCommand | null } {
+	if (ev.repeat === true && holds.has(ev.key)) return { claimed: true, command: null };
+	const action = samplerKeyAction(ev, ctx);
+	if (action === null) return { claimed: false, command: null };
+	if (action.kind === 'flip') {
+		return {
+			claimed: true,
+			command: { type: 'sampler_set_page', edge: action.edge, delta: action.delta }
+		};
+	}
+	const slotId = slotIdAt(action.edge, action.index);
+	if (slotId === null) return { claimed: true, command: null };
+	holds.set(ev.key, slotId);
+	return { claimed: true, command: { type: 'sampler_trigger', slot_id: slotId } };
+}
+
+/** The bus command a keyup sends: sampler_release for the slot its key's press fired, else null. */
+export function samplerKeyUp(key: string, holds: SamplerKeyHolds): SamplerCommand | null {
+	const slotId = holds.get(key);
+	if (slotId === undefined) return null;
+	holds.delete(key);
+	return { type: 'sampler_release', slot_id: slotId };
 }

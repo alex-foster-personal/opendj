@@ -172,11 +172,17 @@ test('#12267 a leaf lists its moves, drill-out and only the leaf commands that a
 		present: true,
 		kind: 'leaf',
 		parentId: 'deck.1',
-		operations: ['selector.move.down', 'selector.drill-out', 'selector.activate']
+		operations: [
+			'selector.move.down',
+			'selector.drill-out',
+			'selector.activate',
+			'selector.shift-activate'
+		]
 	});
 	assert.deepEqual(describe(nodes, 'mixer.ch4.low').operations, [
 		'selector.drill-out',
 		'selector.activate',
+		'selector.shift-activate',
 		'selector.adjust.up',
 		'selector.adjust.down'
 	]);

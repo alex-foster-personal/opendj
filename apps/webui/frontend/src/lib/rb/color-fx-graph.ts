@@ -65,36 +65,8 @@ import {
 } from './color-fx-crush';
 import { buildEchoKernel, type EchoKernel } from './fx/echo-kernel';
 import { glideCorner } from './filter-glide';
+import { SPACE_IMPULSE_SEED, spaceImpulse } from './space-impulse';
 import { FILTER_GLIDE_DOMAIN, FILTER_GLIDE_S } from '$lib/player/constants';
-
-/**
- * Stereo impulse response: decorrelated noise under an exponential decay that
- * falls 60 dB over `seconds`. A seeded generator (not Math.random) so the same
- * length always yields the same tail and a test can pin it.
- */
-function reverbImpulse(
-	sampleRate: number,
-	seconds: number,
-	seed = 0x5eed
-): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
-	const length = Math.max(1, Math.round(sampleRate * seconds));
-	const left = new Float32Array(length);
-	const right = new Float32Array(length);
-	let state = seed >>> 0 || 1;
-	const next = (): number => {
-		state ^= state << 13;
-		state ^= state >>> 17;
-		state ^= state << 5;
-		return ((state >>> 0) / 0xffffffff) * 2 - 1;
-	};
-	const decayPerSample = Math.log(1000) / length;
-	for (let i = 0; i < length; i++) {
-		const envelope = Math.exp(-decayPerSample * i);
-		left[i] = next() * envelope;
-		right[i] = next() * envelope;
-	}
-	return [left, right];
-}
 
 /** Longest echo line: the longest division at the slowest accepted tempo. */
 export const COLOR_FX_ECHO_MAX_DELAY_SEC = Math.max(...COLOR_FX_ECHO_BEATS) * (60 / COLOR_FX_MIN_BPM);
@@ -105,7 +77,7 @@ export const ECHO_LOOP_HP_HZ = 180;
 export const ECHO_LOOP_LP_HZ = 3000;
 export const ECHO_WET_GAIN = 0.8;
 
-/** SPACE tail: decays 60 dB over this many seconds. */
+/** SPACE tail: the low band decays 60 dB over this many seconds, the highs in half (space-impulse.ts). */
 export const SPACE_RT60_SEC = 2.6;
 export const SPACE_WET_GAIN = 0.8;
 
@@ -170,9 +142,9 @@ function _biquad(ctx: GraphContext, type: BiquadFilterType, hz: number): BiquadF
 	return node;
 }
 
-/** The SPACE impulse response, built once per splice (never per render quantum). */
+/** The SPACE impulse response (space-impulse.ts v2), built once per splice (never per render quantum). */
 export function spaceImpulseBuffer(ctx: GraphContext, seconds = SPACE_RT60_SEC): AudioBuffer {
-	const [left, right] = reverbImpulse(ctx.sampleRate, seconds, 0xc010f);
+	const [left, right] = spaceImpulse(ctx.sampleRate, seconds, SPACE_IMPULSE_SEED);
 	const buffer = ctx.createBuffer(2, left.length, ctx.sampleRate);
 	buffer.copyToChannel(left, 0);
 	buffer.copyToChannel(right, 1);
@@ -239,6 +211,7 @@ export function buildColorFxGraph(
 export function attachSpace(ctx: GraphContext, graph: ColorFxGraph, options: ColorFxGraphOptions = {}): ConvolverNode {
 	if (graph.space !== null) return graph.space;
 	const space = ctx.createConvolver();
+	space.normalize = false; // before the buffer: the impulse carries its own level (space-impulse.ts)
 	space.buffer = spaceImpulseBuffer(ctx, options.spaceSeconds ?? SPACE_RT60_SEC);
 	graph.spaceIn.connect(space);
 	space.connect(graph.spaceReturn);

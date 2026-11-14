@@ -245,7 +245,7 @@ test('CUE previews on the cue bus only, and shows pause while previewing', async
 		stop: () => undefined,
 		preview: async (s) => void calls.push(`preview ${s.slot_id}`),
 		stopPreview: () => void calls.push('stopPreview'),
-		warm: () => undefined,
+		reside: () => undefined,
 		phase: () => phase
 	});
 	try {

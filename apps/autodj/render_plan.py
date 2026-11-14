@@ -327,6 +327,9 @@ def compile_render_plan(
 ) -> dict[str, Any]:
     """The ``plan.rs`` JSON that renders ``plan`` with ``context_bars`` of each deck alone around it."""
     _refuse_controls_the_render_cannot_apply(plan)
+    if plan.in_.key_shift_semitones:
+        # #10142: plan.rs has no key shift command yet; never drop the shift silently.
+        raise RenderPlanError("static key shift not rendered yet: odj-audio render takes no key_shift")
     _refuse_follower_tempo_moves(plan)
     layout = layout_of(plan, out_profile, in_profile, context_bars, start_out_bar=start_out_bar)
     _require_absolute_audio_paths(out_audio, in_audio)

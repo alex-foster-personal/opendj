@@ -1,6 +1,8 @@
 <script lang="ts">
 	/**
 	 * One screen edge: top tab shell plus a column of numbered tabs (spec 7.4).
+	 * An in-app deck loop drag (sampler.drag) wakes it with a button held; the tab under the
+	 * pointer wears the dashed drop outline and the tab a drop saved wears the ring.
 	 */
 	import { onDestroy, untrack } from 'svelte';
 	import {
@@ -24,11 +26,13 @@
 		pinEdgeTabOnClick,
 		sampler,
 		slotMatchesEdge,
-		slotPhase
+		slotPhase,
+		slotPlayhead
 	} from '$lib/player/sampler/sampler-store.svelte';
 	import { cueLabel } from '$lib/player/sampler/sampler-store-logic';
 	import { createTriggerGuard } from '$lib/player/sampler/sampler-trigger-guards';
 	import { displayName, type Edge, type SamplerSlot } from '$lib/player/sampler/sampler-types';
+	import EdgeCompatPop from './EdgeCompatPop.svelte';
 	import EdgeTab from './EdgeTab.svelte';
 	import EditSampleModal from './EditSampleModal.svelte';
 	import EdgeWaveTopTab from './EdgeWaveTopTab.svelte';
@@ -72,6 +76,8 @@
 	/** The set whose name dialog is open (it stays on that set if the edge flips); null = closed. */
 	let namingSetId: string | null = $state(null);
 	const namingSet = $derived(sampler.sets.find((s) => s.id === namingSetId) ?? null);
+	/** The top tab's "Compatible with master" popover is open (mock `POP.kind === 'compat'`). */
+	let compatOpen = $state(false);
 	let lastWheelFlip = -1e9;
 
 	const tabH = $derived(Math.max(12, Math.floor((height - HEAD_H - 8) / tabCount)));
@@ -100,6 +106,8 @@
 	);
 	/** The edited tab's row on this edge, or -1 when the agent opened a slot this edge does not show. */
 	const editIndex = $derived(tabs.findIndex((s) => s !== null && s.slot_id === editSlot?.slot_id));
+	const isDropTarget = (i: number): boolean =>
+		sampler.drag?.over?.edge === edge && sampler.drag.over.index === i;
 	const searchOpen = $derived(
 		sampler.edges[edge].searchFocus || sampler.edges[edge].query.trim() !== ''
 	);
@@ -108,6 +116,7 @@
 		`${ref}  ${displayName(s)}${s.name ? ` (from ${s.title})` : ''} . ${cueLabel(s)}${s.description ? `\n${s.description}` : ''}`;
 
 	let root: HTMLDivElement | undefined = $state();
+	let modal: EditSampleModal | undefined = $state();
 	let headEl: HTMLDivElement | undefined = $state();
 	const tabEls: Array<HTMLDivElement | undefined> = $state([]);
 	let headW = $state(REST_W);
@@ -117,7 +126,7 @@
 	const fromEdge = (x: number): number => (edge === 'R' ? window.innerWidth - x : x);
 
 	export function onPointerMove(prev: number, p: Pointer): void {
-		updateArming(armed, fromEdge(prev), fromEdge(p.x), p.buttons, false);
+		updateArming(armed, fromEdge(prev), fromEdge(p.x), p.buttons, sampler.drag !== null);
 	}
 
 	export function onPointerDown(p: Pointer): void {
@@ -146,13 +155,14 @@
 			buttons: p.buttons,
 			inWindow: p.inWindow,
 			t,
-			appDrag: false,
+			appDrag: sampler.drag !== null,
 			held,
 			filled,
 			matches,
 			editingOther,
 			searchOpen,
-			hold: sampler.edges[edge].searchFocus || namingSet !== null || editSlot !== null,
+			hold:
+				sampler.edges[edge].searchFocus || namingSet !== null || editSlot !== null || compatOpen,
 			params,
 			reduceMotion,
 			dtMs: dt,
@@ -181,8 +191,20 @@
 			el.style.setProperty('--reveal', controlsReveal(w).toFixed(2));
 			el.style.setProperty('--treveal', titleReveal(w).toFixed(2));
 			el.classList.toggle('rest', w < REST_CLASS_W);
+			const slot = tabs[i];
+			if (slot) paintPlayhead(el, slot.slot_id);
 		}
-		return motion.needsFrame || held.some(Boolean);
+		const previewing = modal?.paint() ?? false;
+		return motion.needsFrame || held.some(Boolean) || previewing;
+	}
+
+	/** Move a sounding tab's waveform playhead to its voice's place in the pass (transform only). */
+	function paintPlayhead(el: HTMLDivElement, slotId: string): void {
+		const f = slotPlayhead(slotId);
+		const ph = f === null ? null : el.querySelector<HTMLElement>('.wv .ph');
+		if (!ph || f === null) return;
+		const travel = (ph.parentElement?.clientWidth ?? 0) - ph.offsetWidth;
+		ph.style.transform = `translateX(${(f * travel).toFixed(1)}px)`;
 	}
 
 	/** The click guard every control inside tab `i` passes: readable, settled, not a bounce (EDGESAMP-11872g). */
@@ -197,7 +219,7 @@
 	};
 
 	function onWheel(ev: WheelEvent): void {
-		if ((ev.target as Element).closest('.caret-wrap')) return; // the compatible settings panel scrolls
+		if ((ev.target as Element).closest('.pop')) return; // popovers sit off the edge, as in the mock
 		const delta = wheelFlip(motion.awake, ev.deltaY, performance.now(), lastWheelFlip);
 		if (motion.awake) ev.preventDefault();
 		if (delta === 0) return;
@@ -214,6 +236,7 @@
 	function openNaming(): void {
 		const st = sampler.edges[edge];
 		if (st.results === null) namingSetId = sampler.sets[st.set]?.id ?? null;
+		if (namingSetId !== null) compatOpen = false;
 	}
 
 	onDestroy(() => {
@@ -233,7 +256,16 @@
 	data-testid="edge-wave-{edge}"
 	onwheel={onWheel}
 >
-	<EdgeWaveTopTab bind:el={headEl} {edge} onrename={openNaming} />
+	<EdgeWaveTopTab
+		bind:el={headEl}
+		{edge}
+		onrename={openNaming}
+		{compatOpen}
+		oncompat={() => {
+			compatOpen = !compatOpen;
+			if (compatOpen) namingSetId = null;
+		}}
+	/>
 	<div
 		class="wpads"
 		style:top="{PADS_TOP}px"
@@ -253,11 +285,15 @@
 					class:previewing={slotPhase(slot.slot_id) === 'previewing'}
 					class:editing={sampler.editing === slot.slot_id}
 					class:dim={!matches[i]}
+					class:droptarget={isDropTarget(i)}
+					class:justdropped={sampler.justDropped === slot.slot_id}
 					style:top="{i * tabH}px"
 					style:height="{tabH - 3}px"
 					style:--cue={slot.color}
 					title={tabTip(edgeRef(edge, i), slot)}
 					data-tab={i + 1}
+					data-drop-edge={edge}
+					data-drop-index={i}
 					data-slot-id={slot.slot_id}
 					onclick={() => onTabClick(i)}
 					use:selectorNode={{ id: edgeSamplerPadSelectorId(edge, i), kind: 'leaf', enabled: true }}
@@ -270,10 +306,13 @@
 				<div
 					bind:this={tabEls[i]}
 					class="wslot empty rest"
+					class:droptarget={isDropTarget(i)}
 					style:top="{i * tabH}px"
 					style:height="{tabH - 3}px"
 					title="{tabRef(page, i)}  empty slot"
 					data-tab={i + 1}
+					data-drop-edge={edge}
+					data-drop-index={i}
 					use:selectorNode={{ id: edgeSamplerPadSelectorId(edge, i), kind: 'leaf', enabled: true }}
 				>
 					<span class="num">{String(i + 1).padStart(2, '0')}</span>
@@ -282,11 +321,15 @@
 			{/if}
 		{/each}
 	</div>
+	{#if compatOpen}
+		<EdgeCompatPop {edge} onclose={() => (compatOpen = false)} />
+	{/if}
 	{#if namingSet}
 		<SetNameDialog {edge} set={namingSet} onclose={() => (namingSetId = null)} />
 	{/if}
 	{#if editSlot}
 		<EditSampleModal
+			bind:this={modal}
 			{edge}
 			slot={editSlot}
 			anchorY={HEAD_H + 4 + Math.max(0, editIndex) * tabH + tabH / 2}
@@ -392,6 +435,16 @@
 	.wslot.editing {
 		outline: 2px solid var(--es-deck-a);
 		outline-offset: -2px;
+	}
+	/* Loop drag (mock `.droptarget`, `.justdropped`); the glow is the MIX badge's blue. */
+	.wslot.droptarget {
+		outline: 2px dashed var(--es-accent);
+		outline-offset: -2px;
+	}
+	.wslot.justdropped {
+		box-shadow:
+			0 0 0 2px var(--es-deck-a),
+			0 0 18px var(--es-mix-border);
 	}
 	@keyframes pulse {
 		from {

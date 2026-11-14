@@ -62,6 +62,10 @@ _SAMPLE_TOKENS = (
     "sides",
     "echo", "helix", "spiral", "master", "two-deck", "1-3", "bass-swap-8", "red", "jobs",
     "{}",
+    # SAMPLER: a tab ref, an edge and a settings patch.
+    "S1-05", "L", "level:80", "vocals",
+    # SAMPLER: a classic unit play mode and a master gain in dB.
+    "gate", "-6",
 )
 
 
@@ -80,7 +84,12 @@ def _sample_tokens(verb_name: str) -> list[str]:
     if verb_name == "track_info_open":
         return ["sample"]
     tokens: list[str] = []
+    # An exactly-one or at-most-one group is sampled by its first member only (SAMPLER: ref, not slot_id too).
+    verb = VERBS[verb_name]
+    skipped = {key for group in (*verb.exactly_one, *verb.at_most_one) for key in group[1:]}
     for arg in VERBS[verb_name].args:
+        if arg.key in skipped:
+            continue
         tokens.extend(_sample(verb_name, arg.key).split(" "))
     return tokens
 

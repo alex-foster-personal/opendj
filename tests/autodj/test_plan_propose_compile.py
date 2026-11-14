@@ -423,47 +423,48 @@ def test_double_drop_catalog_lists_sixteen_bars_only() -> None:
     assert row["bars"] == {"min": 16, "max": 16, "default": 16}
 
 
+# Refreshed after #14547 (#11581): the equal-power low crossover law moves every crossover style.
 _GOLDEN_STYLE_EVENTS_SHA256: dict[tuple[str, int], str] = {
     ("cut", 1): "82db87a932c2eb7c2ca71c48e787ef12f5d2f61b6da3658143a1014a5f0f442c",
     ("drop_swap", 1): "82db87a932c2eb7c2ca71c48e787ef12f5d2f61b6da3658143a1014a5f0f442c",
-    ("filter_sweep", 12): "ce593efa8ba8aa59ad645cdb82260b2115286a1f61951ccfcce4b19580cc47bf",
-    ("filter_sweep", 15): "135eb51499f16da2e426af115fb7300d44a5a52d1fc0cc73629e34f7a371f356",
-    ("filter_sweep", 16): "b5eb691fa9cf3198b41fce169df7be83c2c7f0e85130278bb5dd362a7ab7a80f",
-    ("filter_sweep", 32): "bdfab8b9fc057f7dcaa0c30344d9022d98103e94735c3c1b0d9ae01e1f27f506",
+    ("filter_sweep", 12): "f08552aeaf4921815d66d2492963547177ab3896c55287482c6dcd1052d00e76",
+    ("filter_sweep", 15): "540faf3b9bf43feadc49175dfb721145de2763099ac5fc0146fa7e12ad34c4fd",
+    ("filter_sweep", 16): "cf2b91029e8074f350100705adc1f1b89733b7dc7ca3ef6170c6ae1136c344cc",
+    ("filter_sweep", 32): "710be5b275db4c0d428d443c3b67ff3019e2c2eec2a87d076e2ce2bd7863b526",
     ("bass_swap_blend", 12): "a6e4dacc39d951595bcc51a3adc3d80fc88137f4bc1be921369d53f3eebddb17",
     ("bass_swap_blend", 15): "f21997b96de1727c57952278cc8514ace06d747046bb86639057f84a1b379b89",
     ("bass_swap_blend", 16): "fce519ef3f313b5f2d7f6a77f210ffd572d4f6cbd4dfe5026249e1ca0a713929",
     ("bass_swap_blend", 32): "6d0f8a149228f8558b82452c3ae7e81df74c93f30faffdf44ae62885b9ceb6cc",
-    ("long_blend", 32): "4a71f8ae72f999e8fd56335bbf9872bddbad56394b18799123b7cbe7a18353cc",
-    ("long_blend", 64): "d25f2091dd271c6255f21f083f6ed71616cfd7cf88d851dddf2c41e6e92930aa",
+    ("long_blend", 32): "a82d4666ffb561257b279f6e6ac0593a8d481f1656061caa736dd01191350c30",
+    ("long_blend", 64): "61b30406a44de0c23d3f3ec1860c1e4302226aabf123be3c5520d637bb496ef8",
     # Provenance (issue #12883): #11834 (924b5b6f2d4d) switched the crossfade catalog entry to
     # fade_shape="smooth" without refreshing these rows; 8805767772e3 (landed inside #12873)
     # recaptured them from that builder. Acceptance impact: none, the builder and event
     # contract are unchanged since #11834. test_crossfade_golden_rows_follow_the_smooth_fade_shape pins this.
-    ("crossfade", 12): "8bf6f6fdd8c735503c94c6cd40262bad62919da4f9fe7e6c1983540e80074489",
-    ("crossfade", 15): "1efd0aafaedf832f38f151583f6eb90e4be92a5de343c0ab5974e8eacde7d03a",
-    ("crossfade", 16): "2a91eaab5e4d2ef54d3c8462f123010804a89c70f9fe50dac2f5e1765f964a74",
-    ("crossfade", 32): "4539b2d68fa39515ecd5384aef9a2b92b655532fcd270679454bf1ef4a1049c1",
-    ("rise", 12): "8c38a5fdb8e8928449d7ad629e3904bdb9f665dc2f1c95f8d843afd30d20dae6",
-    ("rise", 15): "9f1a1097c4560c5ca94d952a7629e029c5da75a1dfcbf5817bda351a3b21eeb3",
-    ("rise", 16): "c74a1f4c14d6c762feeb3a7f0f2383211c2221fe1ac358e4273d4e7dc897c832",
-    ("rise", 32): "7187424b5b68f57079b092a9423e172283fc94709b77657279c89a7364486580",
-    ("wave", 12): "d48916f267b7bb6f980e4cb4c0bef81cf04a950ec7892ec271a2f772c0ad0ecd",
-    ("wave", 15): "1d7bdcc1dbffd5b033d74c96f49f71053aaf154a38ea802a303c2f4842364f74",
-    ("wave", 16): "8a97a36269c15f4f3a4a0f8ae44b1292b867b9c2b870638c1b8d1af3657c0db7",
-    ("wave", 32): "c947fa956fa9814856250309c489f3d85c73a925e4625e41fb38fec86815162f",
-    ("melt", 12): "d4947bd1f074d611d556413fcc3f0ed561293c247d23c1f6930810ba158ad3c0",
-    ("melt", 15): "3cb4ce8e59dc07e907cd1349e8870989ea16abee83bb380e543e2667d5079e8c",
-    ("melt", 16): "d24cfb6f3c2aa8bdbd312f35c770b75241decd47ed6e9f65801d656431d4186f",
-    ("melt", 32): "1da9b72f7fed57d2c97f1a31198a66e66d601ed604e20b5352a272d4904f4676",
+    ("crossfade", 12): "95350e360902179e7a417c2500c4c54312feb52c6e17a3f0099871e458c17b50",
+    ("crossfade", 15): "dd937717db30db1fe598e0c4af2a9ad7f46757199cc422a10fb9f6b9723798f6",
+    ("crossfade", 16): "6f3608713158bee3a34bc8e63ca89a3a23dde114d30e5a7c8233aac15dc0f5ec",
+    ("crossfade", 32): "c248b8ad93bca46552a5a7a99706ef47ef669d39e831ea36eba56ba3a0b68b9c",
+    ("rise", 12): "90374862de4dd49fd7867ebd116c7c8ffab0cb065419722cacff63aa15db56aa",
+    ("rise", 15): "14ed1382abd37d55b4f5315a2f88f26185f7c69cc53671f31d7ba0dbd4bdc771",
+    ("rise", 16): "6401eb4f8e0798b4ba29d6ad70d8ed82d19e10d61860187d3b0fa13d029ba673",
+    ("rise", 32): "c632e307a25bb0d06a14c02891e785f61dc4c1be0145ff1cbf931bf2eefbeeb2",
+    ("wave", 12): "259ed46aa0e7d55f8f01373a31c90e6a7759f27b4614d4b93fd588cc491fff6e",
+    ("wave", 15): "6892f9dbf17ec58652a391099d0552e5877dff5b1a1c03dbe2e61f9a548f9773",
+    ("wave", 16): "96bc28818fb921522e197c8c9ce59df3638bfe1965ccaad20a6bfe01822f80a5",
+    ("wave", 32): "42b28a2eca61ce5bd9cc1b689876c7e4e4e59910120738bd1d915d888487f90e",
+    ("melt", 12): "0efc3bdbdc6514f3899419a05f5a5f83e4a8c7764e0ea5035ccf84f758aa46c2",
+    ("melt", 15): "0f4633ad7e5524634b17e76dbfbf19af97923e6c36c41bbaf6af37fb0a78484e",
+    ("melt", 16): "d94711b447be534c2100da057ce5beb8e06ba5b3ae7ef48629aefca5c63613ba",
+    ("melt", 32): "736c8719761adb43dfe56f0cdb9c7578b02e8383f0cf321f000903380e31b2ab",
     ("lull_then_drop", 8): "a918a7dbfb9ca915f87166ae2b49425b836b98e1d23fb1c332388df5203707fd",
     ("lull_then_drop", 15): "7ba475cca8d1faa946832372fbdae734b6d1f65eb092be54e6eca76a26597e32",
     ("lull_then_drop", 16): "7e4e414a542adcd100e22d4c8a8935f434957e07ef63d4aefd8898a9b439a2e6",
     ("lull_then_drop", 32): "15cb848e50f8676e038b230ec54fd86e17a83210231a408326d24ba8d3d8646e",
-    ("bass_phrase_swap", 12): "77e45ed379829be6b5b86fe7b33d08a48ff053bf1ee07c2980934a6f12d3de7c",
-    ("bass_phrase_swap", 15): "eb01ea027d4d8b8f889fcf223803d29dcaba3965b162e0da023c692acd2b5da1",
-    ("bass_phrase_swap", 16): "e7fb5217cde8fe1f2925f87fc59fa387afc12fa4b04441cf980d42086af3734f",
-    ("bass_phrase_swap", 32): "85288a0ae964c490b8181d014a2a8625a0a10a2c77dbf4a9b625982a7f28d5c7",
+    ("bass_phrase_swap", 12): "8f1e8f4bcbd81953c68f88b2aa7710657a7b05e41187ceb973e56615a3cccd70",
+    ("bass_phrase_swap", 15): "20b876a52e4389a352ac1242b06ed1b936397267b4ce38bcc63e094ef5c82cce",
+    ("bass_phrase_swap", 16): "c0353c0b8c15550438875b2a53d575b19feb27bd2d02977258d2baa8754b1474",
+    ("bass_phrase_swap", 32): "4d78868a449df8f8b728e9f07c9683942e1ac56940a1ee7876b8389926b69723",
 }
 
 
@@ -2122,13 +2123,13 @@ def test_an_authored_incoming_tempo_ramp_starts_from_the_decks_live_pitch() -> N
 
 def test_an_unknown_key_is_unscored_not_a_hidden_half() -> None:
     """AGENT-33: [if] a key is unknown [then] harmony is unscored with its reason, the score is the mean of the
-    measured terms only, and measured reads 3 of 4."""
+    measured terms only, and measured counts of 5."""
     out_window = mix_windows(OUT, "out", limit=1)[0]
     in_window = mix_windows(IN, "in", limit=1)[0]
     unknown = score_windows(OUT, profile("trk-in", key=""), out_window, in_window)
     assert unknown.key_distance is None
     assert ("harmony", "a key is unknown") in unknown.unscored
-    assert unknown.summary()["measured"] == f"{unknown.measured} of 4"
+    assert unknown.summary()["measured"] == f"{unknown.measured} of 5"
     assert unknown.summary()["unscored"][0] == {"term": "harmony", "reason": "a key is unknown"}
     # Changing what a hidden 0.5 would have weighed cannot move the score: no value stands in for harmony.
     from apps.autodj import scoring

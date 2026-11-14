@@ -5,8 +5,10 @@
  * label, so the polite announcement would read dots aloud. Each dotted segment becomes one
  * spoken level, levels are joined with a comma ("Deck 1, Hot cues"), numbers stay digits, and
  * a segment missing from the tables is split on dashes and capitalised. Context-only parents
- * (`mixer`, `topbar`, `sampler`, `assign`, `stem`) are silent when a child follows, so
- * `mixer.ch2` is "Channel 2". DJ control names mimic rekordbox where it has one.
+ * (`mixer`, `topbar`, `sampler`, `assign`, `stem`, `quick`) are silent when a child follows, so
+ * `mixer.ch2` is "Channel 2". DJ control names mimic rekordbox where it has one. Leaves under
+ * a deck's transport, jog and stems groups and the mixer's headphones group are scoped (#14540),
+ * so `deck.1.transport.cue` is "Cue" while a channel's bare `cue` stays the headphone cue.
  */
 
 /** Names keyed by `<parent segment>.<segment>`, checked before the plain segment table. */
@@ -23,7 +25,36 @@ const SCOPED_NAMES: Readonly<Record<string, string>> = {
 	'topbar.mode': 'App mode',
 	'cues.mode': 'Pad mode',
 	'cal.red': 'Red',
-	'cal.ceiling': 'Ceiling'
+	'cal.ceiling': 'Ceiling',
+	// deck transport leaves
+	'transport.cue': 'Cue',
+	'transport.play': 'Play',
+	'transport.call-prev': 'Call previous cue',
+	'transport.call-next': 'Call next cue',
+	// deck jog leaves
+	'jog.dial': 'Jog dial',
+	'jog.quantize': 'Quantize',
+	'jog.slip': 'Slip',
+	'jog.master-tempo': 'Master tempo',
+	'jog.auto-cue': 'Auto cue',
+	'jog.manual-tempo': 'Manual tempo',
+	// mixer headphone leaves
+	'headphones.mix': 'Headphone mix',
+	'headphones.level': 'Headphone level',
+	'headphones.io': 'Show audio input and output',
+	'headphones.midi': 'Open MIDI panel',
+	// deck stem row leaves
+	'stems.vocal': 'Vocal stem',
+	'stems.instrumental': 'Instrumental stem',
+	'stems.drums': 'Drums stem',
+	'stems.bass': 'Bass stem',
+	'stems.other': 'Other stem',
+	'stems.reset': 'Reset on track load',
+	'stems.separate': 'Separate stems',
+	'stems.load': 'Load stems',
+	'quick.aca': 'Acapella quick mode',
+	'quick.inst': 'Instrumental quick mode',
+	'quick.all': 'All stems quick mode'
 };
 
 /** Names for one segment wherever it sits. */
@@ -89,7 +120,8 @@ const SILENT_PARENTS: ReadonlySet<string> = new Set([
 	'topbar',
 	'sampler',
 	'assign',
-	'stem'
+	'stem',
+	'quick'
 ]);
 
 //----- helpers

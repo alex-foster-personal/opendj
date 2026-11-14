@@ -1,0 +1,9 @@
+{
+  "bytes": 10240,
+  "measured_main": 373163,
+  "measured_with_pr": 383197,
+  "sha": "1a7595e090",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--9989-modes-gains grows the library surface; measured +10034 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

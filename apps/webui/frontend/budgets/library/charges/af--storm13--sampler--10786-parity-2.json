@@ -1,0 +1,9 @@
+{
+  "bytes": 6144,
+  "measured_main": 373163,
+  "measured_with_pr": 378707,
+  "sha": "16a50fae3b",
+  "date": "Fri 13 Nov 2026",
+  "reason": "branch af--storm13--sampler--10786-parity-2 grows the library surface; measured +5544 B gzip over main; ceiled to KiB.",
+  "payback": "none planned; the growth is the change's own code on this surface"
+}

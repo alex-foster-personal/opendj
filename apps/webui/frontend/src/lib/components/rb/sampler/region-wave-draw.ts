@@ -10,13 +10,16 @@ import { HIGH_BAND_SCALE, MID_BAND_SCALE, bucketMax } from '$lib/components/rb/w
 import type { RegionPeaks } from '$lib/player/sampler/sampler-types';
 import type { WaveBandColors } from '$lib/rb/wave-palette';
 
-/** Fraction of the half-height the loudest column reaches. */
-const FILL = 0.92;
+/** Fraction of the half-height the loudest column reaches on a tab (mock `drawTabWave`, `H * .46`). */
+const TAB_WAVE_FILL = 0.92;
+/** ...and on the edit modal's CUE-only deck (mock `drawCueDeckWave`, `H * .44`). */
+export const CUE_DECK_WAVE_FILL = 0.88;
 
 /** Per-column band heights (0..1 of the half-height) that tile all of `peaks` across `width` columns. */
 export function regionColumnHeights(
 	peaks: RegionPeaks,
-	width: number
+	width: number,
+	fill = TAB_WAVE_FILL
 ): { low: number[]; mid: number[]; high: number[] } {
 	const n = peaks.low.length;
 	if (n === 0 || peaks.mid.length !== n || peaks.high.length !== n) {
@@ -28,9 +31,9 @@ export function regionColumnHeights(
 	for (let x = 0; x < width; x++) {
 		const p0 = Math.floor((x / width) * n);
 		const p1 = Math.max(p0, Math.min(n - 1, Math.floor(((x + 1) / width) * n) - 1));
-		out.low.push(Math.min(1, bucketMax(peaks.low, p0, p1)) * FILL);
-		out.mid.push(Math.min(1, bucketMax(peaks.mid, p0, p1)) * FILL * MID_BAND_SCALE);
-		out.high.push(Math.min(1, bucketMax(peaks.high, p0, p1)) * FILL * HIGH_BAND_SCALE);
+		out.low.push(Math.min(1, bucketMax(peaks.low, p0, p1)) * fill);
+		out.mid.push(Math.min(1, bucketMax(peaks.mid, p0, p1)) * fill * MID_BAND_SCALE);
+		out.high.push(Math.min(1, bucketMax(peaks.high, p0, p1)) * fill * HIGH_BAND_SCALE);
 	}
 	return out;
 }
@@ -46,14 +49,15 @@ function fitCanvas(cv: HTMLCanvasElement): CanvasRenderingContext2D {
 	return g;
 }
 
-/** Paint `peaks` into `cv` at its CSS size and the device pixel ratio. */
+/** Paint `peaks` into `cv` at its CSS size and the device pixel ratio, loudest at `fill`. */
 export function drawRegionPeaks(
 	cv: HTMLCanvasElement,
 	peaks: RegionPeaks,
-	colors: WaveBandColors
+	colors: WaveBandColors,
+	fill = TAB_WAVE_FILL
 ): void {
 	const g = fitCanvas(cv);
-	const cols = regionColumnHeights(peaks, cv.width);
+	const cols = regionColumnHeights(peaks, cv.width, fill);
 	const half = cv.height / 2;
 	g.clearRect(0, 0, cv.width, cv.height);
 	for (const band of ['low', 'mid', 'high'] as const) {

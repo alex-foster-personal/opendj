@@ -23,7 +23,7 @@ from apps.engine_core.assistant.agent_contract import (
     ToolFailure,
     encode_event,
 )
-from apps.engine_core.assistant.core_tools import _library_path, require_steps_succeeded
+from apps.engine_core.assistant.core_tools import _library_path, _order, require_steps_succeeded
 from apps.engine_core.assistant.upstream import (
     AMBIGUOUS_CODE,
     DEFAULT_OPENROUTER_BASE_URL,
@@ -222,3 +222,24 @@ def test_the_self_route_ban_reads_the_path_the_engine_routes(path: str) -> None:
 def test_a_valid_library_path_goes_out_exactly_as_given(path: str) -> None:
     """[if] the request sends the decoded path [then] %2F in an id becomes a new route segment."""
     assert _library_path({"path": path}, "GET") == path
+
+
+@pytest.mark.requirement("EDGESAMP-14815")
+def test_a_sampler_delete_command_meets_the_destructive_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the assistant's command tool deletes a captured sample [then] it is refused like DELETE /api/v1/*, [else stop]."""
+    monkeypatch.delenv("OPENDJ_MCP_ENABLE_DESTRUCTIVE", raising=False)
+    for args in (
+        {"order": {"single": {"type": "sampler_delete", "slot_id": "cap-1"}}},
+        {"verb": "sampler_delete slot_id=cap-1"},
+    ):
+        with pytest.raises(ToolFailure) as caught:
+            _order(args)
+        assert caught.value.code == "destructive_blocked"
+    with pytest.raises(ToolFailure) as caught:
+        _library_path({"path": "/api/v1/sampler/slots/cap-1"}, "DELETE")
+    assert caught.value.code == "destructive_blocked"
+    # Control: with the switch on, the same order goes out.
+    monkeypatch.setenv("OPENDJ_MCP_ENABLE_DESTRUCTIVE", "1")
+    assert _order({"verb": "sampler_delete slot_id=cap-1"}) == {
+        "single": {"type": "sampler_delete", "slot_id": "cap-1"}
+    }

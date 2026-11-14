@@ -97,3 +97,10 @@ html:is([data-theme='light'], [data-skin]) .perf-root {
 .perf-root {
 	--es-font-body: var(--rb-font);
 }
+/* The mock's keyboard ring (`button:focus-visible, input:focus-visible, textarea:focus-visible`):
+ * app.css draws the same 2 px ring app-wide; the sampler paints it in the mock's --warn. */
+.edge-sampler :focus-visible,
+.sampler-toggle:focus-visible,
+.loop-drag:focus-visible {
+	outline-color: var(--es-warn);
+}

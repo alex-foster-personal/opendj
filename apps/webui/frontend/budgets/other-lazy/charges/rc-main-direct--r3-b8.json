@@ -1,0 +1,9 @@
+{
+  "bytes": 11264,
+  "measured_main": 596461,
+  "measured_with_pr": 606600,
+  "sha": "4c400ddb77",
+  "date": "Fri 13 Nov 2026",
+  "reason": "bundle 8 (PR 14939, branch rc-main-direct--r3-b8) grows the other-lazy surface by its 47 members' code: CI measured +10139 B gzip at the cut 4c400ddb77 over main 434ca4c3af (run 43524909421, the frontend job's budget step); the charge is the KiB ceiling of that plus one KiB of room. Restates growth the members' own charge files already name, which the gate does not count for a bundle.",
+  "payback": "none planned; the growth is the members' own code on this surface"
+}
