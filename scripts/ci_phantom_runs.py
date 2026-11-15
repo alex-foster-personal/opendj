@@ -13,9 +13,16 @@ is more than PHANTOM_AFTER_HOURS before now, and none of whose jobs is waiting f
 runner is a PHANTOM. A caller names it by id (log line and job summary) and skips it:
 never silently dropped, never failing forever. Every other run is untouched by this rule:
 
-- `queued`, `waiting`, `pending` and `requested` runs are never phantoms. A job queued on
-  a saturated pool is bounded by no `timeout-minutes` (Codex P1 on #3844), so age says
-  nothing about whether a queued run is alive.
+- `waiting`, `pending` and `requested` runs are never phantoms, and neither is a `queued`
+  run with any job. A job queued on a saturated pool is bounded by no `timeout-minutes`
+  (Codex P1 on #3844), so age says nothing about whether a queued run is alive. A queued
+  run gets its jobs the moment it is created (run 43373882087, Fri 13 Nov 2026: queued
+  7.5 h with 28 jobs).
+- A GHOST is the second lost-run signature: `queued`, idle for more than
+  PHANTOM_AFTER_HOURS, with NO job at all. GitHub created it and never started it. Runs
+  37642343523 (Wed 7 Oct 2026) and 43095724260 (Wed 11 Nov 2026, with about 75 more from
+  the same 30 minutes) read so for days with updated_at equal to created_at, and the
+  error sink's census failed every pass on them. A ghost is a phantom for every caller.
 - Age is measured from `updated_at`, never from `created_at` (Sol P1 on #4858): created_at
   includes every hour the run spent queued, so a run queued for 14 h and executing for one
   minute would read as 14 h old. `updated_at` moves on every job transition, so it is the
@@ -48,11 +55,12 @@ T = TypeVar("T")
 
 PHANTOM_AFTER_HOURS = 12
 PHANTOM_STATUS = "in_progress"
+GHOST_STATUS = "queued"
 # A job in any of these is waiting for a runner or a gate, not lost: no timeout bounds it.
 WAITING_JOB_STATUSES = frozenset({"queued", "waiting", "pending", "requested"})
 
 # Reads one run's jobs by run id. Supplied by each caller (the census over urllib, the sweep
-# over `gh`) and called only for a run that is already `in_progress` and stale.
+# over `gh`) and called only for a run that is already `in_progress` or `queued`, and stale.
 JobsOf = Callable[[int], Iterable[Mapping[str, Any]]]
 
 
@@ -79,18 +87,19 @@ def one_page_jobs(payload: object, run_id: int, page_size: int, error: type[Exce
     return jobs
 
 
-def _has_waiting_job(run: Mapping[str, Any], jobs_of: JobsOf) -> bool:
-    return any(job.get("status") in WAITING_JOB_STATUSES for job in jobs_of(int(run["id"])))
-
-
 def is_phantom(run: Mapping[str, Any], now: datetime, *, jobs_of: JobsOf, after: timedelta | None = None) -> bool:
-    """True when `run` is `in_progress`, idle for more than `after`, and has no waiting job."""
-    if run.get("status") != PHANTOM_STATUS:
+    """True when `run` is idle for more than `after` and is either `in_progress` with no
+    waiting job or `queued` with no job at all (a ghost)."""
+    status = run.get("status")
+    if status not in (PHANTOM_STATUS, GHOST_STATUS):
         return False
     threshold = after if after is not None else timedelta(hours=PHANTOM_AFTER_HOURS)
     if now - _last_activity(run) <= threshold:
         return False
-    return not _has_waiting_job(run, jobs_of)
+    jobs = list(jobs_of(int(run["id"])))
+    if status == GHOST_STATUS:
+        return not jobs
+    return not any(job.get("status") in WAITING_JOB_STATUSES for job in jobs)
 
 
 def split_phantoms(
@@ -127,8 +136,9 @@ def write_step_summary(lines: list[str], *, caller: str) -> None:
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(
             f"### {caller}: {len(lines)} phantom run(s) skipped\n\n"
-            f"Each was `{PHANTOM_STATUS}`, idle for more than {PHANTOM_AFTER_HOURS} h, with no job "
-            "waiting for a runner (scripts/ci_phantom_runs.py). It was skipped, not waited on.\n\n"
+            f"Each was idle for more than {PHANTOM_AFTER_HOURS} h and either `{PHANTOM_STATUS}` with no "
+            f"job waiting for a runner or `{GHOST_STATUS}` with no job at all (scripts/ci_phantom_runs.py). "
+            "It was skipped, not waited on.\n\n"
         )
         for line in lines:
             handle.write(f"- `{line}`\n")

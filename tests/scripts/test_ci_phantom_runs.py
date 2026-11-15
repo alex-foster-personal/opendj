@@ -16,7 +16,12 @@ Regression lines:
   - if a phantom still holds the census, or is not named in its output, then broken
   - if a recent in_progress run older than the lookback no longer holds, then broken
     (the overshoot control: an age rule that skips everything also "fixes" the wedge)
-  - if a queued run of any age is called a phantom, then broken
+  - if a waiting, pending or requested run of any age, or a queued run with a job, is
+    called a phantom, then broken
+  - if a queued run with no job at all, idle for more than the bound, still holds the
+    census or is not named, then broken (runs 37642343523, Wed 7 Oct 2026, and
+    43095724260, Wed 11 Nov 2026: GitHub created them and never started them, and the
+    error sink's census failed every pass on them)
   - if a run that sat queued for 14 h and started a minute ago is called a phantom, then
     broken (Sol P1 on #4858: age is measured from updated_at, never created_at)
   - if an in_progress run idle for 17 h with a job still queued is called a phantom, then
@@ -109,10 +114,25 @@ def test_a_recently_active_in_progress_run_is_not_a_phantom_and_reads_no_jobs() 
     )
 
 
-@pytest.mark.parametrize("status", ["queued", "waiting", "pending", "requested"])
-def test_a_queued_run_of_any_age_is_never_a_phantom(status: str) -> None:
+@pytest.mark.parametrize("status", ["waiting", "pending", "requested"])
+def test_a_waiting_run_of_any_age_is_never_a_phantom(status: str) -> None:
     """A job queued on a saturated pool is bounded by no timeout (Codex P1 on #3844)."""
     assert not is_phantom(_run(3, hours_old=200, status=status), NOW, jobs_of=_no_job_read)
+
+
+@pytest.mark.parametrize("job", ["queued", "waiting", "pending", "requested", "in_progress", "completed"])
+def test_a_queued_run_with_a_job_is_never_a_phantom(job: str) -> None:
+    """A queued run on a saturated pool has its jobs from the moment it is created (run
+    43373882087, Fri 13 Nov 2026: queued 7.5 h with 28 jobs). Any job keeps it live."""
+    assert not is_phantom(_run(3, hours_old=200, status="queued"), NOW, jobs_of=_jobs_of(job))
+
+
+def test_an_idle_queued_run_with_no_job_is_a_ghost_phantom() -> None:
+    """Runs 37642343523 (Wed 7 Oct 2026) and 43095724260 (Wed 11 Nov 2026) read `queued`
+    with zero jobs and updated_at equal to created_at for days. The control is the same run
+    inside the bound: it is not a phantom and its jobs are not read."""
+    assert is_phantom(_run(37642343523, hours_old=PHANTOM_AFTER_HOURS + 1, status="queued"), NOW, jobs_of=_jobs_of())
+    assert not is_phantom(_run(4, hours_old=PHANTOM_AFTER_HOURS, status="queued"), NOW, jobs_of=_no_job_read)
 
 
 def test_a_run_queued_for_fourteen_hours_that_just_started_is_not_a_phantom() -> None:
@@ -182,9 +202,18 @@ def test_census_still_holds_an_idle_run_with_a_job_queued_behind_a_busy_pool() -
 
 def test_census_still_holds_an_old_queued_run() -> None:
     inflight = [_run(12, hours_old=30, status="queued")]
-    held, phantoms = batch.split_held_back(inflight, WATCHED, NOW, LOOKBACK, jobs_of=_no_job_read)
+    held, phantoms = batch.split_held_back(inflight, WATCHED, NOW, LOOKBACK, jobs_of=_jobs_of("queued"))
     assert [r["id"] for r in held] == [12]
     assert phantoms == []
+
+
+def test_census_skips_a_ghost_queued_run_and_still_holds_its_live_neighbour() -> None:
+    inflight = [_run(43095724260, hours_old=40, status="queued"), _run(12, hours_old=30, status="queued")]
+    held, phantoms = batch.split_held_back(
+        inflight, WATCHED, NOW, LOOKBACK, jobs_of=lambda run_id: [] if run_id == 43095724260 else [{"status": "queued"}]
+    )
+    assert [r["id"] for r in held] == [12]
+    assert [r["id"] for r in phantoms] == [43095724260]
 
 
 def test_census_phantom_rule_leaves_unwatched_and_rerun_filters_alone() -> None:
@@ -309,7 +338,7 @@ def test_closed_pr_sweep_still_cancels_a_recent_in_progress_run(
         dry_run=False,
         still_closed=lambda _run: True,
         now=NOW,
-        jobs_of=_no_job_read,
+        jobs_of=lambda run_id: [{"status": "queued"}] if run_id == 33 else _no_job_read(run_id),
     )
     assert posts == [32, 33]
     assert counts.phantom_skipped == ()
